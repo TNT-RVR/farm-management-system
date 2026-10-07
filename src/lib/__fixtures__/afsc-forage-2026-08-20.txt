@@ -1,0 +1,54 @@
+Peace $ / January - March April - June July - September October - December
+Grass Hay - 1st Cut lb 0.1011 0.1005
+Grass Hay - 2nd Cut lb 0.1176 0.1121
+Alfalfa Hay - 1st Cut lb 0.1058 0.1029
+Alfalfa Hay - 2nd Cut lb 0.1233 0.1150
+Greenfeed lb 0.0932 0.0861
+Straw lb 0.0528 0.0431
+Silage (60% Moisture) ton 61.6886 63.9565
+Silage (60% Moisture) tonne 68.0000 70.5000
+Northwest $ / January - March April - June July - September October - December
+Grass Hay - 1st Cut lb 0.0911 0.0954
+Grass Hay - 2nd Cut lb 0.1135 0.1118
+Alfalfa Hay - 1st Cut lb 0.0987 0.1034
+Alfalfa Hay - 2nd Cut lb 0.1158 0.1158
+Greenfeed lb 0.0792 0.0829
+Straw lb 0.0461 0.0430
+Silage (60% Moisture) ton 65.3173 68.9460
+Silage (60% Moisture) tonne 72.0000 76.0000
+Northeast $ / January - March April - June July - September October - December
+Grass Hay - 1st Cut lb 0.1030 0.1059
+Grass Hay - 2nd Cut lb 0.1215 0.1215
+Alfalfa Hay - 1st Cut lb 0.1070 0.1100
+Alfalfa Hay - 2nd Cut lb 0.1261 0.1261
+Greenfeed lb 0.0858 0.0858
+Straw lb 0.0519 0.0519
+Silage (60% Moisture) ton 66.2245 69.3996
+Silage (60% Moisture) tonne 73.0000 76.5000
+Central $ / January - March April - June July - September October - December
+Grass Hay - 1st Cut lb 0.0846 0.0923
+Grass Hay - 2nd Cut lb 0.1062 0.1043
+Alfalfa Hay - 1st Cut lb 0.0984 0.0984
+Alfalfa Hay - 2nd Cut lb 0.1113 0.1113
+Greenfeed lb 0.0655 0.0652
+Straw lb 0.0452 0.0412
+Silage (60% Moisture) ton 67.0441 69.4352
+Silage (60% Moisture) tonne 73.9035 76.5393
+South $ / January - March April - June July - September October - December
+Grass Hay - 1st Cut lb 0.0927 0.0881
+Grass Hay - 2nd Cut lb 0.1085 0.1011
+Alfalfa Hay - 1st Cut lb 0.0958 0.0979
+Alfalfa Hay - 2nd Cut lb 0.1170 0.1104
+Greenfeed lb 0.0617 0.0657
+Straw lb 0.0482 0.0454
+Silage (60% Moisture) ton 75.2963 77.1107
+Silage (60% Moisture) tonne 83.0000 85.0000
+* Contract Sales to forage processing plants: If forage has been cut and delivered to processing plant before your taxation
+year end, and payment or partial payment has been received after your tax year has ended, do not record this on opening
+and/or closing inventory, but instead as opening and/or closing receivables.
+August 20, 2026
+Note: Commodity prices listed are subject to change if the AgriStability program receives updated market information.
+For more information call 1.877.899.AFSC(2372)
+Forage
+AgriStability Program
+2026 Commodity Price List

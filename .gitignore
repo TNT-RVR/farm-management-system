@@ -1,0 +1,36 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+.netlify/
+supabase/.temp/
+*.local
+public/soil-split/
+public/test/
+
+# Database backups — kept as CI artifacts and on your own disk, never in git.
+# A repo that carries every night's copy of the farm data grows without bound
+# and puts the records somewhere they were never meant to live.
+backups/
+
+# John Deere operation exports. One harvest is 116 MB and a 3.4 GB .dbf; the
+# whole farm is gigabytes of immutable raw passes that can be pulled again any
+# time from Deere. They belong on the machine that grids them, not in git.
+data/jd-exports/
+data/ici-invoices/
+
+# Working output from the topography pipeline: run logs, and the gridded cells
+# on their way into the database. All of it is reproducible from the exports,
+# and the cells live in field_topo_cells once loaded.
+data/*.log
+data/topo/
+scripts/__pycache__/
+scripts/_q_tmp.mjs
+scripts/_water_tmp.mjs
+scripts/_sessions_probe.mjs
+
+# Deep-research working notes and reports (kept out of the app repo)
+research_notes/
+# Anchored to the root: src/lib/reports and src/pages/reports are app code.
+/reports/

@@ -1,0 +1,22 @@
+title: "Show and tell: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Show us your version running on your farm. Screenshots are great; blur anything private first.
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you build or change?
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: How did you do it?
+      description: The prompt you gave your AI assistant, a patch, or a description. Sharing it helps others do the same.
+  - type: textarea
+    id: pictures
+    attributes:
+      label: Screenshots
+      description: Drag images in here.

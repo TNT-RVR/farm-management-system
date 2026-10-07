@@ -1,0 +1,142 @@
+[
+ {
+  "key": "amberdur5",
+  "crop": "Amber Durum Wheat",
+  "table_no": "5",
+  "revised": "2020-07",
+  "sample_weight_g": 250,
+  "calibrate_at": 53,
+  "first_reading": 20.0,
+  "last_reading": 74.5
+ },
+ {
+  "key": "barley14",
+  "crop": "Barley, 52 kg/hL and over",
+  "table_no": "14",
+  "revised": "2022-07",
+  "sample_weight_g": 225,
+  "calibrate_at": 53,
+  "first_reading": 5.0,
+  "last_reading": 52.0
+ },
+ {
+  "key": "blackbean3",
+  "crop": "Black Beans",
+  "table_no": "3",
+  "revised": "2018-07",
+  "sample_weight_g": 250,
+  "calibrate_at": 53,
+  "first_reading": 15.0,
+  "last_reading": 84.5
+ },
+ {
+  "key": "canola6",
+  "crop": "Canola and Rapeseed",
+  "table_no": "6",
+  "revised": "2014-07",
+  "sample_weight_g": 250,
+  "calibrate_at": 53,
+  "first_reading": 3.5,
+  "last_reading": 78.0
+ },
+ {
+  "key": "cornhighmoist11A",
+  "crop": "Corn, high moisture",
+  "table_no": "11A",
+  "revised": "2000-07",
+  "sample_weight_g": 175,
+  "calibrate_at": 53,
+  "first_reading": 28.0,
+  "last_reading": 64.5
+ },
+ {
+  "key": "cornlowmoist6",
+  "crop": "Corn, low moisture",
+  "table_no": "6",
+  "revised": "2000-07",
+  "sample_weight_g": 250,
+  "calibrate_at": 53,
+  "first_reading": 20.0,
+  "last_reading": 66.5
+ },
+ {
+  "key": "beans-greatnorthern-1",
+  "crop": "Great Northern White Beans",
+  "table_no": "1",
+  "revised": "2016-07",
+  "sample_weight_g": 250,
+  "calibrate_at": 53,
+  "first_reading": 10.0,
+  "last_reading": 95.0
+ },
+ {
+  "key": "lightredkidney1",
+  "crop": "Light Red Kidney Beans",
+  "table_no": "1",
+  "revised": "2011-07",
+  "sample_weight_g": 250,
+  "calibrate_at": 53,
+  "first_reading": 10.0,
+  "last_reading": 47.0
+ },
+ {
+  "key": "oats6",
+  "crop": "Oats",
+  "table_no": "6",
+  "revised": "2001-08",
+  "sample_weight_g": 200,
+  "calibrate_at": 53,
+  "first_reading": 0.0,
+  "last_reading": 39.5
+ },
+ {
+  "key": "peas3",
+  "crop": "Peas, green and yellow",
+  "table_no": "3",
+  "revised": "2014-07",
+  "sample_weight_g": 250,
+  "calibrate_at": 53,
+  "first_reading": 10.0,
+  "last_reading": 79.5
+ },
+ {
+  "key": "pintobeans2",
+  "crop": "Pinto Beans",
+  "table_no": "2",
+  "revised": "2007-07",
+  "sample_weight_g": 250,
+  "calibrate_at": 53,
+  "first_reading": 10.0,
+  "last_reading": 79.5
+ },
+ {
+  "key": "soybean9",
+  "crop": "Soybean",
+  "table_no": "9",
+  "revised": "2014-07",
+  "sample_weight_g": 225,
+  "calibrate_at": 53,
+  "first_reading": 0.0,
+  "last_reading": 89.5
+ },
+ {
+  "key": "triticale1",
+  "crop": "Triticale",
+  "table_no": "1",
+  "revised": "1981-08",
+  "sample_weight_g": 250,
+  "calibrate_at": 53,
+  "first_reading": 20.0,
+  "last_reading": 89.5
+ },
+ {
+  "key": "westredspring12",
+  "crop": "Western Red Spring Wheat, 66 kg/hL and over",
+  "table_no": "12",
+  "revised": "2021-07",
+  "sample_weight_g": 250,
+  "calibrate_at": 53,
+  "first_reading": 17.5,
+  "last_reading": 84.5
+ }
+]

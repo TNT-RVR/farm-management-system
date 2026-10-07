@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Farm logo">
+  <rect width="100" height="100" rx="22" fill="#166534"/>
+  <g fill="#fff">
+    <rect x="46.5" y="40" width="7" height="38" rx="3.5"/>
+    <ellipse cx="36.5" cy="52" rx="15" ry="6.5" transform="rotate(35 36.5 52)"/>
+    <ellipse cx="63.5" cy="42" rx="17" ry="7.2" transform="rotate(-35 63.5 42)"/>
+    <rect x="25" y="77" width="50" height="6" rx="3"/>
+  </g>
+</svg>

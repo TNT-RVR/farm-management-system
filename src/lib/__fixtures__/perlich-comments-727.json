@@ -1,0 +1,64 @@
+{
+ "message": "market_report_comment_list",
+ "data": {
+  "market_report_comments": [
+   {
+    "id": 974,
+    "market_report_category": {
+     "id": 1,
+     "parent": null,
+     "name": "Calves",
+     "position": 0,
+     "created_at": "2021-03-02T03:27:18.000000Z",
+     "updated_at": "2021-03-02T03:27:18.000000Z"
+    },
+    "comment": "Too few calves to quote this week.\nCalf sales start next week!\nFirst Calf Sale is WEDNESDAY OCTOBER 7TH at 10:00 AM \n800 Calves Booked\n\nFirst set of presorted calves sell October 10th at 10:00 AM\nOver 1,800 Calves Booked\n\nGive us a call to get your calves booked at 403-329-3101 as some sales are starting to fill up!",
+    "created_at": "2026-10-02T15:47:03.000000Z",
+    "updated_at": "2026-10-02T15:49:10.000000Z"
+   },
+   {
+    "id": 975,
+    "market_report_category": {
+     "id": 52,
+     "parent": null,
+     "name": "Bred Cows/Heifers",
+     "position": 3,
+     "created_at": "2021-03-02T03:27:18.000000Z",
+     "updated_at": "2021-03-02T03:27:18.000000Z"
+    },
+    "comment": "For more information on our upcoming bred sales visit the calendar page of our website!",
+    "created_at": "2026-10-02T15:47:03.000000Z",
+    "updated_at": "2026-10-02T15:47:03.000000Z"
+   },
+   {
+    "id": 976,
+    "market_report_category": {
+     "id": 43,
+     "parent": null,
+     "name": "Cull Cows/Bulls",
+     "position": 2,
+     "created_at": "2021-03-02T03:27:18.000000Z",
+     "updated_at": "2021-03-02T03:27:18.000000Z"
+    },
+    "comment": "Light run of cows this week.",
+    "created_at": "2026-10-02T15:47:03.000000Z",
+    "updated_at": "2026-10-02T15:47:03.000000Z"
+   },
+   {
+    "id": 977,
+    "market_report_category": {
+     "id": 18,
+     "parent": null,
+     "name": "Yearlings",
+     "position": 1,
+     "created_at": "2021-03-02T03:27:18.000000Z",
+     "updated_at": "2021-03-02T03:27:18.000000Z"
+    },
+    "comment": "Good run of yearlings this week. \n11 Blk Angus off grass yearling steers weighing 733 lbs X 575.00 = $3,723.00\n14 Blk Angus off grass yearling steers weighing 787 lbs X 570.00 = $4,486.00\n21 RWF off grass yearling steers weighing 905 lbs X 499.00 = $4,514.00\n42 RWF off grass yearling steers weighing 971 lbs X 477.00 = $4,630.00\n31 RWF off grass yearling steers weighing 1007 lbs X 446.50 = $4,496.00\n22 RWF off grass yearling steers weighing 1113 lbs X 414.00 = $4,607.00\n47 Blk backgrounded steers weighing 904 lbs X 476.00 = $4,303.00\n\nThe bulk of Hfrs traded this week where open backgrounded carrying some flesh.",
+    "created_at": "2026-10-02T15:47:03.000000Z",
+    "updated_at": "2026-10-02T23:43:49.000000Z"
+   }
+  ]
+ },
+ "success": true
+}

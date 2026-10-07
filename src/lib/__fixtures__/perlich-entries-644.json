@@ -1,0 +1,416 @@
+{
+ "message": "market_report_entry_list",
+ "data": {
+  "market_report_entries": [
+   {
+    "id": 19677,
+    "market_report_category": {
+     "id": 20,
+     "parent": {
+      "id": 18,
+      "parent": null,
+      "name": "Yearlings",
+      "position": 1
+     },
+     "name": "400 - 500 - Steers",
+     "position": 1
+    },
+    "min": "625.00",
+    "max": "740.00",
+    "sales_to": "745.00"
+   },
+   {
+    "id": 19681,
+    "market_report_category": {
+     "id": 21,
+     "parent": {
+      "id": 18,
+      "parent": null,
+      "name": "Yearlings",
+      "position": 1
+     },
+     "name": "500 - 600 - Steers",
+     "position": 2
+    },
+    "min": "560.00",
+    "max": "675.00",
+    "sales_to": "682.00"
+   },
+   {
+    "id": 19688,
+    "market_report_category": {
+     "id": 22,
+     "parent": {
+      "id": 18,
+      "parent": null,
+      "name": "Yearlings",
+      "position": 1
+     },
+     "name": "600 - 700 - Steers",
+     "position": 3
+    },
+    "min": "525.00",
+    "max": "580.00",
+    "sales_to": "583.00"
+   },
+   {
+    "id": 19689,
+    "market_report_category": {
+     "id": 23,
+     "parent": {
+      "id": 18,
+      "parent": null,
+      "name": "Yearlings",
+      "position": 1
+     },
+     "name": "700 - 800 - Steers",
+     "position": 4
+    },
+    "min": "450.00",
+    "max": "530.00",
+    "sales_to": "533.00"
+   },
+   {
+    "id": 19679,
+    "market_report_category": {
+     "id": 24,
+     "parent": {
+      "id": 18,
+      "parent": null,
+      "name": "Yearlings",
+      "position": 1
+     },
+     "name": "800 - 900 - Steers",
+     "position": 5
+    },
+    "min": "400.00",
+    "max": "445.00",
+    "sales_to": null
+   },
+   {
+    "id": 19678,
+    "market_report_category": {
+     "id": 31,
+     "parent": {
+      "id": 18,
+      "parent": null,
+      "name": "Yearlings",
+      "position": 1
+     },
+     "name": "300 - 400 - Heifers",
+     "position": 12
+    },
+    "min": "600.00",
+    "max": "735.00",
+    "sales_to": "740.00"
+   },
+   {
+    "id": 19682,
+    "market_report_category": {
+     "id": 32,
+     "parent": {
+      "id": 18,
+      "parent": null,
+      "name": "Yearlings",
+      "position": 1
+     },
+     "name": "400 - 500 - Heifers",
+     "position": 13
+    },
+    "min": "575.00",
+    "max": "675.00",
+    "sales_to": "680.00"
+   },
+   {
+    "id": 19686,
+    "market_report_category": {
+     "id": 33,
+     "parent": {
+      "id": 18,
+      "parent": null,
+      "name": "Yearlings",
+      "position": 1
+     },
+     "name": "500 - 600 - Heifers",
+     "position": 14
+    },
+    "min": "500.00",
+    "max": "575.00",
+    "sales_to": "592.00"
+   },
+   {
+    "id": 19690,
+    "market_report_category": {
+     "id": 34,
+     "parent": {
+      "id": 18,
+      "parent": null,
+      "name": "Yearlings",
+      "position": 1
+     },
+     "name": "600 - 700 - Heifers",
+     "position": 15
+    },
+    "min": "450.00",
+    "max": "550.00",
+    "sales_to": "589.00"
+   },
+   {
+    "id": 19695,
+    "market_report_category": {
+     "id": 35,
+     "parent": {
+      "id": 18,
+      "parent": null,
+      "name": "Yearlings",
+      "position": 1
+     },
+     "name": "700 - 800 - Heifers",
+     "position": 16
+    },
+    "min": "390.00",
+    "max": "480.00",
+    "sales_to": null
+   },
+   {
+    "id": 19699,
+    "market_report_category": {
+     "id": 36,
+     "parent": {
+      "id": 18,
+      "parent": null,
+      "name": "Yearlings",
+      "position": 1
+     },
+     "name": "800 - 900 - Heifers",
+     "position": 17
+    },
+    "min": "375.00",
+    "max": "440.00",
+    "sales_to": null
+   },
+   {
+    "id": 19698,
+    "market_report_category": {
+     "id": 37,
+     "parent": {
+      "id": 18,
+      "parent": null,
+      "name": "Yearlings",
+      "position": 1
+     },
+     "name": "900 - 1000 - Heifers",
+     "position": 18
+    },
+    "min": "390.00",
+    "max": "430.00",
+    "sales_to": null
+   },
+   {
+    "id": 19697,
+    "market_report_category": {
+     "id": 38,
+     "parent": {
+      "id": 18,
+      "parent": null,
+      "name": "Yearlings",
+      "position": 1
+     },
+     "name": "1000 - 1100 - Heifers",
+     "position": 19
+    },
+    "min": "325.00",
+    "max": "425.00",
+    "sales_to": "427.00"
+   },
+   {
+    "id": 19693,
+    "market_report_category": {
+     "id": 44,
+     "parent": {
+      "id": 43,
+      "parent": null,
+      "name": "Cull Cows/Bulls",
+      "position": 2
+     },
+     "name": "D1 - D2 Cows",
+     "position": 0
+    },
+    "min": "210.00",
+    "max": "230.00",
+    "sales_to": null
+   },
+   {
+    "id": 19691,
+    "market_report_category": {
+     "id": 45,
+     "parent": {
+      "id": 43,
+      "parent": null,
+      "name": "Cull Cows/Bulls",
+      "position": 2
+     },
+     "name": "D3 - D4 Cows",
+     "position": 1
+    },
+    "min": "190.00",
+    "max": "210.00",
+    "sales_to": null
+   },
+   {
+    "id": 19685,
+    "market_report_category": {
+     "id": 47,
+     "parent": {
+      "id": 43,
+      "parent": null,
+      "name": "Cull Cows/Bulls",
+      "position": 2
+     },
+     "name": "Feeder Cows",
+     "position": 3
+    },
+    "min": "225.00",
+    "max": "275.00",
+    "sales_to": null
+   },
+   {
+    "id": 19696,
+    "market_report_category": {
+     "id": 48,
+     "parent": {
+      "id": 43,
+      "parent": null,
+      "name": "Cull Cows/Bulls",
+      "position": 2
+     },
+     "name": "Heiferettes",
+     "position": 4
+    },
+    "min": "275.00",
+    "max": "325.00",
+    "sales_to": "350.00"
+   },
+   {
+    "id": 19680,
+    "market_report_category": {
+     "id": 49,
+     "parent": {
+      "id": 43,
+      "parent": null,
+      "name": "Cull Cows/Bulls",
+      "position": 2
+     },
+     "name": "Bulls 1901+",
+     "position": 5
+    },
+    "min": "235.00",
+    "max": "250.00",
+    "sales_to": null
+   },
+   {
+    "id": 19694,
+    "market_report_category": {
+     "id": 51,
+     "parent": {
+      "id": 43,
+      "parent": null,
+      "name": "Cull Cows/Bulls",
+      "position": 2
+     },
+     "name": "Holstein Cows",
+     "position": 8
+    },
+    "min": "150.00",
+    "max": "185.00",
+    "sales_to": null
+   },
+   {
+    "id": 19683,
+    "market_report_category": {
+     "id": 56,
+     "parent": {
+      "id": 52,
+      "parent": null,
+      "name": "Bred Cows/Heifers",
+      "position": 3
+     },
+     "name": "Bred Heifers - Good Quality",
+     "position": 3
+    },
+    "min": "6000.00",
+    "max": "7000.00",
+    "sales_to": "7250.00"
+   },
+   {
+    "id": 19692,
+    "market_report_category": {
+     "id": 57,
+     "parent": {
+      "id": 52,
+      "parent": null,
+      "name": "Bred Cows/Heifers",
+      "position": 3
+     },
+     "name": "Bred Heifers - Med. Quality",
+     "position": 4
+    },
+    "min": "5000.00",
+    "max": "6000.00",
+    "sales_to": null
+   },
+   {
+    "id": 19700,
+    "market_report_category": {
+     "id": 59,
+     "parent": {
+      "id": 52,
+      "parent": null,
+      "name": "Bred Cows/Heifers",
+      "position": 3
+     },
+     "name": "Bred Cows - Good Quality",
+     "position": 6
+    },
+    "min": "5000.00",
+    "max": "5700.00",
+    "sales_to": null
+   },
+   {
+    "id": 19687,
+    "market_report_category": {
+     "id": 60,
+     "parent": {
+      "id": 52,
+      "parent": null,
+      "name": "Bred Cows/Heifers",
+      "position": 3
+     },
+     "name": "Bred Cows - Med. Quality",
+     "position": 7
+    },
+    "min": "4000.00",
+    "max": "5000.00",
+    "sales_to": null
+   },
+   {
+    "id": 19684,
+    "market_report_category": {
+     "id": 71,
+     "parent": {
+      "id": 65,
+      "parent": null,
+      "name": "Holsteins",
+      "position": 4
+     },
+     "name": "800 - 900",
+     "position": 5
+    },
+    "min": "340.00",
+    "max": "360.00",
+    "sales_to": null
+   }
+  ]
+ },
+ "success": true
+}

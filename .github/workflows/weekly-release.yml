@@ -1,0 +1,53 @@
+# Turn each week's update into a release people can apply.
+#
+# A new week arrives as a commit tagged week-YYYY-MM-DD. This makes a
+# release from it: the notes in CHANGES/YYYY-MM-DD.md, a .patch file holding
+# exactly that week's code, and a post in Discussions → Announcements.
+#
+# Runs only on the original repository, not on forks: your copy does not
+# need to announce anything.
+name: Weekly release
+
+on:
+  push:
+    tags: ['week-*']
+
+permissions:
+  contents: write
+  discussions: write
+
+jobs:
+  release:
+    if: github.repository == 'TNT-RVR/farm-management-system'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Make the patch
+        id: patch
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          DATE="${TAG#week-}"
+          PREV=$(git tag --list 'week-*' --sort=-creatordate | grep -vx "$TAG" | head -n 1 || true)
+          if [ -n "$PREV" ]; then
+            # The bookkeeping file is ours, not the app's.
+            git diff --binary "$PREV" "$TAG" -- . ':!.export' > "changes-$DATE.patch"
+          else
+            echo "First release: there is no earlier week to compare with." > "changes-$DATE.patch"
+          fi
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
+          ls -l "changes-$DATE.patch"
+
+      - name: Publish the release and the announcement
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          DATE="${{ steps.patch.outputs.date }}"
+          NOTES="CHANGES/$DATE.md"
+          [ -f "$NOTES" ] || echo "Changes for the week of $DATE." > "$NOTES"
+          gh release create "$GITHUB_REF_NAME" "changes-$DATE.patch" \
+            --title "Week of $DATE" \
+            --notes-file "$NOTES" \
+            --discussion-category "Announcements"
