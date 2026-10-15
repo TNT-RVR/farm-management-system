@@ -1,0 +1,70 @@
+# Tables the app reads that may stay EMPTY in the demo, each with the reason.
+# Read by empty-screens.mjs: anything the app reads that is empty and NOT
+# listed here is reported by the demo build as a screen to fill.
+# One table per line: `table  # why`. Keep the reason honest: a screen a
+# visitor would open and find blank belongs in demo/farm/, not here.
+
+# --- Connections to outside services the demo never makes
+anydo_connections        # Any.do: per-person sign-in to an outside service
+bin_readings             # bin cable sensors: an outside feed
+bin_monitor_readings     # BASF bin report: switched off in the demo farm
+drive_backup_items       # Google Drive backup: not connected in the demo
+drive_backup_runs        # Google Drive backup: not connected in the demo
+fieldnet_systems         # Lindsay FieldNET: not connected in the demo
+fieldnet_passes          # Lindsay FieldNET: not connected in the demo
+fieldnet_applied_bins    # Lindsay FieldNET: not connected in the demo
+eshepherd_activations    # eShepherd collars: pregnancy switched off in the demo
+eshepherd_repro          # eShepherd collars: pregnancy switched off in the demo
+qb_account_categories    # QuickBooks: not connected in the demo
+qb_entities              # QuickBooks: not connected in the demo
+qb_lines                 # QuickBooks: not connected in the demo
+qb_questions             # QuickBooks: not connected in the demo
+ici_fert_reviews         # retailer invoices: switched off in the demo farm
+ici_field_lines          # retailer invoices: switched off in the demo farm
+integration_health       # the feed watchdog: no feeds run in the demo
+integration_status_v     # the feed watchdog: no feeds run in the demo
+aimm_watch               # watches Alberta's irrigation pages for changes
+smrid_areas              # irrigation district allotment: switched off in the demo
+water_allotments         # irrigation district allotment: switched off in the demo
+cameras                  # cameras: switched off in the demo farm
+time_off                 # time-off calendar: switched off in the demo farm
+plc_agent_health         # pump controller on site: switched off in the demo
+plc_commands             # pump controller on site: switched off in the demo
+plc_line_integrity       # pump controller on site: switched off in the demo
+plc_line_watch           # pump controller on site: switched off in the demo
+plc_live                 # pump controller on site: switched off in the demo
+plc_reading_history      # pump controller on site: switched off in the demo
+plc_turbine_fields       # pump controller on site: switched off in the demo
+solar_daily              # SolisCloud solar: switched off in the demo farm
+solar_latest             # SolisCloud solar: switched off in the demo farm
+solar_sites              # SolisCloud solar: switched off in the demo farm
+tv_commands              # the conference-room TV: there is no TV
+push_subscriptions       # phone notifications: per device, none in the demo
+
+# --- Empty means "nothing set", and the screen says so
+crop_bin_overrides       # per-crop bin limit overrides: none is the normal state
+crop_acre_limits         # rotation acre caps: optional
+jd_dismissed_fields      # John Deere fields someone hid: none
+jd_dismissed_operations  # John Deere passes someone hid: none
+mymap_hidden_features    # My Map features someone hid: none
+notification_prefs       # each person's notification choices: defaults apply
+pasture_biomass_calibration  # optional calibration of the forage estimate
+report_favourites        # each person's starred reports: theirs to pick
+year_unlocks             # crop years someone reopened: none
+
+# --- The app's own records
+app_build_info           # written by a production build; What's new works without it
+app_issues               # errors sent to Claude: none in a sandbox
+audit_log                # cleared on purpose when the demo is built (090_finish.sql)
+meeting_fact_log         # which meeting facts were shown: fills itself as it is used
+
+# --- Uploaded files: the demo ships no photos or PDFs
+checklist_photos         # photos taken on a checklist
+field_files              # files attached to a field
+task_files               # files attached to a task
+scale_ticket_photos      # photos of scale tickets
+product_documents        # label and safety-sheet PDFs
+
+# --- Satellite pictures: too large to ship with the demo
+sat_images               # the greenness numbers and charts are there; the pictures are not
+sat_latest_image         # as above

@@ -1,0 +1,48 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  node_bundler = "esbuild"
+  # unpdf carries a pdf.js build with dynamic requires that esbuild mangles when
+  # it inlines them. Shipping it as a real node_module keeps label parsing working.
+  external_node_modules = ["unpdf"]
+
+# FieldNET registered our OAuth callback with a slash (/api/fieldnet/callback),
+# which isn't editable on their side, so map that exact path to our function.
+# Must precede the /api/* catch-all (which would otherwise 404 on the subpath).
+[[redirects]]
+  from = "/api/fieldnet/callback"
+  to = "/.netlify/functions/fieldnet-callback"
+  status = 200
+
+# The legal pages were static .html files for a day (6 Oct 2026) and those
+# addresses went into Intuit's app settings; they now live in the app, filled
+# in from each farm's Farm setup.
+[[redirects]]
+  from = "/legal/privacy.html"
+  to = "/legal/privacy"
+  status = 301
+
+[[redirects]]
+  from = "/legal/terms.html"
+  to = "/legal/terms"
+  status = 301
+
+# The QuickBooks redirect URI registered on the Intuit app. Same reason as
+# FieldNET's: a sub-path, which the /api/* catch-all would 404.
+[[redirects]]
+  from = "/api/quickbooks/callback"
+  to = "/.netlify/functions/quickbooks-callback"
+  status = 200
+
+# Function routes must be matched before the SPA catch-all below.
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -1,0 +1,33 @@
+title: "Idea: "
+labels: ["idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing. The best ideas start from a problem on the farm, not from a feature.
+        Please leave out your own farm's private details (names, land locations, account numbers).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the problem on your farm?
+      description: What are you doing today, and what's slow, missing or wrong about it?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: How you'd like the app to handle it. Rough is fine.
+  - type: input
+    id: area
+    attributes:
+      label: Which part of the app?
+      placeholder: e.g. Fields, Cattle, Irrigation, Fertilizer
+  - type: dropdown
+    id: built
+    attributes:
+      label: Have you built it already?
+      options:
+        - "No, it's an idea"
+        - "Partly"
+        - "Yes, and I can share how"
