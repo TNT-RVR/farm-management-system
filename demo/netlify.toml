@@ -1,0 +1,72 @@
+# The demo site: the app, a made-up farm, and a back end that runs in each
+# visitor's own browser. Its Netlify site uses "demo" as its base directory, so
+# this file — not the app's netlify.toml — applies: no server functions, and
+# nothing here talks to a real database.
+[build]
+  command = "cd .. && npm ci --no-audit --no-fund && npm run build:demo"
+  publish = "dist"
+  # Always build. With "demo" as the base directory, Netlify skips a build
+  # when nothing under demo/ changed — so a push that only changes the app
+  # (src/, supabase/) never reached the demo. exit 1 = go ahead and build.
+  ignore = "exit 1"
+
+# The visitor counter (functions/count.mts): POST /count, GET /count/stats.
+# Its own paths, so the page's /api stand-ins and the catch-all below never see it.
+[functions]
+  directory = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # Loading the schema into PGlite with PostGIS needs about 1 GB.
+  NODE_OPTIONS = "--max-old-space-size=3072"
+
+# Hashed files never change: the browser keeps them, so a visitor downloads
+# the database engine and the farm once.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/demo-data/farm-*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Which farm file is current: always asked for afresh.
+[[headers]]
+  for = "/demo-data/manifest.json"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex"
+    # Nobody frames the demo inside their own page (passing it off, or
+    # clickjacking the Reset button); referrers stop at the site name
+    # (security review, 15 Oct 2026). A full content policy would need testing
+    # against the database engine, workers and map tiles first.
+    X-Frame-Options = "DENY"
+    Content-Security-Policy = "frame-ancestors 'none'"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Content-Type-Options = "nosniff"
+
+# A built file or farm file that is not in this deploy is a real "not found".
+# Without these the catch-all below answered with the web page itself: a tab
+# left open across a new deploy asked for the old build's PostGIS bundle, got
+# HTML, and PGlite failed with "incorrect header check". (Rules without
+# force only apply when no file exists, so real files are served as usual.)
+[[redirects]]
+  from = "/assets/*"
+  to = "/404.html"
+  status = 404
+
+[[redirects]]
+  from = "/demo-data/*"
+  to = "/404.html"
+  status = 404
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

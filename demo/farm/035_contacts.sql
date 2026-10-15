@@ -1,0 +1,32 @@
+-- Contacts: buyers, suppliers, the agronomist, trucking. All made up.
+-- Contact ids: 0de30000-0000-4000-8000-0000000003NN.
+
+insert into public.contacts (id, company, contact_name, email, phone, type, notes_md, tags, active, address) values
+  ('0de30000-0000-4000-8000-000000000301', 'Prairie Ag Supply', 'Morgan Hale', 'user-d2a1@prairieagsupply.example', '403-555-0141', 'supplier',
+   'Fertilizer, chemical and seed. Books fall fertilizer in August; prepay discount ends 15 December.', '{fertilizer,chemical,seed}', true, 'Box 120, Prairie Creek, AB'),
+  ('0de30000-0000-4000-8000-000000000302', 'Creekside Grain Terminal', 'Dana Ortiz', 'user-2c22@creeksideterminal.example', '403-555-0152', 'buyer',
+   'Canola and wheat. 22 km from the yard. Books deliveries a week out.', '{grain}', true, 'Range Road 252, Prairie Creek, AB'),
+  ('0de30000-0000-4000-8000-000000000303', 'Parkland Pulse Processors', 'Lee Chan', 'user-1508@parklandpulse.example', '403-555-0163', 'buyer',
+   'Yellow peas. Wants samples before booking a load.', '{grain,pulses}', true, 'Parkland Industrial Park, AB'),
+  ('0de30000-0000-4000-8000-000000000304', 'Aspen Valley Malt', 'Pat Sorensen', 'user-68d7@aspenvalleymalt.example', '403-555-0174', 'buyer',
+   'Malt barley contracts from the pivots. Germination and protein tested at intake.', '{grain}', true, null),
+  ('0de30000-0000-4000-8000-000000000305', 'Northfield Seeds', 'Jamie Brandt', 'user-e7a4@northfieldseeds.example', '403-555-0185', 'supplier',
+   'Certified wheat, barley and pea seed. Cleans our own peas too.', '{seed}', true, null),
+  ('0de30000-0000-4000-8000-000000000306', 'Ridgeview Veterinary Clinic', 'Dr. Robin Avery', 'user-bbfe@ridgeviewvet.example', '403-555-0196', 'other',
+   'Herd vet. Preg checking booked for the last week of October.', '{cattle,vet}', true, null),
+  ('0de30000-0000-4000-8000-000000000307', 'Western Feed & Mineral', 'Chris Wolfe', 'user-1c16@westernfeed.example', '403-555-0207', 'supplier',
+   'Mineral, salt, lick tubs and creep pellets.', '{cattle}', true, null),
+  ('0de30000-0000-4000-8000-000000000308', 'Taylor Crop Consulting', 'Riley Taylor, P.Ag.', 'user-2bc5@taylorcrop.example', '403-555-0218', 'agronomist',
+   'Independent agronomist. Pulls our soil samples in September and scouts the pivots every two weeks in season.', '{agronomy}', true, null),
+  ('0de30000-0000-4000-8000-000000000309', 'Big Sky Hauling', 'Terry Nolan', 'user-db8d@bigskyhauling.example', '403-555-0229', 'trucking',
+   'Super-B grain hauling when our own trucks are busy.', '{trucking}', true, null),
+  ('0de30000-0000-4000-8000-000000000310', 'Valley Equipment Ltd.', 'Service desk', 'user-9df6@valleyequipment.example', '403-555-0230', 'supplier',
+   'Combine and tractor dealer. Parts counter open Saturdays in harvest.', '{equipment}', true, null),
+  ('0de30000-0000-4000-8000-000000000311', 'County Line Auction Mart', 'Sale barn office', 'office@countylineauction.example', '403-555-0241', 'buyer',
+   'Calf sales Thursdays October to December.', '{cattle}', true, null),
+  ('0de30000-0000-4000-8000-000000000312', 'Lakeland Fuel Co-op', 'Bulk fuel', 'user-bf83@lakelandfuel.example', '403-555-0252', 'supplier',
+   'Bulk diesel and gas delivered to the yard tanks.', '{fuel}', true, null),
+  ('0de30000-0000-4000-8000-000000000313', 'Precision Pivot Service', 'Sam Kowalski', 'user-9df6@precisionpivot.example', '403-555-0263', 'custom_operator',
+   'Pivot and pump repairs. Winterizes the creek pump station in October.', '{irrigation}', true, null),
+  ('0de30000-0000-4000-8000-000000000314', null, 'Evelyn Miller', null, '403-555-0274', 'other',
+   'Landlord, Miller Half. Cash rent due 1 November.', '{landlord}', true, 'Prairie Creek, AB');

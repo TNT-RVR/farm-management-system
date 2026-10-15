@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Ideas and feature requests
+    url: https://github.com/TNT-RVR/farm-management-system/discussions/categories/ideas
+    about: Suggest a feature or share one you built.
+  - name: Help with setup or changes
+    url: https://github.com/TNT-RVR/farm-management-system/discussions/categories/q-a
+    about: Ask the community.
