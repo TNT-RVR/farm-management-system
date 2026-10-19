@@ -36,6 +36,8 @@ export type UserProfile = {
   full_name: string
   role: AppRole
   phone: string | null
+  /** Their own picture (avatars bucket). See lib/avatar.ts. */
+  avatar_url: string | null
   active: boolean
   nav_prefs: { order: string[]; hidden: string[] } | null
   /** Phone home-screen shortcuts. See lib/tiles.ts. */

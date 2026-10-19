@@ -144,7 +144,6 @@ const PARTS = [
   { key: 'overview', label: 'Overview' },
   { key: 'farm', label: 'Your farm' },
   { key: 'features', label: 'Parts of the app' },
-  { key: 'connections', label: 'Connections' },
   { key: 'customize', label: 'Fitting it to your farm' },
 ] as const
 type Part = (typeof PARTS)[number]['key']
@@ -155,6 +154,23 @@ const isPart = (v: string | null): v is Part => PARTS.some((p) => p.key === v)
  * this farm's at all; the connections are ones a farm may or may not use,
  * shown company by company but not demanded.
  */
+/**
+ * Bring a card into view once its tab has drawn it: scroll, ring it for a
+ * moment, and put the cursor in its first box — a checklist line goes to the
+ * place to finish it, not just the tab it is on.
+ */
+function focusSection(id: string, tries = 30) {
+  const el = document.getElementById(id)
+  if (!el) {
+    if (tries > 0) requestAnimationFrame(() => focusSection(id, tries - 1))
+    return
+  }
+  el.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  el.classList.add('ring-2', 'ring-amber-300')
+  setTimeout(() => el.classList.remove('ring-2', 'ring-amber-300'), 2500)
+  el.querySelector<HTMLElement>('input, textarea, select, button')?.focus({ preventScroll: true })
+}
+
 function SetupOverview({
   setup,
   go,
@@ -167,13 +183,14 @@ function SetupOverview({
 }) {
   const { data: keys } = useKeyStatus()
   const isSet = (env: string) => Boolean(keys?.find((k) => k.env === env)?.source)
-  const items: { label: string; done: boolean; where?: Part; connection?: string }[] = [
-    { label: 'Farm name and logo', done: Boolean(setup?.farm_name), where: 'farm' },
-    { label: 'Where the farm is', done: setup?.map_center_lat != null, where: 'farm' },
+  const items: { label: string; done: boolean; where?: Part; card?: string; connection?: string }[] = [
+    { label: 'Farm name and logo', done: Boolean(setup?.farm_name), where: 'farm', card: 'setup-farm' },
+    { label: 'Where the farm is', done: setup?.map_center_lat != null, where: 'farm', card: 'setup-location' },
     {
       label: 'A few words about the farm (for the AI features)',
       done: Boolean(setup?.farm_description?.trim()),
       where: 'farm',
+      card: 'setup-about',
     },
     { label: 'Site address', done: isSet('SITE_URL'), connection: 'site' },
     { label: 'AI key', done: isSet('ANTHROPIC_API_KEY'), connection: 'ai' },
@@ -201,7 +218,11 @@ function SetupOverview({
           {items.map((i) => (
             <li key={i.label}>
               <button
-                onClick={() => (i.where ? go(i.where) : openConnection(i.connection))}
+                onClick={() => {
+                  if (!i.where) return openConnection(i.connection)
+                  go(i.where)
+                  if (i.card) focusSection(i.card)
+                }}
                 className="flex items-center gap-2 text-left text-sm text-gray-700 hover:text-brand-700"
               >
                 {i.done ? (
@@ -267,11 +288,10 @@ export function FarmSetupPanel() {
   const fromUrl = search.get('part')
   // Connections has one home: Settings → Connections (SettingsPage follows ?tab=).
   const openConnection = (id?: string) => setSearch(new URLSearchParams({ tab: 'Connections', ...(id ? { c: id } : {}) }))
-  const part: Part = isPart(fromUrl) && fromUrl !== 'connections' ? fromUrl : 'overview'
+  // An old ?part=connections link is sent to the Connections tab by SettingsPage.
+  const part: Part = isPart(fromUrl) ? fromUrl : 'overview'
   const go = (p: Part) =>
-    p === 'connections'
-      ? openConnection()
-      : setSearch(
+    setSearch(
           (prev) => {
             const next = new URLSearchParams(prev)
             next.set('part', p)

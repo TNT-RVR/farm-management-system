@@ -103,3 +103,44 @@ export function billedPricePerKwh(rows: PumpPower[]): { perKwh: number; kwh: num
   const cost = pumps.reduce((s, r) => s + r.cost, 0)
   return kwh > 0 ? { perKwh: cost / kwh, kwh, cost } : null
 }
+
+/** A site row from the Azgard account page (power_bills.source 'portal'): one per site per invoice. */
+export type PortalSite = { site_id: string | null; bill_date: string | null }
+
+const siteDigits = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '').replace(/^0+/, '')
+const dayOf = (d: string) => Date.parse(`${d}T00:00:00Z`) / 86_400_000
+
+/**
+ * For each site on an Azgard bill read from its PDF (an upload, or a file
+ * attached in QuickBooks), whether the Azgard account page already has that
+ * site for that invoice — so the month is not counted twice. The page's rows
+ * carry the site ID and the invoice date (as their period's end), not a
+ * period; a PDF's site is the same one when its site ID matches and the
+ * page's invoice date is within `days` of the bill's date (its statement
+ * date, else the site's period end), or falls inside the site's period.
+ */
+export function coveredByPortal(
+  sites: { site_id: string | null; period_start: string | null; period_end: string | null }[],
+  billDate: string | null,
+  portal: PortalSite[],
+  days = 10,
+): boolean[] {
+  const bySite = new Map<string, number[]>()
+  for (const p of portal) {
+    const id = siteDigits(p.site_id)
+    if (id.length < 6 || !p.bill_date) continue
+    bySite.set(id, [...(bySite.get(id) ?? []), dayOf(p.bill_date)])
+  }
+  return sites.map((s) => {
+    const dates = bySite.get(siteDigits(s.site_id))
+    if (!dates) return false
+    const at = billDate ?? s.period_end
+    if (at && dates.some((d) => Math.abs(d - dayOf(at)) <= days)) return true
+    if (s.period_start && s.period_end) {
+      const a = dayOf(s.period_start)
+      const b = dayOf(s.period_end)
+      return dates.some((d) => d >= a && d <= b + days)
+    }
+    return false
+  })
+}

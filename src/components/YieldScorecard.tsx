@@ -5,7 +5,8 @@ import { useYieldCuts } from '@/lib/yield-cuts'
 import { cutFor } from '@/lib/yield-estimate'
 import { formatYield, scoreYield } from '@/lib/yield-goal'
 import { useSetPlanGoal, useTypedBeforeHarvest } from '@/lib/yield-goal-data'
-import { VersusBit } from '@/components/YieldScoreCells'
+import { CropDefaultBadge, VersusBit } from '@/components/YieldScoreCells'
+import { AbnormalYearMark } from '@/components/AbnormalYearMark'
 
 type ZoneLite = { id: string; crop_id: string }
 
@@ -104,6 +105,7 @@ export function YieldScorecard({
               ) : (
                 '—'
               )}
+              {score.estimate.fromDefault && <CropDefaultBadge />}
               <span className="text-gray-400"> · {score.estimate.note}</span>
               {score.estimate.typed && score.estimate.history.value != null && score.estimate.history.basis !== 'goal' && (
                 <span className="text-gray-400">
@@ -123,6 +125,15 @@ export function YieldScorecard({
                 <VersusBit v={score.vsEstimate} what="estimate" />
                 {score.vsEstimate && score.vsGoal && <span className="text-gray-400">, </span>}
                 <VersusBit v={score.vsGoal} what="goal" />
+                <AbnormalYearMark
+                  className="ml-2"
+                  fieldId={fieldId}
+                  cropId={crop.id}
+                  cropYear={cropYear}
+                  cropName={crop.name}
+                  reason={score.actual.abnormal}
+                  canEdit={canEdit}
+                />
               </p>
             )}
           </div>

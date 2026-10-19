@@ -30,7 +30,7 @@ import {
   useAuth,
   type AppRole,
 } from '@/lib/auth'
-import { NOTIFICATION_KINDS, useNotificationPrefs, useSetPref } from '@/lib/notifications'
+import { NotificationSwitches } from '@/pages/settings/NotificationSwitches'
 import {
   sendTestNotification,
   subscribeToPush,
@@ -43,6 +43,7 @@ import { FarmSetupPanel } from '@/pages/settings/FarmSetupPanel'
 import { AppVersionCard } from '@/components/AppVersionCard'
 import { AccessMatrix } from '@/pages/settings/AccessMatrix'
 import { AnydoCard } from '@/pages/settings/AnydoCard'
+import { ProfilePicture } from '@/pages/settings/ProfilePicture'
 
 type ManagedUser = {
   id: string
@@ -552,7 +553,7 @@ function PushToggle() {
               ? 'Blocked — enable notifications for this site in your browser.'
               : on
                 ? 'On — you’ll get pushes even with the app closed.'
-                : 'Get task and reminder pushes. On iPhone, add the app to your Home Screen first.'}
+                : 'Get pushes on this device. On iPhone, add the app to your Home Screen first.'}
         </p>
         {err && <p className="text-xs text-red-600">{err}</p>}
         {state !== 'not-configured' && (
@@ -612,37 +613,11 @@ function PushToggle() {
 }
 
 function NotificationPrefs() {
-  const { data: prefs } = useNotificationPrefs()
-  const setPref = useSetPref()
-
-  const inAppFor = (kind: string) => prefs?.find((p) => p.kind === kind)?.in_app ?? true
-
   return (
-    <div className="max-w-md rounded-lg border border-gray-200 bg-white p-4">
+    <div className="max-w-lg rounded-lg border border-gray-200 bg-white p-4">
       <h2 className="text-sm font-semibold text-gray-700">Notifications</h2>
-      <table className="mt-3 w-full text-sm">
-        <thead>
-          <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
-            <th className="py-1 font-medium">Event</th>
-            <th className="py-1 text-center font-medium">In-app</th>
-          </tr>
-        </thead>
-        <tbody>
-          {NOTIFICATION_KINDS.map(({ kind, label }) => (
-            <tr key={kind} className="border-t border-gray-100">
-              <td className="py-2">{label}</td>
-              <td className="py-2 text-center">
-                <input
-                  type="checkbox"
-                  checked={inAppFor(kind)}
-                  onChange={(e) => setPref.mutate({ kind, in_app: e.target.checked })}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
       <PushToggle />
+      <NotificationSwitches />
     </div>
   )
 }
@@ -675,22 +650,23 @@ function CalendarSyncLink() {
  * My account's sections. `?section=` picks one, so the home screen's Edit
  * button can open the tiles directly (/settings?section=home).
  */
-type Section = 'profile' | 'security' | 'notifications' | 'apps' | 'home' | 'device'
+// Connected apps (Any.do) lives under This device since 15 Oct 2026 — one
+// fewer tab to look through; old ?section=apps links still land there.
+type Section = 'profile' | 'security' | 'notifications' | 'home' | 'device'
 const SECTIONS: { key: Section; label: string }[] = [
   { key: 'profile', label: 'Profile' },
   { key: 'security', label: 'Sign-in security' },
   { key: 'notifications', label: 'Notifications' },
-  { key: 'apps', label: 'Connected apps' },
   { key: 'home', label: 'Home screen' },
-  { key: 'device', label: 'This device' },
+  { key: 'device', label: 'This device & apps' },
 ]
 const isSection = (v: string | null): v is Section => SECTIONS.some((x) => x.key === v)
+const sectionFrom = (v: string | null): Section => (v === 'apps' ? 'device' : isSection(v) ? v : 'profile')
 
 /** Your own profile, how you get notified, your home screen and this device. */
 function MyAccount() {
   const [search, setSearch] = useSearchParams()
-  const fromUrl = search.get('section')
-  const section: Section = isSection(fromUrl) ? fromUrl : 'profile'
+  const section: Section = sectionFrom(search.get('section'))
   const pick = (k: Section) =>
     setSearch(
       (prev) => {
@@ -719,10 +695,11 @@ function MyAccount() {
 
   return (
     <>
-      <PillTabs tabs={SECTIONS} value={section} onChange={pick} className="mb-4 max-w-md" />
+      <PillTabs tabs={SECTIONS} value={section} onChange={pick} className="mb-4" />
       {section === 'profile' && (
-        <div className="max-w-md rounded-lg border border-gray-200 bg-white p-4">
+        <div className="max-w-2xl rounded-lg border border-gray-200 bg-white p-4">
           <h2 className="text-sm font-semibold text-gray-700">My account</h2>
+          <ProfilePicture />
           <div className="mt-3 space-y-3 text-sm">
             <div>
               <label htmlFor="my-name" className="text-xs text-gray-500">
@@ -759,27 +736,33 @@ function MyAccount() {
           </div>
         </div>
       )}
-      {section === 'security' && <AuthenticatorSettings />}
+      {section === 'security' && (
+        <div className="max-w-2xl">
+          <AuthenticatorSettings />
+        </div>
+      )}
+      {/* Two columns on a wide screen, one on a phone. */}
       {section === 'notifications' && (
-        <div className="space-y-4">
+        <div className="grid items-start gap-4 xl:grid-cols-2">
           <NotificationPrefs />
           <CalendarSyncLink />
         </div>
       )}
-      {section === 'apps' && (
-        <div className="max-w-md">
-          <AnydoCard />
-        </div>
-      )}
       {section === 'home' && (
-        <div className="max-w-md">
+        <div className="max-w-3xl">
           <TilesPanel />
         </div>
       )}
       {section === 'device' && (
-        <div className="max-w-md space-y-4">
-          <OfflinePanel />
-          <AppVersionCard />
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          <div className="space-y-4">
+            <OfflinePanel />
+            <AppVersionCard />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold text-gray-700">Connected apps</h2>
+            <AnydoCard />
+          </div>
         </div>
       )}
     </>

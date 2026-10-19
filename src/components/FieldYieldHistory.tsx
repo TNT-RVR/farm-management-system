@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Flag, Pencil, RotateCcw, Scale, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -15,6 +15,8 @@ import { DeleteLoadButton } from '@/pages/bins/WeighIn'
 import { TRAIT_LABEL, TRAIT_SHORT, type HerbicideTrait } from '@/lib/canola-trait'
 import { fetchAreaYields, type CropAreaYield } from '@/lib/cropAreaYields'
 import { AreaYieldEditor } from '@/components/AreaYieldEditor'
+import { AbnormalYearMark } from '@/components/AbnormalYearMark'
+import { abnormalIndex, abnormalKey, useAbnormalYears } from '@/lib/abnormal-yields'
 
 const SOURCE_LABEL: Record<string, string> = {
   scale: 'Scale loads',
@@ -83,6 +85,12 @@ export function FieldYieldHistory({
     },
   })
   const splitYears = new Set((areaLines ?? []).map((l) => l.crop_year))
+  // "Not a normal year" marks: shown on the row, left out of every average.
+  const { data: marks } = useAbnormalYears()
+  const markOf = useMemo(() => {
+    const by = abnormalIndex(marks ?? [])
+    return (cropYear: number, cropId: string | null) => by.get(abnormalKey(fieldId, cropYear, cropId))?.reason ?? null
+  }, [marks, fieldId])
   const [editingArea, setEditingArea] = useState<{ cropYear: number; cropId: string; acres: number | null; row: CropAreaYield | null } | null>(null)
   const invalidate = () =>
     void qc.invalidateQueries({
@@ -335,6 +343,17 @@ export function FieldYieldHistory({
                         <td className="py-1.5 pr-3">
                           {cropName(l.crop_id)}
                           <span className="ml-1.5 rounded bg-brand-50 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-800">crop area</span>
+                          {(l.yield_per_acre != null || markOf(l.crop_year, l.crop_id) != null) && (
+                            <AbnormalYearMark
+                              className="mt-0.5 flex"
+                              fieldId={fieldId}
+                              cropId={l.crop_id}
+                              cropYear={l.crop_year}
+                              cropName={cropName(l.crop_id)}
+                              reason={markOf(l.crop_year, l.crop_id)}
+                              canEdit={canEdit}
+                            />
+                          )}
                         </td>
                         <td className="py-1.5 pr-3 text-right tabular-nums">{l.acres != null ? Number(l.acres).toFixed(1) : '—'}</td>
                         <td className="py-1.5 pr-3 text-right whitespace-nowrap tabular-nums">
@@ -358,6 +377,20 @@ export function FieldYieldHistory({
                         {cropName(h.crop_id)}
                         {h.variety && <span className="block text-[11px] text-gray-400">{h.variety}</span>}
                         <TraitBadge t={canolaTrait?.(h.crop_id, h.variety) ?? null} />
+                        {/* A planned figure (Farm at Hand's goal, the rotation sheet) is no harvest to mark. */}
+                        {h.crop_id &&
+                          (((h.yield_per_acre != null || h.clean_yield_per_acre != null) && h.source !== 'fah_import' && h.source !== 'rotation_xlsx') ||
+                            markOf(h.crop_year, h.crop_id) != null) && (
+                          <AbnormalYearMark
+                            className="mt-0.5 flex"
+                            fieldId={fieldId}
+                            cropId={h.crop_id}
+                            cropYear={h.crop_year}
+                            cropName={cropName(h.crop_id)}
+                            reason={markOf(h.crop_year, h.crop_id)}
+                            canEdit={canEdit}
+                          />
+                        )}
                       </td>
                       <td className="py-1.5 pr-3 text-right">{cell(h, 'acres', 'w-20')}</td>
                       <td className="py-1.5 pr-3 text-right whitespace-nowrap">

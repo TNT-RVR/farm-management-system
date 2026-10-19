@@ -285,6 +285,14 @@ function Chart({ data }: { data: DryDown }) {
               strokeDasharray="4 3"
               label={{ value: `dry ≤${f.dryMax}%`, position: 'insideBottomLeft', fontSize: 10, fill: '#15803d' }}
             />
+            {/* Where we are: today on the day chart, this hour on the hour chart. */}
+            <ReferenceLine
+              x={hourly ? now.ms : msDay(now.date)}
+              stroke="#dc2626"
+              strokeWidth={1.5}
+              ifOverflow="hidden"
+              label={{ value: hourly ? 'now' : 'today', position: 'insideTopRight', fontSize: 10, fill: '#dc2626' }}
+            />
             <Area dataKey="range" name="Likely range" stroke="none" fill="#2563eb" fillOpacity={0.12} isAnimationActive={false} connectNulls />
             <Line
               dataKey="predicted"

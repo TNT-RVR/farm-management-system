@@ -70,6 +70,7 @@ const ChemicalsPage = lazy(() => import('@/pages/ChemicalsPage').then((m) => ({ 
 const CalculatorPage = lazy(() => import('@/pages/CalculatorPage').then((m) => ({ default: m.CalculatorPage })))
 const CanolaReportsPage = lazy(() => import('@/pages/CanolaReportsPage').then((m) => ({ default: m.CanolaReportsPage })))
 const ReportsPage = lazy(() => import('@/pages/ReportsPage').then((m) => ({ default: m.ReportsPage })))
+const MissingPage = lazy(() => import('@/pages/MissingPage').then((m) => ({ default: m.MissingPage })))
 
 export default function App() {
   return (
@@ -215,6 +216,8 @@ export default function App() {
         <Route path="/fuel" element={<FuelPage />} />
         <Route path="/calculator" element={<CalculatorPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        {/* What's missing: one checklist of the inputs nobody has entered (16 Oct 2026). */}
+        <Route path="/missing" element={<MissingPage />} />
         <Route path="/integrations" element={<SettingsPage initialTab="Connections" />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

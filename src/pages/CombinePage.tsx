@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useTab } from '@/lib/useTab'
-import { AlertTriangle, ArrowDown, ArrowUp, Droplet, Eye, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Droplet, Eye, Trash2 } from 'lucide-react'
 import { PillTabs } from '@/components/PillTabs'
 import { Select } from '@/components/Select'
 import { InfoPopover } from '@/components/InfoPopover'
@@ -13,6 +13,18 @@ import { useFarmSettings } from '@/lib/farm-setup'
 import { useFields } from '@/lib/queries'
 import { useLossFieldDefaults } from '@/lib/combine-field'
 import { LossTrend } from '@/pages/combine/LossTrend'
+import { MonitorFilesTab } from '@/pages/combine/MonitorFilesTab'
+import { MonitorSetupGuide } from '@/pages/combine/MonitorSetupGuide'
+import { PUBLIC_COPY } from '@/config/edition'
+import { StartFieldCard } from '@/pages/combine/StartFieldCard'
+import { LossSnapshotCard } from '@/pages/combine/LossSnapshotCard'
+import { WhatWorked } from '@/pages/combine/WhatWorked'
+import { FieldFinishedForm } from '@/components/FieldFinishedForm'
+import { useLossSnapshot } from '@/lib/combine-loss-snapshot'
+import { settingsLine, settingText, settingValue } from '@/lib/combine-setting-text'
+import { weatherLine, type WorkWeather } from '@/lib/field-work'
+import { useEquipment } from '@/lib/equipment'
+import { ConditionsAdvice } from '@/pages/combine/ConditionsAdvice'
 import { cn } from '@/lib/utils'
 import {
   CROP_BASELINES,
@@ -62,8 +74,8 @@ import {
   type ManualRow,
 } from '@/lib/combine-manual'
 
-type Tab = 'setup' | 'fix' | 'loss' | 'book'
-const TAB_KEYS: Tab[] = ['setup', 'fix', 'loss', 'book']
+type Tab = 'setup' | 'fix' | 'loss' | 'book' | 'monitor'
+const TAB_KEYS: Tab[] = ['setup', 'fix', 'loss', 'book', 'monitor']
 
 /** Settings the monitor shows in inches, so the fraction is worth printing. */
 const IN_INCHES: SettingKey[] = ['concave_mm', 'presieve_mm', 'chaffer_mm', 'sieve_mm']
@@ -105,6 +117,7 @@ function CombineView() {
     asked === 'reference' ? 'setup' : undefined,
   )
   const [crop, setCrop] = useState<CombineCropKey>('canola')
+  const [finishing, setFinishing] = useState(false)
   const { combineModel } = useFarmSettings()
   // The manual typed in is New Holland's CR book, so its tab only means
   // something on a CR; any other machine lands on Starting settings instead.
@@ -137,17 +150,20 @@ function CombineView() {
             { key: 'fix', label: 'What do I change?' },
             { key: 'loss', label: 'Loss check' },
             ...(isCR ? [{ key: 'book' as const, label: 'From the manual' }] : []),
+            { key: 'monitor', label: 'Monitor files' },
           ]}
           value={tab}
           onChange={setTab}
         />
-        <Select
-          value={crop}
-          ariaLabel="Crop"
-          className="w-40"
-          onChange={(v) => setCrop(v as CombineCropKey)}
-          options={CROP_BASELINES.map((c) => ({ value: c.key, label: c.label }))}
-        />
+        {tab !== 'monitor' && (
+          <Select
+            value={crop}
+            ariaLabel="Crop"
+            className="w-40"
+            onChange={(v) => setCrop(v as CombineCropKey)}
+            options={CROP_BASELINES.map((c) => ({ value: c.key, label: c.label }))}
+          />
+        )}
         {/* The 919 is on Harvest; the reading gets taken at the combine, so
             the way there is one tap from here. */}
         <Link
@@ -156,20 +172,45 @@ function CombineView() {
         >
           <Droplet className="h-3.5 w-3.5" /> Moisture test
         </Link>
+        {profile?.active && (
+          <button
+            type="button"
+            onClick={() => setFinishing(true)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-brand-600 px-3 py-1.5 text-sm font-semibold text-brand-800 hover:bg-brand-50"
+          >
+            <CheckCircle2 className="h-4 w-4" /> Field finished
+          </button>
+        )}
       </div>
+      {finishing && <FieldFinishedForm onClose={() => setFinishing(false)} />}
 
       {tab === 'setup' && (
-        <SetupTab crop={crop} cropYear={cropYear} canEdit={canEdit} showBook={isCR} />
+        <div className="space-y-4">
+          {/* Cards for the field at hand, side by side on a wide screen: Start a
+              field, and room for one more (e.g. weather / crop advice). */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <StartFieldCard cropYear={cropYear} canEdit={canEdit} onCrop={setCrop} />
+            <ConditionsAdvice cropYear={cropYear} onCropChange={setCrop} />
+          </div>
+          <WhatWorked crop={crop} />
+          <SetupTab crop={crop} cropYear={cropYear} canEdit={canEdit} showBook={isCR} />
+        </div>
       )}
       {tab === 'fix' && <FixTab crop={crop} />}
       {/* Anyone active may record, correct or delete a loss check — the
           table's own rule (write_all) — not only a manager. */}
       {tab === 'loss' && <LossTab crop={crop} cropYear={cropYear} canEdit={Boolean(profile?.active)} onCropChange={setCrop} />}
       {tab === 'book' && <BookTab crop={crop} />}
+      {/* The combine display's files: boundaries, names, what each combine has.
+          Built for one make of display, so the public copy asks for the
+          farm's combine and hands their AI assistant the job instead. */}
+      {tab === 'monitor' && (PUBLIC_COPY ? <MonitorSetupGuide /> : <MonitorFilesTab cropYear={cropYear} canEdit={canEdit} />)}
 
-      <p className="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-        <strong>{baseline.label}:</strong> {baseline.note}
-      </p>
+      {tab !== 'monitor' && (
+        <p className="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+          <strong>{baseline.label}:</strong> {baseline.note}
+        </p>
+      )}
     </div>
   )
 }
@@ -517,6 +558,10 @@ function LossTab({
   })
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const fieldDefaults = useLossFieldDefaults(form.fieldId, cropYear, form.zoneId || null)
+  // The combine, operator, settings and moisture at the time, kept with the check.
+  const snap = useLossSnapshot({ fieldId: form.fieldId, cropKey: crop, cropYear, checks: checks ?? [] })
+  const { data: equipment } = useEquipment(false)
+  const machineName = (id: string | null) => (id ? (equipment?.find((e) => e.id === id)?.name ?? 'a combine') : null)
   const chooseField = (id: string) => {
     // A new field (or crop area) brings its own yield, price and acres.
     setForm((f) => ({ ...f, fieldId: id, zoneId: '', yieldBu: '', price: '', acres: '', tkw: '', lbBu: '' }))
@@ -660,6 +705,8 @@ function LossTab({
           />
         </div>
 
+        {form.fieldId && canEdit && <LossSnapshotCard s={snap} />}
+
         {/* The machine and the crop's seed — set once and left. Folded with
             the values in the title, so what the sum is using is still in view. */}
         <Fold
@@ -782,6 +829,7 @@ function LossTab({
                     loss_pct: result.pctOfYield,
                     source: form.source as 'rotor' | 'shoe' | 'header' | 'unknown',
                     notes: form.notes || null,
+                    ...snap.snapshot,
                   },
                   { onSuccess: () => set('grams', '') },
                 )
@@ -837,6 +885,9 @@ function LossTab({
                         {` · ${lossCheckMode(c) === 'windrow' ? 'dropped' : 'spread'}`}
                       </span>
                     </span>
+                    {settingsLine(c, ['rotor_rpm', 'concave_mm', 'fan_rpm', 'chaffer_mm', 'sieve_mm', 'ground_speed_mph']) && (
+                      <span className="block truncate text-[11px] text-gray-400">{settingsLine(c, ['rotor_rpm', 'concave_mm', 'fan_rpm', 'chaffer_mm', 'sieve_mm', 'ground_speed_mph'])}</span>
+                    )}
                     {(c.notes || (c.source && c.source !== 'unknown')) && (
                       <span className="block truncate text-xs text-gray-400">
                         {c.source && c.source !== 'unknown' ? `${c.source} · ` : ''}
@@ -861,7 +912,7 @@ function LossTab({
           )}
         </div>
       </div>
-      {opened && <LossCheckDetail check={opened} fieldName={fieldName} fields={fields ?? []} canEdit={canEdit} onClose={() => setOpenCheck(null)} />}
+      {opened && <LossCheckDetail check={opened} fieldName={fieldName} machineName={machineName} fields={fields ?? []} canEdit={canEdit} onClose={() => setOpenCheck(null)} />}
     </div>
   )
 }
@@ -877,12 +928,14 @@ const checkDate = (ts: string) => new Date(ts).toLocaleDateString('en-CA', { mon
 function LossCheckDetail({
   check: c,
   fieldName,
+  machineName,
   fields,
   canEdit,
   onClose,
 }: {
   check: LossCheckRow
   fieldName: (id: string | null) => string
+  machineName: (id: string | null) => string | null
   fields: { id: string; name: string }[]
   canEdit: boolean
   onClose: () => void
@@ -904,8 +957,14 @@ function LossCheckDetail({
     { key: 'grams_per_1000', label: 'Seed weight (g/1000)', kind: 'number', step: 'any' },
     { key: 'lb_per_bushel', label: 'lb per bushel', kind: 'number', step: 'any' },
     { key: 'yield_bu_per_acre', label: 'Yield (bu/ac)', kind: 'number', step: 'any' },
+    // The settings snapshot, correctable; openings typed in inches as on the display.
+    { key: 'operator', label: 'Operator', kind: 'text' },
+    ...SETTINGS.map((s): EditField => ({ key: `set_${s.key}`, label: `${s.label} (${s.unit})`, kind: 'text', placeholder: IN_INCHES.includes(s.key) ? 'e.g. 1 1/8' : undefined })),
+    { key: 'moisture_pct', label: 'Grain moisture (%)', kind: 'number', step: 'any' },
     { key: 'notes', label: 'Note', kind: 'textarea' },
   ]
+  const wx = c.weather as unknown as WorkWeather | null
+  const ranLine = settingsLine(c)
   return (
     <Modal title={`Loss check — ${checkDate(c.checked_at)}`} onClose={onClose} wide>
       <DetailList
@@ -914,7 +973,14 @@ function LossCheckDetail({
           ['Crop', CROP_BASELINES.find((b) => b.key === c.crop_key)?.label ?? c.crop_key],
           ['Field', c.field_id ? fieldName(c.field_id) : null],
           ['Coming from', c.source && c.source !== 'unknown' ? (SOURCES.find((s) => s.value === c.source)?.label ?? c.source) : null],
-          ['Machine', c.machine],
+          ['Combine', machineName(c.equipment_id) ?? c.machine],
+          ['Operator', c.operator],
+          ['Settings', ranLine || null],
+          ['Settings from', c.settings_from],
+          ['Header type', c.header_type],
+          ['Grain moisture', c.moisture_pct != null ? `${Number(c.moisture_pct).toFixed(1)}%${c.moisture_from ? ` (${c.moisture_from})` : ''}` : null],
+          ['Weather', weatherLine(wx)],
+          ['Weather from', c.weather_source],
           c.grain_grams != null ? ['Grain in the pan', `${n(c.grain_grams, 2)} g`] : ['Seeds counted', n(c.seeds, 0)],
           ['Pan area', `${n(c.pan_area_sqft, 3)} sq ft`],
           ['Header', `${n(c.header_ft)} ft`],
@@ -946,7 +1012,13 @@ function LossCheckDetail({
         <RecordEditModal
           title={`Loss check — ${checkDate(c.checked_at)}`}
           fields={editFields}
-          row={{ ...c, checked_on: new Date(c.checked_at).toLocaleDateString('en-CA') } as unknown as Record<string, unknown>}
+          row={
+            {
+              ...c,
+              checked_on: new Date(c.checked_at).toLocaleDateString('en-CA'),
+              ...Object.fromEntries(SETTINGS.map((s) => [`set_${s.key}`, settingText(s.key, c[s.key] == null ? null : Number(c[s.key]))])),
+            } as unknown as Record<string, unknown>
+          }
           onClose={() => setEditing(false)}
           onSave={(p) => {
             const num = (k: string) => (p[k] as number | null) ?? null
@@ -976,6 +1048,10 @@ function LossCheckDetail({
                 field_id: (p.field_id as string | null) ?? null,
                 source: ((p.source as string | null) ?? 'unknown') as LossCheckRow['source'],
                 notes: (p.notes as string | null) ?? null,
+                operator: ((p.operator as string | null) ?? '').trim().slice(0, 80) || null,
+                moisture_pct: num('moisture_pct'),
+                ...(num('moisture_pct') !== (c.moisture_pct == null ? null : Number(c.moisture_pct)) ? { moisture_from: num('moisture_pct') == null ? null : 'corrected by hand' } : {}),
+                ...Object.fromEntries(SETTINGS.map((s) => [s.key, settingValue(s.key, String(p[`set_${s.key}`] ?? ''))])),
               },
             })
           }}

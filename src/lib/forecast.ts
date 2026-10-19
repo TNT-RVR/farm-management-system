@@ -18,7 +18,9 @@
  *          yield … after 5 years or so … the average yield for that crop on
  *          that specific field." This field's own average once it has five
  *          harvested seasons of the crop; else the farm's average of what was
- *          actually harvested; else the crop's normal (goal) yield.
+ *          actually harvested; else the crop's normal (goal) yield. A harvest
+ *          marked "not a normal year" (abnormal-yields.ts, Sam 16 Oct 2026)
+ *          counts towards none of these and is named in the label.
  */
 
 import { bidPerBu } from './breakeven'
@@ -121,6 +123,12 @@ export type YieldRecord = {
   clean_yield_per_acre?: number | null
   yield_unit: string | null
   source: string | null
+  /**
+   * Marked "not a normal year" (abnormal_yield_years): still the field's
+   * yield, but left out of every average and history-based estimate.
+   */
+  exclude_from_averages?: boolean | null
+  abnormal_reason?: string | null
 }
 
 export type YieldBasis = 'field' | 'farm' | 'goal' | 'none'
@@ -131,6 +139,8 @@ export type ExpectedYield = {
   /** Harvested seasons behind an average. */
   seasons: number
   label: string
+  /** Years of this crop's harvests (on this field, for a field average) left out as not a normal year. */
+  leftOut?: number[]
 }
 
 /** A field needs this many harvested seasons of a crop before its own average is used. */
@@ -156,6 +166,12 @@ const PLANNED_SOURCES = new Set(['fah_import', 'rotation_xlsx'])
 
 /** Whether a history row is a harvested yield that can go into an average. */
 export function isActualYield(r: YieldRecord, unit: string, goal: number | null): boolean {
+  if (r.exclude_from_averages) return false
+  return isHarvest(r, unit, goal)
+}
+
+/** A harvested yield, whether or not it is marked not a normal year. */
+function isHarvest(r: YieldRecord, unit: string, goal: number | null): boolean {
   if (r.source && PLANNED_SOURCES.has(r.source)) return false
   const v = Number(r.clean_yield_per_acre ?? r.yield_per_acre)
   if (!(v > 0)) return false
@@ -201,17 +217,24 @@ export function expectedYield(opts: {
   fieldId?: string | null
 }): ExpectedYield {
   const { cropId, year, unit, goal, history, fieldId } = opts
-  const actual = history.filter(
-    (r) => r.crop_id === cropId && r.crop_year <= year && r.crop_year > year - YIELD_WINDOW && isActualYield(r, unit, goal),
+  const harvests = history.filter(
+    (r) => r.crop_id === cropId && r.crop_year <= year && r.crop_year > year - YIELD_WINDOW && isHarvest(r, unit, goal),
   )
+  const actual = harvests.filter((r) => !r.exclude_from_averages)
+  const marked = harvests.filter((r) => r.exclude_from_averages)
+  const yearsOf = (rows: YieldRecord[]) => [...new Set(rows.map((r) => r.crop_year))].sort((a, b) => a - b)
+  // "· 2026 left out (not a normal year)" on whatever the estimate is built from.
+  const leftOutNote = (ys: number[]) => (ys.length ? ` · ${ys.join(', ')} left out (not a normal year)` : '')
   if (fieldId) {
     const own = actual.filter((r) => r.field_id === fieldId)
     const seasons = new Set(own.map((r) => r.crop_year)).size
     if (seasons >= FIELD_SEASONS) {
       const a = seasonAverage(own)
-      return { value: a.value, basis: 'field', seasons, label: `this field's ${seasons}-season average (${span(a.seasons)})` }
+      const leftOut = yearsOf(marked.filter((r) => r.field_id === fieldId))
+      return { value: a.value, basis: 'field', seasons, label: `this field's ${seasons}-season average (${span(a.seasons)})${leftOutNote(leftOut)}`, leftOut }
     }
   }
+  const leftOut = yearsOf(marked)
   const farmSeasons = new Set(actual.map((r) => r.crop_year)).size
   const farmFields = new Set(actual.map((r) => r.field_id)).size
   if ((farmSeasons >= FARM_SEASONS || farmFields >= FARM_FIELDS) && actual.length) {
@@ -220,15 +243,23 @@ export function expectedYield(opts: {
       value: a.value,
       basis: 'farm',
       seasons: farmSeasons,
-      label: `farm average of what we harvested, ${farmSeasons} season${farmSeasons === 1 ? '' : 's'} (${span(a.seasons)})`,
+      label: `farm average of what we harvested, ${farmSeasons} season${farmSeasons === 1 ? '' : 's'} (${span(a.seasons)})${leftOutNote(leftOut)}`,
+      leftOut,
     }
   }
-  if (goal != null && goal > 0) return { value: goal, basis: 'goal', seasons: 0, label: 'normal yield (no harvest on record yet)' }
-  return { value: null, basis: 'none', seasons: 0, label: 'no yield on record' }
+  if (goal != null && goal > 0) {
+    // Why it fell back: nothing harvested yet, too little to average, or only years marked not normal.
+    const why = actual.length ? 'not enough harvests to average yet' : marked.length ? 'its only harvests are marked not a normal year' : 'no harvest on record yet'
+    return { value: goal, basis: 'goal', seasons: 0, label: `normal yield (${why})${actual.length ? leftOutNote(leftOut) : ''}`, leftOut }
+  }
+  return { value: null, basis: 'none', seasons: 0, label: 'no yield on record', leftOut }
 }
 
 /** Short badge text for a yield basis. */
 export const YIELD_BADGE: Record<YieldBasis, string> = { field: 'field avg', farm: 'farm avg', goal: 'goal', none: '' }
+
+/** The marker for an estimate that fell back to the crop's (or variety's) normal yield. */
+export const CROP_DEFAULT = 'crop default'
 
 /** Short badge text for a price or cost basis. */
 export function basisBadge(b: { basis: PriceBasis | ResolvedCost['basis']; fromYear: number | null }): string {

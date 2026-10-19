@@ -38,7 +38,7 @@ import {
   type LastLoadRow,
 } from '../../src/lib/harvest-date.ts'
 import { farmTz } from '../../src/lib/farm-context.ts'
-import { handDayByField, handWorkDays, type HandWorkRow } from '../../src/lib/field-work.ts'
+import { finishedDays, finishedFor, handDayByField, handWorkDays, type FinishRow, type HandWorkRow } from '../../src/lib/field-work.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
 import { fetchHourly, saveHourly } from '../shared/weather-hourly.ts'
 
@@ -418,10 +418,12 @@ async function handle(req: Request | null) {
     // without the table yet reads as none.
     const { data: handRows } = await sb
       .from('field_work_records')
-      .select('field_id, crop_year, counts_as, started_at, finished_at')
+      .select('field_id, zone_id, crop_year, counts_as, started_at, finished_at, field_finished')
       .eq('crop_year', year)
       .eq('counts_as', 'harvest')
     const handHarvest = handDayByField(handWorkDays((handRows ?? []) as HandWorkRow[], 'harvest', year, farmTz()), 'last')
+    // "Field finished" records: the first source of the harvest date (harvest-date.ts).
+    const finishes = finishedDays((handRows ?? []) as FinishRow[], year, farmTz())
 
     // 1) ingest weather per active station + cache et0
     const { data: stations } = await sb
@@ -725,15 +727,16 @@ async function handle(req: Request | null) {
       const curveEnd = new Date(plant + 'T00:00:00Z')
       curveEnd.setUTCDate(curveEnd.getUTCDate() + coef.l_ini + coef.l_dev + coef.l_mid + coef.l_late)
       const curveEndDay = curveEnd.toISOString().slice(0, 10)
-      // The harvest date: typed in Setup, else the last load off the field,
+      // The harvest date: Field finished, else typed in Setup, else the last load off the field,
       // else the last Deere harvest pass. A forage crop is cut and grows back,
       // so a machine "harvest" there is a cut, not the end of the season.
       const seasonAimmCropId = (coefRow as { aimm_crop_id?: number | null }).aimm_crop_id
       const forage = seasonAimmCropId != null && aimmCropById.get(seasonAimmCropId)?.forage === true
       const evidence = forage ? undefined : harvestEvidence.get(field.id)
       const handLast = forage ? null : (handHarvest.get(field.id) ?? null)
+      const finishedOn = forage ? null : (finishedFor(finishes, field.id, season.zone_id ?? null)?.finished ?? null)
       const harvest = effectiveHarvestDate(
-        { typed: season.harvest_date ?? null, lastLoadOn: evidence?.lastLoadOn ?? null, jdLastPassOn: evidence?.jdLastPassOn ?? null, handLastPassOn: handLast },
+        { finishedOn, typed: season.harvest_date ?? null, lastLoadOn: evidence?.lastLoadOn ?? null, jdLastPassOn: evidence?.jdLastPassOn ?? null, handLastPassOn: handLast },
         { plantingDate: plant, today },
       )
       if (harvest.source && harvest.source !== 'manual')
@@ -744,7 +747,7 @@ async function handle(req: Request | null) {
       const lastCropDay =
         harvest.date == null
           ? curveEndDay
-          : harvest.source === 'manual' || harvest.date < curveEndDay
+          : harvest.source === 'manual' || harvest.source === 'finished' || harvest.date < curveEndDay
             ? harvest.date
             : curveEndDay
 

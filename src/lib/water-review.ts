@@ -78,7 +78,7 @@ export type ReviewData = {
   plans: { field_id: string; crop_id: string; planned_acres: Num; yield_per_acre_override: Num; yield_basis: string | null; variety?: string | null }[]
   /** Varieties' own figures: the plan's variety brings its own normal yield. */
   varieties?: VarietySettingRow[]
-  history: { field_id: string; crop_id: string; acres: Num; yield_per_acre: Num; yield_unit: string | null; source: string }[]
+  history: { field_id: string; crop_id: string; acres: Num; yield_per_acre: Num; yield_unit: string | null; source: string; exclude_from_averages?: boolean | null; abnormal_reason?: string | null }[]
   crops: { id: string; name: string; color: string | null; yield_unit: string | null; default_yield_per_acre: Num; margin_per_acre?: Num; own_use?: boolean | null }[]
   pivots: { field_id: string; acres_irrigated: Num; gpm: Num; system_capacity_ls: Num; application_efficiency: Num; pump_id: string | null }[]
   pumps: { id: string; name: string; horse_power: Num; gpm: Num }[]
@@ -122,6 +122,8 @@ export type WaterReviewRow = {
   yieldKind: YieldKind | null
   /** Far from the crop's default: typed in another unit. Shown, not valued or compared. */
   yieldSuspect: boolean
+  /** Marked not a normal year: compared with the crop average, but not part of it. */
+  yieldAbnormal?: boolean
   yieldFrom: string
   /** Yield per inch of total water (effective irrigation + rain). */
   yieldPerInTotal: number | null
@@ -312,6 +314,7 @@ export function buildWaterReview(d: ReviewData, powerCostKwh: number = DEFAULT_P
       yieldPer = pos(h.yield_per_acre)
       yieldKind = 'actual'
       yieldFrom = SOURCE_LABEL[h.source] ?? `harvested, ${h.source}`
+      if (h.exclude_from_averages) yieldFrom += ` — abnormal, left out of averages${h.abnormal_reason ? `: ${h.abnormal_reason}` : ''}`
       yieldUnit = h.yield_unit ?? yieldUnit
     } else if (plan && pos(plan.yield_per_acre_override)) {
       yieldPer = pos(plan.yield_per_acre_override)
@@ -393,6 +396,7 @@ export function buildWaterReview(d: ReviewData, powerCostKwh: number = DEFAULT_P
       yieldUnit,
       yieldKind,
       yieldSuspect: wrongUnit,
+      yieldAbnormal: Boolean(h?.exclude_from_averages),
       yieldFrom,
       yieldPerInTotal: yieldPer != null && totalWaterIn ? yieldPer / totalWaterIn : null,
       yieldPerInIrrigation: yieldPer != null && irrigationIn > 0 ? yieldPer / irrigationIn : null,
@@ -414,12 +418,13 @@ export function buildWaterReview(d: ReviewData, powerCostKwh: number = DEFAULT_P
   })
 
   // Each crop's farm average, so corn and beans share one axis. Harvested
-  // yields set it when there are any; estimates only when nothing is in.
+  // yields set it when there are any; estimates only when nothing is in. A
+  // field marked not a normal year is compared with it but not part of it.
   const avgYield = new Map<string, number>()
   const avgIrr = new Map<string, number>()
   const yieldCount = new Map<string, number>()
   for (const cropId of new Set(rows.map((r) => r.cropId).filter((c): c is string => c != null))) {
-    const mine = rows.filter((r) => r.cropId === cropId && r.yield != null && !r.yieldSuspect)
+    const mine = rows.filter((r) => r.cropId === cropId && r.yield != null && !r.yieldSuspect && !r.yieldAbnormal)
     const actual = mine.filter((r) => r.yieldKind === 'actual')
     const basis = (actual.length ? actual : mine).filter((r) => r.yieldUnit === (actual[0] ?? mine[0])?.yieldUnit)
     const w = (r: (typeof rows)[number]) => r.acres ?? 1

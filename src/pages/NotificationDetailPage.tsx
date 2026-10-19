@@ -3,7 +3,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, CheckCircle2, ClipboardCopy, Download, ListChecks, Search, TriangleAlert } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { useMarkRead } from '@/lib/notifications'
+import { useSetRead } from '@/lib/notifications'
+import { linkTarget } from '@/lib/notification-format'
+import { DIGEST_KIND } from '@/lib/notification-kinds'
+import type { DigestItem } from '@/lib/notification-schedule'
 import { alertGuide } from '@/lib/alert-guides'
 import { alertReport, FEED_COLUMNS, feedFor } from '@/lib/alert-report'
 import { openChemicalLabel } from '@/lib/chemicals'
@@ -35,7 +38,7 @@ type Finding = { source?: string; url?: string; problem?: string; feeds?: string
 export function NotificationDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const markRead = useMarkRead()
+  const setRead = useSetRead()
   const { profile } = useAuth()
   const isAdmin = hasAdminAccess(profile?.role)
   const [copied, setCopied] = useState(false)
@@ -51,7 +54,7 @@ export function NotificationDetailPage() {
   })
   const { data: feed } = useFeedState(n?.kind, n?.title)
   useEffect(() => {
-    if (n && !n.read_at) markRead.mutate([n.id])
+    if (n && !n.read_at) setRead.mutate({ ids: [n.id], read: true })
     // Mark read once, when it is first opened.
   }, [n?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -77,17 +80,20 @@ export function NotificationDetailPage() {
   if (!n)
     return (
       <div className="mx-auto max-w-2xl p-4 md:p-6">
-        <p className="text-sm text-gray-500">This alert is not here — it may have been for another user, or cleared.</p>
+        <p className="text-sm text-gray-500">This notification is not here — it may have been for another user, or cleared.</p>
         <Link to="/notifications" className="mt-2 inline-block text-sm text-brand-700 underline">
-          All alerts
+          All notifications
         </Link>
       </div>
     )
 
   const findings = ((n.details as { findings?: Finding[] } | null)?.findings ?? []) as Finding[]
-  const otherDetails = n.details && !Array.isArray((n.details as { findings?: unknown }).findings) ? n.details : null
+  // The morning digest lists its items (each with its own page) instead of a guide.
+  const digestItems = n.kind === DIGEST_KIND ? ((n.details as { items?: DigestItem[] } | null)?.items ?? []) : null
+  const otherDetails = n.details && !digestItems && !Array.isArray((n.details as { findings?: unknown }).findings) ? n.details : null
+  const target = linkTarget(n.link, window.location.origin)
   const recovered = /recovered/i.test(n.title)
-  const tone = recovered ? 'info' : guide.tone
+  const tone = recovered || digestItems ? 'info' : guide.tone
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(report)
@@ -110,7 +116,7 @@ export function NotificationDetailPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4 md:p-6">
       <button type="button" onClick={() => navigate('/notifications')} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
-        <ArrowLeft className="h-4 w-4" /> All alerts
+        <ArrowLeft className="h-4 w-4" /> All notifications
       </button>
 
       <div
@@ -119,24 +125,46 @@ export function NotificationDetailPage() {
           tone === 'act' ? 'border-amber-300 bg-amber-50' : tone === 'notice' ? 'border-sky-200 bg-sky-50' : 'border-emerald-200 bg-emerald-50',
         )}
       >
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{guide.name}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{digestItems ? 'Daily digest' : guide.name}</p>
         <h1 className="mt-0.5 flex items-start gap-2 text-lg font-semibold text-gray-900">
           {tone === 'act' ? <TriangleAlert className="mt-1 h-5 w-5 shrink-0 text-amber-600" /> : <CheckCircle2 className="mt-1 h-5 w-5 shrink-0 text-emerald-600" />}
           {n.title}
         </h1>
         {n.body && <p className="mt-1 text-sm text-gray-700">{n.body}</p>}
         <p className="mt-1 text-xs text-gray-400">{new Date(n.created_at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })}</p>
-        {n.link && (
-          <Link to={n.link} className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800">
+        {target?.type === 'internal' && (
+          <Link to={target.to} className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800">
             Go to it <ArrowRight className="h-4 w-4" />
           </Link>
         )}
+        {target?.type === 'external' && (
+          <a href={target.href} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800">
+            Go to it <ArrowRight className="h-4 w-4" />
+          </a>
+        )}
       </div>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-gray-800">What this means</h2>
-        <p className="mt-1 text-sm text-gray-700">{guide.meaning}</p>
-      </section>
+      {digestItems ? (
+        <section className="rounded-lg border border-gray-200 bg-white p-4">
+          <h2 className="text-sm font-semibold text-gray-800">In this digest</h2>
+          <ul className="mt-2 divide-y divide-gray-100">
+            {digestItems.map((it) => (
+              <li key={it.id}>
+                <Link to={`/notifications/${it.id}`} className="flex items-baseline gap-2 py-1.5 text-sm hover:bg-gray-50">
+                  <span className="shrink-0 text-xs text-gray-500">{it.label}</span>
+                  <span className="min-w-0 flex-1 text-gray-800">{it.title}</span>
+                  <ArrowRight className="h-3.5 w-3.5 shrink-0 self-center text-gray-400" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : (
+        <section className="rounded-lg border border-gray-200 bg-white p-4">
+          <h2 className="text-sm font-semibold text-gray-800">What this means</h2>
+          <p className="mt-1 text-sm text-gray-700">{guide.meaning}</p>
+        </section>
+      )}
 
       {findings.length > 0 && (
         <section className="rounded-lg border border-gray-200 bg-white p-4">
@@ -196,7 +224,7 @@ export function NotificationDetailPage() {
         </section>
       )}
 
-      {guide.steps.length > 0 && (
+      {!digestItems && guide.steps.length > 0 && (
         <section className="rounded-lg border border-gray-200 bg-white p-4">
           <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
             <ListChecks className="h-4 w-4 text-brand-700" /> What to do
@@ -209,7 +237,7 @@ export function NotificationDetailPage() {
         </section>
       )}
 
-      {guide.checks.length > 0 && (
+      {!digestItems && guide.checks.length > 0 && (
         <section className="rounded-lg border border-gray-200 bg-white p-4">
           <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
             <Search className="h-4 w-4 text-gray-500" /> Things to check

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { billedPricePerKwh, powerByPump, siteCost, type BillSiteRow } from './power-bills-core'
+import { billedPricePerKwh, coveredByPortal, powerByPump, siteCost, type BillSiteRow } from './power-bills-core'
 import { matchPump } from '../../netlify/shared/power-bill-read'
 
 // Made-up bills.
@@ -98,5 +98,31 @@ describe('matchPump, retailer rate names', () => {
     expect(matchPump({ meter_number: null, site_id: null, legal_land: 'SE 31 39 25 W4', site_name: null, rate_class: '8.44 ¢/kWh - 3 Year Irrigation Discount Rate' }, p)).toBe('rp')
     expect(matchPump({ meter_number: null, site_id: null, legal_land: 'SE 31 39 25 W4', site_name: null, rate_class: '8.54 ¢/kWh - 3 Year Farm Discount Rate' }, p)).toBeNull()
     expect(matchPump({ meter_number: null, site_id: null, legal_land: 'SE 31 39 25 W4', site_name: null, rate_class: 'MicroGen Solar Club Rate' }, p)).toBeNull()
+  })
+})
+
+describe('coveredByPortal', () => {
+  // Made-up site IDs and dates: the account page has two sites, monthly.
+  const portal = [
+    { site_id: '0099900000011', bill_date: '2030-03-02' },
+    { site_id: '0099900000011', bill_date: '2030-04-02' },
+    { site_id: '0099900000022', bill_date: '2030-03-02' },
+    { site_id: null, bill_date: '2030-03-02' },
+  ]
+  const s = (site_id: string | null, period_start: string | null = null, period_end: string | null = null) => ({ site_id, period_start, period_end })
+
+  it('finds a site the account page has for the same invoice', () => {
+    expect(coveredByPortal([s('99900000011'), s('0099900000022'), s('0099900000033')], '2030-03-05', portal)).toEqual([true, true, false])
+  })
+
+  it('needs the same month, not just the same site', () => {
+    expect(coveredByPortal([s('0099900000022')], '2030-04-03', portal)).toEqual([false])
+    expect(coveredByPortal([s('0099900000011')], '2030-05-20', portal)).toEqual([false])
+  })
+
+  it('falls back to the site’s own period when the bill has no date', () => {
+    expect(coveredByPortal([s('0099900000022', '2030-02-01', '2030-02-28')], null, portal)).toEqual([true])
+    expect(coveredByPortal([s('0099900000022', '2030-01-01', '2030-01-31')], null, portal)).toEqual([false])
+    expect(coveredByPortal([s(null, '2030-02-01', '2030-02-28')], null, portal)).toEqual([false])
   })
 })

@@ -7,7 +7,8 @@ import { EquipmentWarranty } from '@/components/EquipmentWarranty'
 import { EquipmentServiceLog } from '@/components/EquipmentServiceLog'
 import { ManualEquipmentModal } from '@/components/EquipmentEditor'
 import { EditButton } from '@/components/RecordEditor'
-import { engineHoursLabel, useEquipmentItem, useSaveEquipment } from '@/lib/equipment'
+import { engineHoursLabel, useEquipment, useEquipmentItem, useSaveEquipment } from '@/lib/equipment'
+import { hoursStaleSince, staleHoursLabel } from '@/lib/stale-hours'
 
 function Field({ label, value }: { label: string; value: string | null }) {
   return (
@@ -26,6 +27,8 @@ export function EquipmentDetailPage() {
   const { profile } = useAuth()
   const canEdit = hasManagerAccess(profile?.role)
   const { data: e, isLoading } = useEquipmentItem(id)
+  // The fleet, to tell this machine's silence from the whole sync's (lib/stale-hours.ts).
+  const { data: fleet } = useEquipment()
   const save = useSaveEquipment()
   const [notes, setNotes] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -34,6 +37,7 @@ export function EquipmentDetailPage() {
   if (!e) return <p className="p-4 text-sm text-gray-500 md:p-6">That machine is not here.</p>
 
   const hours = engineHoursLabel(e)
+  const staleSince = fleet ? hoursStaleSince(e, fleet) : null
   const draft = notes ?? e.notes ?? ''
 
   return (
@@ -76,6 +80,7 @@ export function EquipmentDetailPage() {
       {hours && (
         <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-700">
           <Gauge className="h-4 w-4 text-gray-400" /> {hours}
+          {staleSince && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">{staleHoursLabel(staleSince)}</span>}
         </p>
       )}
 
@@ -117,7 +122,7 @@ export function EquipmentDetailPage() {
         )}
       </div>
 
-      <EquipmentMaintenance equipment={e} canEdit={canEdit} />
+      <EquipmentMaintenance equipment={e} canEdit={canEdit} canLog={Boolean(profile?.active)} hoursStaleSince={staleSince} />
       <EquipmentServiceLog equipment={e} canEdit={canEdit} canAdd={Boolean(profile?.active)} />
     </div>
   )

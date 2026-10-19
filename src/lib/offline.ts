@@ -144,6 +144,8 @@ const LIVE_ONLY = new Set([
   'pump-photo',
   // Pivot nameplate photos, likewise.
   'pivot-photo',
+  // The Combines conditions card's NDVI picture: a signed link, gone within the hour.
+  'combine-ndvi-picture',
 ])
 
 export function shouldPersistQuery(query: Query): boolean {

@@ -1,12 +1,20 @@
 /**
- * A polygon shapefile, zipped — what John Deere Operations Center (and every
- * other prescription importer) takes. Written by hand because the only thing
- * needed is polygons with a few numeric attributes, and a library for that
- * would outweigh the rest of the export.
+ * Shapefiles, zipped — what John Deere Operations Center (and every other
+ * prescription importer) takes, and what a CNH IntelliView's Import2 reads
+ * from a stick. Written by hand because the only thing needed is polygons
+ * and lines with a few attributes, and a library for that would outweigh the
+ * rest of the export.
  *
  * ESRI Shapefile Technical Description (1998) for .shp/.shx; dBase III for
- * .dbf; WGS 84 geographic .prj. The zip is stored, not deflated — every
- * importer reads that.
+ * .dbf; WGS 84 geographic .prj (ESRI WKT, EPSG:4326). The zip is stored, not
+ * deflated — every importer reads that.
+ *
+ * Two writers share the same parts:
+ *   writeShapefile          one polygon a record, ASCII attributes (the
+ *                           prescription export; its output is unchanged)
+ *   writePolygonShapefile   multipart polygons with holes, UTF-8 attributes
+ *   writePolylineShapefile  lines (guidance), UTF-8 attributes
+ * The last two also give a .cpg saying UTF-8.
  */
 
 export type ShpPolygon = {
@@ -17,8 +25,15 @@ export type ShpPolygon = {
 
 export type DbfField = { name: string; type: 'N' | 'C'; length: number; decimals?: number }
 
-const WGS84_PRJ =
+export type ShapefileParts = { shp: Uint8Array; shx: Uint8Array; dbf: Uint8Array; prj: Uint8Array; cpg?: Uint8Array }
+
+/** WGS 84 geographic (EPSG:4326) as ESRI writes it. */
+export const WGS84_PRJ =
   'GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]'
+
+export const SHAPE_NULL = 0
+export const SHAPE_POLYLINE = 3
+export const SHAPE_POLYGON = 5
 
 /** Twice the signed area; positive is counter-clockwise. */
 function signedArea(r: number[][]): number {
@@ -42,60 +57,70 @@ function orient(rings: number[][][]): number[][][] {
   })
 }
 
-export function writeShapefile(polys: ShpPolygon[], fields: DbfField[]): { shp: Uint8Array; shx: Uint8Array; dbf: Uint8Array; prj: Uint8Array } {
-  const shapes = polys.map((p) => orient(p.rings))
-  const recLens = shapes.map((rings) => 44 + 4 * rings.length + 16 * rings.reduce((a, r) => a + r.length, 0))
+/**
+ * The .shp and .shx for records of one shape type. Each record is its parts
+ * (rings or lines), already in the order and winding they are written; a
+ * record with no parts is a null shape, so record numbers still line up with
+ * the .dbf.
+ */
+function writeShpShx(shapeType: number, records: number[][][][]): { shp: Uint8Array; shx: Uint8Array } {
+  const recLens = records.map((parts) => (parts.length ? 44 + 4 * parts.length + 16 * parts.reduce((a, r) => a + r.length, 0) : 4))
   const shpLen = 100 + recLens.reduce((a, l) => a + 8 + l, 0)
   const shp = new DataView(new ArrayBuffer(shpLen))
-  const shx = new DataView(new ArrayBuffer(100 + 8 * shapes.length))
+  const shx = new DataView(new ArrayBuffer(100 + 8 * records.length))
 
   let xmin = Infinity, ymin = Infinity, xmax = -Infinity, ymax = -Infinity
-  for (const rings of shapes)
-    for (const r of rings)
+  for (const parts of records)
+    for (const r of parts)
       for (const [x, y] of r) {
         xmin = Math.min(xmin, x); ymin = Math.min(ymin, y); xmax = Math.max(xmax, x); ymax = Math.max(ymax, y)
       }
-  if (!shapes.length) xmin = ymin = xmax = ymax = 0
+  if (xmin === Infinity) xmin = ymin = xmax = ymax = 0
 
   const header = (v: DataView, lengthBytes: number) => {
     v.setInt32(0, 9994, false)
     v.setInt32(24, lengthBytes / 2, false)
     v.setInt32(28, 1000, true)
-    v.setInt32(32, 5, true)
+    v.setInt32(32, shapeType, true)
     v.setFloat64(36, xmin, true)
     v.setFloat64(44, ymin, true)
     v.setFloat64(52, xmax, true)
     v.setFloat64(60, ymax, true)
   }
   header(shp, shpLen)
-  header(shx, 100 + 8 * shapes.length)
+  header(shx, 100 + 8 * records.length)
 
   let off = 100
-  shapes.forEach((rings, i) => {
+  records.forEach((parts, i) => {
     const len = recLens[i]
     shx.setInt32(100 + 8 * i, off / 2, false)
     shx.setInt32(104 + 8 * i, len / 2, false)
     shp.setInt32(off, i + 1, false)
     shp.setInt32(off + 4, len / 2, false)
     let o = off + 8
+    if (!parts.length) {
+      shp.setInt32(o, SHAPE_NULL, true)
+      off += 8 + len
+      return
+    }
     let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity
-    for (const r of rings) for (const [x, y] of r) { bx0 = Math.min(bx0, x); by0 = Math.min(by0, y); bx1 = Math.max(bx1, x); by1 = Math.max(by1, y) }
-    shp.setInt32(o, 5, true)
+    for (const r of parts) for (const [x, y] of r) { bx0 = Math.min(bx0, x); by0 = Math.min(by0, y); bx1 = Math.max(bx1, x); by1 = Math.max(by1, y) }
+    shp.setInt32(o, shapeType, true)
     shp.setFloat64(o + 4, bx0, true)
     shp.setFloat64(o + 12, by0, true)
     shp.setFloat64(o + 20, bx1, true)
     shp.setFloat64(o + 28, by1, true)
-    const nPts = rings.reduce((a, r) => a + r.length, 0)
-    shp.setInt32(o + 36, rings.length, true)
+    const nPts = parts.reduce((a, r) => a + r.length, 0)
+    shp.setInt32(o + 36, parts.length, true)
     shp.setInt32(o + 40, nPts, true)
     o += 44
     let start = 0
-    for (const r of rings) {
+    for (const r of parts) {
       shp.setInt32(o, start, true)
       o += 4
       start += r.length
     }
-    for (const r of rings)
+    for (const r of parts)
       for (const [x, y] of r) {
         shp.setFloat64(o, x, true)
         shp.setFloat64(o + 8, y, true)
@@ -103,23 +128,45 @@ export function writeShapefile(polys: ShpPolygon[], fields: DbfField[]): { shp: 
       }
     off += 8 + len
   })
+  return { shp: new Uint8Array(shp.buffer), shx: new Uint8Array(shx.buffer) }
+}
 
-  // dBase III
+/** Text cut to a whole number of UTF-8 characters within `len` bytes. */
+function utf8Within(s: string, len: number): Uint8Array {
+  const b = new TextEncoder().encode(s)
+  if (b.length <= len) return b
+  let cut = len
+  while (cut > 0 && (b[cut] & 0xc0) === 0x80) cut--
+  return b.subarray(0, cut)
+}
+
+/**
+ * dBase III. ASCII replaces anything outside printable ASCII with '?' (the
+ * prescription export's old behaviour); UTF-8 writes the bytes, cut on a
+ * character boundary, for a .cpg that says so.
+ */
+function writeDbf(rows: Record<string, number | string | null>[], fields: DbfField[], encoding: 'ascii' | 'utf8'): Uint8Array {
   const recLen = 1 + fields.reduce((a, f) => a + f.length, 0)
   const headLen = 32 + 32 * fields.length + 1
-  const dbf = new Uint8Array(headLen + recLen * polys.length + 1)
+  const dbf = new Uint8Array(headLen + recLen * rows.length + 1)
   const dv = new DataView(dbf.buffer)
   const now = new Date()
   dbf[0] = 0x03
   dbf[1] = now.getFullYear() - 1900
   dbf[2] = now.getMonth() + 1
   dbf[3] = now.getDate()
-  dv.setUint32(4, polys.length, true)
+  dv.setUint32(4, rows.length, true)
   dv.setUint16(8, headLen, true)
   dv.setUint16(10, recLen, true)
   const ascii = (s: string, at: number, len: number, padLeft = false) => {
     const t = (padLeft ? s.slice(-len).padStart(len, ' ') : s.slice(0, len).padEnd(len, ' ')).replace(/[^\x20-\x7e]/g, '?')
     for (let i = 0; i < len; i++) dbf[at + i] = t.charCodeAt(i)
+  }
+  const text = (s: string, at: number, len: number) => {
+    if (encoding === 'ascii') return ascii(s, at, len)
+    const b = utf8Within(s, len)
+    dbf.fill(0x20, at, at + len)
+    dbf.set(b, at)
   }
   fields.forEach((f, i) => {
     const at = 32 + 32 * i
@@ -130,19 +177,53 @@ export function writeShapefile(polys: ShpPolygon[], fields: DbfField[]): { shp: 
     dbf[at + 17] = f.decimals ?? 0
   })
   dbf[headLen - 1] = 0x0d
-  polys.forEach((p, r) => {
+  rows.forEach((props, r) => {
     let at = headLen + r * recLen
     dbf[at++] = 0x20
     for (const f of fields) {
-      const v = p.props[f.name]
+      const v = props[f.name]
       if (f.type === 'N') ascii(v == null || v === '' ? '' : Number(v).toFixed(f.decimals ?? 0), at, f.length, true)
-      else ascii(v == null ? '' : String(v), at, f.length)
+      else text(v == null ? '' : String(v), at, f.length)
       at += f.length
     }
   })
   dbf[dbf.length - 1] = 0x1a
+  return dbf
+}
 
-  return { shp: new Uint8Array(shp.buffer), shx: new Uint8Array(shx.buffer), dbf, prj: new TextEncoder().encode(WGS84_PRJ) }
+const enc = (s: string) => new TextEncoder().encode(s)
+
+export function writeShapefile(polys: ShpPolygon[], fields: DbfField[]): { shp: Uint8Array; shx: Uint8Array; dbf: Uint8Array; prj: Uint8Array } {
+  const { shp, shx } = writeShpShx(SHAPE_POLYGON, polys.map((p) => orient(p.rings)))
+  return { shp, shx, dbf: writeDbf(polys.map((p) => p.props), fields, 'ascii'), prj: enc(WGS84_PRJ) }
+}
+
+/** A record of several polygons, each outer ring first and its holes after (GeoJSON MultiPolygon coordinates). */
+export type ShpMultiPolygon = { polygons: number[][][][]; props: Record<string, number | string | null> }
+
+/** A record of one or more lines (GeoJSON MultiLineString coordinates). An AB line is one two-point line. */
+export type ShpPolyline = { lines: number[][][]; props: Record<string, number | string | null> }
+
+/**
+ * Polygon shapefile, one record per feature, every polygon of the feature in
+ * it: outer rings clockwise, holes counter-clockwise, all closed. Rings too
+ * short to be a ring are dropped; a feature with none left is a null shape.
+ */
+export function writePolygonShapefile(records: ShpMultiPolygon[], fields: DbfField[]): Required<ShapefileParts> {
+  const parts = records.map((r) =>
+    r.polygons.flatMap((poly) =>
+      orient(poly.filter((ring) => ring.length >= 3).map((ring) => ring.map(([x, y]) => [x, y]))).filter((ring) => ring.length >= 4),
+    ),
+  )
+  const { shp, shx } = writeShpShx(SHAPE_POLYGON, parts)
+  return { shp, shx, dbf: writeDbf(records.map((r) => r.props), fields, 'utf8'), prj: enc(WGS84_PRJ), cpg: enc('UTF-8') }
+}
+
+/** Polyline shapefile, one record per feature; lines of fewer than two points are dropped. */
+export function writePolylineShapefile(records: ShpPolyline[], fields: DbfField[]): Required<ShapefileParts> {
+  const parts = records.map((r) => r.lines.filter((l) => l.length >= 2).map((l) => l.map(([x, y]) => [x, y])))
+  const { shp, shx } = writeShpShx(SHAPE_POLYLINE, parts)
+  return { shp, shx, dbf: writeDbf(records.map((r) => r.props), fields, 'utf8'), prj: enc(WGS84_PRJ), cpg: enc('UTF-8') }
 }
 
 /* ------------------------------------------------------------------ zip */

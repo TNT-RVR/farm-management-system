@@ -16,7 +16,13 @@ export type ServicePlan = {
   last_done_hours: number | null
   last_done_on: string | null
   warn_within_hours: number
+  /** Warning on the calendar half, in days. Missing reads as the default. */
+  warn_within_days?: number | null
 }
+
+/** Starting margins: 25 hours of running, or two weeks on the calendar. */
+export const DEFAULT_WARN_HOURS = 25
+export const DEFAULT_WARN_DAYS = 14
 
 export type DueState = 'overdue' | 'due-soon' | 'ok' | 'unknown'
 
@@ -28,6 +34,49 @@ export type Due = {
   daysRemaining: number | null
   /** Which half of the interval is driving the answer. */
   reason: string
+  /** The engine-hour reading it falls due at. Null if not tracked by hours or no baseline. */
+  nextDueHours: number | null
+  /** The calendar day it falls due (YYYY-MM-DD). Null if not tracked by time or no baseline. */
+  nextDueOn: string | null
+}
+
+const iso = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+/**
+ * A calendar day `months` later, kept inside the month it lands in: 31 Jan
+ * plus one month is 28 (or 29) Feb, not 3 March — which is what Date's own
+ * setMonth gives, and put a monthly service in the wrong month.
+ */
+export function addMonths(day: string, months: number): string {
+  const [y, m, d] = day.slice(0, 10).split('-').map(Number)
+  const total = y * 12 + (m - 1) + months
+  const year = Math.floor(total / 12)
+  const month = total - year * 12
+  const last = new Date(year, month + 1, 0).getDate()
+  return iso(new Date(year, month, Math.min(d, last), 12))
+}
+
+/** Where a plan falls due next, from its last service. Either half may be null. */
+export function nextDue(plan: ServicePlan): { hours: number | null; on: string | null } {
+  return {
+    hours:
+      plan.interval_hours != null && plan.last_done_hours != null
+        ? plan.last_done_hours + plan.interval_hours
+        : null,
+    on: plan.interval_months != null && plan.last_done_on ? addMonths(plan.last_done_on, plan.interval_months) : null,
+  }
+}
+
+/**
+ * The plan once a service is recorded: the baseline moves to the hours and
+ * date it was done at, so the next due point is one interval on from there —
+ * not one interval on from where it was due, which would make a late service
+ * look early next time. Hours unknown keep the old hour baseline rather than
+ * wiping it.
+ */
+export function rollForward<P extends ServicePlan>(plan: P, doneOn: string, doneHours: number | null): P {
+  return { ...plan, last_done_on: doneOn, last_done_hours: doneHours ?? plan.last_done_hours }
 }
 
 const DAY = 86_400_000
@@ -51,28 +100,25 @@ export function dueState(
 ): Due {
   let hoursRemaining: number | null = null
   let daysRemaining: number | null = null
+  const next = nextDue(plan)
 
-  if (plan.interval_hours != null) {
-    // Needs both the machine's hours and the hours at the last service; either
-    // one missing means there is no interval to measure.
-    if (currentHours != null && plan.last_done_hours != null) {
-      hoursRemaining = plan.last_done_hours + plan.interval_hours - currentHours
-    }
-  }
+  // Needs both the machine's hours and the hours at the last service; either
+  // one missing means there is no interval to measure.
+  if (next.hours != null && currentHours != null) hoursRemaining = next.hours - currentHours
 
-  if (plan.interval_months != null && plan.last_done_on) {
-    // The calendar day it was done, not UTC midnight — which is the evening
+  if (next.on) {
+    // The calendar day it falls due, not UTC midnight — which is the evening
     // before in Alberta, and put every service a day early.
-    const dueAt = localDate(plan.last_done_on)
-    dueAt.setMonth(dueAt.getMonth() + plan.interval_months)
-    daysRemaining = Math.round((dueAt.getTime() - now.getTime()) / DAY)
+    daysRemaining = Math.round((localDate(next.on).getTime() - now.getTime()) / DAY)
   }
+  const dueAt = { nextDueHours: next.hours, nextDueOn: next.on }
 
   if (hoursRemaining == null && daysRemaining == null) {
     return {
       state: 'unknown',
       hoursRemaining: null,
       daysRemaining: null,
+      ...dueAt,
       reason:
         plan.interval_hours != null && currentHours == null
           ? 'this machine does not report engine hours'
@@ -87,23 +133,24 @@ export function dueState(
       state: 'overdue',
       hoursRemaining,
       daysRemaining,
+      ...dueAt,
       reason: overdueByHours ? 'past the hour interval' : 'past the time interval',
     }
   }
 
   const soonByHours = hoursRemaining != null && hoursRemaining <= plan.warn_within_hours
-  // A month's warning on the calendar half, which is the usual shape of these.
-  const soonByDays = daysRemaining != null && daysRemaining <= 30
+  const soonByDays = daysRemaining != null && daysRemaining <= (plan.warn_within_days ?? DEFAULT_WARN_DAYS)
   if (soonByHours || soonByDays) {
     return {
       state: 'due-soon',
       hoursRemaining,
       daysRemaining,
+      ...dueAt,
       reason: soonByHours ? 'approaching the hour interval' : 'approaching the time interval',
     }
   }
 
-  return { state: 'ok', hoursRemaining, daysRemaining, reason: 'not due' }
+  return { state: 'ok', hoursRemaining, daysRemaining, ...dueAt, reason: 'not due' }
 }
 
 /** "in 120 h", "overdue by 40 h", "in 3 weeks" — whichever half is closer. */
@@ -125,4 +172,29 @@ export function dueLabel(due: Due): string {
 /** Worst state first, so what needs doing is at the top. */
 export function dueRank(state: DueState): number {
   return { overdue: 0, 'due-soon': 1, unknown: 2, ok: 3 }[state]
+}
+
+/** "at 2,500 h · 3 Mar 2027" — where it falls due, whichever halves are known. */
+export function nextDueLabel(due: Pick<Due, 'nextDueHours' | 'nextDueOn'>): string | null {
+  const bits: string[] = []
+  if (due.nextDueHours != null) bits.push(`at ${Math.round(due.nextDueHours).toLocaleString('en-CA')} h`)
+  if (due.nextDueOn)
+    bits.push(localDate(due.nextDueOn).toLocaleDateString('en-CA', { day: 'numeric', month: 'short', year: 'numeric' }))
+  return bits.length ? bits.join(' · ') : null
+}
+
+/** How a machine's plans stand together, for a one-badge summary in the fleet list. */
+export function serviceSummary(
+  plans: readonly ServicePlan[],
+  currentHours: number | null,
+  now: Date = new Date(),
+): { overdue: number; dueSoon: number } {
+  let overdue = 0
+  let dueSoon = 0
+  for (const p of plans) {
+    const s = dueState(p, currentHours, now).state
+    if (s === 'overdue') overdue++
+    else if (s === 'due-soon') dueSoon++
+  }
+  return { overdue, dueSoon }
 }

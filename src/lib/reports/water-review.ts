@@ -42,7 +42,7 @@ export async function fetchWaterReviewData(year: number): Promise<Omit<ReviewDat
     supabase.from('field_crop_seasons').select('field_id, zone_id, application_efficiency').eq('crop_year', year),
     supabase.from('fields').select('id, name'),
     supabase.from('crop_plans').select('field_id, crop_id, planned_acres, yield_per_acre_override, yield_basis, variety').eq('crop_year', year),
-    supabase.from('crop_yields_v').select('field_id, crop_id, acres, yield_per_acre, yield_unit, source').eq('crop_year', year),
+    supabase.from('crop_yields_v').select('field_id, crop_id, acres, yield_per_acre, yield_unit, source, exclude_from_averages, abnormal_reason').eq('crop_year', year),
     supabase.from('crops').select('id, name, color, yield_unit, default_yield_per_acre, margin_per_acre, own_use'),
     supabase.from('field_pivots').select('field_id, acres_irrigated, gpm, system_capacity_ls, application_efficiency, pump_id'),
     supabase.from('pumps').select('id, name, horse_power, gpm, gpm_estimate'),

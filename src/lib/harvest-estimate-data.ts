@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { fetchAll, num } from './reports/framework'
 import { varietySettingFor, type VarietySettingRow } from './crop-variety-settings'
-import { handDayByField, handWorkDays, type HandWorkRow } from './field-work'
+import { finishedDays, finishedFor, handDayByField, handWorkDays, type FinishRow, type HandWorkRow } from './field-work'
+import { seedingDates } from './seeding-dates'
 import { effectiveHarvestDate, farmDay, harvestEvidenceByField, type HarvestOpRow, type HarvestSource, type LastLoadRow } from './harvest-date'
 import {
   estimateBasis,
@@ -27,7 +28,8 @@ import {
  *   weather        the field's AIMM station (weather_daily: measured and the
  *                  Open-Meteo forecast) and its long-term normals
  *   hail           field_hail_events, share = hailed acres / crop acres
- *   harvested      effectiveHarvestDate: typed in Setup, last load from the
+ *   harvested      effectiveHarvestDate: Field finished (the crop area's,
+ *                  else the whole field's), typed in Setup, last load from the
  *                  field, the later of the last Deere harvest pass and the
  *                  last harvest entered by hand; then the scale yield's date
  */
@@ -41,6 +43,8 @@ export type HarvestEstimateRow = {
   cropId: string
   cropName: string
   variety: string | null
+  /** The day it was seeded (the area's season, else the field's, Deere's first pass, or entered by hand); null when unknown. */
+  seeded: string | null
   /** Already off: the actual date and where it came from. */
   harvestedOn: string | null
   harvestedFrom: HarvestSource | 'scale' | null
@@ -74,7 +78,8 @@ export function daysToMaturity(
 export function harvestEstimatesQuery(cropYear: number) {
   return {
     // Versioned: persisted offline, so a change of shape must not restore an old copy.
-    queryKey: ['harvest-estimates', cropYear, 'v2'],
+    // v4: harvestedFrom can be 'finished' (Field finished, 20261017050000).
+    queryKey: ['harvest-estimates', cropYear, 'v4'],
     queryFn: async (): Promise<HarvestEstimateRow[]> => {
       const y0 = `${cropYear}-01-01`
       const y1 = `${cropYear}-12-31`
@@ -112,10 +117,10 @@ export function harvestEstimatesQuery(cropYear: number) {
         // Seeding and harvest entered by hand. An older database without the table reads as none.
         supabase
           .from('field_work_records')
-          .select('field_id, crop_year, counts_as, started_at, finished_at')
+          .select('field_id, zone_id, crop_year, counts_as, started_at, finished_at, field_finished')
           .eq('crop_year', cropYear)
           .in('counts_as', ['seeding', 'harvest'])
-          .then(({ data, error }) => (error ? [] : ((data ?? []) as HandWorkRow[]))),
+          .then(({ data, error }) => (error ? [] : ((data ?? []) as (HandWorkRow & FinishRow)[]))),
       ])
 
       const cropById = new Map(crops.map((c) => [c.id, c]))
@@ -126,25 +131,13 @@ export function harvestEstimatesQuery(cropYear: number) {
       const farmStation = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
       const stationOf = (fieldId: string) => fields.find((f) => f.id === fieldId)?.assigned_station_id ?? farmStation
 
-      // Seeding dates.
-      const seasonPlant = new Map<string, string>()
+      // Seeding dates (seeding-dates.ts, shared with the missing-information checklist).
+      const seededOn = seedingDates(cropYear, seasons, seedOps, handRows)
       const seasonHarvest = new Map<string, string>()
-      for (const s of seasons) {
-        const k = `${s.field_id}:${s.zone_id ?? ''}`
-        if (s.planting_date) seasonPlant.set(k, s.planting_date)
-        if (s.harvest_date) seasonHarvest.set(k, s.harvest_date)
-      }
-      const jdPlant = new Map<string, string>()
-      for (const o of seedOps) {
-        if (!o.field_id || !o.started_at) continue
-        const d = farmDay(o.started_at)
-        if ((o.crop_season ?? Number(d.slice(0, 4))) !== cropYear) continue
-        const prev = jdPlant.get(o.field_id)
-        if (!prev || d < prev) jdPlant.set(o.field_id, d)
-      }
-      // Hand seeding only fills a field Deere has no seeding for.
-      const handPlant = handDayByField(handWorkDays(handRows, 'seeding', cropYear), 'first')
+      for (const s of seasons) if (s.harvest_date) seasonHarvest.set(`${s.field_id}:${s.zone_id ?? ''}`, s.harvest_date)
       const handHarvest = handDayByField(handWorkDays(handRows, 'harvest', cropYear), 'last')
+      // "Field finished": the area's own, else the whole field's. First of every source.
+      const finished = finishedDays(handRows, cropYear)
       const evidence = harvestEvidenceByField(cropYear, loads, harvestOps)
 
       // What is growing: each crop area on a split field, else the plan, else history.
@@ -175,8 +168,7 @@ export function harvestEstimatesQuery(cropYear: number) {
       }
 
       // Weather for the stations in use, from the earliest seeding.
-      const plantOf = (u: Unit) =>
-        seasonPlant.get(`${u.fieldId}:${u.zoneId ?? ''}`) ?? seasonPlant.get(`${u.fieldId}:`) ?? jdPlant.get(u.fieldId) ?? handPlant.get(u.fieldId) ?? null
+      const plantOf = (u: Unit) => seededOn(u.fieldId, u.zoneId)
       const used = units.filter((u) => {
         const c = cropById.get(u.cropId)
         return c && c.counts_for_harvest !== false && plantOf(u)
@@ -223,7 +215,7 @@ export function harvestEstimatesQuery(cropYear: number) {
         const ev = evidence.get(u.fieldId)
         const typed = seasonHarvest.get(`${u.fieldId}:${u.zoneId ?? ''}`) ?? seasonHarvest.get(`${u.fieldId}:`) ?? null
         let actual: { date: string | null; source: HarvestSource | 'scale' | null } = effectiveHarvestDate(
-          { typed, lastLoadOn: ev?.lastLoadOn ?? null, jdLastPassOn: ev?.jdLastPassOn ?? null, handLastPassOn: handHarvest.get(u.fieldId) ?? null },
+          { finishedOn: finishedFor(finished, u.fieldId, u.zoneId)?.finished ?? null, typed, lastLoadOn: ev?.lastLoadOn ?? null, jdLastPassOn: ev?.jdLastPassOn ?? null, handLastPassOn: handHarvest.get(u.fieldId) ?? null },
           { plantingDate: plant, today: now },
         )
         if (!actual.date && u.scaleAt) {
@@ -261,6 +253,7 @@ export function harvestEstimatesQuery(cropYear: number) {
           cropId: u.cropId,
           cropName: crop.name,
           variety: u.variety,
+          seeded: plant,
           harvestedOn: actual.date,
           harvestedFrom: actual.source,
           estimate,

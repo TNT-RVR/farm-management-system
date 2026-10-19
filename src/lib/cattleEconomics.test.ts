@@ -72,7 +72,7 @@ describe('breakEven', () => {
 })
 
 describe('valueOfGain', () => {
-  it('is the whole cheque difference, not 100 lb at todayâ€™s price', () => {
+  it('is the whole cheque difference, not 100 lb at today’s price', () => {
     // The trap: a heavier calf sells for LESS per pound. 450 lb at $6.50 is
     // $2,925; 550 lb at $6.00 is $3,300. The extra 100 lb is worth $375, not
     // the $650 a naive reading gives.
@@ -171,7 +171,7 @@ describe('the benchmark starting point', () => {
 
   it('produces a break-even in the range that budget itself reports', () => {
     // That budget puts the break-even over total costs at $356/cwt on a weaned
-    // calf â€” $3.56/lb. Ours should land near it at a similar weaning weight.
+    // calf — $3.56/lb. Ours should land near it at a similar weaning weight.
     const b = breakEven(
       { ...COW_CALF_BENCHMARK_COSTS, id: 'x', ranch: 'r', crop_year: 2026, notes: null } as CattleCosts,
       500,

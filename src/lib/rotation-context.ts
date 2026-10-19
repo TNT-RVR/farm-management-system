@@ -29,7 +29,7 @@ export function useRotationContext(cropYear: number) {
   const q = useQuery({
     // Versioned: this query is persisted offline, and a restored copy of an
     // older shape (no history) crashed the Rotation view.
-    queryKey: ['rotation-context', 'v18', cropYear],
+    queryKey: ['rotation-context', 'v19', cropYear],
     staleTime: 10 * 60_000,
     queryFn: async () => {
       const since = `${cropYear - 4}-01-01`
@@ -69,8 +69,10 @@ export function useRotationContext(cropYear: number) {
         supabase.from('feed_plans').select('*'),
         supabase.from('herd_counts').select('id, ranch_id, head_count, background_head, avg_weight_lb, feed_class, bcs, target_bcs, target_gain_lb'),
         supabase.from('feed_ration').select('id, ranch_id, crop_id, dm_share_pct'),
-        // Expected yields: every yield on record (forecast.ts drops the planned ones).
-        supabase.from('crop_history').select('field_id, crop_id, crop_year, acres, yield_per_acre, clean_yield_per_acre, yield_unit, source').not('yield_per_acre', 'is', null),
+        // Expected yields: every yield on record by crop, split fields' crop
+        // areas included (forecast.ts drops the planned ones and the years
+        // marked not normal).
+        supabase.from('crop_yields_v').select('field_id, crop_id, crop_year, acres, yield_per_acre, clean_yield_per_acre, yield_unit, source, exclude_from_averages, abnormal_reason').not('yield_per_acre', 'is', null),
         // Today's elevator bids: barley, wheat, oats and durum are priced off them.
         supabase.from('market_series').select('id, code').in('code', BID_CODES),
         // The company behind a variety: a past "Canola" grown for BASF carries BASF's herbicide trait.

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Check, ClipboardCheck, Paperclip, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react'
@@ -20,6 +21,7 @@ import {
   useTasks,
 } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
+import { UserAvatar } from '@/components/UserAvatar'
 
 export function TaskDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -152,7 +154,7 @@ export function TaskDetailPage() {
       )}
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-        {[
+        {([
           ['Field', fields?.find((f) => f.id === task.field_id)?.name ?? '—'],
           [
             'Equipment',
@@ -164,7 +166,20 @@ export function TaskDetailPage() {
           ],
           [
             'Assigned to',
-            task.assignee_ids.map(userName).filter((n) => n !== '—').join(', ') || '—',
+            (() => {
+              const people = task.assignee_ids.map((id) => users?.find((u) => u.id === id)).filter((u) => u != null)
+              if (!people.length) return '—'
+              return (
+                <span className="flex flex-col gap-1">
+                  {people.map((u) => (
+                    <span key={u.id} className="inline-flex items-center gap-2">
+                      <UserAvatar person={u} size="sm" />
+                      {u.full_name}
+                    </span>
+                  ))}
+                </span>
+              )
+            })(),
           ],
           ['Created by', userName(task.created_by)],
           // Date only. Due dates no longer carry a time, and showing the
@@ -182,7 +197,7 @@ export function TaskDetailPage() {
               ? `${new Date(task.completed_at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })} by ${userName(task.completed_by)}`
               : '—',
           ],
-        ].map(([label, val]) => (
+        ] as [string, ReactNode][]).map(([label, val]) => (
           <div key={label} className="rounded-lg border border-gray-200 bg-white p-3">
             <dt className="text-xs text-gray-500">{label}</dt>
             <dd className="mt-0.5 font-medium text-gray-900">{val}</dd>

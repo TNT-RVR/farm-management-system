@@ -46,6 +46,8 @@ export type SeasonInputs = {
   irrigated: boolean
   seeded: DayFrom | null
   harvested: DayFrom | null
+  /** The day it was marked finished (Field finished), if it was. */
+  finished?: DayFrom | null
   history: HistoryLite[]
   sprays: SprayOp[]
   resolve: (deereName: string) => ResolvedProduct | undefined
@@ -114,6 +116,7 @@ export function seasonGroup(d: SeasonInputs): { note: string; rows: Cell[][]; to
   if (rain.days) tail.push(row(null, 'Rain', `${rain.days} days in the water balance`, { total: inches(rain.rainMm) }))
 
   if (d.harvested) push(d.harvested.date, 4, row(d.harvested.date, 'Harvest began', null, { note: `date: ${d.harvested.from}` }))
+  if (d.finished) push(d.finished.date, 4, row(d.finished.date, 'Harvest finished', null, { note: `date: ${d.finished.from}` }))
   const cropName = new Map(d.crops.map((c) => [c.id, c.name]))
   const yields = d.history.filter((h) => h.field_id === d.fieldId && num(h.yield_per_acre) != null)
   for (const h of yields) {
@@ -207,6 +210,7 @@ export async function gatherFieldSeason(p: ParamValues, ctx: GatherContext): Pro
       irrigated: basics.irrigated.has(id),
       seeded: basics.seeded.get(id) ?? null,
       harvested: basics.harvested.get(id) ?? null,
+      finished: basics.finished?.get(id) ?? null,
       history: basics.history,
       sprays,
       resolve,
@@ -238,6 +242,7 @@ export async function gatherFieldSeason(p: ParamValues, ctx: GatherContext): Pro
       ['Spray lines', sprayLines],
       ['Irrigated fields', ids.filter((id) => basics.irrigated.has(id)).length],
       ['Harvest started', ids.filter((id) => basics.harvested.has(id)).length],
+      ['Marked finished', ids.filter((id) => basics.finished?.has(id)).length],
     ],
     summary,
     columns: SEASON_COLUMNS,

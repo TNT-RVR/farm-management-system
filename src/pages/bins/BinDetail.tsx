@@ -11,7 +11,7 @@ import { useBinAllocations, useBinFieldsIn, useBinOnHand, useBins, useEstimatedB
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useDismissBinAirAlert } from '@/lib/moisture-queries'
 import { useBinContents, contentLabel, isCarryOver } from '@/lib/bin-contents'
-import { isOpenLoad, useBinLoads } from '@/lib/bin-loads'
+import { isOpenLoad, testWeightFor, useBinLoads } from '@/lib/bin-loads'
 import { rowClick } from '@/components/RecordEditor'
 import { GRAIN_MOVEMENT_TYPES, type GrainMovementRow } from '@/lib/inventory'
 import { cropColour } from '@/lib/crop-colour'
@@ -29,6 +29,10 @@ const bu = (v: number | string | null | undefined) =>
   v == null ? '—' : `${Math.round(Number(v)).toLocaleString('en-CA')} bu`
 const kg = (v: number | string | null | undefined) =>
   v == null ? '—' : `${Math.round(Number(v)).toLocaleString('en-CA')} kg`
+/** Metric tonnes to two places: what the seed companies write on their forms. */
+const tonnes = (v: number | string | null | undefined) =>
+  v == null ? '—' : `${(Number(v) / 1000).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} t`
+const KG_PER_LB = 0.45359237
 
 /** Everything recorded against one bin, newest first where it is a history. */
 function useBinHistory(binId: string) {
@@ -108,9 +112,21 @@ export function BinDetail({
 
   const cropName = (id: string | null | undefined) => (crops ?? []).find((c) => c.id === id)?.name ?? '—'
   const fieldName = (id: string | null | undefined) => (fields ?? []).find((f) => f.id === id)?.name ?? '—'
+  /**
+   * Kilograms in bushels of a crop, at the crop's own bushel weight (canola
+   * 50 lb, wheat 60). The seed companies ask for kg and tonnes, not bushels (Sam,
+   * 19 Oct 2026). Null when the crop has no bushel weight set.
+   */
+  const kgOf = (cropId: string | null | undefined, bushels: number) => {
+    // The same bushel weight the loads were weighed in at: the crop's own, else the standard one.
+    const lb = testWeightFor((crops ?? []).find((c) => c.id === cropId))
+    return lb ? bushels * lb * KG_PER_LB : null
+  }
 
   const held = (onHand ?? []).filter((o) => o.bin_id === bin.id && o.onhand_bu > 0)
   const heldTotal = held.reduce((s, o) => s + o.onhand_bu, 0)
+  const heldKgs = held.map((o) => kgOf(o.crop_id, o.onhand_bu))
+  const heldKg = heldKgs.some((k) => k == null) ? null : heldKgs.reduce((s: number, k) => s + (k ?? 0), 0)
   const content = (contents ?? []).find((c) => c.bin_id === bin.id) ?? null
   const cap = Number(bin.capacity_bu) || 0
   const fullPct = cap > 0 ? Math.min(100, (heldTotal / cap) * 100) : 0
@@ -162,8 +178,23 @@ export function BinDetail({
               {bin.site ? ` · ${bin.site}` : ''}
               {bin.usual_contents === 'fertilizer' ? ' · fertilizer bin' : ''}
             </p>
+            {heldTotal > 0 && heldKg != null && (
+              <p className="mt-0.5 text-sm font-semibold tabular-nums text-gray-800">
+                {kg(heldKg)} · {tonnes(heldKg)}
+              </p>
+            )}
+            {heldTotal > 0 && heldKg == null && (
+              <p className="mt-0.5 text-xs text-gray-500">Kilograms need this crop's bushel weight, set on the Crops page.</p>
+            )}
             {held.length > 1 && (
-              <p className="mt-0.5 text-xs text-gray-600">{held.map((h) => `${cropName(h.crop_id)} ${bu(h.onhand_bu)}`).join(' · ')}</p>
+              <p className="mt-0.5 text-xs text-gray-600">
+                {held
+                  .map((h) => {
+                    const k = kgOf(h.crop_id, h.onhand_bu)
+                    return `${cropName(h.crop_id)} ${bu(h.onhand_bu)}${k != null ? ` (${kg(k)})` : ''}`
+                  })
+                  .join(' · ')}
+              </p>
             )}
             {heldTotal > 0 && held.length === 1 && <p className="mt-0.5 text-xs text-gray-700">{cropName(held[0].crop_id)} in it</p>}
             {from.length > 0 && <p className="mt-0.5 text-xs text-gray-700">From {from.map((id) => fieldName(id)).join(', ')}</p>}
@@ -358,9 +389,29 @@ export function BinDetail({
           )}
           {finished.length > 0 && (
             <p className="mt-1 text-right text-xs text-gray-500">
-              {bu(finished.reduce((s, l) => s + Number(l.bushels ?? 0), 0))} ·{' '}
-              {kg(finished.reduce((s, l) => s + Number(l.net_kg ?? 0), 0))}
+              {bu(finished.reduce((s, l) => s + Number(l.bushels ?? 0), 0))} · {kg(finished.reduce((s, l) => s + Number(l.net_kg ?? 0), 0))} ·{' '}
+              {tonnes(finished.reduce((s, l) => s + Number(l.net_kg ?? 0), 0))}
             </p>
+          )}
+          {/* By field, weighed: what a seed company asks for its own canola in this bin. */}
+          {finished.length > 0 && (
+            <ul className="mt-1 space-y-0.5 text-xs text-gray-700">
+              {[...new Set(finished.map((l) => l.field_id))].map((fid) => {
+                const mine = finished.filter((l) => l.field_id === fid)
+                const net = mine.reduce((s, l) => s + Number(l.net_kg ?? 0), 0)
+                const bus = mine.reduce((s, l) => s + Number(l.bushels ?? 0), 0)
+                return (
+                  <li key={fid ?? 'none'} className="flex flex-wrap justify-between gap-x-3">
+                    <span>
+                      {fid ? fieldName(fid) : 'No field'} · {mine.length} load{mine.length === 1 ? '' : 's'}
+                    </span>
+                    <span className="tabular-nums">
+                      <b>{kg(net)}</b> · {bu(bus)} · {tonnes(net)}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
           )}
         </Section>
 

@@ -25,6 +25,9 @@ type TaskSource =
   | 'river'
   | 'grant'
   | 'equipment'
+  | 'satellite'
+  | 'service'
+  | 'anydo'
 type GrantStatus =
   | 'new'
   | 'reviewing'
@@ -67,6 +70,112 @@ type CameraKind = 'snapshot' | 'mjpeg' | 'hls' | 'embed'
 export type Database = {
   public: {
     Tables: {
+      /** A harvest marked not a normal year: left out of averages (migration 20261016070000). */
+      abnormal_yield_years: {
+        Row: {
+          id: string
+          field_id: string
+          crop_year: number
+          crop_id: string
+          reason: string
+          marked_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          field_id: string
+          crop_year: number
+          crop_id: string
+          reason: string
+          marked_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          field_id?: string
+          crop_year?: number
+          crop_id?: string
+          reason?: string
+          marked_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      /** John Deere guidance lines per field, read-only mirror (20261017010000). geometry: GeoJSON LineString/MultiLineString, 4326. */
+      jd_guidance_lines: {
+        Row: {
+          id: string
+          field_id: string
+          jd_line_id: string
+          name: string
+          line_type: 'ab' | 'a_plus' | 'curve' | 'circle' | 'adaptive' | 'other'
+          jd_type: string | null
+          archived: boolean
+          heading_deg: number | null
+          geometry: Json | null
+          data_hash: string
+          jd_modified_at: string | null
+          fetched_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          field_id: string
+          jd_line_id: string
+          name?: string
+          line_type: 'ab' | 'a_plus' | 'curve' | 'circle' | 'adaptive' | 'other'
+          jd_type?: string | null
+          archived?: boolean
+          heading_deg?: number | null
+          geometry?: Json | null
+          data_hash: string
+          jd_modified_at?: string | null
+          fetched_at?: string
+          created_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['jd_guidance_lines']['Insert']>
+        Relationships: []
+      }
+      /** What a combine's display was last loaded with, per "Mark loaded" (20261017010000). fields: SnapshotField[] (lib/combine-monitor.ts). */
+      combine_monitor_loads: {
+        Row: {
+          id: string
+          equipment_id: string
+          loaded_at: string
+          loaded_by: string | null
+          fields: Json
+          loaded_count: number
+          note: string | null
+          alerted_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          equipment_id: string
+          loaded_at?: string
+          loaded_by?: string | null
+          fields?: Json
+          loaded_count?: number
+          note?: string | null
+          alerted_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          equipment_id?: string
+          loaded_at?: string
+          loaded_by?: string | null
+          fields?: Json
+          loaded_count?: number
+          note?: string | null
+          alerted_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       /** Daily weather per station (ACIS, Open-Meteo, ECCC, FieldNET). Written by the irrigation sync. */
       weather_daily: {
         Row: {
@@ -458,6 +567,8 @@ export type Database = {
           feed_ranch_id: string | null
           /** Baling: where the bales are stacked. */
           feed_storage: string | null
+          /** A harvest record saying the field (or crop area) is finished (20261017050000). */
+          field_finished: boolean
         }
         Insert: {
           id?: string
@@ -494,6 +605,7 @@ export type Database = {
           feed_type_id?: string | null
           feed_ranch_id?: string | null
           feed_storage?: string | null
+          field_finished?: boolean
         }
         Update: Partial<Database['public']['Tables']['field_work_records']['Insert']>
         Relationships: []
@@ -1119,6 +1231,7 @@ export type Database = {
           is_owner: boolean
           /** Sees the owners-only financials without being an owner (the accountant). Only an owner can set it. */
           finance_access: boolean
+          avatar_url: string | null
         }
         Insert: {
           id: string
@@ -1146,6 +1259,7 @@ export type Database = {
           denied_views?: string[]
           is_owner?: boolean
           finance_access?: boolean
+          avatar_url?: string | null
         }
         Relationships: []
       }
@@ -2573,6 +2687,8 @@ export type Database = {
           progress_note: string | null
           /** False where the crop is baled or shipped direct and never binned. */
           needs_bins: boolean
+          /** Harvested with the combines: puts a field with this crop on the combine displays (20261017010000). */
+          on_combines: boolean
           bin_policy: BinPolicy
           test_weight_lb_per_bu: number | null
           cheatsheet_md: string | null
@@ -2627,6 +2743,7 @@ export type Database = {
           active?: boolean
           color?: string | null
           needs_bins?: boolean
+          on_combines?: boolean
           bin_policy?: BinPolicy
           test_weight_lb_per_bu?: number | null
           cheatsheet_md?: string | null
@@ -2674,6 +2791,7 @@ export type Database = {
           active?: boolean
           color?: string | null
           needs_bins?: boolean
+          on_combines?: boolean
           bin_policy?: BinPolicy
           test_weight_lb_per_bu?: number | null
           cheatsheet_md?: string | null
@@ -3722,6 +3840,8 @@ export type Database = {
           kind: string
           in_app: boolean
           email: boolean
+          push: boolean
+          delivery: string
         }
         Insert: {
           id?: string
@@ -3729,6 +3849,8 @@ export type Database = {
           kind: string
           in_app?: boolean
           email?: boolean
+          push?: boolean
+          delivery?: string
         }
         Update: {
           id?: string
@@ -3736,6 +3858,68 @@ export type Database = {
           kind?: string
           in_app?: boolean
           email?: boolean
+          push?: boolean
+          delivery?: string
+        }
+        Relationships: []
+      }
+      notification_settings: {
+        Row: {
+          id: string
+          user_id: string
+          quiet_on: boolean
+          quiet_start: string
+          quiet_end: string
+          digest_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          quiet_on?: boolean
+          quiet_start?: string
+          quiet_end?: string
+          digest_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          quiet_on?: boolean
+          quiet_start?: string
+          quiet_end?: string
+          digest_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      notification_push_queue: {
+        Row: {
+          id: string
+          notification_id: string
+          user_id: string
+          reason: string
+          created_at: string
+          done_at: string | null
+          outcome: string | null
+        }
+        Insert: {
+          id?: string
+          notification_id: string
+          user_id: string
+          reason: string
+          created_at?: string
+          done_at?: string | null
+          outcome?: string | null
+        }
+        Update: {
+          id?: string
+          notification_id?: string
+          user_id?: string
+          reason?: string
+          created_at?: string
+          done_at?: string | null
+          outcome?: string | null
         }
         Relationships: []
       }
@@ -5660,6 +5844,10 @@ export type Database = {
           warranty_expires_on: string | null
           warranty_hours: number | null
           warranty_note: string | null
+          /** Who this machine's service tasks go to; empty = the farm default. */
+          service_assignees: string[]
+          /** The cab display (20261017010000): display, software, framework, precision_farming, yield_monitor, combine_controller, vehicle_name, interface_level, checked_on, notes. Ours; the sync never writes it. */
+          monitor: Json | null
           archived: boolean
           is_manual: boolean
           notes: string | null
@@ -5685,6 +5873,8 @@ export type Database = {
           warranty_expires_on?: string | null
           warranty_hours?: number | null
           warranty_note?: string | null
+          service_assignees?: string[]
+          monitor?: Json | null
           archived?: boolean
           is_manual?: boolean
           notes?: string | null
@@ -5727,6 +5917,9 @@ export type Database = {
           last_done_hours: number | null
           last_done_on: string | null
           warn_within_hours: number
+          /** Warning on the calendar half, in days (default 14). */
+          warn_within_days: number
+          parts: string | null
           notes: string | null
           active: boolean
           created_at: string
@@ -5740,6 +5933,8 @@ export type Database = {
           last_done_hours?: number | null
           last_done_on?: string | null
           warn_within_hours?: number
+          warn_within_days?: number
+          parts?: string | null
           notes?: string | null
           active?: boolean
           updated_at?: string
@@ -6852,6 +7047,24 @@ export type Database = {
           source: 'rotor' | 'shoe' | 'header' | 'unknown' | null
           notes: string | null
           created_by: string | null
+          /** The snapshot at the time of the check (20261017050000). */
+          equipment_id: string | null
+          operator: string | null
+          rotor_rpm: number | null
+          concave_mm: number | null
+          vane_angle: number | null
+          fan_rpm: number | null
+          presieve_mm: number | null
+          chaffer_mm: number | null
+          sieve_mm: number | null
+          ground_speed_mph: number | null
+          header_type: string | null
+          settings_from: string | null
+          moisture_pct: number | null
+          moisture_from: string | null
+          weather: Json | null
+          weather_source: string | null
+          weather_at: string | null
         }
         Insert: {
           id?: string
@@ -6875,11 +7088,45 @@ export type Database = {
           source?: 'rotor' | 'shoe' | 'header' | 'unknown' | null
           notes?: string | null
           created_by?: string | null
+          equipment_id?: string | null
+          operator?: string | null
+          rotor_rpm?: number | null
+          concave_mm?: number | null
+          vane_angle?: number | null
+          fan_rpm?: number | null
+          presieve_mm?: number | null
+          chaffer_mm?: number | null
+          sieve_mm?: number | null
+          ground_speed_mph?: number | null
+          header_type?: string | null
+          settings_from?: string | null
+          moisture_pct?: number | null
+          moisture_from?: string | null
+          weather?: Json | null
+          weather_source?: string | null
+          weather_at?: string | null
         }
         Update: {
           id?: string
           notes?: string | null
           source?: 'rotor' | 'shoe' | 'header' | 'unknown' | null
+          equipment_id?: string | null
+          operator?: string | null
+          rotor_rpm?: number | null
+          concave_mm?: number | null
+          vane_angle?: number | null
+          fan_rpm?: number | null
+          presieve_mm?: number | null
+          chaffer_mm?: number | null
+          sieve_mm?: number | null
+          ground_speed_mph?: number | null
+          header_type?: string | null
+          settings_from?: string | null
+          moisture_pct?: number | null
+          moisture_from?: string | null
+          weather?: Json | null
+          weather_source?: string | null
+          weather_at?: string | null
         }
         Relationships: []
       }
@@ -7866,6 +8113,9 @@ export type Database = {
           yield_override: boolean | null
           area_yield_id: string | null
           is_area: boolean
+          /** Marked not a normal year (abnormal_yield_years, migration 20261016070000). */
+          exclude_from_averages: boolean
+          abnormal_reason: string | null
         }
         Relationships: []
       }

@@ -420,14 +420,24 @@ export function useSoilByField(cropYear: number) {
   })
 }
 
-export type HistoryRow = { field_id: string; crop_year: number; crop: string | null; yield_per_acre: number | null; yield_unit: string | null; acres: number | null }
+export type HistoryRow = {
+  field_id: string
+  crop_year: number
+  crop: string | null
+  yield_per_acre: number | null
+  yield_unit: string | null
+  acres: number | null
+  /** Marked not a normal year: kept for what the crop took off, left out of yield-goal checks. */
+  exclude_from_averages?: boolean
+}
 
 export function useCropHistoryAll() {
   return useQuery({
-    queryKey: ['fert_crop_history'],
+    // v2: rows carry exclude_from_averages.
+    queryKey: ['fert_crop_history', 2],
     queryFn: async (): Promise<HistoryRow[]> => {
       const { data, error } = await yieldsWithCrops(
-        await supabase.from('crop_yields_v').select('field_id, crop_id, crop_year, yield_per_acre, yield_unit, acres'),
+        await supabase.from('crop_yields_v').select('field_id, crop_id, crop_year, yield_per_acre, yield_unit, acres, exclude_from_averages'),
         'name',
       )
       if (error) throw error
@@ -440,6 +450,7 @@ export function useCropHistoryAll() {
           yield_per_acre: row.yield_per_acre == null ? null : Number(row.yield_per_acre),
           yield_unit: row.yield_unit,
           acres: row.acres == null ? null : Number(row.acres),
+          exclude_from_averages: Boolean(row.exclude_from_averages),
         }
       })
     },

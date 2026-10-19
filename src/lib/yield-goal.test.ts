@@ -121,6 +121,42 @@ describe('actualYield', () => {
   it('is null with no harvest', () => {
     expect(actualYield([rec({ crop_year: 2029 })], { fieldId: 'f1', cropId: 'wheat', year: 2030, unit: 'bu' })).toBeNull()
   })
+  it('keeps a year marked not normal, with its reason', () => {
+    const a = actualYield([rec({ yield_per_acre: 20, exclude_from_averages: true, abnormal_reason: 'cover crop wouldn’t die' })], { fieldId: 'f1', cropId: 'wheat', year: 2030, unit: 'bu' })
+    expect(a).toEqual({ value: 20, clean: false, abnormal: 'cover crop wouldn’t die' })
+  })
+})
+
+describe('years marked not normal', () => {
+  const bad = { exclude_from_averages: true, abnormal_reason: 'cover crop wouldn’t die' }
+
+  it('still grade against their estimate, and say why', () => {
+    const history = [rec({ field_id: 'f2', crop_year: 2028, yield_per_acre: 50 }), rec({ field_id: 'f3', crop_year: 2029, yield_per_acre: 60 }), rec({ crop_year: 2030, yield_per_acre: 22, ...bad })]
+    const s = scoreYield({ fieldId: 'f1', year: 2030, crop, history })
+    expect(s.estimate.value).toBe(55)
+    expect(s.actual?.abnormal).toBe('cover crop wouldn’t die')
+    expect(s.vsEstimate?.dir).toBe('below')
+    expect(scoreText(s, 'bu')).toBe('22 bu/ac (pre-clean) — 33 below estimate (−60%) · abnormal — left out of averages: cover crop wouldn’t die')
+  })
+  it('are left out of the next year’s estimate', () => {
+    const history = [rec({ field_id: 'f2', crop_year: 2028, yield_per_acre: 50 }), rec({ field_id: 'f3', crop_year: 2029, yield_per_acre: 60 }), rec({ crop_year: 2030, yield_per_acre: 22, ...bad })]
+    const next = historyEstimate({ cropId: 'wheat', fieldId: 'f1', year: 2031, unit: 'bu', normal: 40, history })
+    expect(next).toMatchObject({ value: 55, basis: 'farm', leftOut: [2030] })
+    expect(next.label).toContain('2030 left out (not a normal year)')
+  })
+})
+
+describe('estimates from the crop’s default yield', () => {
+  it('are flagged only when nothing typed stood in', () => {
+    const s = scoreYield({ fieldId: 'f1', year: 2030, crop, history: [] })
+    expect(s.estimate).toMatchObject({ value: 40, fromDefault: true })
+    const typed = scoreYield({ fieldId: 'f1', year: 2030, crop, plan: { yield_per_acre_override: 45 }, history: [] })
+    expect(typed.estimate.fromDefault).toBe(false)
+    const ranged = scoreYield({ fieldId: 'f1', year: 2030, crop, plan: { yield_low: 30, yield_high: 50 }, history: [] })
+    expect(ranged.estimate.fromDefault).toBe(false)
+    const averaged = scoreYield({ fieldId: 'f1', year: 2030, crop, history: [rec({ field_id: 'f2', crop_year: 2028 }), rec({ field_id: 'f3', crop_year: 2029 })] })
+    expect(averaged.estimate.fromDefault).toBe(false)
+  })
 })
 
 describe('versus', () => {

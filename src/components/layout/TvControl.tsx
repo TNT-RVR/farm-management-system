@@ -100,7 +100,8 @@ function useTvCommand() {
   return { tracked, send, clear: () => setTracked(null) }
 }
 
-export function TvControl() {
+/** The conference room TV control. It lives on the Monday meeting page (Sam, 15 Oct 2026), as a labelled button beside Print. */
+export function TvControl({ labelled = false }: { labelled?: boolean } = {}) {
   const [open, setOpen] = useState(false)
   const { tracked, send, clear } = useTvCommand()
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -138,13 +139,19 @@ export function TvControl() {
     <div ref={wrapRef} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className={cn('relative rounded-md p-2 text-gray-500 hover:bg-gray-100', open && 'bg-gray-100')}
+        className={cn(
+          labelled
+            ? 'relative flex items-center gap-1.5 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50'
+            : 'relative rounded-md p-2 text-gray-500 hover:bg-gray-100',
+          open && (labelled ? 'bg-gray-50' : 'bg-gray-100'),
+        )}
         aria-label="Show on conference room TV"
         aria-haspopup="menu"
         aria-expanded={open}
         title="Conference room TV"
       >
-        <Tv className="h-4 w-4" />
+        <Tv className={labelled ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+        {labelled && 'Conference TV'}
         {busy && <span className="absolute right-1 top-1 h-2 w-2 animate-pulse rounded-full bg-blue-500" />}
       </button>
 

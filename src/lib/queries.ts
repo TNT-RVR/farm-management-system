@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
+import { cleanFieldName } from './field-name'
 import type { Database } from './database.types'
 
 export type FieldRow = Database['public']['Tables']['fields']['Row']
@@ -40,7 +41,8 @@ export function useFieldMutations() {
         .from('fields')
         .insert({
           farm_id,
-          name: v.name,
+          // No / \ : * ? " < > | in a field name: it becomes a file name.
+          name: cleanFieldName(v.name),
           legal_land_description: v.legal_land_description,
         })
         .select('id')
@@ -384,7 +386,7 @@ export function usersQuery() {
   return {
     queryKey: ['users'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('users').select('id, full_name, email')
+      const { data, error } = await supabase.from('users').select('id, full_name, email, avatar_url')
       if (error) throw error
       return data
     },
@@ -510,7 +512,8 @@ export function useCropVarietyMutations() {
 
 export function cropsQuery() {
   return {
-    queryKey: ['crops'],
+    // v2: rows carry on_combines (20261017010000). Invalidating ['crops'] still reaches it.
+    queryKey: ['crops', 'v2'],
     queryFn: async () => {
       const { data, error } = await supabase.from('crops').select('*').order('name')
       if (error) throw error

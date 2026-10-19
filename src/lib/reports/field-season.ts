@@ -5,7 +5,7 @@ import { boundariesForYear, type BoundaryRow } from '@/lib/queries'
 import { fetchAll, num } from './framework'
 import { applyVarietyToCrop, varietyLookup, type VarietySettingRow } from '@/lib/crop-variety-settings'
 import { cropVarietySettingsQuery } from '@/lib/crop-variety-settings-data'
-import { handWorkDays, type HandWorkDay, type HandWorkRow } from '@/lib/field-work'
+import { finishedDays, handWorkDays, type FinishDay, type FinishRow, type HandWorkDay, type HandWorkRow } from '@/lib/field-work'
 
 /**
  * What a season's field reports all start from: each field's crop areas (a
@@ -118,25 +118,47 @@ export function seedingDates(seasons: SeasonRow[], ops: OpDay[], hand: HandWorkD
 }
 
 /**
- * The day harvest began on each field: the date written on its season where
- * somebody wrote one, else the first Deere harvest pass, the first harvest
- * entered as field work by hand, or the first load weighed off it, whichever
- * came first.
+ * The day harvest began on each field: the start written on a "Field
+ * finished" record (Sam, 17 Oct 2026: the person who finished it saying
+ * when it started), else the date written on its season where somebody wrote
+ * one, else the first Deere harvest pass, the first harvest entered as field
+ * work by hand, or the first load weighed off it, whichever came first.
  */
 export function harvestDates(
   seasons: SeasonRow[],
   ops: OpDay[],
   loads: { field_id: string | null; loaded_on: string | null }[],
   hand: HandWorkDay[] = [],
+  finishes: ReadonlyMap<string, FinishDay> = new Map(),
 ): Map<string, DayFrom> {
   const out = new Map<string, DayFrom>()
-  for (const s of seasons) if (s.zone_id == null && s.harvest_date) out.set(s.field_id, { date: s.harvest_date, from: 'entered by hand' })
+  const started = new Map<string, DayFrom>()
+  for (const [k, f] of finishes) if (f.started) earliest(started, k.slice(0, k.indexOf(':')), f.started, 'Field finished record')
+  for (const [k, v] of started) out.set(k, v)
+  for (const s of seasons) if (s.zone_id == null && s.harvest_date && !out.has(s.field_id)) out.set(s.field_id, { date: s.harvest_date, from: 'entered by hand' })
   const seen = new Map<string, DayFrom>()
   for (const o of ops) if (o.operation_type === 'harvest' && o.started_at) earliest(seen, o.field_id, albertaDay(o.started_at), 'John Deere')
   for (const h of hand) earliest(seen, h.field_id, h.first, 'field work entered by hand')
   for (const l of loads) earliest(seen, l.field_id, l.loaded_on, 'first load weighed')
   for (const [k, v] of seen) if (!out.has(k)) out.set(k, v)
   return out
+}
+
+/**
+ * The day each field was finished: its whole-field "Field finished", else
+ * the latest of its crop areas' (a split field is done when its last area is).
+ */
+export function finishedByField(finishes: ReadonlyMap<string, FinishDay>): Map<string, DayFrom> {
+  const whole = new Map<string, DayFrom>()
+  const areas = new Map<string, DayFrom>()
+  for (const [k, f] of finishes) {
+    const [fieldId, zone] = [k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)]
+    const m = zone ? areas : whole
+    const cur = m.get(fieldId)
+    if (!cur || f.finished > cur.date) m.set(fieldId, { date: f.finished, from: zone ? 'Field finished record (crop area)' : 'Field finished record' })
+  }
+  for (const [k, v] of areas) if (!whole.has(k)) whole.set(k, v)
+  return whole
 }
 
 export type HistoryLite = { field_id: string; crop_id: string | null; acres: unknown; yield_per_acre: unknown; yield_unit: string | null; source: string | null }
@@ -151,6 +173,8 @@ export type SeasonBasics = {
   irrigated: Set<string>
   seeded: Map<string, DayFrom>
   harvested: Map<string, DayFrom>
+  /** The day each field was marked finished (whole field, else its last crop area). */
+  finished?: Map<string, DayFrom>
   history: HistoryLite[]
   /** Fields rented out whole for the year (field_year_tenure): to whom. */
   rentedOut: Map<string, string>
@@ -184,11 +208,12 @@ export async function loadSeasonBasics(year: number): Promise<SeasonBasics> {
     // Seeding and harvest entered by hand. An older database without the table reads as none.
     supabase
       .from('field_work_records')
-      .select('field_id, crop_year, counts_as, started_at, finished_at')
+      .select('field_id, zone_id, crop_year, counts_as, started_at, finished_at, field_finished')
       .eq('crop_year', year)
       .in('counts_as', ['seeding', 'harvest'])
-      .then(({ data, error }) => (error ? [] : ((data ?? []) as HandWorkRow[]))),
+      .then(({ data, error }) => (error ? [] : ((data ?? []) as (HandWorkRow & FinishRow)[]))),
   ])
+  const finishes = finishedDays(handRows, year)
   return {
     year,
     fields,
@@ -197,7 +222,8 @@ export async function loadSeasonBasics(year: number): Promise<SeasonBasics> {
     acresOf: new Map(boundariesForYear(bounds, year).map((b) => [b.field_id, num(b.acres) ?? 0])),
     irrigated: new Set(pivots.map((p) => p.field_id)),
     seeded: seedingDates(seasons, ops, handWorkDays(handRows, 'seeding', year)),
-    harvested: harvestDates(seasons, ops, loads, handWorkDays(handRows, 'harvest', year)),
+    harvested: harvestDates(seasons, ops, loads, handWorkDays(handRows, 'harvest', year), finishes),
+    finished: finishedByField(finishes),
     history,
     rentedOut: new Map(tenure.map((t) => [t.field_id, t.rented_to ?? 'someone else'])),
   }

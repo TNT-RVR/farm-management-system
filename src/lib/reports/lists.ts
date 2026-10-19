@@ -107,6 +107,7 @@ export function cropListColumns(cropYear: number): ExportColumn<CropListRow>[] {
     { key: 'expected_yield', label: 'Yield', value: (r) => r.expected.value ?? r.default_yield_per_acre },
     { key: 'price', label: `${cropYear} Price`, value: (r) => r.price.value },
     { key: 'binned', label: 'Stored in bins', value: (r) => (r.needs_bins !== false ? 1 : 0) },
+    { key: 'combines', label: 'On the combines', value: (r) => (r.on_combines !== false ? 1 : 0) },
     { key: 'cost', label: `${cropYear} Cost/ac`, value: (r) => r.cost.total },
   ]
 }

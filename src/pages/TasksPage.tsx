@@ -10,6 +10,7 @@ import { useEquipment } from '@/lib/equipment'
 import { useTaskMutations, useTasks, type TaskRow, uploadTaskFiles } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 import { withDisplay } from '@/lib/reports/columns'
+import { AvatarStack } from '@/components/UserAvatar'
 import { taskListColumns, taskListRows, taskLookups, type TaskStatusFilter, type TaskWho } from '@/lib/reports/lists'
 
 type Filter = TaskWho
@@ -66,6 +67,19 @@ export function TasksPage() {
           )}
         </span>
       ),
+    },
+    // Each person as their picture in a circle, names beside.
+    assignee: {
+      render: (t) => {
+        const people = t.assignee_ids.map((id) => users?.find((u) => u.id === id)).filter((u) => u != null)
+        if (!people.length) return '—'
+        return (
+          <span className="inline-flex items-center gap-2">
+            <AvatarStack people={people} max={3} size="sm" />
+            <span className="text-gray-700">{people.map((u) => u.full_name).join(', ')}</span>
+          </span>
+        )
+      },
     },
     due: {
       render: (t) => {

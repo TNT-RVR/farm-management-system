@@ -37,7 +37,15 @@ import { chunks, pdfWords, runAttachmentReader, type Reading, type ReaderOptions
  *   bill's key, so two readers at once cannot both claim it.
  *
  * Natural gas (Direct Energy) is read by gas-bills-qb-read.ts, into Utilities → Gas.
- * Azgard's power comes in from its portal, not here.
+ *
+ * Azgard (Sam, 16 Oct 2026: read the Azgard power bills): its power comes
+ * in from its account page (power_bills.source 'portal', a row per site per
+ * invoice). QuickBooks books Azgard's power as bank payments with nothing
+ * attached; the PDFs on its bills there are Azgard Solar's equipment invoices,
+ * which are told apart and left out ('no_lines'). An Azgard power bill that is
+ * attached later has no text layout known here, so it is queued for the model
+ * reader, and power-bills-background leaves off it every site the account
+ * page already has for that month (coveredByPortal).
  *
  * Runs nightly at the end of quickbooks-sync-background, on demand by
  * power-bills-qb-background, and locally by scripts/read-power-bills.mjs
@@ -47,7 +55,7 @@ import { chunks, pdfWords, runAttachmentReader, type Reading, type ReaderOptions
 export const READER = 'power_bills'
 export const HEALTH_KEY = 'power_bills_qb'
 /** The electricity retailers whose bills carry the PDFs, as QuickBooks names them. */
-export const VENDORS = ['epcor%', 'hudson energy%', 'equs%'] as const
+export const VENDORS = ['epcor%', 'hudson energy%', 'equs%', 'azgard%'] as const
 export const SINCE = '2022-01-01'
 
 export type PowerStatus = 'sites' | 'notice' | 'queued' | 'kept' | 'duplicate' | 'no_lines' | 'failed'
@@ -88,7 +96,7 @@ export const billKey = (b: Pick<ParsedBill, 'account_number' | 'bill_date'>) => 
  * lone pump on its quarter), else the pump someone put the same site ID on by
  * hand in another bill.
  */
-export function sitePump(s: ParsedSite, pumps: Pump[], byHand: Map<string, string>): SiteMatch {
+export function sitePump(s: Pick<ParsedSite, 'meter_number' | 'site_id' | 'legal_land' | 'site_name' | 'rate_class'>, pumps: Pump[], byHand: Map<string, string>): SiteMatch {
   const named = (id: string | null) => pumps.find((p) => p.id === id)?.name ?? null
   const hit = matchPump(s, pumps)
   if (hit) {
@@ -98,6 +106,19 @@ export function sitePump(s: ParsedSite, pumps: Pump[], byHand: Map<string, strin
   }
   const linked = s.site_id ? byHand.get(digits(s.site_id)) : undefined
   return linked ? { pumpId: linked, pumpName: named(linked), by: 'site' } : { pumpId: null, pumpName: null, by: null }
+}
+
+/**
+ * The site IDs a person has put on a pump (and confirmed), each to its pump:
+ * the same site on another bill goes there too. A site ID put on two
+ * different pumps is left out.
+ */
+export function handSitePumps(sites: Pick<ExistingSite, 'site_id' | 'pump_id' | 'pump_set_by_hand' | 'pump_unconfirmed'>[]): Map<string, string> {
+  const handPump = new Map<string, Set<string>>()
+  for (const s of sites) if (s.pump_set_by_hand && !s.pump_unconfirmed && s.pump_id && s.site_id) handPump.set(digits(s.site_id), new Set([...(handPump.get(digits(s.site_id)) ?? []), s.pump_id]))
+  const out = new Map<string, string>()
+  for (const [k, v] of handPump) if (v.size === 1) out.set(k, [...v][0])
+  return out
 }
 
 /** "EPCOR ebill email: $123.45 due 2030-10-03" — what a notice says, for the bill's notes. */
@@ -173,10 +194,7 @@ export async function readPowerBills(sb: SupabaseClient, opts: ReaderOptions): P
         const key = billKey({ account_number: b.account_number, bill_date: b.bill_date })
         if (b.source === 'upload' && key && own.length) uploads.set(key, String(b.file_name ?? 'an uploaded bill'))
       }
-      // A site ID a person has put on a pump: the same site on another bill goes there too.
-      const handPump = new Map<string, Set<string>>()
-      for (const s of sites) if (s.pump_set_by_hand && !s.pump_unconfirmed && s.pump_id && s.site_id) handPump.set(digits(s.site_id), new Set([...(handPump.get(digits(s.site_id)) ?? []), s.pump_id]))
-      for (const [k, v] of handPump) if (v.size === 1) byHand.set(k, [...v][0])
+      for (const [k, v] of handSitePumps(sites)) byHand.set(k, v)
     },
     failed: (base, message) => ({ ...base, status: 'failed', detail: message, parsed: null, matches: [], claim: null, existingId: existing.get(base.attachableId)?.id ?? null }),
     read: async (t, pdf, base) => {
@@ -201,7 +219,7 @@ export async function readPowerBills(sb: SupabaseClient, opts: ReaderOptions): P
       if (parsed.kind === 'notice') return out('notice', noticeNote(parsed), { parsed })
       if (parsed.kind === 'other') {
         if (prior) return out('kept', 'Not a layout read here; in Power bills already')
-        return parsed.looksLikePower ? out('queued', 'A power bill in a layout not read here: queued for the model reader') : out('no_lines', 'Not a power bill')
+        return parsed.looksLikePower ? out('queued', 'A power bill in a layout not read here: queued for the model reader') : out('no_lines', parsed.note ?? 'Not a power bill')
       }
       if (!parsed.sites.length) return prior ? out('kept', 'No sites found; left as it is') : out('queued', 'No sites found on the text: queued for the model reader')
 

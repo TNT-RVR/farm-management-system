@@ -21,6 +21,8 @@ export type YieldEntry = {
   unit: string | null
   /** The plan's scale-written figure, not a history row. */
   fromPlan: boolean
+  /** Marked not a normal year: printed (marked †) but left out of every average. */
+  abnormal?: boolean
 }
 
 export type CropInfo = { id: string; name: string; normal: number | null; unit: string | null }
@@ -61,23 +63,28 @@ export function yieldTable(entries: YieldEntry[], crops: CropInfo[], years: numb
   for (const [cropId, list] of byCrop) {
     const crop = cropOf.get(cropId)
     const normal = crop?.normal ?? null
-    const farm = avg(list.map((e) => ({ v: e.yield, w: e.acres ?? 0 })))
+    // Averages leave out the years marked not normal; the year's own cell still prints them.
+    const counted = (es: YieldEntry[]) => es.filter((e) => !e.abnormal).map((e) => ({ v: e.yield, w: e.acres ?? 0 }))
+    const farm = avg(counted(list))
     const byField = new Map<string, YieldEntry[]>()
     for (const e of list) byField.set(e.fieldId, [...(byField.get(e.fieldId) ?? []), e])
     const rows: Cell[][] = [...byField.values()]
       .sort((a, b) => compareFieldNames(a[0].field, b[0].field))
       .map((fe) => {
-        const mean = avg(fe.map((e) => ({ v: e.yield, w: e.acres ?? 0 })))
+        const mean = avg(counted(fe))
         const cells: Cell[] = shownYears.map((y) => {
           const hit = fe.filter((e) => e.year === y)
           if (!hit.length) return null
           const v = avg(hit.map((e) => ({ v: e.yield, w: e.acres ?? 0 })))
-          // A plan figure is marked, so nobody mistakes it for a weighed harvest.
-          return v != null && hit.every((e) => e.fromPlan) ? `${v.toFixed(1)}*` : v
+          if (v == null) return null
+          // A plan figure is marked, so nobody mistakes it for a weighed harvest;
+          // a year marked not normal, so nobody looks for it in the average.
+          const mark = `${hit.every((e) => e.fromPlan) ? '*' : ''}${hit.every((e) => e.abnormal) ? '†' : ''}`
+          return mark ? `${v.toFixed(1)}${mark}` : v
         })
         return [fe[0].field, ...cells, mean, normal, against(mean, normal), against(mean, farm)]
       })
-    const yearAvgs = shownYears.map((y) => avg(list.filter((e) => e.year === y).map((e) => ({ v: e.yield, w: e.acres ?? 0 }))))
+    const yearAvgs = shownYears.map((y) => avg(counted(list.filter((e) => e.year === y))))
     const unit = list.find((e) => e.unit)?.unit ?? crop?.unit ?? null
     groups.push({
       title: `${crop?.name ?? 'Crop'}${unit ? ` (${unit}/ac)` : ''}`,
@@ -95,8 +102,8 @@ export async function gatherYieldHistory(p: ParamValues, ctx: GatherContext): Pr
   const years = Array.from({ length: span }, (_, i) => last - span + 1 + i)
   const cropId = pick(p, 'crop')
   const [history, plans, crops, fields] = await Promise.all([
-    fetchAll<{ field_id: string; crop_id: string | null; crop_year: number; yield_per_acre: unknown; clean_yield_per_acre: unknown; yield_unit: string | null; acres: unknown }>((a, b) => {
-      let q = supabase.from('crop_yields_v').select('field_id, crop_id, crop_year, yield_per_acre, clean_yield_per_acre, yield_unit, acres').gte('crop_year', years[0]).lte('crop_year', last).order('id')
+    fetchAll<{ field_id: string; crop_id: string | null; crop_year: number; yield_per_acre: unknown; clean_yield_per_acre: unknown; yield_unit: string | null; acres: unknown; exclude_from_averages: boolean | null }>((a, b) => {
+      let q = supabase.from('crop_yields_v').select('field_id, crop_id, crop_year, yield_per_acre, clean_yield_per_acre, yield_unit, acres, exclude_from_averages').gte('crop_year', years[0]).lte('crop_year', last).order('id')
       if (cropId) q = q.eq('crop_id', cropId)
       return q.range(a, b)
     }),
@@ -111,17 +118,19 @@ export async function gatherYieldHistory(p: ParamValues, ctx: GatherContext): Pr
   const fieldName = new Map(fields.map((f) => [f.id, f.name]))
   const entries: YieldEntry[] = []
   const seen = new Set<string>()
+  const marked = new Set(history.filter((h) => h.exclude_from_averages).map((h) => `${h.field_id}|${h.crop_year}|${h.crop_id}`))
   for (const h of history) {
     // The yield as the field ran; the cleaned-out figure only where that is all there is.
     const y = num(h.yield_per_acre) ?? num(h.clean_yield_per_acre)
     if (y == null || !h.crop_id || !(y > 0)) continue
     seen.add(`${h.field_id}|${h.crop_year}|${h.crop_id}`)
-    entries.push({ fieldId: h.field_id, field: fieldName.get(h.field_id) ?? 'Field', cropId: h.crop_id, year: h.crop_year, yield: y, acres: num(h.acres), unit: h.yield_unit, fromPlan: false })
+    entries.push({ fieldId: h.field_id, field: fieldName.get(h.field_id) ?? 'Field', cropId: h.crop_id, year: h.crop_year, yield: y, acres: num(h.acres), unit: h.yield_unit, fromPlan: false, abnormal: Boolean(h.exclude_from_averages) })
   }
   for (const pl of plans) {
     const y = num(pl.yield_per_acre_override)
-    if (y == null || !pl.crop_id || !(y > 0) || seen.has(`${pl.field_id}|${pl.crop_year}|${pl.crop_id}`)) continue
-    entries.push({ fieldId: pl.field_id, field: fieldName.get(pl.field_id) ?? 'Field', cropId: pl.crop_id, year: pl.crop_year, yield: y, acres: num(pl.planned_acres), unit: null, fromPlan: true })
+    const key = `${pl.field_id}|${pl.crop_year}|${pl.crop_id}`
+    if (y == null || !pl.crop_id || !(y > 0) || seen.has(key)) continue
+    entries.push({ fieldId: pl.field_id, field: fieldName.get(pl.field_id) ?? 'Field', cropId: pl.crop_id, year: pl.crop_year, yield: y, acres: num(pl.planned_acres), unit: null, fromPlan: true, abnormal: marked.has(key) })
   }
   const cropInfo: CropInfo[] = crops.map((c) => ({ id: c.id, name: c.name, normal: num(c.default_yield_per_acre), unit: c.yield_unit }))
   const t = yieldTable(entries, cropInfo, years)
@@ -131,6 +140,7 @@ export async function gatherYieldHistory(p: ParamValues, ctx: GatherContext): Pr
     'Yield an acre as harvested, by field and year. Normal is the crop’s normal yield on Crop settings; vs farm compares the field with the farm’s own average for that crop over the years shown. Averages are acre-weighted.',
   ]
   if (entries.some((e) => e.fromPlan)) summary.push('* the scale-weighed yield written to the plan; the field’s history row for that year is not filled in yet.')
+  if (entries.some((e) => e.abnormal && t.shownYears.includes(e.year))) summary.push('† marked not a normal year on the field: shown, but left out of every average.')
   return {
     title: 'Yield history by field and crop',
     subtitle: `${t.shownYears[0]}–${t.shownYears.at(-1)} · ${cropLabel}`,

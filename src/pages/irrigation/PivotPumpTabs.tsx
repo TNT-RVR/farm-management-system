@@ -714,6 +714,9 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
       ],
     },
     { key: 'legal_land', label: 'Legal land', kind: 'text' },
+    // Where its pin goes on the maps (river, checklists, farm layers).
+    { key: 'lat', label: 'Latitude', kind: 'number', step: 'any', hint: 'Decimal degrees' },
+    { key: 'lon', label: 'Longitude', kind: 'number', step: 'any', hint: 'Decimal degrees; west is negative' },
     { key: 'water_priority_number', label: 'Water priority', kind: 'text' },
     { key: 'gpm', label: 'GPM, measured', kind: 'number', step: '10', hint: 'From a flow meter or FieldNET. Leave blank until measured; the estimate below stands in.' },
     { key: 'gpm_estimate', label: 'GPM, estimated', kind: 'number', step: '10', hint: 'From the pump curve at a likely head. Say how in "How the estimate was made".' },

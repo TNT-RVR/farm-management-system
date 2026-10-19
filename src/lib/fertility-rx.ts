@@ -61,11 +61,12 @@ const num = (v: unknown): number | null => {
 
 export function usePrescriptions(cropYear: number) {
   return useQuery({
-    queryKey: ['fertility_rx', cropYear],
+    // v2: field_label is the linked field's current name (fields renamed 17 Oct 2026).
+    queryKey: ['fertility_rx', cropYear, 'v2'],
     queryFn: async (): Promise<Prescription[]> => {
       const { data, error } = await supabase
         .from('fertility_rx')
-        .select('*, fertility_rx_zones(*)')
+        .select('*, fertility_rx_zones(*), fields(name)')
         .eq('crop_year', cropYear)
         .order('field_label')
       if (error) throw error
@@ -90,7 +91,10 @@ export function usePrescriptions(cropYear: number) {
           id: String(row.id),
           crop_year: Number(row.crop_year),
           field_id: (row.field_id as string) ?? null,
-          field_label: String(row.field_label),
+          // The app's name for the field when the Rx is linked to one, so a
+          // renamed field reads the same here as everywhere else; the label
+          // printed on the Rx stays in the row (it keys re-imports).
+          field_label: String((row.fields as { name?: string } | null)?.name ?? row.field_label),
           legal: (row.legal as string) ?? null,
           crop_type: (row.crop_type as string) ?? null,
           variety: (row.variety as string) ?? null,

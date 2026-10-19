@@ -1,20 +1,25 @@
 import { DateField } from '@/components/DateField'
 import { useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, ClipboardPlus, Plus, Trash2, Wrench } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { AlertTriangle, CheckCircle2, ClipboardCheck, ClipboardPlus, ListPlus, Plus, Trash2, Wrench } from 'lucide-react'
 import {
   useCreateEquipmentTask,
   useDeleteServicePlan,
   useEquipmentAlerts,
   useLogService,
+  useRunServiceCheck,
   useSaveServicePlan,
   useServicePlans,
+  useServiceTasks,
   type Equipment,
   type ServicePlanRow,
 } from '@/lib/equipment'
-import { dueLabel, dueRank, dueState, type DueState } from '@/lib/maintenance'
+import { DEFAULT_WARN_DAYS, DEFAULT_WARN_HOURS, dueLabel, dueRank, dueState, nextDueLabel, type DueState } from '@/lib/maintenance'
 import { LogServiceDialog } from '@/components/LogServiceDialog'
+import { ServiceAssignees, ServiceTemplatesPanel } from '@/components/EquipmentServiceSetup'
 import { HelpNote } from '@/components/HelpNote'
 import { cn } from '@/lib/utils'
+import { staleHoursDate } from '@/lib/stale-hours'
 
 const STATE_STYLE: Record<DueState, string> = {
   overdue: 'bg-red-100 text-red-800',
@@ -47,72 +52,51 @@ function PlanForm({
     interval_months: existing?.interval_months?.toString() ?? '',
     last_done_hours: existing?.last_done_hours?.toString() ?? '',
     last_done_on: existing?.last_done_on ?? '',
-    warn_within_hours: existing?.warn_within_hours?.toString() ?? '50',
+    warn_within_hours: existing?.warn_within_hours?.toString() ?? String(DEFAULT_WARN_HOURS),
+    warn_within_days: existing?.warn_within_days?.toString() ?? String(DEFAULT_WARN_DAYS),
+    parts: existing?.parts ?? '',
+    notes: existing?.notes ?? '',
   })
   const num = (v: string) => (v.trim() === '' ? null : Number(v))
   const valid = d.name.trim() && (d.interval_hours.trim() || d.interval_months.trim())
+  const box = (key: keyof typeof d, label: string, opts: { type?: string; min?: string; span?: boolean; placeholder?: string } = {}) => (
+    <label className={cn('text-[11px] text-gray-500', opts.span && 'col-span-2 sm:col-span-3')}>
+      {label}
+      <input
+        type={opts.type ?? 'text'}
+        min={opts.min}
+        className={input}
+        placeholder={opts.placeholder}
+        value={d[key]}
+        onChange={(e) => setD({ ...d, [key]: e.target.value })}
+      />
+    </label>
+  )
 
   return (
     <div className="rounded-lg bg-brand-50/50 p-3">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <label className="text-[11px] text-gray-500 sm:col-span-3">
-          What the service is *
-          <input
-            className={input}
-            placeholder="Engine oil and filter"
-            value={d.name}
-            onChange={(e) => setD({ ...d, name: e.target.value })}
-          />
-        </label>
-        <label className="text-[11px] text-gray-500">
-          Every (engine hours)
-          <input
-            type="number"
-            min="1"
-            className={input}
-            value={d.interval_hours}
-            onChange={(e) => setD({ ...d, interval_hours: e.target.value })}
-          />
-        </label>
-        <label className="text-[11px] text-gray-500">
-          …or every (months)
-          <input
-            type="number"
-            min="1"
-            className={input}
-            value={d.interval_months}
-            onChange={(e) => setD({ ...d, interval_months: e.target.value })}
-          />
-        </label>
-        <label className="text-[11px] text-gray-500">
-          Warn within (hours)
-          <input
-            type="number"
-            min="0"
-            className={input}
-            value={d.warn_within_hours}
-            onChange={(e) => setD({ ...d, warn_within_hours: e.target.value })}
-          />
-        </label>
-        <label className="text-[11px] text-gray-500">
-          Last done at (hours)
-          <input
-            type="number"
-            min="0"
-            className={input}
-            value={d.last_done_hours}
-            onChange={(e) => setD({ ...d, last_done_hours: e.target.value })}
-          />
-        </label>
+        {box('name', 'What the service is *', { span: true, placeholder: 'Engine oil and filter' })}
+        {box('interval_hours', 'Every (engine hours)', { type: 'number', min: '1' })}
+        {box('interval_months', '…or every (months)', { type: 'number', min: '1' })}
+        <span className="hidden sm:block" />
+        {box('warn_within_hours', 'Warn within (hours)', { type: 'number', min: '0' })}
+        {box('warn_within_days', 'Warn within (days)', { type: 'number', min: '0' })}
+        <span className="hidden sm:block" />
+        {box('last_done_hours', 'Last done at (hours)', { type: 'number', min: '0' })}
         <label className="text-[11px] text-gray-500">
           Last done on
           <DateField value={d.last_done_on} onChange={(v) => setD({ ...d, last_done_on: v })} />
         </label>
+        <span className="hidden sm:block" />
+        {box('parts', 'Parts (optional)', { span: true, placeholder: 'Filter part numbers, oil' })}
+        {box('notes', 'Notes (optional)', { span: true })}
       </div>
       <HelpNote className="mt-1.5" summary="Whichever comes first." title="Hours and months together">
-        Set both intervals for “every 500 hours or once a year, whichever comes first”. Until a last
-        service is recorded there is nothing to measure from, and the plan will say so rather than
-        guess.
+        Set both intervals for “every 500 hours or once a year, whichever comes first”. A task is made when
+        the machine&apos;s hours from John Deere come within the hour warning, or the date within the day
+        warning. Until a last service is recorded there is nothing to measure from, and the plan will say so
+        rather than guess.
       </HelpNote>
       <div className="mt-2 flex gap-2">
         <button
@@ -127,7 +111,10 @@ function PlanForm({
                 interval_months: num(d.interval_months),
                 last_done_hours: num(d.last_done_hours),
                 last_done_on: d.last_done_on || null,
-                warn_within_hours: Number(d.warn_within_hours || 50),
+                warn_within_hours: num(d.warn_within_hours) ?? DEFAULT_WARN_HOURS,
+                warn_within_days: num(d.warn_within_days) ?? DEFAULT_WARN_DAYS,
+                parts: d.parts.trim() || null,
+                notes: d.notes.trim() || null,
               },
               { onSuccess: onDone },
             )
@@ -157,20 +144,33 @@ function PlanForm({
  * with this app — every maintenancePlans endpoint answers 403 or 404 — so the
  * card says whose numbers these are rather than letting them be mistaken for
  * the manufacturer's.
+ *
+ * A plan coming due raises one task by itself (netlify/shared/service-due.ts,
+ * after every Deere sync). Ticking that task done, or Done here, records the
+ * service and moves the next due point on (both in the database).
  */
 export function EquipmentMaintenance({
   equipment,
   canEdit,
+  canLog,
+  hoursStaleSince = null,
 }: {
   equipment: Equipment
+  /** When the machine's hours stopped updating (lib/stale-hours.ts): hours-based due points can't be trusted. */
+  hoursStaleSince?: string | null
+  /** Managers: plans, people, raising the task. */
   canEdit: boolean
+  /** Anyone active may record a service as done. */
+  canLog: boolean
 }) {
   const { data: plans } = useServicePlans(equipment.id)
   const { data: alerts } = useEquipmentAlerts(equipment.jd_id)
+  const { data: tasks } = useServiceTasks(equipment.id)
   const del = useDeleteServicePlan()
   const log = useLogService()
+  const check = useRunServiceCheck()
   const createTask = useCreateEquipmentTask()
-  const [adding, setAdding] = useState(false)
+  const [adding, setAdding] = useState<'form' | 'templates' | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [logging, setLogging] = useState<string | null>(null)
 
@@ -179,6 +179,7 @@ export function EquipmentMaintenance({
       .map((p) => ({ plan: p, due: dueState(p, equipment.engine_hours) }))
       .sort((a, b) => dueRank(a.due.state) - dueRank(b.due.state))
   }, [plans, equipment.engine_hours])
+  const taskByPlan = useMemo(() => new Map((tasks ?? []).map((t) => [t.source_ref, t])), [tasks])
 
   const openAlerts = (alerts ?? []).filter((a) => !a.acknowledged)
 
@@ -190,36 +191,60 @@ export function EquipmentMaintenance({
             <Wrench className="h-4 w-4 text-brand-700" /> Service schedule
           </h2>
           {canEdit && !adding && (
-            <button
-              onClick={() => setAdding(true)}
-              className="inline-flex items-center gap-0.5 text-xs font-medium text-brand-700 hover:underline"
-            >
-              <Plus className="h-3 w-3" /> Add
-            </button>
+            <>
+              <button
+                onClick={() => setAdding('form')}
+                className="inline-flex items-center gap-0.5 text-xs font-medium text-brand-700 hover:underline"
+              >
+                <Plus className="h-3 w-3" /> Add
+              </button>
+              <button
+                onClick={() => setAdding('templates')}
+                className="inline-flex items-center gap-0.5 text-xs font-medium text-brand-700 hover:underline"
+              >
+                <ListPlus className="h-3 w-3" /> Common intervals
+              </button>
+            </>
           )}
         </div>
         <p className="mt-0.5 text-xs text-gray-500">
-          Service intervals, measured against{' '}
+          Measured against{' '}
           {equipment.engine_hours != null
             ? `${Math.round(equipment.engine_hours).toLocaleString('en-CA')} engine hours`
             : 'the calendar — this machine reports no engine hours'}
           .
         </p>
+        {hoursStaleSince && (
+          <p className="mt-1 text-xs font-medium text-amber-800">
+            Its hours have not updated since {staleHoursDate(hoursStaleSince)}, so a due point by hours can&apos;t be trusted.
+          </p>
+        )}
 
-        {adding && (
+        {adding === 'form' && (
           <div className="mt-3">
-            <PlanForm equipmentId={equipment.id} onDone={() => setAdding(false)} />
+            <PlanForm equipmentId={equipment.id} onDone={() => setAdding(null)} />
+          </div>
+        )}
+        {adding === 'templates' && (
+          <div className="mt-3">
+            <ServiceTemplatesPanel
+              equipment={equipment}
+              existingNames={(plans ?? []).map((p) => p.name)}
+              onDone={() => setAdding(null)}
+            />
           </div>
         )}
 
         {ranked.length === 0 && !adding ? (
           <p className="mt-3 text-sm text-gray-400">
-            No service plans yet{canEdit ? ' — add the first one above.' : '.'}
+            No service plans yet{canEdit ? ' — add one, or start from the common intervals.' : '.'}
           </p>
         ) : (
           <ul className="mt-3 divide-y divide-gray-100">
-            {ranked.map(({ plan, due }) =>
-              editing === plan.id ? (
+            {ranked.map(({ plan, due }) => {
+              const task = taskByPlan.get(plan.id)
+              const at = nextDueLabel(due)
+              return editing === plan.id ? (
                 <li key={plan.id} className="py-2">
                   <PlanForm
                     equipmentId={equipment.id}
@@ -254,60 +279,67 @@ export function EquipmentMaintenance({
                     )}
                     title={due.reason}
                   >
+                    {at ? `next ${at} · ` : ''}
                     {dueLabel(due)}
                   </span>
+                  {plan.parts && <span className="text-[11px] text-gray-400">parts: {plan.parts}</span>}
+                  {hoursStaleSince && plan.interval_hours ? (
+                    <span className="text-[11px] font-medium text-amber-800">hours due point can&apos;t be trusted</span>
+                  ) : null}
 
-                  {canEdit && (
-                    <span className="ml-auto flex items-center gap-2">
-                      {(due.state === 'overdue' || due.state === 'due-soon') && (
-                        <button
-                          onClick={() =>
-                            createTask.mutate({
-                              title: `${plan.name} — ${equipment.name ?? 'machine'}`,
-                              description: [
-                                `${plan.name} on ${equipment.name ?? 'this machine'}.`,
-                                `Status: ${STATE_LABEL[due.state]} (${dueLabel(due)}).`,
-                                equipment.engine_hours != null
-                                  ? `Engine hours at time of raising: ${Math.round(equipment.engine_hours)}.`
-                                  : 'This machine reports no engine hours.',
-                              ].join('\n\n'),
-                            })
-                          }
-                          className="inline-flex items-center gap-1 text-xs text-brand-700 hover:underline"
-                        >
-                          <ClipboardPlus className="h-3.5 w-3.5" /> Make a task
-                        </button>
-                      )}
+                  <span className="ml-auto flex items-center gap-2">
+                    {task && (
+                      <Link to={`/tasks/${task.id}`} className="inline-flex items-center gap-1 text-xs text-brand-700 hover:underline">
+                        <ClipboardCheck className="h-3.5 w-3.5" /> Task open
+                      </Link>
+                    )}
+                    {canEdit && !task && (due.state === 'overdue' || due.state === 'due-soon') && (
+                      <button
+                        onClick={() => check.mutate()}
+                        disabled={check.isPending}
+                        title="Raise the service task now instead of at the next Deere sync"
+                        className="inline-flex items-center gap-1 text-xs text-brand-700 hover:underline disabled:opacity-50"
+                      >
+                        <ClipboardPlus className="h-3.5 w-3.5" /> {check.isPending ? 'Raising…' : 'Raise the task'}
+                      </button>
+                    )}
+                    {canLog && (
                       <button
                         onClick={() => setLogging(plan.id)}
-                        title="Record this as done — with a photo of the hour meter if you are at the machine"
+                        title="Mark serviced at the hours on the meter — with a photo of it if you are at the machine"
                         className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-green-700"
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" /> Done
                       </button>
-                      <button
-                        onClick={() => setEditing(plan.id)}
-                        className="text-xs text-gray-400 hover:text-brand-700"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => {
-                          // Delete always confirms (Sam, 7 Oct 2026); the history stays, unlinked.
-                          if (window.confirm(`Delete the "${plan.name}" plan? Services already recorded stay in the history.`)) del.mutate(plan.id)
-                        }}
-                        aria-label={`Delete ${plan.name}`}
-                        className="text-gray-300 hover:text-red-600"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </span>
-                  )}
+                    )}
+                    {canEdit && (
+                      <>
+                        <button
+                          onClick={() => setEditing(plan.id)}
+                          className="text-xs text-gray-400 hover:text-brand-700"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => {
+                            // Delete always confirms (Sam, 7 Oct 2026); the history stays, unlinked.
+                            if (window.confirm(`Delete the "${plan.name}" plan? Services already recorded stay in the history.`)) del.mutate(plan.id)
+                          }}
+                          aria-label={`Delete ${plan.name}`}
+                          className="text-gray-300 hover:text-red-600"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </span>
                 </li>
-              ),
-            )}
+              )
+            })}
           </ul>
         )}
+        {check.isError && <p className="mt-1 text-xs text-red-600">{(check.error as Error).message}</p>}
+        {canEdit && <ServiceAssignees equipment={equipment} />}
       </section>
 
       {/* Deere's own diagnostics. Unlike the intervals above, these ARE the

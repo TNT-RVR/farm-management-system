@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Word } from './ici-invoice-pdf'
-import { columnLines, endMoney, legalLand, longDate, parseBillNotice, parseEpcorBill, readPowerBillText } from './power-bill-pdf'
-import { billKey, noticeNote, sitePump } from '../../netlify/shared/power-bills-qb-read'
+import { columnLines, endMoney, isAzgardEquipmentInvoice, isAzgardRetailer, legalLand, longDate, parseBillNotice, parseEpcorBill, readPowerBillText } from './power-bill-pdf'
+import { billKey, handSitePumps, noticeNote, sitePump } from '../../netlify/shared/power-bills-qb-read'
 
 // Every account, site, meter, place and figure here is made up.
 
@@ -265,5 +265,40 @@ describe('helpers', () => {
     // A house on a pump's quarter is not the pump.
     expect(sitePump(s({ meter_number: '1112223', legal_land: 'SW 4-34-18 W4', rate_class: 'Residential' }), pumps, none).pumpId).toBeNull()
     expect(sitePump(s({ meter_number: '1112223', site_id: '0099900000044' }), pumps, new Map([['99900000044', 'p3']]))).toMatchObject({ pumpId: 'p3', by: 'site' })
+  })
+
+  it('takes a site ID set by hand to its pump, unless it was put on two', () => {
+    const row = (site_id: string, pump_id: string, by = true, unconfirmed = false) => ({ site_id, pump_id, pump_set_by_hand: by, pump_unconfirmed: unconfirmed })
+    const m = handSitePumps([
+      row('0099900000011', 'p1'),
+      row('99900000011', 'p1'),
+      row('0099900000022', 'p2'),
+      row('0099900000022', 'p3'),
+      row('0099900000033', 'p4', false),
+      row('0099900000044', 'p5', true, true),
+    ])
+    expect([...m]).toEqual([['99900000011', 'p1']])
+  })
+
+  it('tells an Azgard Solar equipment invoice from a power bill', () => {
+    // Made up, in the shape of the solar supplier's invoice: item lines, no energy.
+    const text = [
+      'To: Example Farms Ltd. Remit to: Ship to: Date: March 3, 2030',
+      'Azgard Solar Inc. Invoice No.: 2030-0001',
+      'I N V O I C E',
+      'Item Description Quantity Unit Price Amount',
+      '1 Solar Modules and Racking 2 $ 100.00 $ 200.00',
+      'Subtotal: $ 200.00',
+      'Plus: GST @ 5% $ 10.00',
+      'TOTAL : $ 210.00',
+    ].join('\n')
+    expect(isAzgardEquipmentInvoice(text)).toBe(true)
+    expect(readPowerBillText([], text)).toEqual({ kind: 'other', looksLikePower: false, note: expect.stringMatching(/equipment invoice/) })
+    // A power bill that names Azgard is not one.
+    expect(isAzgardEquipmentInvoice(`${text}\nSite ID 0099900000011 Energy 120 kWh`)).toBe(false)
+    expect(isAzgardRetailer('Azgard Solar / UtilNet')).toBe(true)
+    expect(isAzgardRetailer('UTILNET')).toBe(true)
+    expect(isAzgardRetailer('EPCOR Energy')).toBe(false)
+    expect(isAzgardRetailer(null)).toBe(false)
   })
 })

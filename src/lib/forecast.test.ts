@@ -115,3 +115,52 @@ describe('expectedYield', () => {
     expect(isActualYield(rec('a', 2026, 41), 'bu', 40)).toBe(true)
   })
 })
+
+describe('expectedYield with years marked not normal', () => {
+  const rec = (field: string, year: number, y: number, extra: Partial<YieldRecord> = {}): YieldRecord => ({
+    field_id: field,
+    crop_id: 'bean',
+    crop_year: year,
+    acres: 100,
+    yield_per_acre: y,
+    yield_unit: 'lbs',
+    source: 'scale',
+    ...extra,
+  })
+  const base = { cropId: 'bean', year: 2027, unit: 'lbs', goal: 3000 }
+  const bad = { exclude_from_averages: true, abnormal_reason: 'cover crop wouldn’t die' }
+
+  it('is not an actual yield for averaging', () => {
+    expect(isActualYield(rec('a', 2026, 1100, bad), 'lbs', 3000)).toBe(false)
+  })
+  it('leaves a marked year out of the farm average and says so', () => {
+    const h = [rec('a', 2024, 3200), rec('b', 2025, 3400), rec('c', 2026, 1100, bad)]
+    const e = expectedYield({ ...base, history: h })
+    expect(e).toMatchObject({ value: 3300, basis: 'farm', seasons: 2, leftOut: [2026] })
+    expect(e.label).toBe('farm average of what we harvested, 2 seasons (2024–2025) · 2026 left out (not a normal year)')
+  })
+  it('a marked year no longer makes the two seasons the farm average needs', () => {
+    const h = [rec('a', 2025, 3200), rec('a', 2026, 1100, bad)]
+    const e = expectedYield({ ...base, history: h })
+    expect(e).toMatchObject({ value: 3000, basis: 'goal' })
+    expect(e.label).toBe('normal yield (not enough harvests to average yet) · 2026 left out (not a normal year)')
+  })
+  it('falls back to the normal yield when the only harvests are marked', () => {
+    const e = expectedYield({ ...base, history: [rec('a', 2026, 1100, bad), rec('b', 2026, 900, bad), rec('c', 2026, 1000, bad)] })
+    expect(e).toMatchObject({ value: 3000, basis: 'goal', leftOut: [2026] })
+    expect(e.label).toBe('normal yield (its only harvests are marked not a normal year)')
+  })
+  it('drops a marked year from a field’s own average and its count of seasons', () => {
+    const own = [2020, 2021, 2022, 2023, 2024, 2025].map((y) => rec('home', y, 3000))
+    own[5] = { ...own[5], yield_per_acre: 600, ...bad }
+    const e = expectedYield({ ...base, history: own, fieldId: 'home' })
+    expect(e).toMatchObject({ value: 3000, basis: 'field', seasons: 5, leftOut: [2025] })
+    // With only four normal seasons left, the farm average is used instead.
+    const four = own.slice(1)
+    expect(expectedYield({ ...base, history: four, fieldId: 'home' })).toMatchObject({ basis: 'farm', seasons: 4 })
+  })
+  it('without marks is unchanged', () => {
+    const h = [rec('a', 2024, 3200), rec('b', 2025, 3400), rec('c', 2026, 1100)]
+    expect(expectedYield({ ...base, history: h })).toMatchObject({ value: (3200 + 3400 + 1100) / 3, basis: 'farm', seasons: 3, leftOut: [] })
+  })
+})

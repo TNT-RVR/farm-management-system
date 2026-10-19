@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import type { Database } from './database.types'
-import { latestForPlan, newManualJdId } from './equipment-edits'
+import { newManualJdId } from './equipment-edits'
 
 export type Equipment = Database['public']['Tables']['jd_equipment']['Row']
 
@@ -11,7 +11,8 @@ export type Equipment = Database['public']['Tables']['jd_equipment']['Row']
  */
 export function jdEquipmentQuery(includeArchived = false) {
   return {
-    queryKey: ['jd_equipment', includeArchived],
+    // v2: rows carry service_assignees (20261016050000); v3: and monitor (20261017010000).
+    queryKey: ['jd_equipment', 'v3', includeArchived],
     queryFn: async () => {
       let q = supabase.from('jd_equipment').select('*').order('name')
       if (!includeArchived) q = q.eq('archived', false)
@@ -28,7 +29,7 @@ export function useEquipment(includeArchived = false) {
 
 export function useEquipmentItem(id: string | undefined) {
   return useQuery({
-    queryKey: ['jd_equipment', 'one', id],
+    queryKey: ['jd_equipment', 'one', 'v3', id],
     enabled: Boolean(id),
     queryFn: async () => {
       const { data, error } = await supabase
@@ -144,26 +145,11 @@ export function useServiceLog(equipmentId: string | undefined) {
 }
 
 /**
- * Keep a plan's "last done" on its latest logged service after one is changed
- * or removed; with none left it is left as it was (it may have been set by
- * hand in the plan form).
- */
-async function rebasePlan(planId: string) {
-  const { data, error } = await supabase.from('equipment_service_log').select('id, plan_id, done_on, engine_hours, created_at').eq('plan_id', planId)
-  if (error) throw error
-  const latest = latestForPlan(data ?? [], planId)
-  if (!latest) return
-  const { error: e2 } = await supabase
-    .from('equipment_service_plans')
-    .update({ last_done_on: latest.done_on, last_done_hours: latest.engine_hours, updated_at: new Date().toISOString() })
-    .eq('id', planId)
-  if (e2) throw e2
-}
-
-/**
  * Add a service by hand, or correct one (Sam, 7 Oct 2026). Anyone active may
  * add (equipment_service_log_insert); changing one is the manager's
- * (equipment_service_log_manage). The plans it touches are re-based.
+ * (equipment_service_log_manage). The database moves each plan it touches
+ * to its latest entry (fn_service_log_applied), so a worker's entry rolls the
+ * plan on too — the plan itself is a manager-only write.
  */
 export function useSaveServiceLog() {
   const qc = useQueryClient()
@@ -191,11 +177,11 @@ export function useSaveServiceLog() {
         const { error } = await supabase.from('equipment_service_log').insert({ ...row, equipment_id: v.equipment_id, done_by: user?.id ?? null })
         if (error) throw error
       }
-      for (const p of new Set([v.plan_id, v.was_plan_id].filter((x): x is string => Boolean(x)))) await rebasePlan(p)
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['equipment_service_log'] })
       void qc.invalidateQueries({ queryKey: ['equipment_service_plans'] })
+      void qc.invalidateQueries({ queryKey: ['tasks'] })
     },
   })
 }
@@ -207,7 +193,6 @@ export function useDeleteServiceLog() {
       const { data, error } = await supabase.from('equipment_service_log').delete().eq('id', v.id).select('id')
       if (error) throw error
       if (!data?.length) throw new Error('Not deleted: only a manager can remove a recorded service.')
-      if (v.plan_id) await rebasePlan(v.plan_id)
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['equipment_service_log'] })
@@ -245,6 +230,9 @@ export type ServicePlanRow = {
   last_done_hours: number | null
   last_done_on: string | null
   warn_within_hours: number
+  /** Calendar warning, in days (default 14). */
+  warn_within_days: number
+  parts: string | null
   notes: string | null
   active: boolean
 }
@@ -266,7 +254,8 @@ export type EquipmentAlert = {
 
 export function useServicePlans(equipmentId: string | undefined) {
   return useQuery({
-    queryKey: ['equipment_service_plans', equipmentId],
+    // v2: plans carry warn_within_days and parts (20261016050000).
+    queryKey: ['equipment_service_plans', 'v2', equipmentId],
     enabled: Boolean(equipmentId),
     queryFn: async () => {
       const { data, error } = await supabase
@@ -327,10 +316,11 @@ export function useDeleteServicePlan() {
 }
 
 /**
- * Record that a service was done, and move the plan's baseline to match.
- *
- * Both halves in one go: logging the work without advancing the plan leaves it
- * reading overdue forever, which trains people to ignore it.
+ * Record that a service was done. The database moves the plan's baseline to
+ * it and closes the plan's open service task (fn_service_log_applied): logging
+ * the work without advancing the plan leaves it reading overdue forever, and
+ * the plan is a manager-only write, so the app doing it left a worker's
+ * service unrecorded on the plan.
  */
 export function useLogService() {
   const qc = useQueryClient()
@@ -354,21 +344,11 @@ export function useLogService() {
         done_by: user?.id ?? null,
       })
       if (error) throw error
-      if (v.plan_id) {
-        const { error: e2 } = await supabase
-          .from('equipment_service_plans')
-          .update({
-            last_done_on: v.done_on,
-            last_done_hours: v.engine_hours,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', v.plan_id)
-        if (e2) throw e2
-      }
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['equipment_service_plans'] })
       void qc.invalidateQueries({ queryKey: ['equipment_service_log'] })
+      void qc.invalidateQueries({ queryKey: ['tasks'] })
     },
   })
 }
@@ -414,5 +394,103 @@ export function useCreateEquipmentTask() {
       void qc.invalidateQueries({ queryKey: ['tasks'] })
       void qc.invalidateQueries({ queryKey: ['jd_equipment_alerts'] })
     },
+  })
+}
+
+/** Every active plan on the farm — a few dozen rows — for the fleet list's badges. */
+export function useAllServicePlans() {
+  return useQuery({
+    queryKey: ['equipment_service_plans', 'v2', 'all'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('equipment_service_plans').select('*').eq('active', true)
+      if (error) throw error
+      return data as unknown as ServicePlanRow[]
+    },
+  })
+}
+
+/** Add several plans at once — a starting template the manager accepted. */
+export function useAddServicePlans() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (rows: Database['public']['Tables']['equipment_service_plans']['Insert'][]) => {
+      if (!rows.length) return
+      const { error } = await supabase.from('equipment_service_plans').insert(rows)
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['equipment_service_plans'] }),
+  })
+}
+
+export type ServiceTaskRow = { id: string; source_ref: string | null; title: string; due_at: string | null }
+
+/** The open service tasks on a machine, one per due plan (source 'service', source_ref = plan). */
+export function useServiceTasks(equipmentId: string | undefined) {
+  return useQuery({
+    queryKey: ['tasks', 'service', 'v1', equipmentId],
+    enabled: Boolean(equipmentId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('id, source_ref, title, due_at')
+        .eq('source', 'service')
+        .eq('status', 'open')
+        .eq('equipment_id', equipmentId!)
+      if (error) throw error
+      return data as ServiceTaskRow[]
+    },
+  })
+}
+
+/**
+ * Run the service check now (managers): raises the task for anything due
+ * without waiting for the next Deere sync.
+ */
+export function useRunServiceCheck() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const res = await fetch('/api/service-due', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+      })
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; raised?: number }
+      if (!res.ok || !body.ok) throw new Error(body.error ?? `The service check did not run (${res.status})`)
+      return body
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['tasks'] }),
+  })
+}
+
+/** The farm-wide default for who gets service tasks (operating_settings 'service_task_assignees'). */
+export const SERVICE_ASSIGNEES_KEY = 'service_task_assignees'
+
+export function useDefaultServiceAssignees() {
+  return useQuery({
+    queryKey: ['operating_settings', SERVICE_ASSIGNEES_KEY],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('operating_settings').select('value').eq('key', SERVICE_ASSIGNEES_KEY).maybeSingle()
+      if (error) throw error
+      return Array.isArray(data?.value) ? (data.value as unknown[]).filter((v): v is string => typeof v === 'string') : []
+    },
+  })
+}
+
+export function useSaveDefaultServiceAssignees() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      const { error } = await supabase
+        .from('operating_settings')
+        .upsert({ key: SERVICE_ASSIGNEES_KEY, value: ids, updated_by: user?.id ?? null, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['operating_settings', SERVICE_ASSIGNEES_KEY] }),
   })
 }

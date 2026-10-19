@@ -11,9 +11,19 @@ import {
   ChevronRight,
   ClipboardCheck,
   Droplets,
+  ListChecks,
   Printer,
+  Scale,
   Umbrella,
+  Wheat,
 } from 'lucide-react'
+import { useHarvestEstimates } from '@/lib/harvest-estimate-data'
+import { shortDate } from '@/lib/harvest-estimate'
+import { HARVEST_WINDOW_DAYS, upcomingHarvests, useHarvestedYields } from '@/lib/meeting-estimates'
+import { useMissingChecklist } from '@/lib/missing-checklist'
+import { formatYield } from '@/lib/yield-goal'
+import { CropDefaultBadge, VersusBit } from '@/components/YieldScoreCells'
+import { abnormalText } from '@/lib/abnormal-yields'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useCropYear } from '@/lib/crop-year'
 import { awayThisWeek, useTimeOff } from '@/lib/timeoff'
@@ -43,6 +53,7 @@ import {
   weekStart,
 } from '@/lib/meeting'
 import { PillTabs } from '@/components/PillTabs'
+import { TvControl } from '@/components/layout/TvControl'
 import { useRanchWeather, wmo, type ForecastDay } from '@/lib/ranchWeather'
 import { useWeatherSites } from '@/lib/weatherSites'
 import { cn } from '@/lib/utils'
@@ -109,6 +120,15 @@ export function MeetingPage() {
   const { data: seasons } = useFieldSeasons(cropYear)
   const { data: note } = useMeetingNote(monday)
   const saveNote = useSaveMeetingNote(monday)
+
+  // The estimates: harvest dates coming up, and yields against estimate and goal.
+  const { data: harvestRows } = useHarvestEstimates(cropYear)
+  const comingHarvest = useMemo(() => upcomingHarvests(harvestRows ?? [], monday), [harvestRows, monday])
+  const yields = useHarvestedYields(cropYear)
+  const [showAllYields, setShowAllYields] = useState(false)
+  // What's missing, the top of the /missing checklist.
+  const missing = useMissingChecklist(cropYear)
+  const [showAllMissing, setShowAllMissing] = useState(false)
 
   const days = weekDays(monday)
   // Who is off this week, from the time-off calendar — said before the jobs are handed out.
@@ -192,12 +212,15 @@ export function MeetingPage() {
             </button>
           )}
         </div>
-        <button
-          onClick={() => window.print()}
-          className="flex items-center gap-1.5 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-        >
-          <Printer className="h-3.5 w-3.5" /> Print
-        </button>
+        <div className="flex items-center gap-2">
+          <TvControl labelled />
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <Printer className="h-3.5 w-3.5" /> Print
+          </button>
+        </div>
       </div>
 
       <h1 className="text-lg font-semibold text-gray-900">Monday meeting</h1>
@@ -237,7 +260,7 @@ export function MeetingPage() {
           tone="warn"
           hint="Everything the app raised in the last week that asks for action, for the whole farm. Several alerts of one kind are one line; the newest is shown."
           empty="No alerts in the last week."
-          more={{ to: '/notifications', label: 'All alerts' }}
+          more={{ to: '/notifications', label: 'All notifications' }}
         >
           {alertGroups.map((g) => (
             <Row
@@ -419,9 +442,86 @@ export function MeetingPage() {
           </Section>
         )}
 
+        {/* Which crops the harvest estimate says are ready in the next two
+            weeks — only when there are some. */}
+        {comingHarvest.length > 0 && (
+          <Section
+            icon={Wheat}
+            title="Harvest coming"
+            count={comingHarvest.length}
+            empty=""
+            hint={`Estimated ready dates in the ${HARVEST_WINDOW_DAYS} days from this Monday: seeding plus days to maturity, moved by each field's weather and hail. The calendar has the rest.`}
+            more={{ to: '/calendar', label: 'Calendar' }}
+          >
+            {comingHarvest.map((r) => (
+              <Row
+                key={r.key}
+                to={`/fields/${r.fieldId}`}
+                title={r.zoneId ? `${r.fieldName} · ${r.cropName}` : r.fieldName}
+                meta={[r.zoneId ? null : r.cropName, `~${shortDate(r.estimate!.mature)}`]}
+              />
+            ))}
+          </Section>
+        )}
+
+        {/* How the crops already off did against their estimate and goal —
+            once there are some. Furthest below the estimate first. */}
+        {yields.length > 0 && (
+          <Section
+            icon={Scale}
+            title="Yield vs estimate"
+            count={yields.length}
+            empty=""
+            hint="Each harvested crop this year against its estimate (from earlier seasons, or the figure typed on the plan) and its goal. Furthest below the estimate first."
+            more={{ to: '/plan?tab=plan', label: 'Plan' }}
+          >
+            {(showAllYields ? yields : yields.slice(0, YIELDS_SHOWN)).map((y) => (
+              <li key={y.key}>
+                <Link to={`/fields/${y.fieldId}`} className="flex flex-wrap items-baseline gap-x-2 py-1.5 text-sm hover:text-brand-700">
+                  <span className="min-w-0 flex-1 truncate">
+                    {y.fieldName} <span className="text-xs text-gray-400">{y.cropName}</span>
+                  </span>
+                  <span className="shrink-0 text-xs tabular-nums text-gray-700">
+                    {formatYield(y.score.actual!.value)} {y.unit}/ac
+                  </span>
+                  <span className="shrink-0 text-xs">
+                    <VersusBit v={y.score.vsEstimate} what="estimate" />
+                    {y.score.vsEstimate && y.score.estimate.fromDefault && <CropDefaultBadge />}
+                    {y.score.vsEstimate && y.score.vsGoal && <span className="text-gray-400">, </span>}
+                    <VersusBit v={y.score.vsGoal} what="goal" />
+                  </span>
+                  {y.score.actual!.abnormal != null && (
+                    <span className="basis-full text-[11px] font-medium text-amber-800">{abnormalText(y.score.actual!.abnormal)}</span>
+                  )}
+                </Link>
+              </li>
+            ))}
+            {yields.length > YIELDS_SHOWN && <ShowAll total={yields.length} open={showAllYields} onToggle={() => setShowAllYields((v) => !v)} />}
+          </Section>
+        )}
+
         {/* Conferences: shows itself only when something is on or a deadline
             is coming; the full list is the Events page. */}
         <ConferencesSection />
+
+        {/* What's missing: the data nobody has entered that holds features
+            back, the top few lines of the /missing checklist. */}
+        {missing.total > 0 && (
+          <Section
+            icon={ListChecks}
+            title="Things to fill in"
+            count={missing.total}
+            tone="warn"
+            empty=""
+            hint={missing.canFix ? 'Data the app is waiting on, each line linked to where it is filled in.' : 'Data the app is waiting on. A manager fills these in.'}
+            more={{ to: '/missing', label: 'Checklist' }}
+          >
+            {(showAllMissing ? missing.lines : missing.lines.slice(0, MISSING_SHOWN)).map((l) => (
+              <Row key={l.id} to={missing.canFix ? l.path : undefined} title={l.title} meta={[l.why, String(l.count)]} />
+            ))}
+            {missing.total > MISSING_SHOWN && <ShowAll total={missing.total} open={showAllMissing} onToggle={() => setShowAllMissing((v) => !v)} />}
+          </Section>
+        )}
 
         {/* A meeting is where jobs get handed out, so this is where they have
             to be writable. Sending somebody to the Tasks page to type what was
@@ -662,21 +762,47 @@ function Row({
   meta,
   alert,
 }: {
-  to: string
+  /** No link: shown read-only. */
+  to?: string
   title: string
   meta: (string | null)[]
   alert?: boolean
 }) {
   const shown = meta.filter(Boolean)
+  const body = (
+    <>
+      {alert && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />}
+      <span className="min-w-0 flex-1 truncate">{title}</span>
+      {shown.length > 0 && (
+        <span className="shrink-0 text-xs text-gray-400">{shown.join(' · ')}</span>
+      )}
+    </>
+  )
   return (
     <li>
-      <Link to={to} className="flex items-center gap-2 py-1.5 text-sm hover:text-brand-700">
-        {alert && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />}
-        <span className="min-w-0 flex-1 truncate">{title}</span>
-        {shown.length > 0 && (
-          <span className="shrink-0 text-xs text-gray-400">{shown.join(' · ')}</span>
-        )}
-      </Link>
+      {to ? (
+        <Link to={to} className="flex items-center gap-2 py-1.5 text-sm hover:text-brand-700">
+          {body}
+        </Link>
+      ) : (
+        <div className="flex items-center gap-2 py-1.5 text-sm">{body}</div>
+      )}
+    </li>
+  )
+}
+
+/** Lines of the what's-missing checklist the agenda shows before "Show all". */
+const MISSING_SHOWN = 3
+/** Yield lines shown before "Show all". */
+const YIELDS_SHOWN = 8
+
+/** "Show all 12" under a cut-down list; hidden on the printout. */
+function ShowAll({ total, open, onToggle }: { total: number; open: boolean; onToggle: () => void }) {
+  return (
+    <li className="py-1.5 print:hidden">
+      <button onClick={onToggle} className="text-xs font-medium text-brand-700 hover:underline">
+        {open ? 'Show fewer' : `Show all ${total}`}
+      </button>
     </li>
   )
 }

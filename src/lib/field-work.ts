@@ -60,7 +60,17 @@ export function workTypeList(custom: readonly Pick<FieldWorkType, 'label' | 'cou
 }
 
 /** What to call a record's work: "Baling", or what was typed for Other. */
+/**
+ * "Field finished" (Sam, 17 Oct 2026): a harvest record (counts_as
+ * 'harvest', field_finished true) saying the field, or one crop area of it,
+ * is done. Not in the Record work list: it has its own form
+ * (components/FieldFinishedForm.tsx) that also keeps the combine settings.
+ */
+export const FIELD_FINISHED = 'field_finished'
+export const FIELD_FINISHED_LABEL = 'Field finished'
+
 export function workTypeLabel(rec: Pick<FieldWorkRecord, 'work_type' | 'work_type_other'>): string {
+  if (rec.work_type === FIELD_FINISHED) return FIELD_FINISHED_LABEL
   if (rec.work_type === 'other') return rec.work_type_other?.trim() || 'Other'
   return WORK_TYPES.find((t) => t.key === rec.work_type)?.label ?? rec.work_type
 }
@@ -377,4 +387,43 @@ export function handDayByField(days: readonly HandWorkDay[], pick: 'first' | 'la
     if (!cur || (pick === 'first' ? v < cur : v > cur)) out.set(d.field_id, v)
   }
   return out
+}
+
+// ------------------------------------------------------------------ field finished
+
+export type FinishRow = Pick<FieldWorkRecord, 'field_id' | 'zone_id' | 'crop_year' | 'started_at' | 'finished_at'> & {
+  field_finished?: boolean | null
+}
+
+export type FinishDay = { finished: string; started: string | null }
+
+/** The key a finish is filed under: the crop area, or '' for the whole field. */
+export const finishKey = (fieldId: string, zoneId: string | null | undefined) => `${fieldId}:${zoneId ?? ''}`
+
+/**
+ * The latest "Field finished" per field and crop area in `year`, as farm
+ * days. A record with only a start counts as finished that day.
+ */
+export function finishedDays(recs: readonly FinishRow[], year: number, timeZone = farmTz()): Map<string, FinishDay> {
+  const day = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone })
+  const out = new Map<string, FinishDay>()
+  for (const r of recs) {
+    if (!r.field_finished || r.crop_year !== year) continue
+    const at = r.finished_at ?? r.started_at
+    if (!at) continue
+    const k = finishKey(r.field_id, r.zone_id)
+    const finished = day(at)
+    const cur = out.get(k)
+    if (!cur || finished > cur.finished) out.set(k, { finished, started: r.started_at ? day(r.started_at) : null })
+  }
+  return out
+}
+
+/**
+ * The finish for a field, or one crop area of it: the area's own, else one
+ * for the whole field. A whole-field question is answered only by a
+ * whole-field finish: one area done is not the field done.
+ */
+export function finishedFor(days: ReadonlyMap<string, FinishDay>, fieldId: string, zoneId: string | null | undefined): FinishDay | null {
+  return (zoneId ? days.get(finishKey(fieldId, zoneId)) : undefined) ?? days.get(finishKey(fieldId, null)) ?? null
 }

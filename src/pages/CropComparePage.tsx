@@ -28,12 +28,12 @@ type Overrides = { yield?: string; price?: string; cost?: string; extraAc?: stri
 /** A field's crops by year: ten years of history, and the plan for years not yet harvested. */
 function useFieldTimeline(fieldId: string | null) {
   return useQuery({
-    queryKey: ['crop-compare-field', fieldId],
+    queryKey: ['crop-compare-field', 2, fieldId],
     enabled: Boolean(fieldId),
     staleTime: 5 * 60_000,
     queryFn: async () => {
       const [hist, plans, zones] = await Promise.all([
-        supabase.from('crop_yields_v').select('crop_year, crop_id, acres, yield_per_acre, clean_yield_per_acre, yield_unit, source, field_id').eq('field_id', fieldId!),
+        supabase.from('crop_yields_v').select('crop_year, crop_id, acres, yield_per_acre, clean_yield_per_acre, yield_unit, source, field_id, exclude_from_averages, abnormal_reason').eq('field_id', fieldId!),
         supabase.from('crop_plans').select('crop_year, crop_id').eq('field_id', fieldId!),
         supabase.from('field_crop_zones').select('crop_year, crop_id').eq('field_id', fieldId!),
       ])
@@ -145,9 +145,10 @@ export function CropComparePage() {
       costShare: share.costShare,
     }
     const ev = evaluate(fctx, crop, year, cropsById, pref, ctx.rulesByReg)
+    // Every harvest here; one marked not a normal year is listed and marked (the averages skip it).
     const grown = (timeline.data?.hist ?? [])
-      .filter((h) => h.crop_id === cropId && isActualYield({ ...h, acres: h.acres == null ? null : Number(h.acres) }, basis.unit, null))
-      .map((h) => ({ year: h.crop_year, y: Number(h.clean_yield_per_acre ?? h.yield_per_acre) }))
+      .filter((h) => h.crop_id === cropId && isActualYield({ ...h, acres: h.acres == null ? null : Number(h.acres), exclude_from_averages: false }, basis.unit, null))
+      .map((h) => ({ year: h.crop_year, y: Number(h.clean_yield_per_acre ?? h.yield_per_acre), ...(h.exclude_from_averages ? { abnormal: h.abnormal_reason ?? 'not a normal year' } : {}) }))
       .sort((a, b) => b.year - a.year)
     const waterIn = fctx.irrigated ? (fctx.waterNeedIn?.(cropId) ?? crop.waterNeedIn ?? null) : null
     return { crop, basis, share, side, ev, grown, waterIn, direct, lines: allLines.filter((l) => !l.farm_fixed), o }
@@ -346,7 +347,8 @@ type SideData = {
   share: { revShare: number; costShare: number; note: string }
   side: CompareSide
   ev: { blocked: string[]; cautions: string[]; plus: string[]; labels: { product: string; registration: string }[] }
-  grown: { year: number; y: number }[]
+  /** abnormal: the reason a year is marked not normal. */
+  grown: { year: number; y: number; abnormal?: string }[]
   waterIn: number | null
   /** The input budget less the farm's fixed expenses, $/ac. */
   direct: number | null
@@ -461,7 +463,7 @@ function SideCard({
       {fixed != null && fixed > 0 && <AgainstFixed m={m} fixed={fixed} full={yieldFor(s.side, fixed)} unit={u} />}
 
       <p className="mt-2 text-[11px] text-gray-500">
-        {s.grown.length ? `Grown here: ${s.grown.slice(0, 5).map((g) => `${g.year} ${fmtYield(g.y, u)}`).join(' · ')}` : 'No harvest of this crop on record here.'}
+        {s.grown.length ? `Grown here: ${s.grown.slice(0, 5).map((g) => `${g.year} ${fmtYield(g.y, u)}${g.abnormal ? ` (abnormal — left out of averages: ${g.abnormal})` : ''}`).join(' · ')}` : 'No harvest of this crop on record here.'}
         {s.waterIn != null && ` · Needs about ${Math.round(s.waterIn)}" of irrigation`}
       </p>
     </section>

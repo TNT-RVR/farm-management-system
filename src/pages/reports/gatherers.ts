@@ -35,6 +35,7 @@ import {
 import { fromExportColumns, longDate, pick, yearParam, type GatherContext, type Gathered, type Made, type ParamValues, type ReportData } from '@/lib/reports/framework'
 import { gatherSprayRecords } from '@/lib/reports/spray'
 import { gatherFieldSeason } from '@/lib/reports/season'
+import { useSeasonWrapUpRun } from '@/lib/reports/season-wrap-up-data'
 import { gatherSeededAcreage } from '@/lib/reports/afsc'
 import { gatherAfscProduction } from '@/lib/reports/afsc-production'
 import { gatherHail } from '@/lib/reports/hail'
@@ -82,6 +83,7 @@ import { farmBrand } from '@/lib/farm-setup'
 import { supabase } from '@/lib/supabase'
 import { useQuery } from '@tanstack/react-query'
 import { gatherNTrial } from '@/lib/reports/n-trial'
+import { gatherCombineBoundaries, gatherCombineFieldNames } from '@/lib/reports/combine-monitor'
 import { gatherInvoiceCopies } from '@/lib/reports/invoices'
 import { gatherAlertLog } from '@/lib/reports/alerts'
 import { gatherManifests } from '@/lib/reports/manifests'
@@ -416,6 +418,7 @@ export const GATHERERS: Record<BuiltId, Gatherer> = {
   'yield-history': { run: gatherYieldHistory },
   'yield-vs-estimate': { useRun: useYieldVsEstimateRun },
   'field-season': { run: gatherFieldSeason },
+  'season-wrap-up': { useRun: useSeasonWrapUpRun },
   'afsc-acreage': { run: gatherSeededAcreage },
   'afsc-production': { run: gatherAfscProduction },
   hail: { run: gatherHail },
@@ -454,6 +457,8 @@ export const GATHERERS: Record<BuiltId, Gatherer> = {
   'cow-cost': { run: gatherCowCost },
   'fuel-by-field': { run: gatherFuel },
   'equipment-service': { run: gatherEquipment },
+  'combine-boundaries': { run: gatherCombineBoundaries },
+  'combine-field-names': { run: gatherCombineFieldNames },
   trucking: { run: gatherTrucking },
   'crop-pnl': { useRun: useCropPnlRun },
   'cost-of-production': { useRun: useCostOfProductionRun },

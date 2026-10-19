@@ -11,6 +11,7 @@ import { supabase } from './supabase'
 import type { CropInputRow, CropPriceRow } from './queries'
 import type { YieldRecord } from './forecast'
 import { fetchAreaYields } from './cropAreaYields'
+import { fetchAbnormalYears, withAbnormal } from './abnormal-yields'
 
 const PAGE = 1000
 
@@ -42,11 +43,13 @@ export function useAllCropInputs() {
 /**
  * Every crop_history row with a yield; forecast.ts decides which are harvests.
  * A split field's year comes from its crop areas instead: the field's own row
- * holds one crop's harvest spread over the whole field.
+ * holds one crop's harvest spread over the whole field. Each carries its
+ * "not a normal year" mark (abnormal-yields.ts), which averages skip.
  */
 export function useYieldHistory() {
   return useQuery({
-    queryKey: ['crop_history', 'yields'],
+    // v2: rows carry exclude_from_averages / abnormal_reason.
+    queryKey: ['crop_history', 'yields', 2],
     staleTime: 10 * 60_000,
     queryFn: async (): Promise<YieldRecord[]> => {
       const rows = await all<{
@@ -67,14 +70,15 @@ export function useYieldHistory() {
           .range(a, b),
       )
       const n = (v: number | string | null) => (v == null ? null : Number(v))
-      const areas = (await fetchAreaYields()).filter((a) => a.yield_per_acre != null)
+      const [allAreas, marks] = await Promise.all([fetchAreaYields(), fetchAbnormalYears()])
+      const areas = allAreas.filter((a) => a.yield_per_acre != null)
       const split = new Set(areas.map((a) => `${a.field_id}:${a.crop_year}`))
-      return [
+      return withAbnormal([
         ...rows
           .filter((r) => !split.has(`${r.field_id}:${r.crop_year}`))
           .map((r) => ({ ...r, acres: n(r.acres), yield_per_acre: n(r.yield_per_acre), clean_yield_per_acre: n(r.clean_yield_per_acre) })),
         ...areas.map((a) => ({ field_id: a.field_id, crop_id: a.crop_id, crop_year: a.crop_year, acres: a.acres, yield_per_acre: a.yield_per_acre, clean_yield_per_acre: null, yield_unit: a.yield_unit, source: a.source })),
-      ]
+      ], marks)
     },
   })
 }

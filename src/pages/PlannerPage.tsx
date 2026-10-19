@@ -25,6 +25,7 @@ import { budgetExportColumns, planExportColumns, usePlanRows } from '@/lib/repor
 import { cutLabel, formatYieldRange, isRange, parseYieldText, planYieldText } from '@/lib/yield-estimate'
 import { cn } from '@/lib/utils'
 import { GoalCell, VersusCell } from '@/components/YieldScoreCells'
+import { CROP_DEFAULT } from '@/lib/forecast'
 
 function SourceBadge({ label, title: why }: { label: string; title?: string }) {
   // Harvest yields stand out from estimates; a pre-clean one is flagged,
@@ -38,7 +39,7 @@ function SourceBadge({ label, title: why }: { label: string; title?: string }) {
         ? 'bg-green-100 text-green-800'
         : label === 'forecast'
           ? 'bg-sky-100 text-sky-800'
-          : /^\d{4}$/.test(label)
+          : /^\d{4}$/.test(label) || label === CROP_DEFAULT
             ? 'bg-amber-50 text-amber-700'
             : 'bg-gray-100 text-gray-400'
   const title =
@@ -417,7 +418,7 @@ export function PlannerPage() {
                 }}
                 className="w-24 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums"
               />
-              {r.yieldSource && <SourceBadge label={r.yieldSource} title={r.yieldNote || undefined} />}
+              {r.yieldSource && <SourceBadge label={r.yieldSource === 'goal' ? CROP_DEFAULT : r.yieldSource} title={r.yieldNote || undefined} />}
             </div>
             {r.cutPct > 0 && r.yieldPerAcre != null && (
               <span className="mt-0.5 text-[11px] font-medium tabular-nums text-amber-800">
@@ -457,7 +458,15 @@ export function PlannerPage() {
         ),
     },
     goal: { className: 'text-right', render: (r) => <GoalCell row={r} canEdit={canEdit} /> },
-    vs_estimate: { render: (r) => <VersusCell score={r.score} /> },
+    // The "not a normal year" mark is about the averages, not the plan, so a locked year can still be marked.
+    vs_estimate: {
+      render: (r) => (
+        <VersusCell
+          score={r.score}
+          mark={r.crop ? { fieldId: r.field.id, cropId: r.crop.id, cropYear, cropName: r.crop.name, canEdit: hasManagerAccess(profile?.role) } : undefined}
+        />
+      ),
+    },
     price: {
       className: 'text-right tabular-nums',
       render: (r) =>

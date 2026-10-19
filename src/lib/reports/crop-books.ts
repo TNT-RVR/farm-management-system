@@ -63,6 +63,8 @@ export type YieldFrom = 'actual' | 'typed' | 'field avg' | 'farm avg' | 'goal' |
 export type BookRow = {
   fieldId: string
   field: string
+  /** The crop area (field_crop_zones.id) on a split field; null or absent for the whole field. */
+  zoneId?: string | null
   crop: CropRow | null
   unit: string | null
   acres: number
@@ -317,6 +319,7 @@ export function buildCropBooks(inp: BooksInput): CropBooks {
       out.push({
         fieldId,
         field,
+        zoneId: r.zoneId ?? null,
         crop: r.crop,
         unit: r.crop?.yield_unit ?? null,
         acres,
@@ -461,5 +464,5 @@ export function useCropBooks(year: number) {
       extraLines: operating,
     })
   }
-  return { ready, error, build, crops: plan.crops }
+  return { ready, error, build, crops: plan.crops, planRows: plan.rows }
 }

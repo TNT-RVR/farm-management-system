@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './supabase'
-import type { Database } from './database.types'
+import type { Database, Json } from './database.types'
+import { weatherForField } from './work-record-weather'
 import type { CombineCropKey, SettingKey } from './combine'
 
 export type CombineSettingsRow = Database['public']['Tables']['combine_settings']['Row']
@@ -74,7 +75,8 @@ export function useSaveCombineSettings(cropYear: number) {
 
 export function useLossChecks(cropYear: number) {
   return useQuery({
-    queryKey: ['combine_loss_checks', cropYear],
+    // v2: checks carry the settings, moisture and weather snapshot (20261017050000).
+    queryKey: ['combine_loss_checks', 'v2', cropYear],
     queryFn: async (): Promise<LossCheckRow[]> => {
       const { data, error } = await supabase
         .from('combine_loss_checks')
@@ -88,16 +90,58 @@ export function useLossChecks(cropYear: number) {
   })
 }
 
+/**
+ * Every year's checks of one crop, newest first, for "What worked" and the
+ * conditions card's history line (lib/combine-what-worked.ts).
+ */
+export function useCropLossHistory(cropKey: string | null) {
+  return useQuery({
+    queryKey: ['combine_loss_checks', 'v2', 'crop', cropKey ?? ''],
+    enabled: Boolean(cropKey),
+    queryFn: async (): Promise<LossCheckRow[]> => {
+      const { data, error } = await supabase
+        .from('combine_loss_checks')
+        .select('*')
+        .eq('crop_key', cropKey as LossCheckRow['crop_key'])
+        .order('checked_at', { ascending: false })
+        .limit(1000)
+      if (error) throw error
+      return data ?? []
+    },
+  })
+}
+
+/**
+ * Save a check. The weather at the field for that hour is fetched after the
+ * row is in (so a slow weather service never loses the check) and written
+ * onto it once, as a snapshot (lib/work-record-weather.ts).
+ */
 export function useSaveLossCheck(cropYear: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (
       v: Omit<Database['public']['Tables']['combine_loss_checks']['Insert'], 'crop_year'>,
     ) => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('combine_loss_checks')
         .insert({ ...v, crop_year: cropYear, machine: v.machine ?? MACHINE })
+        .select('id, checked_at')
+        .single()
       if (error) throw error
+      if (v.field_id && data) {
+        try {
+          const at = data.checked_at
+          const w = await weatherForField(v.field_id, { from: at, to: at })
+          if (w) {
+            await supabase
+              .from('combine_loss_checks')
+              .update({ weather: w.weather as unknown as Json, weather_source: w.source, weather_at: at })
+              .eq('id', data.id)
+          }
+        } catch {
+          // Saved without the weather; the check itself is in.
+        }
+      }
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['combine_loss_checks'] }),
   })
@@ -120,6 +164,12 @@ export type LossCheckPatch = Partial<
     | 'yield_bu_per_acre'
     | 'loss_bu_per_acre'
     | 'loss_pct'
+    | 'equipment_id'
+    | 'operator'
+    | SettingKey
+    | 'header_type'
+    | 'moisture_pct'
+    | 'moisture_from'
   >
 >
 

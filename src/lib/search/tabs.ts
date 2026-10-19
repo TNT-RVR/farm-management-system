@@ -41,6 +41,8 @@ export const TAB_ENTRIES: TabEntry[] = [
   { label: 'Agenda', page: 'Monday meeting', to: '/meeting?tab=agenda', exact: true },
   { label: 'This week', page: 'Monday meeting', to: '/meeting?tab=calendar', exact: true, keywords: 'week calendar' },
   { label: "What's new", page: 'Monday meeting', to: '/meeting?tab=whats-new', exact: true, keywords: 'changes updates app changelog' },
+  // What's missing (/missing): the checklist; its top lines are a card on the agenda.
+  { label: "What's missing", page: 'Monday meeting', to: '/missing', exact: true, keywords: 'missing data checklist fill in setup gaps blank to do' },
 
   // Map section (useTab 'map')
   { label: 'Map', page: 'Map', to: '/map?tab=map', exact: true, keywords: 'farm map' },
@@ -81,12 +83,15 @@ export const TAB_ENTRIES: TabEntry[] = [
   { label: 'What do I change?', page: 'Combine', to: '/combine?tab=fix', exact: true, keywords: 'troubleshoot adjust' },
   { label: 'Loss check', page: 'Combine', to: '/combine?tab=loss', exact: true, keywords: 'combine loss' },
   { label: 'From the manual', page: 'Combine', to: '/combine?tab=book', exact: true, keywords: 'operator manual CR' },
+  { label: 'Monitor files', page: 'Combine', to: '/combine?tab=monitor', exact: true, keywords: 'IntelliView display boundaries shapefile USB stick field names' },
 
   // Calculator (useTab 'calculator')
   { label: 'Water', page: 'Calculator', to: '/calculator?tab=water', exact: true, keywords: 'volume flow depth' },
   { label: 'Bushels & weight', page: 'Calculator', to: '/calculator?tab=bushels', exact: true, keywords: 'bushel calculator' },
   { label: 'General', page: 'Calculator', to: '/calculator?tab=general', exact: true, keywords: 'weight area distance liquid unit converter' },
   { label: 'Planter', page: 'Calculator', to: '/calculator?tab=planter', exact: true, keywords: 'seeding rate' },
+  { label: 'Operation cost', page: 'Calculator', to: '/calculator?tab=operation', exact: true, keywords: 'job cost estimate spraying seeding field work fuel labour wages inputs' },
+  { label: 'Irrigation cost', page: 'Calculator', to: '/calculator?tab=irrigation', exact: true, keywords: 'pivot water cost inch power kwh pumping allotment licence' },
 
   // Chemicals (useTab 'chemicals')
   { label: 'Registry', page: 'Chemicals', to: '/chemicals?tab=registry', exact: true, keywords: 'labels pesticide registry' },
@@ -171,8 +176,10 @@ export const TAB_ENTRIES: TabEntry[] = [
   { label: 'Profile', page: 'Settings', to: '/settings?section=profile', exact: true },
   { label: 'Sign-in security', page: 'Settings', to: '/settings?section=security', exact: true, keywords: 'mfa authenticator' },
   { label: 'Notifications', page: 'Settings', to: '/settings?section=notifications', exact: true, keywords: 'push alerts' },
+  // Notifications (/notifications): `?show=unread` and `?kind=<label>` pick its filters.
+  { label: 'Unread', page: 'Notifications', to: '/notifications?show=unread', exact: true, keywords: 'notifications unread new bell' },
   { label: 'Home screen', page: 'Settings', to: '/settings?section=home', exact: true, keywords: 'tiles' },
-  { label: 'Connected apps', page: 'Settings', to: '/settings?section=apps', exact: true, keywords: 'any.do anydo tasks sync to-do' },
+  { label: 'Connected apps', page: 'Settings', to: '/settings?section=device', exact: true, keywords: 'any.do anydo tasks sync to-do' },
   { label: 'This device', page: 'Settings', to: '/settings?section=device', exact: true },
   // Settings › Farm setup parts (`?part=`)
   { label: 'Overview', page: 'Farm setup', to: '/settings?tab=Farm setup&part=overview', exact: true, adminOnly: true },

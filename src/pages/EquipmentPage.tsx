@@ -5,11 +5,14 @@ import { hasManagerAccess, useAuth } from '@/lib/auth'
 import {
   categoryRank,
   engineHoursLabel,
+  useAllServicePlans,
   useEquipment,
   useSyncEquipment,
   type Equipment,
 } from '@/lib/equipment'
+import { serviceSummary } from '@/lib/maintenance'
 import { WARRANTY_STYLE, warrantyStatus } from '@/lib/warranty'
+import { staleHoursLabel, staleHoursMachines } from '@/lib/stale-hours'
 import { AddButton } from '@/components/RecordEditor'
 import { ManualEquipmentModal } from '@/components/EquipmentEditor'
 import { cn } from '@/lib/utils'
@@ -34,7 +37,16 @@ function describe(e: Equipment): string {
   return fresh.join(' · ')
 }
 
-function EquipmentRow({ e }: { e: Equipment }) {
+function EquipmentRow({
+  e,
+  service,
+  staleSince,
+}: {
+  e: Equipment
+  service: { overdue: number; dueSoon: number } | undefined
+  /** When its hours stopped updating (lib/stale-hours.ts), else null. */
+  staleSince: string | null
+}) {
   const hours = engineHoursLabel(e)
   const detail = describe(e)
   const warranty = warrantyStatus(e)
@@ -63,6 +75,26 @@ function EquipmentRow({ e }: { e: Equipment }) {
             {warranty.label}
           </span>
         )}
+        {/* Like the warranty badge: only when there is something to do. */}
+        {service && (service.overdue > 0 || service.dueSoon > 0) && (
+          <span
+            className={cn(
+              'flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium',
+              service.overdue > 0 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800',
+            )}
+          >
+            <Wrench className="h-3 w-3" />
+            {service.overdue > 0
+              ? `${service.overdue} service${service.overdue === 1 ? '' : 's'} overdue`
+              : `${service.dueSoon} service${service.dueSoon === 1 ? '' : 's'} due soon`}
+          </span>
+        )}
+        {staleSince && (
+          <span className="flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+            <Gauge className="h-3 w-3" />
+            {staleHoursLabel(staleSince)}
+          </span>
+        )}
         <span className="ml-auto flex items-center gap-3 text-xs tabular-nums text-gray-600">
           {hours ? (
             <span className="flex items-center gap-1">
@@ -87,6 +119,7 @@ export function EquipmentPage() {
   const [adding, setAdding] = useState(false)
   const { data: all, isLoading } = useEquipment(showArchived)
   const sync = useSyncEquipment()
+  const { data: plans } = useAllServicePlans()
 
   const groups = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -111,6 +144,13 @@ export function EquipmentPage() {
   // is to say there is something to deal with even while you are searching for
   // something else.
   const endingSoon = (all ?? []).filter((e) => warrantyStatus(e).state === 'soon').length
+  const serviceByMachine = useMemo(() => {
+    const byId = new Map<string, NonNullable<typeof plans>>()
+    for (const p of plans ?? []) byId.set(p.equipment_id, [...(byId.get(p.equipment_id) ?? []), p])
+    return new Map((all ?? []).map((e) => [e.id, serviceSummary(byId.get(e.id) ?? [], e.engine_hours)]))
+  }, [plans, all])
+  const servicesDue = [...serviceByMachine.values()].reduce((n, s) => n + s.overdue + s.dueSoon, 0)
+  const staleHours = useMemo(() => staleHoursMachines(all ?? []), [all])
 
   return (
     <div className="p-4 md:p-6">
@@ -126,6 +166,12 @@ export function EquipmentPage() {
               <span className="font-medium text-amber-700">
                 {' · '}
                 {endingSoon} {endingSoon === 1 ? 'warranty' : 'warranties'} running out
+              </span>
+            )}
+            {servicesDue > 0 && (
+              <span className="font-medium text-amber-700">
+                {' · '}
+                {servicesDue} {servicesDue === 1 ? 'service' : 'services'} due
               </span>
             )}
           </p>
@@ -203,7 +249,7 @@ export function EquipmentPage() {
               </h2>
               <ul>
                 {rows.map((e) => (
-                  <EquipmentRow key={e.id} e={e} />
+                  <EquipmentRow key={e.id} e={e} service={serviceByMachine.get(e.id)} staleSince={staleHours.get(e.id) ?? null} />
                 ))}
               </ul>
             </section>

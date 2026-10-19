@@ -3,6 +3,16 @@ import { supabase } from '@/lib/supabase'
 import { compareFieldNames } from '@/lib/queries'
 import { productResolver, sprayedProducts, type PriceBookAlias, type PriceBookProduct } from '@/lib/spray-products'
 import { fetchAll, fieldLabel, num, yearParam, type Cell, type GatherContext, type ParamValues, type ReportData, type ReportGroup } from './framework'
+import { SETUP_LINKS } from '@/lib/setup-links'
+import { varietyKey } from '@/lib/crop-variety-settings'
+import type { HandWorkRow } from '@/lib/field-work'
+import { seedingDates, type SeasonPlantRow, type SeedOpRow } from '@/lib/seeding-dates'
+import { farmDay } from '@/lib/harvest-date'
+import { billGaps, monthRuns, type BillRow } from './bill-gaps'
+import { staleHoursDate, staleHoursMachines, type HoursRow } from '@/lib/stale-hours'
+import { expectedYield, YIELD_WINDOW, type YieldRecord } from '@/lib/forecast'
+import { changeList, changeSummary, type FieldChange } from '@/lib/combine-monitor'
+import { loadCombineStates } from '@/lib/combine-monitor-state'
 
 /**
  * Missing information: everything the app still needs a person to fill in,
@@ -15,16 +25,57 @@ import { fetchAll, fieldLabel, num, yearParam, type Cell, type GatherContext, ty
  * irrigation) or closed to the person is skipped: there is nothing they can
  * do about it. The fixed-cost check runs only for an owner, and says only
  * that the breakdown is missing, never what is in it.
+ *
+ * The same rows make the checklist (missingChecklist): one line per check —
+ * what is missing, why it matters, how many, and where it is fixed — on the
+ * Monday meeting and the /missing page. Every line is fixed by a manager
+ * (the tables are manager-written); others see the list read-only.
  */
 
-export type MissingItem = { area: string; item: string; missing: string; where: string; path: string }
+export type MissingItem = {
+  area: string
+  item: string
+  missing: string
+  where: string
+  path: string
+  /** The check that found it (set by missingItems). */
+  check?: string
+}
 
 export type MissingData = {
   year: number
   fields: { id: string; name: string; active: boolean; legal_land_description: string | null }[]
-  plans: { field_id: string; crop_id: string | null; crop_year: number; planned_acres: unknown }[]
+  plans: { field_id: string; crop_id: string | null; crop_year: number; planned_acres: unknown; variety?: string | null }[]
   tenure: { field_id: string; crop_year: number; rented_to: string | null }[]
-  crops: { id: string; name: string; active: boolean; default_yield_per_acre: unknown; renter_only: boolean | null; land_rent_only: boolean | null }[]
+  crops: {
+    id: string
+    name: string
+    active: boolean
+    default_yield_per_acre: unknown
+    renter_only: boolean | null
+    land_rent_only: boolean | null
+    days_to_maturity?: unknown
+    counts_for_harvest?: boolean | null
+    own_use?: boolean | null
+    yield_unit?: string | null
+  }[]
+  /** Split fields' crop areas this year. */
+  zones: { id: string; field_id: string; crop_id: string; crop_year: number }[]
+  varieties: { id: string; crop_id: string; variety: string; days_to_maturity: unknown }[]
+  seasons: SeasonPlantRow[]
+  seedOps: SeedOpRow[]
+  handWork: HandWorkRow[]
+  baleDefaults: { bale_type: string; lb_per_bale: unknown }[]
+  /** Baled feed-supply entries (unit round / big square). */
+  baled: { unit: string; lb_per_bale: unknown; feed_type_id: string | null }[]
+  feedTypes: { id: string; default_unit: string | null; default_lb_per_bale: unknown }[]
+  /** Managers only, like the bills; empty for everyone else. */
+  gasSites: { site_id: string; place: string | null }[]
+  haulPlans: { field_id: string; crop_year: number }[]
+  powerBills: BillRow[]
+  gasBills: BillRow[]
+  /** The farm's calendar day, for how long a bill is overdue. */
+  today: string
   prices: { crop_id: string; crop_year: number; price_per_unit: unknown }[]
   inputs: { crop_id: string; crop_year: number; name: string | null; category: string | null }[]
   pivots: {
@@ -41,11 +92,14 @@ export type MissingData = {
     nozzles_replaced_year: unknown
     end_gun: boolean | null
     pivot_pressure_psi: unknown
+    vri?: boolean | null
     /** The landowner runs this pivot and its pump for us: nothing to ask for. */
     operated_by?: string | null
+    /** A pivot not in use: nothing to ask for either. */
+    not_used?: boolean | null
     fields: { name: string; active: boolean | null } | null
   }[]
-  pumps: { id: string; name: string; horse_power: unknown; gpm: unknown }[]
+  pumps: { id: string; name: string; horse_power: unknown; gpm: unknown; lat?: number | null; lon?: number | null }[]
   entries: { field_id: string }[]
   routes: { from_key: string; to_key: string; method: string | null }[]
   ops: { products: unknown; crop_season: number | null }[]
@@ -66,10 +120,23 @@ export type MissingData = {
   progress: { field_id: string; crop_year: number; has_harvest: boolean | null }[]
   loads: { field_id: string | null }[]
   history: { field_id: string; crop_year: number; yield_per_acre: unknown; clean_yield_per_acre: unknown }[]
+  /** The fleet's hour-meter readings (not archived). */
+  equipment: (HoursRow & { name: string | null })[]
+  /** Earlier seasons' yields by crop (crop_yields_v, marks included), for what this year's estimates rest on. */
+  yieldHistory: YieldRecord[]
+  /** Combines marked loaded, with what has changed on the app's side since (lib/combine-monitor-state.ts). */
+  combines?: { id: string; name: string; changes: FieldChange[] }[]
 }
 
 export type MissingCheck = {
   id: string
+  /** The checklist line: what is missing. */
+  title: string
+  /** Why it matters, in eight words or fewer. */
+  why: string
+  area: string
+  /** Where the whole line is filled in. */
+  path: string
   /** Owner-only checks: the fixed-cost breakdown is theirs alone. */
   ownersOnly?: boolean
   run: (d: MissingData) => MissingItem[]
@@ -90,6 +157,36 @@ function farmedFields(d: MissingData): Set<string> {
 const sentence = (parts: string[]) => parts.join('; ').replace(/^./, (c) => c.toUpperCase())
 const blank = (v: unknown) => v == null || v === ''
 const list = (xs: string[]) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`)
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
+/** Grown once and cut for years: no seeding date or days to maturity to ask for. */
+const PERENNIAL = /alfalfa|grass|hay|pasture/i
+const FALLOW = /fallow/i
+
+/**
+ * What is growing this year that the farm harvests itself: each crop area
+ * on a split field, else the field's plan. Not land rented out, not a
+ * renter's crop, not fallow or a perennial, not an archived field.
+ */
+function harvestedUnits(d: MissingData): { fieldId: string; zoneId: string | null; cropId: string; variety: string | null }[] {
+  const crop = new Map(d.crops.map((c) => [c.id, c]))
+  const active = new Set(d.fields.filter((f) => f.active).map((f) => f.id))
+  const rentedOut = new Set(d.tenure.filter((t) => t.crop_year === d.year && t.rented_to).map((t) => t.field_id))
+  const ours = (cropId: string) => {
+    const c = crop.get(cropId)
+    return !!c && c.counts_for_harvest !== false && !c.renter_only && !c.land_rent_only && !FALLOW.test(c.name) && !PERENNIAL.test(c.name)
+  }
+  const zones = d.zones.filter((z) => z.crop_year === d.year)
+  const zoned = new Set(zones.map((z) => z.field_id))
+  const plan = new Map(d.plans.filter((p) => p.crop_year === d.year && p.crop_id).map((p) => [p.field_id, p]))
+  const out: { fieldId: string; zoneId: string | null; cropId: string; variety: string | null }[] = []
+  for (const z of zones) {
+    const p = plan.get(z.field_id)
+    out.push({ fieldId: z.field_id, zoneId: z.id, cropId: z.crop_id, variety: p?.crop_id === z.crop_id ? (p.variety ?? null) : null })
+  }
+  for (const p of plan.values()) if (!zoned.has(p.field_id)) out.push({ fieldId: p.field_id, zoneId: null, cropId: p.crop_id!, variety: p.variety ?? null })
+  return out.filter((u) => active.has(u.fieldId) && !rentedOut.has(u.fieldId) && ours(u.cropId))
+}
 
 /* ── Checks ─────────────────────────────────────────────────────────────── */
 
@@ -98,9 +195,13 @@ export const CHECKS: MissingCheck[] = [
     // The pumping cost, the water review and the efficiency suggestion all
     // read these off Pivot Information.
     id: 'pivot-equipment',
+    title: "Pivots missing details",
+    why: "needed for pumping cost and water review",
+    area: 'Irrigation',
+    path: '/irrigation-info?tab=pivot',
     run: (d) =>
       [...d.pivots]
-        .filter((p) => p.fields?.active !== false && !p.operated_by)
+        .filter((p) => p.fields?.active !== false && !p.operated_by && !p.not_used)
         .sort((a, b) => compareFieldNames(a.fields?.name ?? '', b.fields?.name ?? ''))
         .map((p) => {
           const gaps: string[] = []
@@ -115,6 +216,7 @@ export const CHECKS: MissingCheck[] = [
           if (blank(p.nozzles_replaced_year)) equipment.push('year nozzles were replaced')
           if (p.end_gun == null) equipment.push('end gun')
           if (blank(p.pivot_pressure_psi)) equipment.push('pressure')
+          if (p.vri == null) equipment.push('VRI')
           if (equipment.length) gaps.push(`equipment: ${list(equipment)}`)
           return gaps.length ? { area: 'Irrigation', item: `Pivot on ${fieldLabel(p.fields?.name ?? '?')}`, missing: `No ${list(gaps)}`, where: 'Pivots & pumps → Pivot Information', path: '/irrigation-info?tab=pivot' } : null
         })
@@ -122,6 +224,10 @@ export const CHECKS: MissingCheck[] = [
   },
   {
     id: 'pump-power',
+    title: "Pumps with no horsepower or flow",
+    why: "needed to work out pumping cost",
+    area: 'Irrigation',
+    path: '/irrigation-info?tab=pump',
     run: (d) =>
       d.pumps
         .map((p) => {
@@ -132,6 +238,10 @@ export const CHECKS: MissingCheck[] = [
   },
   {
     id: 'licence-volume',
+    title: "Water licences with no volume",
+    why: "needed to judge pivots against the licence",
+    area: 'Irrigation',
+    path: '/irrigation',
     run: (d) =>
       d.licences
         .filter((l) => num(l.volume) == null)
@@ -139,6 +249,10 @@ export const CHECKS: MissingCheck[] = [
   },
   {
     id: 'district-allotment',
+    title: "District allotment not set",
+    why: "last year’s figure is used instead",
+    area: 'Irrigation',
+    path: '/irrigation',
     run: (d) =>
       d.pivots.some((p) => p.water_source === 'smrid' || !blank(p.smrid_area)) && !d.allotments.some((a) => a.year === d.year)
         ? [{ area: 'Irrigation', item: `District allotment ${d.year}`, missing: `Not set for ${d.year}; the last year’s figure is being used`, where: 'Soil moisture → Overview', path: '/irrigation' }]
@@ -148,6 +262,10 @@ export const CHECKS: MissingCheck[] = [
     // Field work, fuel and hauling are measured from the shop to the field's
     // entry; without a pin a suggested one is used.
     id: 'entry-pins',
+    title: "Fields with no entry pin",
+    why: "needed for distances, fuel and hauling",
+    area: 'Travel & trucking',
+    path: '/hauling?tab=distances',
     run: (d) => {
       const pinned = new Set(d.entries.map((e) => e.field_id))
       return d.fields
@@ -158,6 +276,10 @@ export const CHECKS: MissingCheck[] = [
   },
   {
     id: 'farm-trails',
+    title: "Fields with no farm trail mapped",
+    why: "last stretch is a straight-line guess",
+    area: 'Travel & trucking',
+    path: '/hauling?tab=distances',
     run: (d) => {
       const name = fieldName(d)
       const ids = new Set(d.routes.filter((r) => r.from_key === 'shop' && r.to_key.startsWith('field:') && r.method === 'road+straight').map((r) => r.to_key.slice(6)))
@@ -170,6 +292,10 @@ export const CHECKS: MissingCheck[] = [
   },
   {
     id: 'legal-land',
+    title: "Fields with no legal land description",
+    why: "needed for reports, maps and insurance",
+    area: 'Fields',
+    path: '/fields',
     run: (d) =>
       d.fields
         .filter((f) => f.active && !f.legal_land_description?.trim())
@@ -177,6 +303,10 @@ export const CHECKS: MissingCheck[] = [
   },
   {
     id: 'harvest-yield',
+    title: "Harvested fields with no yield",
+    why: "needed for yield records and scorecards",
+    area: 'Crops',
+    path: '/fields',
     run: (d) => {
       const name = fieldName(d)
       const harvested = new Set([...d.progress.filter((p) => p.crop_year === d.year && p.has_harvest).map((p) => p.field_id), ...d.loads.map((l) => l.field_id).filter((x): x is string => !!x)])
@@ -192,6 +322,10 @@ export const CHECKS: MissingCheck[] = [
     // A crop grown on our own account needs a price and a normal yield for
     // the plan, the budget and the break-even. Rented-out crops do not.
     id: 'crop-price-yield',
+    title: "Crops with no price or normal yield",
+    why: "needed for the plan and break-even",
+    area: 'Crops',
+    path: '/crops',
     run: (d) => {
       const grown = new Set(d.plans.filter((p) => p.crop_year === d.year && p.crop_id).map((p) => p.crop_id!))
       return d.crops
@@ -206,7 +340,46 @@ export const CHECKS: MissingCheck[] = [
     },
   },
   {
+    // Nothing typed and too few harvests to average: this year's estimate
+    // (the scorecard's, from seasons before this one) is the crop's normal
+    // yield, so that figure had better be right. A crop with no normal yield
+    // at all is the line above.
+    id: 'default-yield-estimate',
+    title: 'Crops estimated from a default yield',
+    why: 'not enough history yet; check the normal yield',
+    area: 'Crops',
+    path: '/crops',
+    run: (d) => {
+      const units = harvestedUnits(d)
+      const fields = new Map<string, Set<string>>()
+      for (const u of units) fields.set(u.cropId, (fields.get(u.cropId) ?? new Set()).add(u.fieldId))
+      return d.crops
+        .filter((c) => fields.has(c.id) && num(c.default_yield_per_acre) != null)
+        .map((c) => {
+          const normal = num(c.default_yield_per_acre)!
+          const unit = c.yield_unit ?? ''
+          const e = expectedYield({ cropId: c.id, year: d.year - 1, unit, goal: normal, history: d.yieldHistory })
+          if (e.basis !== 'goal') return null
+          const n = fields.get(c.id)!.size
+          const figure = `${normal.toLocaleString('en-CA')}${unit ? ` ${unit}/ac` : ''}`
+          return {
+            area: 'Crops',
+            item: c.name,
+            missing: `${plural(n, 'field')} estimated at its ${e.label.replace('normal yield', `normal yield of ${figure}`)}`,
+            where: 'The crop → Normal yield',
+            path: `/crops/${c.id}`,
+          }
+        })
+        .filter((x): x is MissingItem => x != null)
+        .sort((a, b) => a.item.localeCompare(b.item))
+    },
+  },
+  {
     id: 'crop-inputs',
+    title: "Crops with no input costs",
+    why: "needed for the crop budget",
+    area: 'Crops',
+    path: '/crops',
     run: (d) => {
       const grown = new Set(d.plans.filter((p) => p.crop_year === d.year && p.crop_id).map((p) => p.crop_id!))
       return d.crops
@@ -219,6 +392,10 @@ export const CHECKS: MissingCheck[] = [
     // The 50/50 deals take hail and crop insurance off the top; with no line
     // named for it, nothing comes off.
     id: 'insurance',
+    title: "No insurance premium in the inputs",
+    why: "needed for the 50/50 deal split",
+    area: 'Money',
+    path: '/crops',
     run: (d) =>
       d.inputs.some((i) => i.crop_year === d.year && /insurance|hail|afsc/i.test(`${i.name ?? ''} ${i.category ?? ''}`))
         ? []
@@ -226,6 +403,10 @@ export const CHECKS: MissingCheck[] = [
   },
   {
     id: 'fixed-costs',
+    title: "Fixed costs not broken down",
+    why: "needed for the full cost per acre",
+    area: 'Money',
+    path: '/plan?tab=farm%20costs',
     ownersOnly: true,
     run: (d) => {
       const out: MissingItem[] = []
@@ -238,6 +419,10 @@ export const CHECKS: MissingCheck[] = [
   },
   {
     id: 'unmatched-products',
+    title: "Deere products not in the price book",
+    why: "needed for spray costs and PCP numbers",
+    area: 'Spraying',
+    path: '/chemicals?tab=prices',
     run: (d) => {
       const resolve = productResolver(d.products, d.aliases)
       const ignored = new Set(d.aliases.filter((a) => a.ignored).map((a) => a.deere_name.trim().toLowerCase()))
@@ -252,6 +437,10 @@ export const CHECKS: MissingCheck[] = [
     // The grazing restrictions and the rotation's re-crop rules are read off
     // each label; one not read yet is a product the checks know nothing about.
     id: 'label-rules',
+    title: "Labels not read yet",
+    why: "needed for grazing and re-crop checks",
+    area: 'Spraying',
+    path: '/chemicals',
     run: (d) => {
       const regs = new Set(d.products.map((p) => p.pmra_registration?.trim()).filter((x): x is string => !!x))
       const name = new Map(d.products.filter((p) => p.pmra_registration).map((p) => [p.pmra_registration!.trim(), p.name]))
@@ -271,6 +460,10 @@ export const CHECKS: MissingCheck[] = [
     // The migration's starting figures: every class got these, and the
     // feed budget runs on them until someone weighs and scores the cattle.
     id: 'herd-defaults',
+    title: "Herd weights still the starting figures",
+    why: "needed for an accurate feed budget",
+    area: 'Cattle',
+    path: '/herd',
     run: (d) => {
       const ranch = new Map(d.ranches.map((r) => [r.id, r.name]))
       const start = (c: string) => (/bull/i.test(c) ? 1700 : /heifer/i.test(c) ? 900 : /cal(f|ves)/i.test(c) ? 650 : /cow/i.test(c) ? 1400 : null)
@@ -287,6 +480,10 @@ export const CHECKS: MissingCheck[] = [
   },
   {
     id: 'feed-on-hand',
+    title: "Ranches with no feed counted",
+    why: "needed for “will the feed last”",
+    area: 'Cattle',
+    path: '/feed-records',
     run: (d) =>
       d.ranches
         .filter((r) => !d.feed.some((f) => f.ranch_id === r.id && (num(f.remaining_lb) ?? 0) > 0))
@@ -294,6 +491,10 @@ export const CHECKS: MissingCheck[] = [
   },
   {
     id: 'cattle-costs',
+    title: "Cattle cost assumptions missing",
+    why: "needed for the cattle budget",
+    area: 'Cattle',
+    path: '/cattle-settings',
     run: (d) =>
       d.ranches
         .map((r) => {
@@ -316,6 +517,10 @@ export const CHECKS: MissingCheck[] = [
   },
   {
     id: 'pasture-links',
+    title: "Grazing pastures not on the map",
+    why: "needed to graze them on the map",
+    area: 'Cattle',
+    path: '/grazing',
     run: (d) =>
       d.grazingPastures
         .filter((g) => g.active !== false && !g.pasture_id)
@@ -323,11 +528,19 @@ export const CHECKS: MissingCheck[] = [
   },
   {
     id: 'my-maps',
+    title: "Ranches with no Google My Map",
+    why: "needed to sync pastures and water points",
+    area: 'Cattle',
+    path: '/cattle',
     run: (d) =>
       d.ranches.filter((r) => !r.mymaps_url).map((r) => ({ area: 'Cattle', item: `${r.name} map`, missing: 'Google My Map not linked — its pastures and water points are not synced', where: 'Cattle → Map', path: '/cattle' })),
   },
   {
     id: 'leases',
+    title: "Leases missing dates or terms",
+    why: "needed for rent and lease reminders",
+    area: 'Leases',
+    path: '/leases',
     run: (d) =>
       d.leases
         .filter((l) => l.active !== false)
@@ -343,17 +556,223 @@ export const CHECKS: MissingCheck[] = [
         })
         .filter((x): x is MissingItem => x != null),
   },
+  {
+    // The harvest estimate is seeding + days to maturity, moved by the weather.
+    id: 'days-to-maturity',
+    title: 'Crops with no days to maturity',
+    why: 'needed for harvest-date estimates',
+    area: 'Crops',
+    path: '/crops',
+    run: (d) => {
+      const crop = new Map(d.crops.map((c) => [c.id, c]))
+      const without = new Map<string, Set<string>>()
+      for (const u of harvestedUnits(d)) {
+        const c = crop.get(u.cropId)!
+        const k = varietyKey(u.variety)
+        const own = k ? num(d.varieties.find((v) => v.crop_id === u.cropId && varietyKey(v.variety) === k)?.days_to_maturity) : null
+        if ((own != null && own > 0) || (num(c.days_to_maturity) ?? 0) > 0) continue
+        without.set(u.cropId, (without.get(u.cropId) ?? new Set()).add(u.fieldId))
+      }
+      return [...without]
+        .map(([id, fields]) => ({ area: 'Crops', item: crop.get(id)!.name, missing: `No days to maturity — ${plural(fields.size, 'field')} with no harvest estimate`, where: 'Crop settings → the crop (or its variety)', path: `/crops/${id}` }))
+        .sort((a, b) => a.item.localeCompare(b.item))
+    },
+  },
+  {
+    // The date typed in Irrigation → Setup, else Deere's seeding pass, else one entered by hand.
+    id: 'seeding-date',
+    title: 'Planned fields with no seeding date',
+    why: 'needed for harvest-date estimates',
+    area: 'Crops',
+    path: SETUP_LINKS.plantingDate(),
+    run: (d) => {
+      const seeded = seedingDates(d.year, d.seasons, d.seedOps, d.handWork)
+      const name = fieldName(d)
+      const ids = new Set(harvestedUnits(d).filter((u) => !seeded(u.fieldId, u.zoneId)).map((u) => u.fieldId))
+      return [...ids]
+        .map((id) => ({ area: 'Crops', item: name(id), missing: `No seeding date for ${d.year} — no harvest estimate`, where: 'Soil moisture → Setup, the field’s row', path: SETUP_LINKS.plantingDate(id) }))
+        .sort(byName)
+    },
+  },
+  {
+    // Baled feed with no weight of its own, nor one on its feed, is weighed by these.
+    id: 'bale-weights',
+    title: 'Bale weights blank',
+    why: 'needed to count baled feed in pounds',
+    area: 'Cattle',
+    path: '/feed-records',
+    run: (d) => {
+      const type = new Map(d.feedTypes.map((t) => [t.id, t]))
+      return (['round', 'big_square'] as const)
+        .map((unit) => {
+          if (num(d.baleDefaults.find((b) => b.bale_type === unit)?.lb_per_bale) != null) return null
+          const unweighed = d.baled.filter((e) => {
+            if (e.unit !== unit || num(e.lb_per_bale) != null) return false
+            const t = e.feed_type_id ? type.get(e.feed_type_id) : undefined
+            return !(t && t.default_unit === unit && num(t.default_lb_per_bale) != null)
+          }).length
+          return unweighed
+            ? { area: 'Cattle', item: unit === 'round' ? 'Round bale weight' : 'Big square bale weight', missing: `Blank — ${plural(unweighed, 'baled entry', 'baled entries')} cannot be weighed`, where: 'Feed records → Counted on hand → Bale weights', path: '/feed-records' }
+            : null
+        })
+        .filter((x): x is MissingItem => x != null)
+    },
+  },
+  {
+    id: 'gas-place',
+    title: 'Gas sites with no place named',
+    why: 'needed for gas cost by place',
+    area: 'Utilities',
+    path: '/utilities?tab=gas',
+    run: (d) =>
+      d.gasSites
+        .filter((s) => !s.place?.trim())
+        .map((s) => ({ area: 'Utilities', item: `Gas site ${s.site_id}`, missing: 'No place named — its cost is not put to a yard or building', where: 'Utilities → Gas', path: '/utilities?tab=gas' })),
+  },
+  {
+    id: 'power-bills',
+    title: 'Power bill months missing',
+    why: 'needed for power cost per pump',
+    area: 'Utilities',
+    path: '/utilities?tab=power',
+    run: (d) =>
+      billGaps(d.powerBills, d.today).map((g) => ({
+        area: 'Utilities',
+        item: `${g.retailer} ${g.account}`,
+        missing: `No bill for ${plural(g.missing.length, 'month')}: ${monthRuns(g.missing)}${g.closed ? ' (account closed)' : ''}`,
+        where: 'Utilities → Power',
+        path: '/utilities?tab=power',
+      })),
+  },
+  {
+    id: 'gas-bills',
+    title: 'Gas bill months missing',
+    why: 'needed for heating cost by place',
+    area: 'Utilities',
+    path: '/utilities?tab=gas',
+    run: (d) =>
+      billGaps(d.gasBills, d.today).map((g) => ({
+        area: 'Utilities',
+        item: `${g.retailer} ${g.account}`,
+        missing: `No bill for ${plural(g.missing.length, 'month')}: ${monthRuns(g.missing)}${g.closed ? ' (account closed)' : ''}`,
+        where: 'Utilities → Gas',
+        path: '/utilities?tab=gas',
+      })),
+  },
+  {
+    id: 'pump-location',
+    title: 'Pumps with no map location',
+    why: 'needed for a pin on the map',
+    area: 'Irrigation',
+    path: '/irrigation-info?tab=pump',
+    run: (d) =>
+      d.pumps
+        .filter((p) => p.lat == null || p.lon == null)
+        .map((p) => ({ area: 'Irrigation', item: /pump/i.test(p.name) ? p.name : `Pump ${p.name}`, missing: 'No latitude and longitude — no pin on the map', where: 'Pivots & pumps → Pump Information → the pump', path: `/irrigation-info?tab=pump&pump=${p.id}` }))
+        .sort((a, b) => a.item.localeCompare(b.item)),
+  },
+  {
+    // Where each field's crop goes: straight to the elevator, the bin yard, a buyer.
+    id: 'haul-plan',
+    title: 'Fields with no haul plan',
+    why: 'needed for trucking cost by field',
+    area: 'Travel & trucking',
+    path: '/hauling?tab=trucking',
+    run: (d) => {
+      const crop = new Map(d.crops.map((c) => [c.id, c]))
+      const planned = new Set(d.haulPlans.filter((h) => h.crop_year === d.year).map((h) => h.field_id))
+      const name = fieldName(d)
+      // Fed at home (silage, green feed) is not trucked off the farm.
+      const ids = new Set(harvestedUnits(d).filter((u) => !crop.get(u.cropId)?.own_use && !planned.has(u.fieldId)).map((u) => u.fieldId))
+      return [...ids].map((id) => ({ area: 'Travel & trucking', item: name(id), missing: `No haul plan for the ${d.year} crop`, where: 'Travel & trucking → Trucking', path: '/hauling?tab=trucking' })).sort(byName)
+    },
+  },  {
+    // Service reminders count engine hours; a machine gone quiet never comes due.
+    id: 'stale-hours',
+    title: 'Machines whose hours stopped updating',
+    why: 'needed for service reminders',
+    area: 'Equipment',
+    path: '/equipment',
+    run: (d) => {
+      const stale = staleHoursMachines(d.equipment, Date.parse(`${d.today}T12:00:00Z`))
+      return d.equipment
+        .filter((m) => stale.has(m.id))
+        .map((m) => ({
+          area: 'Equipment',
+          item: m.name ?? 'A machine',
+          missing: `Hours not updating since ${staleHoursDate(stale.get(m.id)!)} — its service due points by hours can't be trusted`,
+          where: 'Equipment → the machine (check its Deere modem)',
+          path: `/equipment/${m.id}`,
+        }))
+        .sort((a, b) => a.item.localeCompare(b.item))
+    },
+  },
+  {
+    // A combine's display only knows the fields it was last loaded with.
+    id: 'combine-boundaries',
+    title: 'Combines with field boundaries to update',
+    why: 'needed for right combine maps and acres',
+    area: 'Equipment',
+    path: '/combine?tab=monitor',
+    run: (d) =>
+      (d.combines ?? [])
+        .filter((c) => c.changes.length)
+        .map((c) => ({
+          area: 'Equipment',
+          item: c.name,
+          missing: `${changeSummary(c.changes)}: ${changeList(c.changes)}`,
+          where: 'Combine → Monitor files',
+          path: '/combine?tab=monitor',
+        })),
+  },
 ]
 
 /** Every check's rows, owner-only ones only for an owner, minus those whose page the person cannot use. */
 export function missingItems(d: MissingData, o: { isOwner: boolean; viewOff?: (path: string) => boolean }): MissingItem[] {
   return CHECKS.filter((c) => !c.ownersOnly || o.isOwner)
-    .flatMap((c) => c.run(d))
+    .flatMap((c) => c.run(d).map((i) => ({ ...i, check: c.id })))
     .filter((i) => !o.viewOff?.(i.path.split('?')[0]))
 }
 
 /** The order areas are listed in. */
-const AREAS = ['Fields', 'Crops', 'Money', 'Spraying', 'Irrigation', 'Travel & trucking', 'Cattle', 'Leases']
+const AREAS = ['Fields', 'Crops', 'Money', 'Spraying', 'Irrigation', 'Equipment', 'Travel & trucking', 'Utilities', 'Cattle', 'Leases']
+
+/* ── The checklist ──────────────────────────────────────────────────────── */
+
+export type ChecklistLine = {
+  id: string
+  area: string
+  title: string
+  why: string
+  count: number
+  /** Where it is filled in: the one item's own spot when there is one, else the check's page. */
+  path: string
+  items: MissingItem[]
+}
+
+/** One line per check that found something, grouped by area in the order the areas are read. */
+export function missingChecklist(items: MissingItem[]): ChecklistLine[] {
+  const by = new Map<string, MissingItem[]>()
+  for (const i of items) if (i.check) by.set(i.check, [...(by.get(i.check) ?? []), i])
+  const rank = (a: string) => AREAS.indexOf(a) + 1 || 99
+  return CHECKS.filter((c) => by.has(c.id))
+    .map((c) => {
+      const rows = by.get(c.id)!
+      return { id: c.id, area: c.area, title: c.title, why: c.why, count: rows.length, path: rows.length === 1 ? rows[0].path : c.path, items: rows }
+    })
+    .sort((a, b) => rank(a.area) - rank(b.area))
+}
+
+/** The checklist by area, for the full page. */
+export function checklistByArea(lines: ChecklistLine[]): { area: string; lines: ChecklistLine[] }[] {
+  const out: { area: string; lines: ChecklistLine[] }[] = []
+  for (const l of lines) {
+    const last = out.at(-1)
+    if (last?.area === l.area) last.lines.push(l)
+    else out.push({ area: l.area, lines: [l] })
+  }
+  return out
+}
 
 export function missingGroups(items: MissingItem[]): ReportGroup[] {
   const by = new Map<string, Cell[][]>()
@@ -366,7 +785,14 @@ export function missingGroups(items: MissingItem[]): ReportGroup[] {
 /* ── Loading ────────────────────────────────────────────────────────────── */
 
 /** One read of everything the checks look at. Takes the client so a script can run it too. */
-export async function loadMissingData(sb: SupabaseClient, year: number, isOwner: boolean): Promise<MissingData> {
+export async function loadMissingData(
+  sb: SupabaseClient,
+  year: number,
+  isOwner: boolean,
+  opts: { isManager?: boolean; today?: string } = {},
+): Promise<MissingData> {
+  const isManager = opts.isManager ?? true
+  const today = opts.today ?? farmDay(new Date().toISOString())
   // The few filters used here, without the client's full generic typing
   // (which gives up on a table name that is only a string).
   type Sel = {
@@ -374,6 +800,9 @@ export async function loadMissingData(sb: SupabaseClient, year: number, isOwner:
     gte: (c: string, v: unknown) => Sel
     lte: (c: string, v: unknown) => Sel
     is: (c: string, v: null) => Sel
+    in: (c: string, v: unknown[]) => Sel
+    or: (f: string) => Sel
+    not: (c: string, op: string, v: unknown) => Sel
     order: (c: string) => Sel
     range: (a: number, b: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>
   }
@@ -383,19 +812,55 @@ export async function loadMissingData(sb: SupabaseClient, year: number, isOwner:
       if (filter) q = filter(q)
       return q.order(order).range(a, b)
     })
-  const [fields, plans, tenure, crops, prices, inputs, pivots, pumps, entries, routes, ops, products, aliases, labels, ranches, herd, feed, cattleCosts, leases, grazingPastures, licences, allotments, fixedCosts, fixedLines, progress, loads, history] =
-    await Promise.all([
+  // Bills and gas sites are the managers' alone (row security); not asking is plainer.
+  const managers = <T>(read: () => Promise<T[]>) => (isManager ? read() : Promise.resolve([] as T[]))
+  // Before its migration lands (or with no combine marked loaded) this is empty, not an error.
+  const combinesP = loadCombineStates(sb, year)
+    .then((states) => states.filter((s) => s.load).map((s) => ({ id: s.machine.id, name: s.machine.name ?? 'A combine', changes: s.changes })))
+    .catch(() => [])
+  const [
+    [zones, varieties, seasons, seedOps, handWork, baleDefaults, baled, feedTypes, gasSites, haulPlans, powerBills, gasBills, equipment, yieldRows],
+    [fields, plans, tenure, crops, prices, inputs, pivots, pumps, entries, routes, ops, products, aliases, labels, ranches, herd, feed, cattleCosts, leases, grazingPastures, licences, allotments, fixedCosts, fixedLines, progress, loads, history],
+  ] = await Promise.all([
+    Promise.all([
+      all<MissingData['zones'][number]>('field_crop_zones', 'id, field_id, crop_id, crop_year', (q) => q.eq('crop_year', year)),
+      all<MissingData['varieties'][number]>('crop_variety_settings', 'id, crop_id, variety, days_to_maturity'),
+      all<SeasonPlantRow & { id?: string }>('field_crop_seasons', 'id, field_id, zone_id, planting_date', (q) => q.eq('crop_year', year)),
+      all<SeedOpRow>('jd_field_operations', 'field_id, crop_season, started_at', (q) =>
+        q
+          // Season checked in seedingDates: a pass without one counts in the year it was made.
+          .or('operation_type.ilike.seeding,operation_type.ilike.planting')
+          .gte('started_at', `${year - 1}-07-01`)
+          .lte('started_at', `${year}-12-31T23:59:59Z`)
+          .is('duplicate_of', null)
+          .not('field_id', 'is', null),
+      ),
+      // An older database without hand-entered field work reads as none.
+      all<HandWorkRow>('field_work_records', 'field_id, crop_year, counts_as, started_at, finished_at', (q) => q.eq('crop_year', year).eq('counts_as', 'seeding')).catch(() => [] as HandWorkRow[]),
+      all<MissingData['baleDefaults'][number]>('bale_weight_defaults', 'bale_type, lb_per_bale'),
+      all<MissingData['baled'][number]>('feed_inventory', 'unit, lb_per_bale, feed_type_id', (q) => q.in('unit', ['round', 'big_square'])),
+      all<MissingData['feedTypes'][number]>('feed_types', 'id, default_unit, default_lb_per_bale'),
+      managers(() => all<MissingData['gasSites'][number]>('gas_sites', 'site_id, place')),
+      all<MissingData['haulPlans'][number]>('field_haul_plans', 'field_id, crop_year', (q) => q.eq('crop_year', year)),
+      managers(() => all<BillRow>('power_bills', 'retailer, account_number, bill_date, period_start, period_end', (q) => q.eq('status', 'read'))),
+      managers(() => all<BillRow>('gas_bills', 'retailer, account_number, bill_date, period_start, period_end', (q) => q.eq('status', 'read'))),
+      all<MissingData['equipment'][number]>('jd_equipment', 'id, name, engine_hours, engine_hours_at, archived, is_manual', (q) => q.eq('archived', false)),
+      all<Record<string, unknown>>('crop_yields_v', 'field_id, crop_id, crop_year, acres, yield_per_acre, clean_yield_per_acre, yield_unit, source, exclude_from_averages', (q) =>
+        q.gte('crop_year', year - YIELD_WINDOW).lte('crop_year', year - 1).not('yield_per_acre', 'is', null),
+      ),
+    ]),
+    Promise.all([
       all<MissingData['fields'][number]>('fields', 'id, name, active, legal_land_description'),
-      all<MissingData['plans'][number]>('crop_plans', 'field_id, crop_id, crop_year, planned_acres', (q) => q.eq('crop_year', year)),
+      all<MissingData['plans'][number]>('crop_plans', 'field_id, crop_id, crop_year, planned_acres, variety', (q) => q.eq('crop_year', year)),
       all<MissingData['tenure'][number]>('field_year_tenure', 'field_id, crop_year, rented_to', (q) => q.eq('crop_year', year)),
-      all<MissingData['crops'][number]>('crops', 'id, name, active, default_yield_per_acre, renter_only, land_rent_only'),
+      all<MissingData['crops'][number]>('crops', 'id, name, active, default_yield_per_acre, renter_only, land_rent_only, days_to_maturity, counts_for_harvest, own_use, yield_unit'),
       all<MissingData['prices'][number]>('crop_prices', 'crop_id, crop_year, price_per_unit', (q) => q.lte('crop_year', year)),
       all<MissingData['inputs'][number]>('crop_inputs', 'crop_id, crop_year, name, category', (q) => q.eq('crop_year', year)),
       all<MissingData['pivots'][number]>(
         'field_pivots',
-        'field_id, pump_id, gpm, acres_irrigated, water_source, water_licence_id, smrid_area, sprinkler_package, drop_height_ft, pressure_regulators, nozzles_replaced_year, end_gun, pivot_pressure_psi, operated_by, fields(name, active)',
+        'field_id, pump_id, gpm, acres_irrigated, water_source, water_licence_id, smrid_area, sprinkler_package, drop_height_ft, pressure_regulators, nozzles_replaced_year, end_gun, pivot_pressure_psi, vri, operated_by, not_used, fields(name, active)',
       ),
-      all<MissingData['pumps'][number]>('pumps', 'id, name, horse_power, gpm'),
+      all<MissingData['pumps'][number]>('pumps', 'id, name, horse_power, gpm, lat, lon'),
       all<MissingData['entries'][number]>('field_entries', 'field_id'),
       all<MissingData['routes'][number]>('road_routes', 'from_key, to_key, method', (q) => q.eq('from_key', 'shop')),
       all<MissingData['ops'][number]>('jd_field_operations', 'products, crop_season', (q) =>
@@ -418,15 +883,71 @@ export async function loadMissingData(sb: SupabaseClient, year: number, isOwner:
       all<MissingData['progress'][number]>('field_season_progress', 'field_id, crop_year, has_harvest', (q) => q.eq('crop_year', year), 'field_id'),
       all<MissingData['loads'][number]>('bin_loads', 'field_id', (q) => q.eq('crop_year', year)),
       all<MissingData['history'][number]>('crop_history', 'field_id, crop_year, yield_per_acre, clean_yield_per_acre', (q) => q.eq('crop_year', year)),
-    ])
-  return { year, fields, plans, tenure, crops, prices, inputs, pivots, pumps, entries, routes, ops, products, aliases, labels, ranches, herd, feed, cattleCosts, leases, grazingPastures, licences, allotments, fixedCosts, fixedLines, progress, loads, history }
+    ]),
+  ])
+  return {
+    year,
+    today,
+    fields,
+    plans,
+    tenure,
+    crops,
+    prices,
+    inputs,
+    pivots,
+    pumps,
+    entries,
+    routes,
+    ops,
+    products,
+    aliases,
+    labels,
+    ranches,
+    herd,
+    feed,
+    cattleCosts,
+    leases,
+    grazingPastures,
+    licences,
+    allotments,
+    fixedCosts,
+    fixedLines,
+    progress,
+    loads,
+    history,
+    yieldHistory: yieldRows.map((r) => ({
+      field_id: String(r.field_id),
+      crop_id: (r.crop_id as string | null) ?? null,
+      crop_year: Number(r.crop_year),
+      acres: num(r.acres),
+      yield_per_acre: num(r.yield_per_acre),
+      clean_yield_per_acre: num(r.clean_yield_per_acre),
+      yield_unit: (r.yield_unit as string | null) ?? null,
+      source: (r.source as string | null) ?? null,
+      exclude_from_averages: Boolean(r.exclude_from_averages),
+    })),
+    zones,
+    varieties,
+    seasons,
+    seedOps,
+    handWork,
+    baleDefaults,
+    baled,
+    feedTypes,
+    gasSites,
+    haulPlans,
+    powerBills,
+    gasBills,
+    equipment,
+    combines: await combinesP,
+  }
 }
 
 export const MISSING_COLUMNS = [{ label: 'Item' }, { label: 'What is missing' }, { label: 'Where to fill it in' }, { label: 'Page', link: true }]
 
 export async function gatherMissing(p: ParamValues, ctx: GatherContext): Promise<ReportData> {
   const year = yearParam(p, ctx)
-  const data = await loadMissingData(supabase as unknown as SupabaseClient, year, ctx.isOwner)
+  const data = await loadMissingData(supabase as unknown as SupabaseClient, year, ctx.isOwner, { isManager: ctx.isManager, today: ctx.today })
   const items = missingItems(data, { isOwner: ctx.isOwner, viewOff: ctx.viewOff })
   if (!items.length) throw new Error('Nothing is missing — every check passed.')
   const groups = missingGroups(items)

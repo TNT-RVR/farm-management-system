@@ -71,6 +71,7 @@ export type BuiltId =
   | 'yield-history'
   | 'yield-vs-estimate'
   | 'field-season'
+  | 'season-wrap-up'
   | 'afsc-acreage'
   | 'afsc-production'
   | 'hail'
@@ -110,6 +111,8 @@ export type BuiltId =
   | 'cow-cost'
   | 'fuel-by-field'
   | 'equipment-service'
+  | 'combine-boundaries'
+  | 'combine-field-names'
   | 'trucking'
   // Money: crop books, marketing, land deals
   | 'crop-pnl'
@@ -173,6 +176,17 @@ export type ReportEntry = BuiltReport | OpenReport
 
 const year: ParamSpec = { key: 'year', kind: 'year' }
 const PDF_CSV: ReportFormat[] = ['PDF', 'CSV']
+/** Which fields go on the combine display: those on a combine crop that year (crops.on_combines), or all. */
+const combineFields: ParamSpec = {
+  key: 'which',
+  kind: 'choice',
+  label: 'Fields',
+  options: [
+    { value: 'harvest', label: 'On the combines that year' },
+    { value: 'all', label: 'All active fields' },
+  ],
+  default: 'harvest',
+}
 
 export const REPORTS: ReportEntry[] = [
   // ── Crops & fields ──────────────────────────────────────────────────────
@@ -237,6 +251,20 @@ export const REPORTS: ReportEntry[] = [
     what: 'One section per field: crop, seeding, every spray and fertilizer with rates, water, rain, hail and yield.',
     from: { label: 'Fields', to: '/fields' },
     formats: PDF_CSV,
+    params: [year, { key: 'field', kind: 'field', allLabel: 'All fields' }],
+  },
+  // Sam, 16 Oct 2026: for the bank, insurance and next year's plan. Manager-only
+  // as the Crop P&L is (its money is that report's); the fixed-cost breakdown in
+  // it is owners' and the accountant's only, and says "hidden" to anyone else.
+  {
+    mode: 'build',
+    id: 'season-wrap-up',
+    section: 'crops',
+    name: 'Season wrap-up',
+    what: 'A page a field: dates, yield against goal and estimate, cuts and hail, water, revenue, costs and margin; farm by crop.',
+    from: { label: 'Financials', to: '/plan' },
+    formats: PDF_CSV,
+    managerOnly: true,
     params: [year, { key: 'field', kind: 'field', allLabel: 'All fields' }],
   },
   {
@@ -826,6 +854,26 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     mode: 'build',
+    id: 'combine-boundaries',
+    section: 'equipment',
+    name: 'Combine display boundaries',
+    what: 'ZIP: boundary and guidance-line shapefiles for the combine display. CSV and PDF: what is in it.',
+    from: { label: 'Combine', to: '/combine?tab=monitor' },
+    formats: ['ZIP', 'PDF', 'CSV'],
+    params: [year, combineFields],
+  },
+  {
+    mode: 'build',
+    id: 'combine-field-names',
+    section: 'equipment',
+    name: 'Combine display field names',
+    what: 'Each field’s name to create on the combine display, with its farm, acres, crop and variety.',
+    from: { label: 'Combine', to: '/combine?tab=monitor' },
+    formats: PDF_CSV,
+    params: [year, combineFields],
+  },
+  {
+    mode: 'build',
     id: 'trucking',
     section: 'equipment',
     name: 'Trucking cost by field and buyer',
@@ -924,7 +972,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'records',
     name: 'Alert error log',
     what: 'Your alerts over a date range by kind; Markdown bundles each one’s error log for an AI chat to diagnose.',
-    from: { label: 'Alerts', to: '/notifications' },
+    from: { label: 'Notifications', to: '/notifications' },
     formats: ['CSV', 'PDF', 'MD'],
     adminOnly: true,
     params: [

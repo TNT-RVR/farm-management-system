@@ -5,37 +5,18 @@ import { OfflineBanner } from '@/components/OfflineBanner'
 import { InstallBanner } from '@/components/InstallBanner'
 import { useAutoOfflineSave } from '@/lib/offline-auto'
 import { useAppBadge } from '@/lib/useAppBadge'
-import { Bell, LogOut, MoreHorizontal, Search } from 'lucide-react'
+import { LogOut, MoreHorizontal, Search } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { usePushSync } from '@/lib/push'
 import { MOBILE_BAR_COUNT, useNavLayout } from '@/lib/nav'
-import { useNotifications, useNotificationsRealtime } from '@/lib/notifications'
 import { SidebarNav } from './SidebarNav'
 import { CropYearSwitcher } from './CropYearSwitcher'
-import { TvControl } from './TvControl'
+import { NotificationBell } from './NotificationBell'
+import { AvatarStack, UserAvatar } from '@/components/UserAvatar'
+import { useOnlineUsers } from '@/lib/presence'
 import { cn } from '@/lib/utils'
 import { useApplyFarmSetup, useBrand, useFirstRunRedirect } from '@/lib/farm-setup'
 import { DriveBackupScheduler } from '@/components/DriveBackupScheduler'
-
-function NotificationBell() {
-  useNotificationsRealtime()
-  const { data: notifications } = useNotifications()
-  const unread = notifications?.filter((n) => !n.read_at).length ?? 0
-  return (
-    <NavLink
-      to="/notifications"
-      className="relative rounded-md p-2 text-gray-500 hover:bg-gray-100"
-      aria-label={`Alerts${unread ? ` (${unread} unread)` : ''}`}
-    >
-      <Bell className="h-4 w-4" />
-      {unread > 0 && (
-        <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
-          {unread > 9 ? '9+' : unread}
-        </span>
-      )}
-    </NavLink>
-  )
-}
 
 /** Ctrl+K (⌘K), or / when not typing in a box, opens the search from anywhere. */
 function useSearchShortcut() {
@@ -61,6 +42,7 @@ export function AppShell() {
   // Unread count on the installed app's icon.
   useAppBadge()
   const { profile, signOut } = useAuth()
+  const online = useOnlineUsers()
   // The farm's own name and logo (Farm setup), and its farm-wide settings applied.
   const BRAND = useBrand()
   useApplyFarmSetup()
@@ -93,9 +75,18 @@ export function AppShell() {
             <Search className="h-4 w-4" />
           </NavLink>
           <CropYearSwitcher />
-          <TvControl />
           <NotificationBell />
-          <span className="hidden text-sm text-gray-600 md:inline">{profile?.full_name}</span>
+          {online.length > 0 && (
+            <span className="flex items-center" title={`Also in the app now: ${online.map((p) => p.full_name).join(', ')}`}>
+              <AvatarStack people={online} max={4} size="sm" />
+            </span>
+          )}
+          {profile && (
+            <NavLink to="/settings?section=profile" className="flex items-center gap-2 rounded-full" title="Your account and picture">
+              <UserAvatar person={profile} size="sm" />
+              <span className="hidden text-sm text-gray-600 md:inline">{profile.full_name}</span>
+            </NavLink>
+          )}
           <button
             onClick={() => void signOut()}
             className="rounded-md p-2 text-gray-500 hover:bg-gray-100"

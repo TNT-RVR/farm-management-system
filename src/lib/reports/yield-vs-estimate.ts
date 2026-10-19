@@ -34,11 +34,17 @@ export function yieldVsEstimateColumns(): ExportColumn<PlanRowView>[] {
     { key: 'basis', label: 'Actual is', value: (r) => (r.score?.actual ? (r.score.actual.clean ? 'clean' : 'pre-clean') : '') },
     { key: 'estimate', label: 'Estimate /ac', value: (r) => r1(r.score?.estimate.value) },
     { key: 'how', label: 'Estimate from', value: (r) => r.score?.estimate.note ?? '' },
+    { key: 'crop_default', label: 'Crop default', value: (r) => (r.score?.estimate.fromDefault ? 'yes' : '') },
     { key: 'vs_est', label: 'vs estimate /ac', value: (r) => r1(r.score?.vsEstimate?.diff) },
     { key: 'vs_est_pct', label: 'vs estimate %', value: (r) => r0(r.score?.vsEstimate?.pct) },
     { key: 'goal', label: 'Goal /ac', value: (r) => r1(r.score?.goal.value) },
     { key: 'goal_from', label: 'Goal from', value: (r) => (r.score?.goal.source === 'field' ? 'field' : r.score?.goal.source === 'crop' ? 'crop default' : '') },
     { key: 'vs_goal', label: 'vs goal /ac', value: (r) => r1(r.score?.vsGoal?.diff) },
     { key: 'vs_goal_pct', label: 'vs goal %', value: (r) => r0(r.score?.vsGoal?.pct) },
+    {
+      key: 'abnormal',
+      label: 'Not a normal year',
+      value: (r) => (r.score?.actual?.abnormal != null ? `left out of averages${r.score.actual.abnormal ? `: ${r.score.actual.abnormal}` : ''}` : ''),
+    },
   ]
 }

@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import type { MultiPolygon } from 'geojson'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { FieldYieldHistory } from '@/components/FieldYieldHistory'
-import { ArrowLeft, CloudHail, ExternalLink, Gauge, MapPin, PenLine, Radio } from 'lucide-react'
+import { ArrowLeft, CloudHail, ExternalLink, FileText, Gauge, MapPin, PenLine, Radio } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useFieldPivots, usePumps, useWaterLicences } from '@/lib/irrigation'
 import { usePlcTurbines } from '@/lib/plc'
@@ -43,6 +43,8 @@ import { useFarmSettings } from '@/lib/farm-setup'
 import { RecordEditModal, rowClick } from '@/components/RecordEditor'
 import { keepInspectionRef } from '@/lib/record-edits'
 import { cn } from '@/lib/utils'
+import { fieldNameProblem } from '@/lib/field-name'
+import { useVisibleReports } from '@/lib/reports/visible'
 import {
   boundariesForYear,
   useAllBoundaries,
@@ -140,6 +142,8 @@ function FieldInfoEditor({
   const [legal, setLegal] = useState(field.legal_land_description ?? '')
   const [dirty, setDirty] = useState(false)
   const { update } = useFieldMutations()
+  // A name goes into file names (combine shapefiles): no / \ : * ? " < > |.
+  const nameProblem = fieldNameProblem(name)
 
   /**
    * The legal land description the boundary actually sits in.
@@ -175,6 +179,7 @@ function FieldInfoEditor({
           <button
             onClick={() =>
               name.trim() &&
+              !nameProblem &&
               update.mutate(
                 {
                   id: field.id,
@@ -183,7 +188,7 @@ function FieldInfoEditor({
                 { onSuccess: () => setDirty(false) },
               )
             }
-            disabled={update.isPending || !name.trim()}
+            disabled={update.isPending || !name.trim() || Boolean(nameProblem)}
             className="rounded-md bg-brand-700 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
           >
             {update.isPending ? 'Saving…' : 'Save'}
@@ -202,6 +207,7 @@ function FieldInfoEditor({
             }}
             className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm text-gray-900 focus:border-brand-600 focus:outline-none disabled:bg-gray-50"
           />
+          {nameProblem && <span className="mt-1 block font-normal text-red-700">{nameProblem}</span>}
         </label>
         <label className="text-xs font-medium text-gray-500">
           Legal land description
@@ -262,6 +268,26 @@ const TABLE_LABELS: Record<string, string> = {
  * full list is a different question and now has its own page.
  */
 const RECENT = 5
+
+/**
+ * "Season wrap-up": this field's page of the report (Reports → Season wrap-up),
+ * opened with the field and the year already picked. Shown to whoever may make
+ * the report — managers, with Financials open to them.
+ */
+function SeasonWrapUpLink({ fieldId, cropYear }: { fieldId: string; cropYear: number }) {
+  const { reports } = useVisibleReports()
+  if (!reports.some((r) => r.id === 'season-wrap-up')) return null
+  return (
+    <div className="mt-4 flex justify-end print:hidden">
+      <Link
+        to={`/reports?open=season-wrap-up&field=${encodeURIComponent(fieldId)}&year=${cropYear}`}
+        className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50"
+      >
+        <FileText className="h-4 w-4 text-brand-700" /> Season wrap-up {cropYear}
+      </Link>
+    </div>
+  )
+}
 
 function ActivityTimeline({ fieldId }: { fieldId: string }) {
   const { data: audit } = useFieldAudit(fieldId)
@@ -867,6 +893,7 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
 
       {section === 'history' && (
         <>
+          <SeasonWrapUpLink fieldId={field.id} cropYear={cropYear} />
           <FieldYieldHistory fieldId={field.id} history={history ?? []} cropName={cropName} canEdit={canEdit} canolaTrait={canolaTrait} />
 
           <div className="mt-4">

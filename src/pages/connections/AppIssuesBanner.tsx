@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { Bot, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
+import { stuckSince } from '@/lib/fixer-stuck'
 
 /**
  * Problems sent to Claude (lib/app-issues.ts, app_issues): every feed alert and
@@ -27,6 +28,9 @@ type Issue = {
   status: 'new' | 'working' | 'fixed' | 'needs_sam' | 'ignored'
   claude_notes: string | null
   fixed_in: string | null
+  updated_at: string
+  /** When Claude started on it (20261016060000); missing until that migration lands. */
+  working_since?: string | null
 }
 
 const STATUS: Record<Issue['status'], { label: string; cls: string }> = {
@@ -45,7 +49,8 @@ export function AppIssuesBanner() {
   const [expanded, setExpanded] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
   const { data } = useQuery({
-    queryKey: ['app_issues'],
+    // v2: rows carry working_since and stalls (20261016060000).
+    queryKey: ['app_issues', 'v2'],
     queryFn: async () => {
       const { data, error } = await db.from('app_issues').select('*').order('last_seen', { ascending: false }).limit(25)
       if (error) throw error
@@ -55,6 +60,8 @@ export function AppIssuesBanner() {
   })
   const waiting = (data ?? []).filter((i) => i.status === 'new' || i.status === 'working').length
   const needsYou = (data ?? []).filter((i) => i.status === 'needs_sam').length
+  const stuck = new Map((data ?? []).map((i) => [i.id, stuckSince(i)]))
+  const stuckCount = [...stuck.values()].filter(Boolean).length
   if (!waiting && !needsYou) return null
   // Open ones first; the settled ones stay below for context.
   const list = [...(data ?? [])].sort((a, b) => Number(OPEN.includes(b.status)) - Number(OPEN.includes(a.status)))
@@ -74,6 +81,7 @@ export function AppIssuesBanner() {
           {waiting ? `${waiting} being worked on` : ''}
           {waiting && needsYou ? ' · ' : ''}
           {needsYou ? <span className="font-medium text-amber-800">{needsYou} need you</span> : ''}
+          {stuckCount ? <span className="font-medium text-red-800">{` · ${stuckCount} stuck`}</span> : ''}
         </span>
       </button>
       {expanded && (
@@ -84,6 +92,9 @@ export function AppIssuesBanner() {
                 <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform', open === i.id && 'rotate-90')} />
                 <span className="min-w-0 flex-1 truncate text-gray-900">{i.title}</span>
                 {i.occurrences > 1 && <span className="text-[11px] tabular-nums text-gray-400">×{i.occurrences}</span>}
+                {stuck.get(i.id) && (
+                  <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-800">stuck since {when(stuck.get(i.id)!)}</span>
+                )}
                 <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', STATUS[i.status].cls)}>{STATUS[i.status].label}</span>
               </button>
               {open === i.id && (

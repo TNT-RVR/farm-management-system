@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { jdAccessToken, jdGet } from '../functions/_jd.mts'
+import { MANAGER_ROLES, jdAccessToken, jdGet } from '../functions/_jd.mts'
+import { runServiceDueUnattended } from './service-due.ts'
 
 // Machines and implements from Operations Center.
 //
@@ -256,9 +257,21 @@ export async function runJdEquipmentSync(sb: SupabaseClient): Promise<EquipmentS
     if (error) throw new Error(error.message)
   }
 
+  // Fresh hours are what the service intervals are measured against, so the
+  // check runs now rather than waiting for the morning sweep. Its failure is
+  // reported in the heartbeat but never fails the sync: the hours are saved.
+  let service: string
+  try {
+    const r = await runServiceDueUnattended(sb, MANAGER_ROLES)
+    service = r ? `; service check: ${r.raised} raised, ${r.updated} updated, ${r.retired} cleared` : '; service check skipped (no active manager)'
+  } catch (e) {
+    service = `; service check failed: ${(e as Error).message}`
+    console.error('[jd-equipment] service check failed', e)
+  }
+
   const detail =
     `${rows.length} machines and implements, ${withHours} reporting engine hours, ` +
-    `${alertCount} alerts`
+    `${alertCount} alerts${service}`
   await sb.rpc('record_integration_heartbeat', {
     p_key: 'jd_equipment',
     p_detail: detail,

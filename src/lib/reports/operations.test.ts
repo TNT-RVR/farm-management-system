@@ -271,7 +271,7 @@ describe('fuel by field', () => {
 })
 
 describe('equipment service', () => {
-  const plan = (over: Partial<ServicePlanRow>): ServicePlanRow => ({ id: 'p', equipment_id: 'm', name: 'Engine oil', interval_hours: 500, interval_months: 12, last_done_hours: null, last_done_on: null, warn_within_hours: 50, notes: null, active: true, ...over })
+  const plan = (over: Partial<ServicePlanRow>): ServicePlanRow => ({ id: 'p', equipment_id: 'm', name: 'Engine oil', interval_hours: 500, interval_months: 12, last_done_hours: null, last_done_on: null, warn_within_hours: 50, warn_within_days: 14, parts: null, notes: null, active: true, ...over })
 
   it('names what is due, or why nothing can be judged', () => {
     const now = new Date(2026, 9, 2, 12)

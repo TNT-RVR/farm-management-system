@@ -162,7 +162,9 @@ async function syncPerson(sb: SupabaseClient, conn: { user_id: string; list_id: 
     const title = stripMarker(t.title ?? '', marker) || 'Task from Any.do'
     const { data: task, error } = await sb
       .from('tasks')
-      .insert({ title, description_md: t.note?.trim() || null, created_by: user, status: 'open', source: 'anydo', source_ref: t.task_id })
+      // tasks.source_ref is a uuid and Any.do's ids are not (every save failed
+      // from 15 Oct). The Any.do id lives on the link row below instead.
+      .insert({ title, description_md: t.note?.trim() || null, created_by: user, status: 'open', source: 'anydo' })
       .select('id')
       .single()
     if (error) throw error

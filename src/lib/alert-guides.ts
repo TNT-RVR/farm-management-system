@@ -145,6 +145,14 @@ const G: Record<string, AlertGuide> = {
     raisedBy: ['netlify/shared/smrid-allotment.ts'],
     tone: 'info',
   },
+  smrid_rate: {
+    name: 'District water rate changed',
+    meaning: 'The irrigation district published a new rate per acre. The app has updated itself; water costs now use it.',
+    steps: ['Open Irrigation → Allocation to see the new rate.'],
+    checks: ['The district policy book linked on that page.'],
+    raisedBy: ['netlify/shared/smrid-rates.ts'],
+    tone: 'info',
+  },
   irrigation: {
     name: 'Irrigation needed',
     meaning: 'The soil-water balance says a field has reached, or is about to reach, its irrigation threshold.',
@@ -308,6 +316,19 @@ const G: Record<string, AlertGuide> = {
     raisedBy: ['netlify/functions/jd-boundaries-cron.mts'],
     tone: 'notice',
   },
+  combine_out_of_date: {
+    name: 'Combine display out of date',
+    meaning:
+      'Since a combine was last marked loaded, a field came onto a crop harvested with the combines (crops "On the combines"), its boundary, name or Deere "Combine" guidance lines changed, or it went off the combine crops or out of use. Its display still has the old picture.',
+    steps: [
+      'Open Combine → Monitor files and look at that combine.',
+      'Press "Download just these", load them as the steps say, then press "Mark loaded".',
+      'Fields to take off: delete them on the display (Data Management → Delete) if you want them gone. The app cannot change the display.',
+    ],
+    checks: ['Sent once per load; the badge on the page keeps counting after that.'],
+    raisedBy: ['netlify/shared/combine-monitor-watch.ts (hourly)'],
+    tone: 'notice',
+  },
   ab_input_prices: {
     name: 'Provincial input prices',
     meaning: 'New provincial farm input prices were published (fuel, fertilizer, feed, labour).',
@@ -338,6 +359,21 @@ const G: Record<string, AlertGuide> = {
     steps: ['Open Tasks.'],
     checks: [],
     raisedBy: ['supabase scheduled reminders'],
+    tone: 'notice',
+  },
+  service_due: {
+    name: 'Service due',
+    meaning:
+      "A machine's service interval (set on its equipment page) is within its warning margin by engine hours from John Deere, or by date, and a task was made for it. The intervals are the farm's own, not Deere's.",
+    steps: [
+      'Open the task, or the machine on Equipment.',
+      'Do the service, then tick the task done (records it at the hours Deere last reported) or press Done on the schedule to enter the meter reading.',
+    ],
+    checks: [
+      'If the hours look wrong, check when Deere last reported them (under the machine name).',
+      'Who gets these is set per machine under "Service tasks go to".',
+    ],
+    raisedBy: ['netlify/shared/service-due.ts (after each equipment sync, and daily)'],
     tone: 'notice',
   },
   pasture_move: {
@@ -376,6 +412,19 @@ const G: Record<string, AlertGuide> = {
     ],
     raisedBy: ['netlify/shared/freeze-watch.ts', 'src/lib/freeze-watch.ts', 'netlify/functions/crop-weather-cron.mts'],
     tone: 'act',
+  },
+  fixer_stuck: {
+    name: 'Claude got stuck fixing a problem',
+    meaning:
+      'The hourly Claude task on the farm computer started on an app problem and was still on it two hours later, so its run stalled. The first time, the problem goes back in the queue for the next run; a second stall is left for a person.',
+    steps: [
+      'Open Settings → Connections: the problem shows under "Problems sent to Claude", with "stuck since" on it while it is stuck.',
+      'Check the farm computer is on and awake, and that Claude Code is running its scheduled task (rvr-fix-app-issues).',
+      'If it stalled twice, open a Claude Code session in the repository and ask it to look at that problem.',
+    ],
+    checks: ['The sweep runs every 15 minutes in the database (cron job app-issue-stall-sweep); the row keeps a note of each stall.'],
+    raisedBy: ['supabase/migrations/20261016060000_fixer_stuck_and_stale_hours.sql', 'src/lib/fixer-stuck.ts'],
+    tone: 'notice',
   },
   app_notice: {
     name: 'App notice',

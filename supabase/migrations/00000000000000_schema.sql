@@ -1600,6 +1600,79 @@ $$;
 ALTER FUNCTION "public"."fn_app_issue_from_alert"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_app_issue_stall_sweep"() RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  r record;
+  n integer := 0;
+  v_now text := to_char(now() at time zone 'America/Edmonton', 'Mon FMDD, HH24:MI');
+  v_since text;
+begin
+  for r in
+    select id, title, working_since, stalls
+      from app_issues
+     where status = 'working'
+       and working_since < now() - interval '2 hours'
+       and stalls < 2
+     for update skip locked
+  loop
+    v_since := to_char(r.working_since at time zone 'America/Edmonton', 'Mon FMDD, HH24:MI');
+    if r.stalls = 0 then
+      update app_issues
+         set status = 'new',
+             stalls = 1,
+             claude_notes = concat_ws(E'\n', nullif(claude_notes, ''), 'Stalled at ' || v_now || ' (on it since ' || v_since || '); put back in the queue.'),
+             updated_at = now()
+       where id = r.id;
+      perform fn_notify_managers('fixer_stuck',
+        'Claude got stuck fixing: ' || left(r.title, 150),
+        'It sat at "working" since ' || v_since || '. Put back in the queue for the next run.',
+        '/integrations',
+        jsonb_build_object('app_issue_id', r.id, 'stalls', 1));
+    else
+      update app_issues
+         set stalls = 2,
+             claude_notes = concat_ws(E'\n', nullif(claude_notes, ''), 'Stalled again at ' || v_now || ' (on it since ' || v_since || '); left for a person to look at.'),
+             updated_at = now()
+       where id = r.id;
+      perform fn_notify_managers('fixer_stuck',
+        'Claude stalled twice fixing: ' || left(r.title, 150),
+        'Stuck at "working" since ' || v_since || ', the second time. Not retried again: it needs a look.',
+        '/integrations',
+        jsonb_build_object('app_issue_id', r.id, 'stalls', 2));
+    end if;
+    n := n + 1;
+  end loop;
+  return n;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_app_issue_stall_sweep"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_app_issue_working_since"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if new.status = 'working' then
+    if tg_op = 'INSERT' or old.status is distinct from 'working' then
+      new.working_since := now();
+    end if;
+  else
+    new.working_since := null;
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_app_issue_working_since"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_apply_hail_inspection"("p_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
@@ -2025,6 +2098,26 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_close_irrigation_task"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_combine_monitor_landowners"("p_crop_year" integer) RETURNS TABLE("field_id" "uuid", "landowner" "text")
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select distinct on (u.fid) u.fid, btrim(l.landlord)
+    from public.land_leases l
+    cross join lateral unnest(l.field_ids) as u(fid)
+   where ((select auth.role()) = 'service_role' or (select is_active()))
+     and l.active
+     and l.direction = 'in'
+     and nullif(btrim(l.landlord), '') is not null
+     and (l.start_date is null or l.start_date <= make_date(p_crop_year, 12, 31))
+     and (l.end_date is null or l.end_date >= make_date(p_crop_year, 1, 1))
+   order by u.fid, l.created_at, l.id
+$$;
+
+
+ALTER FUNCTION "public"."fn_combine_monitor_landowners"("p_crop_year" integer) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_crop_average_crop_changed"() RETURNS "trigger"
@@ -2631,6 +2724,28 @@ $$;
 ALTER FUNCTION "public"."fn_farm_setup_ensure_farm"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_field_name_safe"("p_name" "text") RETURNS "text"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'extensions'
+    AS $_$
+  select btrim(regexp_replace(
+           regexp_replace(
+             regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(
+               p_name,
+               '(^|[^0-9])3/4([^0-9]|$)', '\13 Quarter\2', 'g'),
+               '(^|[^0-9])1/2([^0-9]|$)', '\1Half\2', 'g'),
+               '(^|[^0-9])1/4([^0-9]|$)', '\1Quarter\2', 'g'),
+               '½', 'Half', 'g'),
+               '¼', 'Quarter', 'g'),
+               '¾', '3 Quarter', 'g'),
+             '[[:space:]]*[/\\:*?"<>|]+[[:space:]]*', '-', 'g'),
+           '[[:space:]]{2,}', ' ', 'g'))
+$_$;
+
+
+ALTER FUNCTION "public"."fn_field_name_safe"("p_name" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_field_work_feed_lot"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
@@ -2769,6 +2884,20 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_fields_guard"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_fields_name_safe"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  new.name := public.fn_field_name_safe(new.name);
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_fields_name_safe"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_flag_duplicate_operations"() RETURNS integer
@@ -2976,16 +3105,68 @@ $$;
 ALTER FUNCTION "public"."fn_norm_chem_name"("p" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_notification_gate"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if fn_notification_wanted(new.user_id, new.kind, 'in_app') then
+    return new;
+  end if;
+  if new.kind = 'integration_alert' and new.title like '⚠%' then
+    perform app_issue_record(
+      'integration_alert',
+      'integration_alert:' || coalesce(new.details->>'source_key', new.title) || ':' || coalesce(new.details->>'status', ''),
+      new.title, new.body,
+      coalesce(new.details, '{}'::jsonb) || jsonb_build_object('link', new.link),
+      new.link, null, null
+    );
+  end if;
+  return null;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_notification_gate"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_notification_urgent"("p_kind" "text") RETURNS boolean
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select p_kind = any (array['winterizing_freeze', 'fieldnet_fault', 'crop_weather', 'grazing_conflict'])
+$$;
+
+
+ALTER FUNCTION "public"."fn_notification_urgent"("p_kind" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_notification_wanted"("p_user" "uuid", "p_kind" "text", "p_channel" "text") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select p_kind = 'test' or coalesce((
+    select case when p_channel = 'push' then np.in_app and np.push else np.in_app end
+      from notification_prefs np
+     where np.user_id = p_user and np.kind = p_kind
+  ), true)
+$$;
+
+
+ALTER FUNCTION "public"."fn_notification_wanted"("p_user" "uuid", "p_kind" "text", "p_channel" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_notify"("p_user" "uuid", "p_kind" "text", "p_title" "text", "p_body" "text", "p_link" "text", "p_details" "jsonb" DEFAULT NULL::"jsonb") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
     AS $$
 begin
   if p_user is null then return; end if;
-  if exists (
-    select 1 from notification_prefs
-    where user_id = p_user and kind = p_kind and in_app = false
-  ) then return; end if;
+  -- Switched off: skip the insert. A feed alert goes on to the gate, which
+  -- files its app issue before dropping the row.
+  if p_kind <> 'integration_alert' and not fn_notification_wanted(p_user, p_kind, 'in_app') then
+    return;
+  end if;
   insert into notifications (user_id, kind, title, body, link, details)
   values (p_user, p_kind, p_title, p_body, p_link, p_details);
 end;
@@ -3133,7 +3314,18 @@ CREATE OR REPLACE FUNCTION "public"."fn_push_dispatch"() RETURNS "trigger"
 declare
   v_secret text;
   v_site   text;
+  v_hold   text;
 begin
+  if not fn_notification_wanted(new.user_id, new.kind, 'push') then
+    return new;
+  end if;
+  v_hold := fn_push_hold(new.user_id, new.kind, now());
+  if v_hold is not null then
+    insert into notification_push_queue (notification_id, user_id, reason)
+    values (new.id, new.user_id, v_hold)
+    on conflict (notification_id) do nothing;
+    return new;
+  end if;
   select value into v_secret from app_secrets where key in ('push_hook_secret', 'PUSH_HOOK_SECRET')
    order by key = 'push_hook_secret' desc limit 1;
   select rtrim(value, '/') into v_site from app_secrets where key = 'SITE_URL';
@@ -3149,6 +3341,42 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_push_dispatch"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_push_hold"("p_user" "uuid", "p_kind" "text", "p_at" timestamp with time zone DEFAULT "now"()) RETURNS "text"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  v_tz  text;
+  v_t   time;
+  s     notification_settings%rowtype;
+begin
+  if p_kind = 'test' or fn_notification_urgent(p_kind) then
+    return null;
+  end if;
+  if p_kind <> 'digest' and exists (
+    select 1 from notification_prefs np
+     where np.user_id = p_user and np.kind = p_kind and np.delivery = 'digest'
+  ) then
+    return 'digest';
+  end if;
+  select * into s from notification_settings where user_id = p_user;
+  if not found or not s.quiet_on or s.quiet_start = s.quiet_end then
+    return null;
+  end if;
+  select coalesce(nullif(time_zone, ''), 'America/Edmonton') into v_tz from farm_setup limit 1;
+  v_t := (p_at at time zone coalesce(v_tz, 'America/Edmonton'))::time;
+  if (s.quiet_start < s.quiet_end and v_t >= s.quiet_start and v_t < s.quiet_end)
+     or (s.quiet_start > s.quiet_end and (v_t >= s.quiet_start or v_t < s.quiet_end)) then
+    return 'quiet';
+  end if;
+  return null;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_push_hold"("p_user" "uuid", "p_kind" "text", "p_at" timestamp with time zone) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_queue_label_for_product"() RETURNS "trigger"
@@ -3512,6 +3740,89 @@ end $$;
 ALTER FUNCTION "public"."fn_scale_ticket_match_load"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_service_log_applied"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if tg_op = 'DELETE' then
+    perform fn_service_plan_rebase(old.plan_id);
+    return null;
+  end if;
+  perform fn_service_plan_rebase(new.plan_id);
+  -- Moved to another plan: the one it left follows its own latest entry.
+  if tg_op = 'UPDATE' and old.plan_id is distinct from new.plan_id then
+    perform fn_service_plan_rebase(old.plan_id);
+  end if;
+
+  -- A service recorded straight from the equipment page closes the task the
+  -- sweep raised for it. The flag stops the task's own trigger from logging
+  -- the same service a second time.
+  if tg_op = 'INSERT' and new.plan_id is not null then
+    perform set_config('rvr.service_log_closing', 'on', true);
+    update tasks
+       set status = 'done', completed_by = coalesce(new.done_by, completed_by)
+     where source = 'service' and source_ref = new.plan_id and status = 'open';
+    perform set_config('rvr.service_log_closing', 'off', true);
+  end if;
+  return null;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_service_log_applied"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_service_plan_rebase"("p_plan" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  v_on date;
+  v_hours numeric;
+begin
+  if p_plan is null then return; end if;
+  select l.done_on, l.engine_hours into v_on, v_hours
+    from equipment_service_log l
+   where l.plan_id = p_plan
+   order by l.done_on desc, l.created_at desc
+   limit 1;
+  if not found then return; end if;
+  update equipment_service_plans
+     set last_done_on = v_on, last_done_hours = v_hours, updated_at = now()
+   where id = p_plan
+     and (last_done_on is distinct from v_on or last_done_hours is distinct from v_hours);
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_service_plan_rebase"("p_plan" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_service_task_done"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if new.source = 'service' and new.source_ref is not null
+     and old.status = 'open' and new.status = 'done'
+     and coalesce(current_setting('rvr.service_log_closing', true), 'off') <> 'on' then
+    insert into equipment_service_log (equipment_id, plan_id, done_on, engine_hours, notes, done_by)
+    select p.equipment_id, p.id, (now() at time zone 'America/Edmonton')::date, e.engine_hours,
+           'Recorded when the task was ticked done, at the hours John Deere last reported.',
+           new.completed_by
+      from equipment_service_plans p
+      join jd_equipment e on e.id = p.equipment_id
+     where p.id = new.source_ref;
+  end if;
+  return null;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_service_task_done"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_soil_inputs_hash"("p_report_id" "uuid") RETURNS "text"
     LANGUAGE "sql" STABLE
     AS $$
@@ -3688,10 +3999,12 @@ CREATE OR REPLACE FUNCTION "public"."fn_task_assignee_notify"() RETURNS "trigger
 declare
   v_actor_name text;
   v_title text;
+  v_source task_source;
 begin
   if new.user_id = auth.uid() then return new; end if;
+  select title, source into v_title, v_source from tasks where id = new.task_id;
+  if v_source = 'service' and auth.uid() is null then return new; end if;
   select full_name into v_actor_name from users where id = auth.uid();
-  select title into v_title from tasks where id = new.task_id;
   perform fn_notify(new.user_id, 'task_assigned',
     'Task assigned to you: ' || coalesce(v_title, 'untitled'),
     coalesce('by ' || v_actor_name, null),
@@ -5749,6 +6062,22 @@ CREATE OR REPLACE VIEW "public"."ab_input_latest" WITH ("security_invoker"='true
 ALTER VIEW "public"."ab_input_latest" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."abnormal_yield_years" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "crop_id" "uuid" NOT NULL,
+    "reason" "text" NOT NULL,
+    "marked_by" "uuid" DEFAULT "auth"."uid"(),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "abnormal_yield_years_reason_check" CHECK ((("length"(TRIM(BOTH FROM "reason")) > 0) AND ("length"("reason") <= 200)))
+);
+
+
+ALTER TABLE "public"."abnormal_yield_years" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."ag_news" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "source" "text" NOT NULL,
@@ -5914,6 +6243,8 @@ CREATE TABLE IF NOT EXISTS "public"."app_issues" (
     "claude_notes" "text",
     "fixed_in" "text",
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "working_since" timestamp with time zone,
+    "stalls" integer DEFAULT 0 NOT NULL,
     CONSTRAINT "app_issues_status_check" CHECK (("status" = ANY (ARRAY['new'::"text", 'working'::"text", 'fixed'::"text", 'needs_sam'::"text", 'ignored'::"text"])))
 );
 
@@ -6151,6 +6482,7 @@ CREATE TABLE IF NOT EXISTS "public"."crops" (
     "yield_high_per_acre" numeric,
     "days_to_maturity" integer,
     "goal_yield_per_acre" numeric,
+    "on_combines" boolean DEFAULT true NOT NULL,
     CONSTRAINT "crops_category_new_check" CHECK (("category" = ANY (ARRAY['seed'::"text", 'commercial'::"text", 'own_use'::"text"]))),
     CONSTRAINT "crops_days_to_maturity_check" CHECK ((("days_to_maturity" IS NULL) OR (("days_to_maturity" >= 1) AND ("days_to_maturity" <= 400)))),
     CONSTRAINT "crops_feed_dm_pct_check" CHECK ((("feed_dm_pct" > (0)::numeric) AND ("feed_dm_pct" <= (100)::numeric))),
@@ -6272,6 +6604,10 @@ COMMENT ON COLUMN "public"."crops"."days_to_maturity" IS 'Typical days from seed
 
 
 COMMENT ON COLUMN "public"."crops"."goal_yield_per_acre" IS 'Default goal yield per acre for fields with no goal of their own (crop_plans.goal_yield). Separate from default_yield_per_acre, the normal yield an estimate falls back to.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."on_combines" IS 'Harvested with the combines: puts a field with this crop (plan or crop area) on the combine displays for the year.';
 
 
 
@@ -7100,14 +7436,80 @@ CREATE TABLE IF NOT EXISTS "public"."combine_loss_checks" (
     "grain_grams" numeric,
     "discharge_mode" "text",
     "zone_id" "uuid",
+    "equipment_id" "uuid",
+    "operator" "text",
+    "rotor_rpm" numeric,
+    "concave_mm" numeric,
+    "vane_angle" numeric,
+    "fan_rpm" numeric,
+    "presieve_mm" numeric,
+    "chaffer_mm" numeric,
+    "sieve_mm" numeric,
+    "ground_speed_mph" numeric,
+    "header_type" "text",
+    "settings_from" "text",
+    "moisture_pct" numeric,
+    "moisture_from" "text",
+    "weather" "jsonb",
+    "weather_source" "text",
+    "weather_at" timestamp with time zone,
     CONSTRAINT "combine_loss_checks_crop_key_check" CHECK (("crop_key" = ANY (ARRAY['canola'::"text", 'corn'::"text", 'wheat'::"text", 'sainfoin'::"text", 'beans'::"text", 'durum'::"text", 'barley'::"text", 'oats'::"text"]))),
     CONSTRAINT "combine_loss_checks_discharge_mode_check" CHECK ((("discharge_mode" IS NULL) OR ("discharge_mode" = ANY (ARRAY['spreader'::"text", 'windrow'::"text"])))),
     CONSTRAINT "combine_loss_checks_grain_grams_check" CHECK ((("grain_grams" IS NULL) OR ("grain_grams" >= (0)::numeric))),
+    CONSTRAINT "combine_loss_checks_header_type_check" CHECK ((("header_type" IS NULL) OR ("length"("header_type") <= 40))),
+    CONSTRAINT "combine_loss_checks_moisture_from_check" CHECK ((("moisture_from" IS NULL) OR ("length"("moisture_from") <= 200))),
+    CONSTRAINT "combine_loss_checks_moisture_pct_check" CHECK ((("moisture_pct" IS NULL) OR (("moisture_pct" >= (0)::numeric) AND ("moisture_pct" <= (100)::numeric)))),
+    CONSTRAINT "combine_loss_checks_operator_check" CHECK ((("operator" IS NULL) OR ("length"("operator") <= 80))),
+    CONSTRAINT "combine_loss_checks_settings_from_check" CHECK ((("settings_from" IS NULL) OR ("length"("settings_from") <= 200))),
     CONSTRAINT "combine_loss_checks_source_check" CHECK (("source" = ANY (ARRAY['rotor'::"text", 'shoe'::"text", 'header'::"text", 'unknown'::"text"])))
 );
 
 
 ALTER TABLE "public"."combine_loss_checks" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."combine_loss_checks"."weather" IS 'Snapshot of the weather at the field when the check was taken (lib/work-record-weather.ts). Written once.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."combine_monitor_loads" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "equipment_id" "uuid" NOT NULL,
+    "loaded_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "loaded_by" "uuid" DEFAULT "auth"."uid"(),
+    "fields" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "loaded_count" integer DEFAULT 0 NOT NULL,
+    "note" "text",
+    "alerted_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "combine_monitor_loads_fields_check" CHECK (("jsonb_typeof"("fields") = 'array'::"text")),
+    CONSTRAINT "combine_monitor_loads_loaded_count_check" CHECK (("loaded_count" >= 0)),
+    CONSTRAINT "combine_monitor_loads_note_check" CHECK ((("note" IS NULL) OR ("length"("note") <= 500)))
+);
+
+
+ALTER TABLE "public"."combine_monitor_loads" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."combine_monitor_names" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "farm" "text",
+    "field" "text",
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_by" "uuid" DEFAULT "auth"."uid"(),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "combine_monitor_names_farm_check" CHECK ((("farm" IS NULL) OR (("length"("btrim"("farm")) >= 1) AND ("length"("btrim"("farm")) <= 64)))),
+    CONSTRAINT "combine_monitor_names_field_check" CHECK ((("field" IS NULL) OR (("length"("btrim"("field")) >= 1) AND ("length"("btrim"("field")) <= 64)))),
+    CONSTRAINT "combine_monitor_names_something" CHECK ((("farm" IS NOT NULL) OR ("field" IS NOT NULL)))
+);
+
+
+ALTER TABLE "public"."combine_monitor_names" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."combine_monitor_names" IS 'Combine display names set by hand per field (Farm, Field). Blank = the automatic name. Combine displays only.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."combine_settings" (
@@ -7134,6 +7536,51 @@ ALTER TABLE "public"."combine_settings" OWNER TO "postgres";
 
 
 COMMENT ON COLUMN "public"."combine_settings"."presieve_mm" IS 'Pre-sieve opening, mm. Set by hand on the machine; the manual gives one per crop.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."combine_settings_used" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "used_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "crop_key" "text" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "field_id" "uuid",
+    "equipment_id" "uuid",
+    "rotor_rpm" numeric,
+    "concave_mm" numeric,
+    "vane_angle" numeric,
+    "fan_rpm" numeric,
+    "presieve_mm" numeric,
+    "chaffer_mm" numeric,
+    "sieve_mm" numeric,
+    "ground_speed_mph" numeric,
+    "header_type" "text",
+    "operation_instance" "text",
+    "operator" "text",
+    "tag" "text",
+    "notes" "text",
+    "created_by" "uuid" DEFAULT "auth"."uid"(),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "work_record_id" "uuid",
+    "variety" "text",
+    CONSTRAINT "combine_settings_used_crop_key_check" CHECK (("crop_key" = ANY (ARRAY['canola'::"text", 'corn'::"text", 'wheat'::"text", 'sainfoin'::"text", 'beans'::"text", 'durum'::"text", 'barley'::"text", 'oats'::"text"]))),
+    CONSTRAINT "combine_settings_used_header_type_check" CHECK ((("header_type" IS NULL) OR ("length"("header_type") <= 40))),
+    CONSTRAINT "combine_settings_used_notes_check" CHECK ((("notes" IS NULL) OR ("length"("notes") <= 1000))),
+    CONSTRAINT "combine_settings_used_operation_instance_check" CHECK ((("operation_instance" IS NULL) OR ("length"("operation_instance") <= 40))),
+    CONSTRAINT "combine_settings_used_operator_check" CHECK ((("operator" IS NULL) OR ("length"("operator") <= 80))),
+    CONSTRAINT "combine_settings_used_tag_check" CHECK ((("tag" IS NULL) OR ("length"("tag") <= 40))),
+    CONSTRAINT "combine_settings_used_variety_check" CHECK ((("variety" IS NULL) OR ("length"("variety") <= 40)))
+);
+
+
+ALTER TABLE "public"."combine_settings_used" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."combine_settings_used" IS 'What a combine was set to on a field on a day (Start a field). The next field of the crop starts from the latest row.';
+
+
+
+COMMENT ON COLUMN "public"."combine_settings_used"."work_record_id" IS 'The Field finished record (field_work_records) these settings were saved with; deleted with it.';
 
 
 
@@ -7827,8 +8274,11 @@ CREATE OR REPLACE VIEW "public"."crop_yields_v" WITH ("security_invoker"='true')
     "h"."scale_at",
     "h"."yield_override",
     NULL::"uuid" AS "area_yield_id",
-    false AS "is_area"
-   FROM "public"."crop_history" "h"
+    false AS "is_area",
+    ("ab"."id" IS NOT NULL) AS "exclude_from_averages",
+    "ab"."reason" AS "abnormal_reason"
+   FROM ("public"."crop_history" "h"
+     LEFT JOIN "public"."abnormal_yield_years" "ab" ON ((("ab"."field_id" = "h"."field_id") AND ("ab"."crop_year" = "h"."crop_year") AND ("ab"."crop_id" = "h"."crop_id"))))
   WHERE (NOT (EXISTS ( SELECT 1
            FROM "split" "s"
           WHERE (("s"."field_id" = "h"."field_id") AND ("s"."crop_year" = "h"."crop_year")))))
@@ -7862,11 +8312,14 @@ UNION ALL
     "y"."scale_at",
     COALESCE("y"."yield_override", false) AS "yield_override",
     "y"."id" AS "area_yield_id",
-    true AS "is_area"
-   FROM ((("areas" "a"
+    true AS "is_area",
+    ("ab"."id" IS NOT NULL) AS "exclude_from_averages",
+    "ab"."reason" AS "abnormal_reason"
+   FROM (((("areas" "a"
      JOIN "public"."crops" "c" ON (("c"."id" = "a"."crop_id")))
      LEFT JOIN "public"."crop_area_yields" "y" ON ((("y"."field_id" = "a"."field_id") AND ("y"."crop_year" = "a"."crop_year") AND ("y"."crop_id" = "a"."crop_id"))))
-     LEFT JOIN "public"."crop_history" "h" ON ((("h"."field_id" = "a"."field_id") AND ("h"."crop_year" = "a"."crop_year") AND ("h"."crop_id" = "a"."crop_id"))));
+     LEFT JOIN "public"."crop_history" "h" ON ((("h"."field_id" = "a"."field_id") AND ("h"."crop_year" = "a"."crop_year") AND ("h"."crop_id" = "a"."crop_id"))))
+     LEFT JOIN "public"."abnormal_yield_years" "ab" ON ((("ab"."field_id" = "a"."field_id") AND ("ab"."crop_year" = "a"."crop_year") AND ("ab"."crop_id" = "a"."crop_id"))));
 
 
 ALTER VIEW "public"."crop_yields_v" OWNER TO "postgres";
@@ -7963,15 +8416,18 @@ CREATE TABLE IF NOT EXISTS "public"."equipment_service_plans" (
     "interval_months" integer,
     "last_done_hours" numeric,
     "last_done_on" "date",
-    "warn_within_hours" numeric DEFAULT 50 NOT NULL,
+    "warn_within_hours" numeric DEFAULT 25 NOT NULL,
     "notes" "text",
     "active" boolean DEFAULT true NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "warn_within_days" integer DEFAULT 14 NOT NULL,
+    "parts" "text",
     CONSTRAINT "at_least_one_interval" CHECK ((("interval_hours" IS NOT NULL) OR ("interval_months" IS NOT NULL))),
     CONSTRAINT "equipment_service_plans_interval_hours_check" CHECK (("interval_hours" > (0)::numeric)),
     CONSTRAINT "equipment_service_plans_interval_months_check" CHECK (("interval_months" > 0)),
     CONSTRAINT "equipment_service_plans_last_done_hours_check" CHECK (("last_done_hours" >= (0)::numeric)),
+    CONSTRAINT "equipment_service_plans_warn_within_days_check" CHECK (("warn_within_days" >= 0)),
     CONSTRAINT "equipment_service_plans_warn_within_hours_check" CHECK (("warn_within_hours" >= (0)::numeric))
 );
 
@@ -9569,6 +10025,7 @@ CREATE TABLE IF NOT EXISTS "public"."field_work_records" (
     "feed_type_id" "uuid",
     "feed_ranch_id" "uuid",
     "feed_storage" "text",
+    "field_finished" boolean DEFAULT false NOT NULL,
     CONSTRAINT "field_work_records_acres_check" CHECK ((("acres" IS NULL) OR ("acres" >= (0)::numeric))),
     CONSTRAINT "field_work_records_bale_type_check" CHECK ((("bale_type" IS NULL) OR ("bale_type" = ANY (ARRAY['round'::"text", 'big_square'::"text"])))),
     CONSTRAINT "field_work_records_counts_as_check" CHECK (("counts_as" = ANY (ARRAY['seeding'::"text", 'harvest'::"text", 'tillage'::"text", 'application'::"text"]))),
@@ -9584,6 +10041,10 @@ ALTER TABLE "public"."field_work_records" OWNER TO "postgres";
 
 
 COMMENT ON TABLE "public"."field_work_records" IS 'Field work entered by hand: jobs Operations Center never recorded. Weather is a snapshot taken when saved.';
+
+
+
+COMMENT ON COLUMN "public"."field_work_records"."field_finished" IS 'This harvest record says the field (or its crop area, zone_id) is finished. The first source of the harvest date.';
 
 
 
@@ -10873,7 +11334,10 @@ CREATE TABLE IF NOT EXISTS "public"."jd_equipment" (
     "warranty_expires_on" "date",
     "warranty_hours" integer,
     "warranty_note" "text",
+    "service_assignees" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
+    "monitor" "jsonb",
     CONSTRAINT "jd_equipment_engine_hours_check" CHECK (("engine_hours" >= (0)::numeric)),
+    CONSTRAINT "jd_equipment_monitor_object" CHECK ((("monitor" IS NULL) OR ("jsonb_typeof"("monitor") = 'object'::"text"))),
     CONSTRAINT "jd_equipment_receiver_height_in_check" CHECK ((("receiver_height_in" IS NULL) OR (("receiver_height_in" > (0)::numeric) AND ("receiver_height_in" < (400)::numeric)))),
     CONSTRAINT "jd_equipment_receiver_height_source_check" CHECK ((("receiver_height_source" IS NULL) OR ("receiver_height_source" = ANY (ARRAY['measured'::"text", 'deere'::"text", 'estimated'::"text"])))),
     CONSTRAINT "jd_equipment_warranty_hours_check" CHECK ((("warranty_hours" IS NULL) OR ("warranty_hours" > 0)))
@@ -10911,6 +11375,10 @@ COMMENT ON COLUMN "public"."jd_equipment"."warranty_note" IS 'What is actually c
 
 
 
+COMMENT ON COLUMN "public"."jd_equipment"."monitor" IS 'The cab display: display, software, framework, precision_farming, yield_monitor, combine_controller, vehicle_name, interface_level, checked_on, notes. Ours; the Deere sync never writes it.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."jd_equipment_alerts" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "jd_id" "text" NOT NULL,
@@ -10931,6 +11399,28 @@ CREATE TABLE IF NOT EXISTS "public"."jd_equipment_alerts" (
 
 
 ALTER TABLE "public"."jd_equipment_alerts" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."jd_guidance_lines" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "jd_line_id" "text" NOT NULL,
+    "name" "text" DEFAULT ''::"text" NOT NULL,
+    "line_type" "text" NOT NULL,
+    "jd_type" "text",
+    "archived" boolean DEFAULT false NOT NULL,
+    "heading_deg" double precision,
+    "geometry" "jsonb",
+    "data_hash" "text" NOT NULL,
+    "jd_modified_at" timestamp with time zone,
+    "fetched_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "jd_guidance_lines_geometry_check" CHECK ((("geometry" IS NULL) OR (("geometry" ->> 'type'::"text") = ANY (ARRAY['LineString'::"text", 'MultiLineString'::"text"])))),
+    CONSTRAINT "jd_guidance_lines_line_type_check" CHECK (("line_type" = ANY (ARRAY['ab'::"text", 'a_plus'::"text", 'curve'::"text", 'circle'::"text", 'adaptive'::"text", 'other'::"text"])))
+);
+
+
+ALTER TABLE "public"."jd_guidance_lines" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."jd_operators" (
@@ -11456,11 +11946,44 @@ CREATE TABLE IF NOT EXISTS "public"."notification_prefs" (
     "user_id" "uuid" NOT NULL,
     "kind" "text" NOT NULL,
     "in_app" boolean DEFAULT true NOT NULL,
-    "email" boolean DEFAULT false NOT NULL
+    "email" boolean DEFAULT false NOT NULL,
+    "push" boolean DEFAULT true NOT NULL,
+    "delivery" "text" DEFAULT 'now'::"text" NOT NULL,
+    CONSTRAINT "notification_prefs_delivery_check" CHECK (("delivery" = ANY (ARRAY['now'::"text", 'digest'::"text"])))
 );
 
 
 ALTER TABLE "public"."notification_prefs" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."notification_push_queue" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "notification_id" "uuid" NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "reason" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "done_at" timestamp with time zone,
+    "outcome" "text",
+    CONSTRAINT "notification_push_queue_outcome_check" CHECK (("outcome" = ANY (ARRAY['sent'::"text", 'read'::"text", 'gone'::"text"]))),
+    CONSTRAINT "notification_push_queue_reason_check" CHECK (("reason" = ANY (ARRAY['quiet'::"text", 'digest'::"text"])))
+);
+
+
+ALTER TABLE "public"."notification_push_queue" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."notification_settings" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "quiet_on" boolean DEFAULT false NOT NULL,
+    "quiet_start" time without time zone DEFAULT '22:00:00'::time without time zone NOT NULL,
+    "quiet_end" time without time zone DEFAULT '06:00:00'::time without time zone NOT NULL,
+    "digest_at" time without time zone DEFAULT '07:00:00'::time without time zone NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."notification_settings" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."notifications" (
@@ -13850,7 +14373,8 @@ CREATE TABLE IF NOT EXISTS "public"."users" (
     "denied_views" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
     "tile_prefs" "jsonb",
     "is_owner" boolean DEFAULT false NOT NULL,
-    "finance_access" boolean DEFAULT false NOT NULL
+    "finance_access" boolean DEFAULT false NOT NULL,
+    "avatar_url" "text"
 );
 
 
@@ -14396,6 +14920,16 @@ ALTER TABLE ONLY "public"."ab_input_prices"
 
 
 
+ALTER TABLE ONLY "public"."abnormal_yield_years"
+    ADD CONSTRAINT "abnormal_yield_years_field_id_crop_year_crop_id_key" UNIQUE ("field_id", "crop_year", "crop_id");
+
+
+
+ALTER TABLE ONLY "public"."abnormal_yield_years"
+    ADD CONSTRAINT "abnormal_yield_years_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."ag_news"
     ADD CONSTRAINT "ag_news_pkey" PRIMARY KEY ("id");
 
@@ -14701,6 +15235,21 @@ ALTER TABLE ONLY "public"."combine_loss_checks"
 
 
 
+ALTER TABLE ONLY "public"."combine_monitor_loads"
+    ADD CONSTRAINT "combine_monitor_loads_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."combine_monitor_names"
+    ADD CONSTRAINT "combine_monitor_names_field_id_key" UNIQUE ("field_id");
+
+
+
+ALTER TABLE ONLY "public"."combine_monitor_names"
+    ADD CONSTRAINT "combine_monitor_names_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."combine_settings"
     ADD CONSTRAINT "combine_settings_machine_crop_key_crop_year_key" UNIQUE ("machine", "crop_key", "crop_year");
 
@@ -14708,6 +15257,11 @@ ALTER TABLE ONLY "public"."combine_settings"
 
 ALTER TABLE ONLY "public"."combine_settings"
     ADD CONSTRAINT "combine_settings_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."combine_settings_used"
+    ADD CONSTRAINT "combine_settings_used_pkey" PRIMARY KEY ("id");
 
 
 
@@ -15511,6 +16065,16 @@ ALTER TABLE ONLY "public"."jd_field_operations"
 
 
 
+ALTER TABLE ONLY "public"."jd_guidance_lines"
+    ADD CONSTRAINT "jd_guidance_lines_jd_line_id_key" UNIQUE ("jd_line_id");
+
+
+
+ALTER TABLE ONLY "public"."jd_guidance_lines"
+    ADD CONSTRAINT "jd_guidance_lines_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."jd_operators"
     ADD CONSTRAINT "jd_operators_jd_id_key" UNIQUE ("jd_id");
 
@@ -15683,6 +16247,26 @@ ALTER TABLE ONLY "public"."notification_prefs"
 
 ALTER TABLE ONLY "public"."notification_prefs"
     ADD CONSTRAINT "notification_prefs_user_id_kind_key" UNIQUE ("user_id", "kind");
+
+
+
+ALTER TABLE ONLY "public"."notification_push_queue"
+    ADD CONSTRAINT "notification_push_queue_notification_id_key" UNIQUE ("notification_id");
+
+
+
+ALTER TABLE ONLY "public"."notification_push_queue"
+    ADD CONSTRAINT "notification_push_queue_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."notification_settings"
+    ADD CONSTRAINT "notification_settings_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."notification_settings"
+    ADD CONSTRAINT "notification_settings_user_id_key" UNIQUE ("user_id");
 
 
 
@@ -16369,6 +16953,10 @@ CREATE INDEX "ab_input_prices_item" ON "public"."ab_input_prices" USING "btree" 
 
 
 
+CREATE INDEX "abnormal_yield_years_year" ON "public"."abnormal_yield_years" USING "btree" ("crop_year");
+
+
+
 CREATE INDEX "ag_news_pick_idx" ON "public"."ag_news" USING "btree" ("score" DESC, "published_at" DESC);
 
 
@@ -16593,11 +17181,27 @@ CREATE INDEX "chemicals_type_idx" ON "public"."chemicals" USING "btree" ("produc
 
 
 
+CREATE INDEX "combine_loss_checks_crop_idx" ON "public"."combine_loss_checks" USING "btree" ("crop_key", "checked_at" DESC);
+
+
+
 CREATE INDEX "combine_loss_checks_field_idx" ON "public"."combine_loss_checks" USING "btree" ("field_id", "checked_at");
 
 
 
 CREATE INDEX "combine_loss_checks_year_idx" ON "public"."combine_loss_checks" USING "btree" ("crop_year", "checked_at" DESC);
+
+
+
+CREATE INDEX "combine_monitor_loads_latest" ON "public"."combine_monitor_loads" USING "btree" ("equipment_id", "loaded_at" DESC);
+
+
+
+CREATE INDEX "combine_settings_used_latest" ON "public"."combine_settings_used" USING "btree" ("crop_key", "used_on" DESC, "created_at" DESC);
+
+
+
+CREATE INDEX "combine_settings_used_work_record" ON "public"."combine_settings_used" USING "btree" ("work_record_id") WHERE ("work_record_id" IS NOT NULL);
 
 
 
@@ -16781,6 +17385,10 @@ CREATE INDEX "field_work_records_finished" ON "public"."field_work_records" USIN
 
 
 
+CREATE INDEX "field_work_records_finished_fields" ON "public"."field_work_records" USING "btree" ("crop_year", "field_id") WHERE "field_finished";
+
+
+
 CREATE INDEX "field_work_records_kind" ON "public"."field_work_records" USING "btree" ("crop_year", "counts_as") WHERE ("counts_as" IS NOT NULL);
 
 
@@ -16949,6 +17557,10 @@ CREATE INDEX "jd_field_ops_type_idx" ON "public"."jd_field_operations" USING "bt
 
 
 
+CREATE INDEX "jd_guidance_lines_field" ON "public"."jd_guidance_lines" USING "btree" ("field_id");
+
+
+
 CREATE INDEX "jd_product_aliases_product_idx" ON "public"."jd_product_aliases" USING "btree" ("product_id");
 
 
@@ -17030,6 +17642,10 @@ CREATE INDEX "n_rich_strips_field_idx" ON "public"."n_rich_strips" USING "btree"
 
 
 CREATE INDEX "n_trials_field_idx" ON "public"."n_trials" USING "btree" ("field_id", "crop_year");
+
+
+
+CREATE INDEX "notification_push_queue_waiting" ON "public"."notification_push_queue" USING "btree" ("user_id", "created_at") WHERE ("done_at" IS NULL);
 
 
 
@@ -17313,11 +17929,19 @@ CREATE OR REPLACE TRIGGER "app_issue_from_alert" AFTER INSERT ON "public"."notif
 
 
 
+CREATE OR REPLACE TRIGGER "app_issue_working_since" BEFORE INSERT OR UPDATE OF "status" ON "public"."app_issues" FOR EACH ROW EXECUTE FUNCTION "public"."fn_app_issue_working_since"();
+
+
+
 CREATE OR REPLACE TRIGGER "apply_product_correction" BEFORE INSERT OR UPDATE ON "public"."jd_field_operations" FOR EACH ROW EXECUTE FUNCTION "public"."fn_apply_product_correction"();
 
 
 
 CREATE OR REPLACE TRIGGER "area_yield" AFTER INSERT OR DELETE OR UPDATE ON "public"."bin_loads" FOR EACH ROW EXECUTE FUNCTION "public"."fn_bin_load_area_yield"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."abnormal_yield_years" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -17441,7 +18065,19 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."combine_monitor_loads" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."combine_monitor_names" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."combine_settings" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."combine_settings_used" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -17729,6 +18365,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."jd_guidance_lines" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."land_lease_payments" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -17786,6 +18426,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."notification_prefs" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."notification_settings" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -17993,6 +18637,10 @@ CREATE OR REPLACE TRIGGER "compute" BEFORE INSERT OR UPDATE ON "public"."farm_fi
 
 
 
+CREATE OR REPLACE TRIGGER "equipment_service_log_applied" AFTER INSERT OR DELETE OR UPDATE ON "public"."equipment_service_log" FOR EACH ROW EXECUTE FUNCTION "public"."fn_service_log_applied"();
+
+
+
 CREATE OR REPLACE TRIGGER "equipment_service_log_audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."equipment_service_log" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -18081,7 +18729,15 @@ CREATE OR REPLACE TRIGGER "monthly_instance_before" BEFORE UPDATE ON "public"."m
 
 
 
+CREATE OR REPLACE TRIGGER "name_safe" BEFORE INSERT OR UPDATE OF "name" ON "public"."fields" FOR EACH ROW EXECUTE FUNCTION "public"."fn_fields_name_safe"();
+
+
+
 CREATE OR REPLACE TRIGGER "note_stamp" BEFORE UPDATE ON "public"."checklist_run_locations" FOR EACH ROW EXECUTE FUNCTION "public"."fn_run_location_note"();
+
+
+
+CREATE OR REPLACE TRIGGER "notification_gate" BEFORE INSERT ON "public"."notifications" FOR EACH ROW EXECUTE FUNCTION "public"."fn_notification_gate"();
 
 
 
@@ -18146,6 +18802,10 @@ CREATE OR REPLACE TRIGGER "task_before" BEFORE INSERT OR UPDATE ON "public"."tas
 
 
 CREATE OR REPLACE TRIGGER "task_notify" AFTER INSERT OR UPDATE ON "public"."tasks" FOR EACH ROW EXECUTE FUNCTION "public"."fn_task_notify"();
+
+
+
+CREATE OR REPLACE TRIGGER "task_service_done" AFTER UPDATE OF "status" ON "public"."tasks" FOR EACH ROW EXECUTE FUNCTION "public"."fn_service_task_done"();
 
 
 
@@ -18238,6 +18898,21 @@ CREATE OR REPLACE TRIGGER "yield_basis" BEFORE UPDATE ON "public"."crop_plans" F
 
 
 CREATE OR REPLACE TRIGGER "yield_before" BEFORE INSERT OR UPDATE ON "public"."crop_history" FOR EACH ROW EXECUTE FUNCTION "public"."fn_crop_history_yield_before"();
+
+
+
+ALTER TABLE ONLY "public"."abnormal_yield_years"
+    ADD CONSTRAINT "abnormal_yield_years_crop_id_fkey" FOREIGN KEY ("crop_id") REFERENCES "public"."crops"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."abnormal_yield_years"
+    ADD CONSTRAINT "abnormal_yield_years_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."abnormal_yield_years"
+    ADD CONSTRAINT "abnormal_yield_years_marked_by_fkey" FOREIGN KEY ("marked_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
 
 
 
@@ -18597,6 +19272,11 @@ ALTER TABLE ONLY "public"."combine_loss_checks"
 
 
 ALTER TABLE ONLY "public"."combine_loss_checks"
+    ADD CONSTRAINT "combine_loss_checks_equipment_id_fkey" FOREIGN KEY ("equipment_id") REFERENCES "public"."jd_equipment"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."combine_loss_checks"
     ADD CONSTRAINT "combine_loss_checks_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE SET NULL;
 
 
@@ -18606,8 +19286,48 @@ ALTER TABLE ONLY "public"."combine_loss_checks"
 
 
 
+ALTER TABLE ONLY "public"."combine_monitor_loads"
+    ADD CONSTRAINT "combine_monitor_loads_equipment_id_fkey" FOREIGN KEY ("equipment_id") REFERENCES "public"."jd_equipment"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."combine_monitor_loads"
+    ADD CONSTRAINT "combine_monitor_loads_loaded_by_fkey" FOREIGN KEY ("loaded_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."combine_monitor_names"
+    ADD CONSTRAINT "combine_monitor_names_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."combine_monitor_names"
+    ADD CONSTRAINT "combine_monitor_names_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."combine_settings"
     ADD CONSTRAINT "combine_settings_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."combine_settings_used"
+    ADD CONSTRAINT "combine_settings_used_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."combine_settings_used"
+    ADD CONSTRAINT "combine_settings_used_equipment_id_fkey" FOREIGN KEY ("equipment_id") REFERENCES "public"."jd_equipment"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."combine_settings_used"
+    ADD CONSTRAINT "combine_settings_used_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."combine_settings_used"
+    ADD CONSTRAINT "combine_settings_used_work_record_id_fkey" FOREIGN KEY ("work_record_id") REFERENCES "public"."field_work_records"("id") ON DELETE CASCADE;
 
 
 
@@ -19411,6 +20131,11 @@ ALTER TABLE ONLY "public"."jd_field_operations"
 
 
 
+ALTER TABLE ONLY "public"."jd_guidance_lines"
+    ADD CONSTRAINT "jd_guidance_lines_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."jd_operators"
     ADD CONSTRAINT "jd_operators_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE SET NULL;
 
@@ -19588,6 +20313,21 @@ ALTER TABLE ONLY "public"."n_trials"
 
 ALTER TABLE ONLY "public"."notification_prefs"
     ADD CONSTRAINT "notification_prefs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."notification_push_queue"
+    ADD CONSTRAINT "notification_push_queue_notification_id_fkey" FOREIGN KEY ("notification_id") REFERENCES "public"."notifications"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."notification_push_queue"
+    ADD CONSTRAINT "notification_push_queue_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."notification_settings"
+    ADD CONSTRAINT "notification_settings_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE;
 
 
 
@@ -20089,7 +20829,10 @@ ALTER TABLE ONLY "public"."yield_adjustments"
 ALTER TABLE "public"."ab_input_prices" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "add" ON "public"."bale_checks" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_active"());
+ALTER TABLE "public"."abnormal_yield_years" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "add" ON "public"."bale_checks" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20103,7 +20846,7 @@ ALTER TABLE "public"."ag_news" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."aimm_crops" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "aimm_crops_read" ON "public"."aimm_crops" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "aimm_crops_read" ON "public"."aimm_crops" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20122,28 +20865,28 @@ ALTER TABLE "public"."anydo_tokens" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."app_build_info" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "app_build_info_select" ON "public"."app_build_info" FOR SELECT TO "authenticated" USING ("public"."is_manager"());
+CREATE POLICY "app_build_info_select" ON "public"."app_build_info" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."app_change_weeks" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "app_change_weeks_select" ON "public"."app_change_weeks" FOR SELECT TO "authenticated" USING ("public"."is_manager"());
+CREATE POLICY "app_change_weeks_select" ON "public"."app_change_weeks" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."app_commits" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "app_commits_select" ON "public"."app_commits" FOR SELECT TO "authenticated" USING ("public"."is_manager"());
+CREATE POLICY "app_commits_select" ON "public"."app_commits" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."app_issues" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "app_issues_select" ON "public"."app_issues" FOR SELECT TO "authenticated" USING ("public"."is_manager"());
+CREATE POLICY "app_issues_select" ON "public"."app_issues" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -20153,7 +20896,7 @@ ALTER TABLE "public"."app_secrets" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."auction_reports" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "auction_reports_read" ON "public"."auction_reports" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "auction_reports_read" ON "public"."auction_reports" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20164,7 +20907,7 @@ CREATE POLICY "auction_reports_write" ON "public"."auction_reports" USING ("publ
 ALTER TABLE "public"."audit_log" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "audit_read" ON "public"."audit_log" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "audit_read" ON "public"."audit_log" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20208,22 +20951,22 @@ ALTER TABLE "public"."calendar_events" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."cameras" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "cameras_read" ON "public"."cameras" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "cameras_read" ON "public"."cameras" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "cameras_write" ON "public"."cameras" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "cameras_write" ON "public"."cameras" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."canola_isolation_reports" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "canola_isolation_reports_select" ON "public"."canola_isolation_reports" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "canola_isolation_reports_select" ON "public"."canola_isolation_reports" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "canola_isolation_reports_write" ON "public"."canola_isolation_reports" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "canola_isolation_reports_write" ON "public"."canola_isolation_reports" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -20236,11 +20979,11 @@ ALTER TABLE "public"."cattle" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."cattle_cost_assumptions" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "cattle_costs_read" ON "public"."cattle_cost_assumptions" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "cattle_costs_read" ON "public"."cattle_cost_assumptions" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "cattle_costs_write" ON "public"."cattle_cost_assumptions" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "cattle_costs_write" ON "public"."cattle_cost_assumptions" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -20259,22 +21002,22 @@ ALTER TABLE "public"."cattle_manifests" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."cattle_sales" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "cattle_sales_read" ON "public"."cattle_sales" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "cattle_sales_read" ON "public"."cattle_sales" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "cattle_sales_write" ON "public"."cattle_sales" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "cattle_sales_write" ON "public"."cattle_sales" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."cattle_water" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "cattle_water_read" ON "public"."cattle_water" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "cattle_water_read" ON "public"."cattle_water" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "cattle_water_write" ON "public"."cattle_water" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "cattle_water_write" ON "public"."cattle_water" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -20312,22 +21055,22 @@ ALTER TABLE "public"."chemical_grazing_rules" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."chemical_label_crops" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "chemical_label_crops_read" ON "public"."chemical_label_crops" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "chemical_label_crops_read" ON "public"."chemical_label_crops" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "chemical_label_crops_write" ON "public"."chemical_label_crops" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "chemical_label_crops_write" ON "public"."chemical_label_crops" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."chemical_labels" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "chemical_labels_read" ON "public"."chemical_labels" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "chemical_labels_read" ON "public"."chemical_labels" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "chemical_labels_write" ON "public"."chemical_labels" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "chemical_labels_write" ON "public"."chemical_labels" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -20340,7 +21083,16 @@ ALTER TABLE "public"."chemicals" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."combine_loss_checks" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."combine_monitor_loads" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."combine_monitor_names" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."combine_settings" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."combine_settings_used" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."contacts" ENABLE ROW LEVEL SECURITY;
@@ -20352,7 +21104,7 @@ ALTER TABLE "public"."contracts" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."cost_benchmarks" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "cost_benchmarks_read" ON "public"."cost_benchmarks" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "cost_benchmarks_read" ON "public"."cost_benchmarks" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20402,7 +21154,7 @@ ALTER TABLE "public"."crop_weather_alerts" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."crops" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "delete_mgr" ON "public"."moisture_tests" FOR DELETE TO "authenticated" USING ("public"."is_manager"());
+CREATE POLICY "delete_mgr" ON "public"."moisture_tests" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -20411,6 +21163,10 @@ CREATE POLICY "delete_mgr" ON "public"."pasture_sprays" FOR DELETE TO "authentic
 
 
 CREATE POLICY "delete_mgr" ON "public"."water_quality_samples" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") AND ("source" = 'own'::"text")));
+
+
+
+CREATE POLICY "delete_own" ON "public"."combine_settings_used" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
@@ -20425,7 +21181,7 @@ CREATE POLICY "delete_own" ON "public"."scouting_notes" FOR DELETE TO "authentic
 ALTER TABLE "public"."delivery_sites" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "dismiss_any" ON "public"."bin_air_alerts" FOR UPDATE TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "dismiss_any" ON "public"."bin_air_alerts" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20449,26 +21205,26 @@ ALTER TABLE "public"."equipment" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."equipment_service_log" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "equipment_service_log_insert" ON "public"."equipment_service_log" FOR INSERT WITH CHECK ("public"."is_active"());
+CREATE POLICY "equipment_service_log_insert" ON "public"."equipment_service_log" FOR INSERT WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "equipment_service_log_manage" ON "public"."equipment_service_log" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "equipment_service_log_manage" ON "public"."equipment_service_log" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "equipment_service_log_read" ON "public"."equipment_service_log" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "equipment_service_log_read" ON "public"."equipment_service_log" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
 ALTER TABLE "public"."equipment_service_plans" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "equipment_service_plans_read" ON "public"."equipment_service_plans" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "equipment_service_plans_read" ON "public"."equipment_service_plans" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "equipment_service_plans_write" ON "public"."equipment_service_plans" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "equipment_service_plans_write" ON "public"."equipment_service_plans" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -20484,7 +21240,7 @@ ALTER TABLE "public"."eshepherd_repro_history" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."events" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "events_adjust" ON "public"."irrigation_events" FOR UPDATE TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "events_adjust" ON "public"."irrigation_events" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20512,7 +21268,7 @@ CREATE POLICY "events_insert" ON "public"."irrigation_events" FOR INSERT TO "aut
 
 
 
-CREATE POLICY "events_mgr_upd" ON "public"."cattle_events" FOR UPDATE TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "events_mgr_upd" ON "public"."cattle_events" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -20537,7 +21293,7 @@ CREATE POLICY "farm_fixed_cost_lines_owner" ON "public"."farm_fixed_cost_lines" 
 ALTER TABLE "public"."farm_fixed_costs" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "farm_fixed_costs_read" ON "public"."farm_fixed_costs" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "farm_fixed_costs_read" ON "public"."farm_fixed_costs" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20548,7 +21304,7 @@ CREATE POLICY "farm_fixed_costs_write" ON "public"."farm_fixed_costs" TO "authen
 ALTER TABLE "public"."farm_setup" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "farm_setup_read" ON "public"."farm_setup" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "farm_setup_read" ON "public"."farm_setup" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20658,7 +21414,7 @@ ALTER TABLE "public"."field_pivots" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."field_rain_daily" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "field_rain_read" ON "public"."field_rain_daily" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "field_rain_read" ON "public"."field_rain_daily" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20671,14 +21427,14 @@ ALTER TABLE "public"."field_soil_profiles" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."field_topo_cells" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "field_topo_cells_select" ON "public"."field_topo_cells" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "field_topo_cells_select" ON "public"."field_topo_cells" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
 ALTER TABLE "public"."field_topo_surfaces" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "field_topo_surfaces_select" ON "public"."field_topo_surfaces" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "field_topo_surfaces_select" ON "public"."field_topo_surfaces" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20697,14 +21453,14 @@ ALTER TABLE "public"."field_yield_zones" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."fieldnet_applied_bins" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "fieldnet_bins_read" ON "public"."fieldnet_applied_bins" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "fieldnet_bins_read" ON "public"."fieldnet_applied_bins" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
 ALTER TABLE "public"."fieldnet_passes" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "fieldnet_passes_read" ON "public"."fieldnet_passes" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "fieldnet_passes_read" ON "public"."fieldnet_passes" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20714,11 +21470,11 @@ ALTER TABLE "public"."fieldnet_systems" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."fields" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "fields_mgr" ON "public"."fields" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "fields_mgr" ON "public"."fields" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "fields_user" ON "public"."fields" FOR UPDATE TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "fields_user" ON "public"."fields" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20738,14 +21494,14 @@ CREATE POLICY "files_insert" ON "public"."task_files" FOR INSERT TO "authenticat
 
 
 
-CREATE POLICY "files_mgr" ON "public"."field_files" FOR UPDATE TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "files_mgr" ON "public"."field_files" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."financial_entries" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "fso_read" ON "public"."field_season_outlook" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "fso_read" ON "public"."field_season_outlook" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20755,33 +21511,33 @@ ALTER TABLE "public"."fuel_purchases" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."gas_bill_sites" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "gas_bill_sites_select" ON "public"."gas_bill_sites" FOR SELECT TO "authenticated" USING ("public"."is_manager"());
+CREATE POLICY "gas_bill_sites_select" ON "public"."gas_bill_sites" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "gas_bill_sites_write" ON "public"."gas_bill_sites" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "gas_bill_sites_write" ON "public"."gas_bill_sites" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."gas_bills" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "gas_bills_select" ON "public"."gas_bills" FOR SELECT TO "authenticated" USING ("public"."is_manager"());
+CREATE POLICY "gas_bills_select" ON "public"."gas_bills" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "gas_bills_write" ON "public"."gas_bills" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "gas_bills_write" ON "public"."gas_bills" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."gas_sites" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "gas_sites_select" ON "public"."gas_sites" FOR SELECT TO "authenticated" USING ("public"."is_manager"());
+CREATE POLICY "gas_sites_select" ON "public"."gas_sites" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "gas_sites_write" ON "public"."gas_sites" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "gas_sites_write" ON "public"."gas_sites" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -20835,6 +21591,10 @@ ALTER TABLE "public"."input_items" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."input_movements" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "insert_active" ON "public"."combine_settings_used" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "insert_active" ON "public"."field_work_records" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND (("created_by" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."is_manager"() AS "is_manager"))));
 
 
@@ -20851,7 +21611,7 @@ CREATE POLICY "insert_any" ON "public"."moisture_tests" FOR INSERT TO "authentic
 
 
 
-CREATE POLICY "inst_update" ON "public"."monthly_task_instances" FOR UPDATE TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "inst_update" ON "public"."monthly_task_instances" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20875,7 +21635,7 @@ CREATE POLICY "items_update" ON "public"."checklist_run_items" FOR UPDATE TO "au
 ALTER TABLE "public"."jd_api_probes" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "jd_api_probes_read" ON "public"."jd_api_probes" FOR SELECT USING ("public"."is_manager"());
+CREATE POLICY "jd_api_probes_read" ON "public"."jd_api_probes" FOR SELECT USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -20891,27 +21651,30 @@ ALTER TABLE "public"."jd_equipment" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."jd_equipment_alerts" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "jd_equipment_alerts_read" ON "public"."jd_equipment_alerts" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "jd_equipment_alerts_read" ON "public"."jd_equipment_alerts" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "jd_equipment_alerts_write" ON "public"."jd_equipment_alerts" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "jd_equipment_alerts_write" ON "public"."jd_equipment_alerts" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "jd_equipment_read" ON "public"."jd_equipment" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "jd_equipment_read" ON "public"."jd_equipment" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "jd_equipment_write" ON "public"."jd_equipment" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "jd_equipment_write" ON "public"."jd_equipment" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."jd_field_operations" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "jd_field_operations_delete" ON "public"."jd_field_operations" FOR DELETE TO "authenticated" USING ("public"."is_manager"());
+CREATE POLICY "jd_field_operations_delete" ON "public"."jd_field_operations" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
+
+
+ALTER TABLE "public"."jd_guidance_lines" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."jd_operators" ENABLE ROW LEVEL SECURITY;
@@ -20920,22 +21683,22 @@ ALTER TABLE "public"."jd_operators" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."jd_product_aliases" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "jd_product_aliases_read" ON "public"."jd_product_aliases" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "jd_product_aliases_read" ON "public"."jd_product_aliases" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "jd_product_aliases_write" ON "public"."jd_product_aliases" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "jd_product_aliases_write" ON "public"."jd_product_aliases" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."jd_products" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "jd_products_read" ON "public"."jd_products" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "jd_products_read" ON "public"."jd_products" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "jd_products_write" ON "public"."jd_products" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "jd_products_write" ON "public"."jd_products" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -20948,22 +21711,22 @@ ALTER TABLE "public"."land_leases" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."manure_applications" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "manure_delete" ON "public"."manure_applications" FOR DELETE TO "authenticated" USING ("public"."is_manager"());
+CREATE POLICY "manure_delete" ON "public"."manure_applications" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."manure_haul_invoices" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "manure_insert" ON "public"."manure_applications" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_active"());
+CREATE POLICY "manure_insert" ON "public"."manure_applications" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "manure_read" ON "public"."manure_applications" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "manure_read" ON "public"."manure_applications" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "manure_update" ON "public"."manure_applications" FOR UPDATE TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "manure_update" ON "public"."manure_applications" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20976,18 +21739,18 @@ ALTER TABLE "public"."map_layers" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."market_alerts" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "market_alerts_read" ON "public"."market_alerts" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "market_alerts_read" ON "public"."market_alerts" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "market_alerts_write" ON "public"."market_alerts" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "market_alerts_write" ON "public"."market_alerts" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."market_futures" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "market_futures_read" ON "public"."market_futures" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "market_futures_read" ON "public"."market_futures" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -20998,7 +21761,7 @@ CREATE POLICY "market_futures_write" ON "public"."market_futures" USING ("public
 ALTER TABLE "public"."market_prices" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "market_prices_read" ON "public"."market_prices" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "market_prices_read" ON "public"."market_prices" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -21009,7 +21772,7 @@ CREATE POLICY "market_prices_write" ON "public"."market_prices" USING ("public".
 ALTER TABLE "public"."market_series" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "market_series_read" ON "public"."market_series" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "market_series_read" ON "public"."market_series" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -21020,15 +21783,15 @@ CREATE POLICY "market_series_write" ON "public"."market_series" USING ("public".
 ALTER TABLE "public"."marketing_targets" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "meas_del" ON "public"."soil_moisture_measurements" FOR DELETE TO "authenticated" USING ("public"."is_manager"());
+CREATE POLICY "meas_del" ON "public"."soil_moisture_measurements" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "meas_edit" ON "public"."soil_moisture_measurements" FOR UPDATE TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "meas_edit" ON "public"."soil_moisture_measurements" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "meas_insert" ON "public"."soil_moisture_measurements" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_active"());
+CREATE POLICY "meas_insert" ON "public"."soil_moisture_measurements" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -21042,6 +21805,10 @@ ALTER TABLE "public"."meeting_notes" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "mfa_required" ON "public"."ab_input_prices" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."abnormal_yield_years" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -21241,7 +22008,19 @@ CREATE POLICY "mfa_required" ON "public"."combine_loss_checks" AS RESTRICTIVE TO
 
 
 
+CREATE POLICY "mfa_required" ON "public"."combine_monitor_loads" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."combine_monitor_names" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
 CREATE POLICY "mfa_required" ON "public"."combine_settings" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."combine_settings_used" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -21665,6 +22444,10 @@ CREATE POLICY "mfa_required" ON "public"."jd_field_operations" AS RESTRICTIVE TO
 
 
 
+CREATE POLICY "mfa_required" ON "public"."jd_guidance_lines" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
 CREATE POLICY "mfa_required" ON "public"."jd_operators" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
@@ -21762,6 +22545,14 @@ CREATE POLICY "mfa_required" ON "public"."n_trials" AS RESTRICTIVE TO "authentic
 
 
 CREATE POLICY "mfa_required" ON "public"."notification_prefs" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."notification_push_queue" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."notification_settings" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -22161,6 +22952,12 @@ CREATE POLICY "note_update" ON "public"."checklist_run_locations" FOR UPDATE TO 
 ALTER TABLE "public"."notification_prefs" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."notification_push_queue" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."notification_settings" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."notifications" ENABLE ROW LEVEL SECURITY;
 
 
@@ -22179,6 +22976,10 @@ CREATE POLICY "own_all" ON "public"."notification_prefs" TO "authenticated" USIN
 
 
 
+CREATE POLICY "own_all" ON "public"."notification_settings" TO "authenticated" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
+
+
+
 CREATE POLICY "own_all" ON "public"."push_subscriptions" TO "authenticated" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
 
 
@@ -22188,6 +22989,10 @@ CREATE POLICY "own_delete" ON "public"."notifications" FOR DELETE TO "authentica
 
 
 CREATE POLICY "own_or_admin" ON "public"."anydo_connections" FOR SELECT TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."is_admin"()));
+
+
+
+CREATE POLICY "own_read" ON "public"."notification_push_queue" FOR SELECT TO "authenticated" USING (("user_id" = "auth"."uid"()));
 
 
 
@@ -22231,19 +23036,19 @@ CREATE POLICY "pasture_zones_read" ON "public"."pasture_zones" FOR SELECT TO "au
 ALTER TABLE "public"."pastures" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "pastures_read" ON "public"."pastures" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "pastures_read" ON "public"."pastures" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "pastures_write" ON "public"."pastures" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "pastures_write" ON "public"."pastures" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "pdc_read" ON "public"."pivot_depth_checks" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "pdc_read" ON "public"."pivot_depth_checks" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "pdc_write" ON "public"."pivot_depth_checks" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "pdc_write" ON "public"."pivot_depth_checks" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -22259,33 +23064,33 @@ ALTER TABLE "public"."pivot_photos" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."pl_field_lines" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "pl_field_lines_read" ON "public"."pl_field_lines" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "pl_field_lines_read" ON "public"."pl_field_lines" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "pl_field_lines_write" ON "public"."pl_field_lines" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "pl_field_lines_write" ON "public"."pl_field_lines" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."pl_flat_costs" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "pl_flat_costs_read" ON "public"."pl_flat_costs" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "pl_flat_costs_read" ON "public"."pl_flat_costs" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "pl_flat_costs_write" ON "public"."pl_flat_costs" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "pl_flat_costs_write" ON "public"."pl_flat_costs" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."pl_op_grids" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "pl_op_grids_read" ON "public"."pl_op_grids" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "pl_op_grids_read" ON "public"."pl_op_grids" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "pl_op_grids_write" ON "public"."pl_op_grids" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "pl_op_grids_write" ON "public"."pl_op_grids" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -22295,7 +23100,7 @@ ALTER TABLE "public"."planter_plates" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."plc_agent_status" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "plc_agent_status_read" ON "public"."plc_agent_status" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "plc_agent_status_read" ON "public"."plc_agent_status" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -22310,37 +23115,37 @@ CREATE POLICY "plc_commands_insert" ON "public"."plc_commands" FOR INSERT TO "au
 
 
 
-CREATE POLICY "plc_commands_read" ON "public"."plc_commands" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "plc_commands_read" ON "public"."plc_commands" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
 ALTER TABLE "public"."plc_devices" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "plc_devices_read" ON "public"."plc_devices" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "plc_devices_read" ON "public"."plc_devices" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "plc_devices_write" ON "public"."plc_devices" FOR UPDATE TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "plc_devices_write" ON "public"."plc_devices" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "plc_history_read" ON "public"."plc_reading_history" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "plc_history_read" ON "public"."plc_reading_history" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
 ALTER TABLE "public"."plc_line_watch" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "plc_line_watch_insert" ON "public"."plc_line_watch" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_manager"());
+CREATE POLICY "plc_line_watch_insert" ON "public"."plc_line_watch" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "plc_line_watch_read" ON "public"."plc_line_watch" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "plc_line_watch_read" ON "public"."plc_line_watch" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "plc_line_watch_update" ON "public"."plc_line_watch" FOR UPDATE TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "plc_line_watch_update" ON "public"."plc_line_watch" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -22350,36 +23155,36 @@ ALTER TABLE "public"."plc_reading_history" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."plc_readings" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "plc_readings_read" ON "public"."plc_readings" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "plc_readings_read" ON "public"."plc_readings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
 ALTER TABLE "public"."plc_tags" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "plc_tags_read" ON "public"."plc_tags" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "plc_tags_read" ON "public"."plc_tags" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
 ALTER TABLE "public"."power_bill_sites" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "power_bill_sites_select" ON "public"."power_bill_sites" FOR SELECT TO "authenticated" USING ("public"."is_manager"());
+CREATE POLICY "power_bill_sites_select" ON "public"."power_bill_sites" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "power_bill_sites_write" ON "public"."power_bill_sites" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "power_bill_sites_write" ON "public"."power_bill_sites" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 ALTER TABLE "public"."power_bills" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "power_bills_select" ON "public"."power_bills" FOR SELECT TO "authenticated" USING ("public"."is_manager"());
+CREATE POLICY "power_bills_select" ON "public"."power_bills" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "power_bills_write" ON "public"."power_bills" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "power_bills_write" ON "public"."power_bills" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -22454,22 +23259,22 @@ CREATE POLICY "qb_report_cache_select" ON "public"."qb_report_cache" FOR SELECT 
 ALTER TABLE "public"."quarter_crops" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "quarter_crops_select" ON "public"."quarter_crops" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "quarter_crops_select" ON "public"."quarter_crops" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "quarter_crops_write" ON "public"."quarter_crops" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "quarter_crops_write" ON "public"."quarter_crops" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
 ALTER TABLE "public"."quarter_owners" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "quarter_owners_select" ON "public"."quarter_owners" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "quarter_owners_select" ON "public"."quarter_owners" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "quarter_owners_write" ON "public"."quarter_owners" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "quarter_owners_write" ON "public"."quarter_owners" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -22479,19 +23284,19 @@ ALTER TABLE "public"."rain_gauge_readings" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."rain_gauges" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "rain_gauges_read" ON "public"."rain_gauges" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "rain_gauges_read" ON "public"."rain_gauges" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "rain_gauges_write" ON "public"."rain_gauges" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "rain_gauges_write" ON "public"."rain_gauges" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "rain_readings_read" ON "public"."rain_gauge_readings" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "rain_readings_read" ON "public"."rain_gauge_readings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "rain_readings_write" ON "public"."rain_gauge_readings" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "rain_readings_write" ON "public"."rain_gauge_readings" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -22510,23 +23315,27 @@ CREATE POLICY "read_active" ON "public"."water_supply" FOR SELECT TO "authentica
 
 
 
-CREATE POLICY "read_all" ON "public"."ab_input_prices" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."ab_input_prices" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."ag_news" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."abnormal_yield_years" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."aimm_watch" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."ag_news" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."bale_check_readings" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."aimm_watch" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."bale_checks" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."bale_check_readings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."bale_checks" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -22534,19 +23343,19 @@ CREATE POLICY "read_all" ON "public"."bale_weight_defaults" FOR SELECT TO "authe
 
 
 
-CREATE POLICY "read_all" ON "public"."bin_air_alerts" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."bin_air_alerts" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."bin_allocations" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."bin_allocations" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."bin_contents" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."bin_contents" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."bin_loads" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."bin_loads" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -22554,67 +23363,67 @@ CREATE POLICY "read_all" ON "public"."bin_monitor_readings" FOR SELECT TO "authe
 
 
 
-CREATE POLICY "read_all" ON "public"."bin_readings" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."bin_readings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."bins" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."bins" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."calendar_events" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."calendar_events" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."cash_bids" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."cash_bids" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."cattle" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."cattle" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."cattle_events" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."cattle_events" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."cattle_groups" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."cattle_groups" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."cattle_manifest_lines" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."cattle_manifest_lines" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."cattle_manifests" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."cattle_manifests" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."checklist_photos" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."checklist_photos" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."checklist_run_items" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."checklist_run_items" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."checklist_run_locations" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."checklist_run_locations" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."checklist_runs" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."checklist_runs" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."checklist_template_items" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."checklist_template_items" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."checklist_template_locations" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."checklist_template_locations" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."checklist_templates" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."checklist_templates" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -22630,23 +23439,35 @@ CREATE POLICY "read_all" ON "public"."chemical_recrop_rules" FOR SELECT TO "auth
 
 
 
-CREATE POLICY "read_all" ON "public"."chemicals" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."chemicals" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."combine_loss_checks" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."combine_loss_checks" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."combine_settings" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."combine_monitor_loads" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."contacts" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."combine_monitor_names" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."contracts" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."combine_settings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."combine_settings_used" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."contacts" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."contracts" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -22654,19 +23475,19 @@ CREATE POLICY "read_all" ON "public"."crop_acre_limits" FOR SELECT TO "authentic
 
 
 
-CREATE POLICY "read_all" ON "public"."crop_area_yields" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."crop_area_yields" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."crop_bin_overrides" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."crop_bin_overrides" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."crop_coefficients" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."crop_coefficients" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."crop_history" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."crop_history" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -22674,27 +23495,27 @@ CREATE POLICY "read_all" ON "public"."crop_inputs" FOR SELECT TO "authenticated"
 
 
 
-CREATE POLICY "read_all" ON "public"."crop_plans" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."crop_plans" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."crop_planter_profiles" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."crop_planter_profiles" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."crop_prices" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."crop_prices" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."crop_succession_rules" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."crop_succession_rules" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."crop_varieties" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."crop_varieties" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."crop_variety_settings" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."crop_variety_settings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -22702,71 +23523,71 @@ CREATE POLICY "read_all" ON "public"."crop_weather_alerts" FOR SELECT TO "authen
 
 
 
-CREATE POLICY "read_all" ON "public"."crops" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."crops" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."delivery_sites" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."delivery_sites" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."equipment" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."equipment" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."eshepherd_activations" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."eshepherd_activations" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."eshepherd_repro" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."eshepherd_repro" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."eshepherd_repro_history" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."eshepherd_repro_history" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."events" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."events" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."farm_trails" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."farm_trails" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."farms" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."farms" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."feed_group_ration" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."feed_group_ration" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."feed_inventory" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."feed_inventory" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."feed_plans" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."feed_plans" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."feed_ration" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."feed_ration" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."feed_record_lines" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."feed_record_lines" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."feed_records" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."feed_records" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."feed_tests" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."feed_tests" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."feed_types" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."feed_types" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -22778,87 +23599,87 @@ CREATE POLICY "read_all" ON "public"."fert_blends" FOR SELECT TO "authenticated"
 
 
 
-CREATE POLICY "read_all" ON "public"."fert_bookings" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."fert_bookings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."fert_buy_signals" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."fert_buy_signals" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."fert_check_strips" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."fert_check_strips" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."fert_inventory" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."fert_inventory" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."fert_programs" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."fert_programs" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."fert_quotes" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."fert_quotes" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."fert_settings" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."fert_settings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."fert_split_plans" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."fert_split_plans" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."fertility_rx" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."fertility_rx" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."fertility_rx_map" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."fertility_rx_map" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."fertility_rx_zones" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."fertility_rx_zones" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."field_boundaries" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."field_boundaries" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."field_crop_seasons" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."field_crop_seasons" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."field_crop_zones" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."field_crop_zones" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."field_entries" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."field_entries" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."field_files" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."field_files" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."field_hail_events" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."field_hail_events" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."field_haul_plans" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."field_haul_plans" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."field_inspections" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."field_inspections" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."field_pivots" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."field_pivots" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."field_soil_profiles" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."field_soil_profiles" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -22874,47 +23695,47 @@ CREATE POLICY "read_all" ON "public"."field_year_tenure" FOR SELECT TO "authenti
 
 
 
-CREATE POLICY "read_all" ON "public"."field_yield_zones" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."field_yield_zones" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."fieldnet_systems" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."fieldnet_systems" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."fields" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."fields" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."financial_entries" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."financial_entries" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."fuel_purchases" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."fuel_purchases" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."grain_movements" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."grain_movements" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."grants" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."grants" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."grazing_disposition_returns" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."grazing_disposition_returns" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."grazing_dispositions" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."grazing_dispositions" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."grazing_herd" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."grazing_herd" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."grazing_pastures" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."grazing_pastures" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -22922,43 +23743,43 @@ CREATE POLICY "read_all" ON "public"."grazing_restriction_alerts" FOR SELECT TO 
 
 
 
-CREATE POLICY "read_all" ON "public"."hail_inspections" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."hail_inspections" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."herd_counts" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."herd_counts" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."ici_fert_reviews" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."ici_fert_reviews" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."ici_field_lines" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."ici_field_lines" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."input_items" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."input_items" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."input_movements" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."input_movements" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."integration_health" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."integration_health" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."irrigation_events" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."irrigation_events" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."jd_dismissed_fields" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."jd_dismissed_fields" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."jd_dismissed_operations" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."jd_dismissed_operations" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -22966,55 +23787,59 @@ CREATE POLICY "read_all" ON "public"."jd_field_operations" FOR SELECT TO "authen
 
 
 
-CREATE POLICY "read_all" ON "public"."jd_operators" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."jd_guidance_lines" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."manure_haul_invoices" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."jd_operators" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."map_features" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."manure_haul_invoices" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."map_layers" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."map_features" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."marketing_targets" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."map_layers" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."meeting_fact_log" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."marketing_targets" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."meeting_facts" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."meeting_fact_log" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."meeting_notes" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."meeting_facts" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."mineral_programs" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."meeting_notes" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."moisture_tests" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."mineral_programs" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."monthly_task_instances" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."moisture_tests" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."monthly_task_templates" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."monthly_task_instances" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."mymap_hidden_features" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."monthly_task_templates" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."mymap_hidden_features" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23026,7 +23851,7 @@ CREATE POLICY "read_all" ON "public"."n_trials" FOR SELECT TO "authenticated" US
 
 
 
-CREATE POLICY "read_all" ON "public"."operating_settings" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."operating_settings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23034,55 +23859,55 @@ CREATE POLICY "read_all" ON "public"."pasture_sprays" FOR SELECT TO "authenticat
 
 
 
-CREATE POLICY "read_all" ON "public"."pivot_control_log" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."pivot_control_log" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."pivot_photos" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."pivot_photos" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."planter_plates" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."planter_plates" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."product_documents" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."product_documents" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."product_purchases" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."product_purchases" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."pump_photos" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."pump_photos" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."pumps" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."pumps" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."ranches" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."ranches" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."river_watch" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."river_watch" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."road_routes" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."road_routes" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."road_snaps" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."road_snaps" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."scale_ticket_photos" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."scale_ticket_photos" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."scale_tickets" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."scale_tickets" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23090,67 +23915,67 @@ CREATE POLICY "read_all" ON "public"."scouting_notes" FOR SELECT TO "authenticat
 
 
 
-CREATE POLICY "read_all" ON "public"."smrid_areas" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."smrid_areas" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."soil_landscape_polygons" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."soil_landscape_polygons" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."soil_moisture_measurements" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."soil_moisture_measurements" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."soil_sample_sites" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."soil_sample_sites" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."soil_test_assessments" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."soil_test_assessments" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."soil_test_reports" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."soil_test_reports" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."soil_test_samples" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."soil_test_samples" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."solar_daily" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."solar_daily" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."solar_latest" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."solar_latest" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."solar_sites" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."solar_sites" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."stubble_grazing" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."stubble_grazing" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."task_assignees" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."task_assignees" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."task_files" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."task_files" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."tasks" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."tasks" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."time_off" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."time_off" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."tissue_tests" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."tissue_tests" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23158,19 +23983,19 @@ CREATE POLICY "read_all" ON "public"."water_allotments" FOR SELECT TO "authentic
 
 
 
-CREATE POLICY "read_all" ON "public"."water_balance_daily" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."water_balance_daily" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."water_features" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."water_features" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."water_licences" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."water_licences" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."water_quality_flags" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."water_quality_flags" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23182,27 +24007,27 @@ CREATE POLICY "read_all" ON "public"."water_quality_stations" FOR SELECT TO "aut
 
 
 
-CREATE POLICY "read_all" ON "public"."water_supply_daily" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."water_supply_daily" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."weather_daily" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."weather_daily" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."weather_hourly" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."weather_hourly" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."weather_stations" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."weather_stations" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."year_unlocks" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."year_unlocks" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "read_all" ON "public"."yield_adjustments" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "read_all" ON "public"."yield_adjustments" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23254,7 +24079,7 @@ CREATE POLICY "sat_alerts_write" ON "public"."sat_alerts" FOR UPDATE TO "authent
 ALTER TABLE "public"."sat_api_usage" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "sat_api_usage_read" ON "public"."sat_api_usage" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "sat_api_usage_read" ON "public"."sat_api_usage" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23265,7 +24090,7 @@ CREATE POLICY "sat_api_usage_write" ON "public"."sat_api_usage" USING ("public".
 ALTER TABLE "public"."sat_daily" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "sat_daily_read" ON "public"."sat_daily" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "sat_daily_read" ON "public"."sat_daily" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23283,7 +24108,7 @@ CREATE POLICY "sat_images_read" ON "public"."sat_images" FOR SELECT TO "authenti
 ALTER TABLE "public"."sat_observations" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "sat_observations_read" ON "public"."sat_observations" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "sat_observations_read" ON "public"."sat_observations" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23294,7 +24119,7 @@ CREATE POLICY "sat_observations_write" ON "public"."sat_observations" USING ("pu
 ALTER TABLE "public"."sat_scenes" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "sat_scenes_read" ON "public"."sat_scenes" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "sat_scenes_read" ON "public"."sat_scenes" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23311,11 +24136,11 @@ ALTER TABLE "public"."scale_tickets" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."scouting_notes" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "smr_read" ON "public"."soil_moisture_readings" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "smr_read" ON "public"."soil_moisture_readings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "smr_write" ON "public"."soil_moisture_readings" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "smr_write" ON "public"."soil_moisture_readings" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23403,6 +24228,10 @@ CREATE POLICY "update_mgr" ON "public"."water_quality_samples" FOR UPDATE TO "au
 
 
 
+CREATE POLICY "update_own" ON "public"."combine_settings_used" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid")))) WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
+
+
+
 CREATE POLICY "update_own" ON "public"."field_work_records" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid")))) WITH CHECK ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
@@ -23422,7 +24251,7 @@ CREATE POLICY "users_admin_delete" ON "public"."users" FOR DELETE TO "authentica
 
 
 
-CREATE POLICY "users_mgr_update" ON "public"."users" FOR UPDATE TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "users_mgr_update" ON "public"."users" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -23464,7 +24293,7 @@ ALTER TABLE "public"."water_supply" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."water_supply_daily" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "wbw_read" ON "public"."water_balance_wedges" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "wbw_read" ON "public"."water_balance_wedges" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23483,43 +24312,43 @@ ALTER TABLE "public"."weather_stations" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."weed_patches" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "weed_patches_delete" ON "public"."weed_patches" FOR DELETE USING ("public"."is_manager"());
+CREATE POLICY "weed_patches_delete" ON "public"."weed_patches" FOR DELETE USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "weed_patches_insert" ON "public"."weed_patches" FOR INSERT WITH CHECK ("public"."is_active"());
+CREATE POLICY "weed_patches_insert" ON "public"."weed_patches" FOR INSERT WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "weed_patches_read" ON "public"."weed_patches" FOR SELECT USING ("public"."is_active"());
+CREATE POLICY "weed_patches_read" ON "public"."weed_patches" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "weed_patches_update" ON "public"."weed_patches" FOR UPDATE USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "weed_patches_update" ON "public"."weed_patches" FOR UPDATE USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "wn_read" ON "public"."weather_normals" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+CREATE POLICY "wn_read" ON "public"."weather_normals" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "write_active" ON "public"."eshepherd_activations" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "write_active" ON "public"."eshepherd_activations" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "write_active" ON "public"."grants" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "write_active" ON "public"."grants" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "write_active" ON "public"."scale_ticket_photos" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "write_active" ON "public"."scale_ticket_photos" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "write_active" ON "public"."scale_tickets" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "write_active" ON "public"."scale_tickets" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "write_all" ON "public"."bin_loads" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "write_all" ON "public"."bin_loads" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23527,43 +24356,47 @@ CREATE POLICY "write_all" ON "public"."bin_monitor_readings" TO "authenticated" 
 
 
 
-CREATE POLICY "write_all" ON "public"."cattle_manifest_lines" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "write_all" ON "public"."cattle_manifest_lines" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "write_all" ON "public"."cattle_manifests" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "write_all" ON "public"."cattle_manifests" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "write_all" ON "public"."combine_loss_checks" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "write_all" ON "public"."combine_loss_checks" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "write_all" ON "public"."combine_settings" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "write_all" ON "public"."combine_settings" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "write_all" ON "public"."delivery_sites" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "write_all" ON "public"."delivery_sites" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "write_all" ON "public"."soil_sample_sites" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "write_all" ON "public"."soil_sample_sites" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "write_all" ON "public"."task_assignees" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "write_all" ON "public"."task_assignees" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "write_all" ON "public"."tissue_tests" TO "authenticated" USING ("public"."is_active"()) WITH CHECK ("public"."is_active"());
+CREATE POLICY "write_all" ON "public"."tissue_tests" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "write_managers" ON "public"."product_documents" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_managers" ON "public"."product_documents" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."ab_input_prices" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."ab_input_prices" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."abnormal_yield_years" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -23571,47 +24404,47 @@ CREATE POLICY "write_mgr" ON "public"."bale_weight_defaults" TO "authenticated" 
 
 
 
-CREATE POLICY "write_mgr" ON "public"."bin_allocations" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."bin_allocations" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."bin_contents" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."bin_contents" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."bins" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."bins" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."cash_bids" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."cash_bids" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."cattle" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."cattle" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."cattle_groups" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."cattle_groups" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."checklist_run_locations" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."checklist_run_locations" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."checklist_runs" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."checklist_runs" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."checklist_template_items" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."checklist_template_items" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."checklist_template_locations" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."checklist_template_locations" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."checklist_templates" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."checklist_templates" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -23627,15 +24460,27 @@ CREATE POLICY "write_mgr" ON "public"."chemical_recrop_rules" TO "authenticated"
 
 
 
-CREATE POLICY "write_mgr" ON "public"."chemicals" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."chemicals" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."contacts" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."combine_monitor_loads" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."contracts" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."combine_monitor_names" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."combine_settings_used" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."contacts" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."contracts" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -23643,99 +24488,99 @@ CREATE POLICY "write_mgr" ON "public"."crop_acre_limits" TO "authenticated" USIN
 
 
 
-CREATE POLICY "write_mgr" ON "public"."crop_area_yields" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."crop_area_yields" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."crop_bin_overrides" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."crop_bin_overrides" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."crop_coefficients" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."crop_coefficients" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."crop_history" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."crop_history" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."crop_inputs" TO "authenticated" USING (("public"."is_manager"() AND ((NOT "fixed_land_share") OR "public"."can_see_finances"()))) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."crop_inputs" TO "authenticated" USING (("public"."is_manager"() AND ((NOT "fixed_land_share") OR "public"."can_see_finances"()))) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."crop_plans" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."crop_plans" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."crop_planter_profiles" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."crop_planter_profiles" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."crop_prices" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."crop_prices" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."crop_succession_rules" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."crop_succession_rules" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."crop_varieties" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."crop_varieties" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."crop_variety_settings" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."crop_variety_settings" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."crops" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."crops" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."equipment" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."equipment" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."events" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."events" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."farm_trails" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."farm_trails" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."farms" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."farms" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."feed_group_ration" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."feed_group_ration" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."feed_inventory" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."feed_inventory" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."feed_plans" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."feed_plans" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."feed_ration" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."feed_ration" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."feed_record_lines" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."feed_record_lines" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."feed_records" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."feed_records" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."feed_tests" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."feed_tests" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."feed_types" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."feed_types" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -23747,83 +24592,83 @@ CREATE POLICY "write_mgr" ON "public"."fert_blends" TO "authenticated" USING (( 
 
 
 
-CREATE POLICY "write_mgr" ON "public"."fert_bookings" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."fert_bookings" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."fert_buy_signals" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."fert_buy_signals" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."fert_check_strips" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."fert_check_strips" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."fert_inventory" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."fert_inventory" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."fert_programs" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."fert_programs" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."fert_quotes" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."fert_quotes" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."fert_settings" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."fert_settings" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."fert_split_plans" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."fert_split_plans" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."fertility_rx" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."fertility_rx" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."fertility_rx_map" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."fertility_rx_map" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."fertility_rx_zones" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."fertility_rx_zones" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."field_boundaries" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."field_boundaries" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."field_crop_seasons" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."field_crop_seasons" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."field_crop_zones" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."field_crop_zones" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."field_entries" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."field_entries" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."field_hail_events" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."field_hail_events" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."field_haul_plans" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."field_haul_plans" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."field_inspections" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."field_inspections" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."field_pivots" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."field_pivots" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."field_soil_profiles" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."field_soil_profiles" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -23835,115 +24680,119 @@ CREATE POLICY "write_mgr" ON "public"."field_year_tenure" TO "authenticated" USI
 
 
 
-CREATE POLICY "write_mgr" ON "public"."field_yield_zones" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."field_yield_zones" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."fieldnet_systems" FOR UPDATE TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."fieldnet_systems" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."financial_entries" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."financial_entries" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."fuel_purchases" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."fuel_purchases" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."grain_movements" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."grain_movements" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."grazing_disposition_returns" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."grazing_disposition_returns" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."grazing_dispositions" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."grazing_dispositions" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."grazing_herd" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."grazing_herd" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."grazing_pastures" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."grazing_pastures" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."hail_inspections" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."hail_inspections" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."herd_counts" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."herd_counts" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."ici_field_lines" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."ici_field_lines" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."input_items" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."input_items" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."input_movements" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."input_movements" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."integration_health" FOR UPDATE TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."integration_health" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."jd_dismissed_fields" FOR DELETE TO "authenticated" USING ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."jd_dismissed_fields" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."jd_dismissed_operations" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."jd_dismissed_operations" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."jd_field_operations" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."jd_field_operations" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."jd_operators" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."jd_guidance_lines" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."manure_haul_invoices" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."jd_operators" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."map_features" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."manure_haul_invoices" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."map_layers" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."map_features" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."marketing_targets" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."map_layers" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."meeting_notes" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."marketing_targets" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."mineral_programs" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."meeting_notes" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."moisture_tests" FOR UPDATE TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."mineral_programs" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."monthly_task_templates" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."moisture_tests" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."mymap_hidden_features" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."monthly_task_templates" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."mymap_hidden_features" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -23955,71 +24804,71 @@ CREATE POLICY "write_mgr" ON "public"."n_trials" TO "authenticated" USING (( SEL
 
 
 
-CREATE POLICY "write_mgr" ON "public"."operating_settings" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."operating_settings" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."pivot_photos" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."pivot_photos" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."planter_plates" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."planter_plates" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."product_purchases" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."product_purchases" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."pump_photos" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."pump_photos" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."pumps" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."pumps" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."ranches" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."ranches" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."river_watch" FOR UPDATE TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."river_watch" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."road_routes" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."road_routes" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."road_snaps" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."road_snaps" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."smrid_areas" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."smrid_areas" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."soil_landscape_polygons" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."soil_landscape_polygons" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."soil_test_assessments" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."soil_test_assessments" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."soil_test_reports" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."soil_test_reports" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."soil_test_samples" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."soil_test_samples" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."solar_sites" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."solar_sites" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."stubble_grazing" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."stubble_grazing" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -24027,11 +24876,11 @@ CREATE POLICY "write_mgr" ON "public"."water_allotments" TO "authenticated" USIN
 
 
 
-CREATE POLICY "write_mgr" ON "public"."water_features" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."water_features" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."water_licences" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."water_licences" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -24043,15 +24892,15 @@ CREATE POLICY "write_mgr" ON "public"."water_quality_stations" TO "authenticated
 
 
 
-CREATE POLICY "write_mgr" ON "public"."weather_stations" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."weather_stations" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."year_unlocks" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."year_unlocks" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
-CREATE POLICY "write_mgr" ON "public"."yield_adjustments" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+CREATE POLICY "write_mgr" ON "public"."yield_adjustments" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -25295,6 +26144,16 @@ GRANT ALL ON FUNCTION "public"."fn_app_issue_from_alert"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."fn_app_issue_stall_sweep"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_app_issue_stall_sweep"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_app_issue_working_since"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_app_issue_working_since"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_apply_hail_inspection"("p_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_apply_hail_inspection"("p_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_apply_hail_inspection"("p_id" "uuid") TO "service_role";
@@ -25396,6 +26255,12 @@ GRANT ALL ON FUNCTION "public"."fn_close_expired_grants"() TO "service_role";
 REVOKE ALL ON FUNCTION "public"."fn_close_irrigation_task"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_close_irrigation_task"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_close_irrigation_task"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_combine_monitor_landowners"("p_crop_year" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_combine_monitor_landowners"("p_crop_year" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_combine_monitor_landowners"("p_crop_year" integer) TO "service_role";
 
 
 
@@ -25504,6 +26369,11 @@ GRANT ALL ON FUNCTION "public"."fn_farm_setup_ensure_farm"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."fn_field_name_safe"("p_name" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_field_name_safe"("p_name" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_field_work_feed_lot"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_field_work_feed_lot"() TO "service_role";
 
@@ -25512,6 +26382,11 @@ GRANT ALL ON FUNCTION "public"."fn_field_work_feed_lot"() TO "service_role";
 REVOKE ALL ON FUNCTION "public"."fn_fields_guard"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_fields_guard"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_fields_guard"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_fields_name_safe"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_fields_name_safe"() TO "service_role";
 
 
 
@@ -25574,6 +26449,21 @@ GRANT ALL ON FUNCTION "public"."fn_norm_chem_name"("p" "text") TO "service_role"
 
 
 
+REVOKE ALL ON FUNCTION "public"."fn_notification_gate"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_notification_gate"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_notification_urgent"("p_kind" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_notification_urgent"("p_kind" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_notification_wanted"("p_user" "uuid", "p_kind" "text", "p_channel" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_notification_wanted"("p_user" "uuid", "p_kind" "text", "p_channel" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_notify"("p_user" "uuid", "p_kind" "text", "p_title" "text", "p_body" "text", "p_link" "text", "p_details" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_notify"("p_user" "uuid", "p_kind" "text", "p_title" "text", "p_body" "text", "p_link" "text", "p_details" "jsonb") TO "service_role";
 
@@ -25617,6 +26507,11 @@ GRANT ALL ON FUNCTION "public"."fn_purchase_reprice_product"() TO "service_role"
 REVOKE ALL ON FUNCTION "public"."fn_push_dispatch"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_push_dispatch"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_push_dispatch"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_push_hold"("p_user" "uuid", "p_kind" "text", "p_at" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_push_hold"("p_user" "uuid", "p_kind" "text", "p_at" timestamp with time zone) TO "service_role";
 
 
 
@@ -25688,6 +26583,21 @@ GRANT ALL ON FUNCTION "public"."fn_scale_ticket_delivered"() TO "service_role";
 REVOKE ALL ON FUNCTION "public"."fn_scale_ticket_match_load"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_scale_ticket_match_load"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_scale_ticket_match_load"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_service_log_applied"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_service_log_applied"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_service_plan_rebase"("p_plan" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_service_plan_rebase"("p_plan" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_service_task_done"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_service_task_done"() TO "service_role";
 
 
 
@@ -30556,6 +31466,11 @@ GRANT ALL ON TABLE "public"."ab_input_latest" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."abnormal_yield_years" TO "authenticated";
+GRANT ALL ON TABLE "public"."abnormal_yield_years" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."ag_news" TO "authenticated";
 GRANT ALL ON TABLE "public"."ag_news" TO "service_role";
 
@@ -30835,8 +31750,23 @@ GRANT ALL ON TABLE "public"."combine_loss_checks" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."combine_monitor_loads" TO "authenticated";
+GRANT ALL ON TABLE "public"."combine_monitor_loads" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."combine_monitor_names" TO "authenticated";
+GRANT ALL ON TABLE "public"."combine_monitor_names" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."combine_settings" TO "authenticated";
 GRANT ALL ON TABLE "public"."combine_settings" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."combine_settings_used" TO "authenticated";
+GRANT ALL ON TABLE "public"."combine_settings_used" TO "service_role";
 
 
 
@@ -31536,6 +32466,11 @@ GRANT ALL ON TABLE "public"."jd_equipment_alerts" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."jd_guidance_lines" TO "authenticated";
+GRANT ALL ON TABLE "public"."jd_guidance_lines" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."jd_operators" TO "authenticated";
 GRANT ALL ON TABLE "public"."jd_operators" TO "service_role";
 
@@ -31658,6 +32593,16 @@ GRANT ALL ON TABLE "public"."n_trials" TO "service_role";
 
 GRANT ALL ON TABLE "public"."notification_prefs" TO "authenticated";
 GRANT ALL ON TABLE "public"."notification_prefs" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."notification_push_queue" TO "authenticated";
+GRANT ALL ON TABLE "public"."notification_push_queue" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."notification_settings" TO "authenticated";
+GRANT ALL ON TABLE "public"."notification_settings" TO "service_role";
 
 
 
@@ -32282,6 +33227,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 
 -- Added by public-export/schema-extras.sql: storage, scheduled jobs, sign-up trigger
 -- ── Storage buckets and their access rules
+insert into storage.buckets (id, name, public) values ('avatars', 'avatars', true) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('branding', 'branding', true) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('checklist-photos', 'checklist-photos', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('contract-files', 'contract-files', false) on conflict (id) do nothing;
@@ -32291,6 +33237,14 @@ insert into storage.buckets (id, name, public) values ('invoices', 'invoices', f
 insert into storage.buckets (id, name, public) values ('satellite-images', 'satellite-images', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('scouting-photos', 'scouting-photos', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('task-files', 'task-files', false) on conflict (id) do nothing;
+drop policy if exists avatars_own_delete on storage.objects;
+create policy avatars_own_delete on storage.objects as PERMISSIVE for DELETE to authenticated using (((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text)));
+drop policy if exists avatars_own_insert on storage.objects;
+create policy avatars_own_insert on storage.objects as PERMISSIVE for INSERT to authenticated with check (((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text)));
+drop policy if exists avatars_own_select on storage.objects;
+create policy avatars_own_select on storage.objects as PERMISSIVE for SELECT to authenticated using (((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text)));
+drop policy if exists avatars_own_update on storage.objects;
+create policy avatars_own_update on storage.objects as PERMISSIVE for UPDATE to authenticated using (((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text)));
 drop policy if exists branding_admin_write on storage.objects;
 create policy branding_admin_write on storage.objects as PERMISSIVE for ALL to authenticated using (((bucket_id = 'branding'::text) AND public.is_admin())) with check (((bucket_id = 'branding'::text) AND public.is_admin()));
 drop policy if exists checklist_photos_delete on storage.objects;
@@ -32336,6 +33290,8 @@ create policy task_files_insert on storage.objects as PERMISSIVE for INSERT to a
 drop policy if exists task_files_read on storage.objects;
 create policy task_files_read on storage.objects as PERMISSIVE for SELECT to authenticated using (((bucket_id = 'task-files'::text) AND public.is_active()));
 -- ── Scheduled jobs (pg_cron)
+select cron.unschedule('app-issue-stall-sweep') where exists (select 1 from cron.job where jobname = 'app-issue-stall-sweep');
+select cron.schedule('app-issue-stall-sweep', '*/15 * * * *', ' select public.fn_app_issue_stall_sweep() ');
 select cron.unschedule('bale-check-reminder') where exists (select 1 from cron.job where jobname = 'bale-check-reminder');
 select cron.schedule('bale-check-reminder', '0 15 1 * *', ' select public.create_bale_check_task() ');
 select cron.unschedule('checklist-new-year') where exists (select 1 from cron.job where jobname = 'checklist-new-year');

@@ -17,6 +17,7 @@ import { withDisplay } from '@/lib/reports/columns'
 import { cropListColumns, cropListRows, type CropListRow } from '@/lib/reports/lists'
 import { useElevatorBids } from '@/components/BreakevenCard'
 import { useSetCropNeedsBins } from '@/lib/bins'
+import { useSetCropOnCombines } from '@/lib/combine-monitor-data'
 import { ColourPicker } from '@/components/ColourPicker'
 import { cropColour } from '@/lib/crop-colour'
 import { useSetCropColour } from '@/lib/crop-colour-mutation'
@@ -51,6 +52,7 @@ export function CropsPage() {
   const { data: bidList } = useElevatorBids()
   const { setArchived, remove, create } = useCropMutations()
   const setNeedsBins = useSetCropNeedsBins()
+  const setOnCombines = useSetCropOnCombines()
   const setColour = useSetCropColour()
   const isManager = hasManagerAccess(profile?.role)
   const { data: varietyList } = useCropVarieties()
@@ -158,7 +160,9 @@ export function CropsPage() {
         return (
           <span title={`${normal}\n${r.expected.label}`}>
             {(Math.round(r.expected.value * 10) / 10).toLocaleString('en-CA')} {r.yield_unit}/ac
-            <span className="ml-1 text-[10px] uppercase text-gray-400">{r.expected.basis === 'goal' ? 'goal' : r.expected.basis === 'farm' ? 'farm avg' : 'field avg'}</span>
+            <span className={`ml-1 text-[10px] uppercase ${r.expected.basis === 'goal' ? 'text-amber-700' : 'text-gray-400'}`}>
+              {r.expected.basis === 'goal' ? 'crop default' : r.expected.basis === 'farm' ? 'farm avg' : 'field avg'}
+            </span>
           </span>
         )
       },
@@ -196,6 +200,25 @@ export function CropsPage() {
           </label>
         ) : (
           <span className="text-xs text-gray-600">{r.needs_bins !== false ? 'yes' : 'no'}</span>
+        ),
+    },
+    // Harvested with the combines: a field with this crop goes on the
+    // combine displays (Combine → Monitor files). Beans, potatoes and green
+    // feed never see the combines.
+    combines: {
+      render: (r) =>
+        isManager ? (
+          <label className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={r.on_combines !== false}
+              disabled={setOnCombines.isPending}
+              onChange={(e) => setOnCombines.mutate({ id: r.id, on: e.target.checked })}
+              aria-label={`${r.name} is harvested with the combines`}
+            />
+          </label>
+        ) : (
+          <span className="text-xs text-gray-600">{r.on_combines !== false ? 'yes' : 'no'}</span>
         ),
     },
     cost: {

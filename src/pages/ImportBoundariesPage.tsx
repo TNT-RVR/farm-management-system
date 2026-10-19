@@ -13,6 +13,7 @@ import { parseBoundaryFile, type ParsedBoundary } from '@/lib/geo/parse-boundary
 import { SATELLITE_STYLE } from '@/lib/geo/map-style'
 import { boundsOf } from '@/lib/geo/area'
 import { farmMapCenter } from '@/lib/farm-setup'
+import { cleanFieldName } from '@/lib/field-name'
 
 /**
  * The "Create a new field" choice in a row's field picker. Not a uuid, so it
@@ -120,7 +121,8 @@ export function ImportBoundariesPage() {
 
   /** Make the field a "Create a new field" row asks for; returns its id. */
   async function createField(row: RowState): Promise<string> {
-    const name = row.newName.trim() || defaultNewName(row, row.key)
+    // No / \ : * ? " < > | in a field name: it becomes a file name.
+    const name = cleanFieldName(row.newName.trim() || defaultNewName(row, row.key))
     const { data, error } = await supabase
       .from('fields')
       .insert({ farm_id: await farmId(), name, legal_land_description: null })

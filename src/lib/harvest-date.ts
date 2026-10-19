@@ -5,6 +5,9 @@ import { farmTz } from './farm-context'
  * left blank keeps a combined field drawing crop water to the end of its curve.
  *
  * AIMM Setup takes it by hand; the rest of the app usually already knows:
+ *  0. "Field finished" (field_work_records.field_finished, Sam 17 Oct
+ *     2026): a person saying, on the day, that the last of the field is off.
+ *     It is the most direct statement there is, so it comes first;
  *  1. a date a person typed in AIMM Setup (field_crop_seasons.harvest_date)
  *     always wins — they may know the monitor was logging the wrong field;
  *  2. the load marked "last from field" on the weigh-in form: a person saying
@@ -18,9 +21,10 @@ import { farmTz } from './farm-context'
  * Nothing found leaves the date blank, and the balance runs the crop curve out.
  */
 
-export type HarvestSource = 'manual' | 'last_load' | 'john_deere' | 'hand'
+export type HarvestSource = 'finished' | 'manual' | 'last_load' | 'john_deere' | 'hand'
 
 export const HARVEST_SOURCE_LABEL: Record<HarvestSource, string> = {
+  finished: 'field marked finished',
   manual: 'typed in Setup',
   last_load: 'last load from the field',
   john_deere: 'last Deere harvest pass',
@@ -28,6 +32,8 @@ export const HARVEST_SOURCE_LABEL: Record<HarvestSource, string> = {
 }
 
 export type HarvestEvidence = {
+  /** The farm day of the latest "Field finished" for this field or crop area, this crop year. */
+  finishedOn?: string | null
   /** field_crop_seasons.harvest_date — only ever written by a person. */
   typed: string | null
   /** Latest bin_loads.loaded_on with last_from_field, this crop year. */
@@ -47,6 +53,7 @@ export function effectiveHarvestDate(
   e: HarvestEvidence,
   opts: { plantingDate?: string | null; today?: string | null } = {},
 ): { date: string | null; source: HarvestSource | null } {
+  if (e.finishedOn) return { date: e.finishedOn, source: 'finished' }
   if (e.typed) return { date: e.typed, source: 'manual' }
   const plausible = (d: string | null): d is string =>
     !!d && (!opts.plantingDate || d > opts.plantingDate) && (!opts.today || d <= opts.today)

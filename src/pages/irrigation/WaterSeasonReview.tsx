@@ -16,7 +16,8 @@ import { fetchFarmPowerCost, fetchWaterReviewData, perDepth, perUnit, powerPrice
 /** Everything the review reads for one year. The arithmetic is in lib/water-review. */
 function useReviewData(year: number) {
   return useQuery({
-    queryKey: ['water-season-review', year],
+    // v2: yields carry the "not a normal year" mark.
+    queryKey: ['water-season-review', 2, year],
     staleTime: 10 * 60_000,
     queryFn: () => fetchWaterReviewData(year),
   })

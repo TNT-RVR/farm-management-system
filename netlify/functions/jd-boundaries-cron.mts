@@ -83,6 +83,18 @@ export default async () => {
       p_data_at: new Date().toISOString(),
     })
 
+    // Then the guidance lines, for the combine displays. One Deere request a
+    // field is more than this function's thirty seconds can hold, so it only
+    // wakes the background worker (jd-guidance-sync-background) and moves on.
+    const workerKey = process.env.JOB_WORKER_KEY
+    const site = process.env.URL
+    if (workerKey && site) {
+      const woke = await fetch(`${site}/.netlify/functions/jd-guidance-sync-background`, { method: 'POST', headers: { 'x-worker-key': workerKey } }).catch(
+        (e: Error) => ({ status: `failed: ${e.message}` }),
+      )
+      console.log(`[jd-boundaries] woke the guidance-line refresh: ${woke.status}`)
+    }
+
     return new Response(JSON.stringify({ ok: true, ...result }), {
       status: 200,
       headers: { 'content-type': 'application/json' },

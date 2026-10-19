@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useNotifications } from './notifications'
+import { useUnreadCount } from './notifications'
 
 /**
  * The unread count on the installed app's icon.
@@ -18,8 +18,8 @@ import { useNotifications } from './notifications'
  * worker when a push wakes it. See sw.ts.
  */
 export function useAppBadge(): void {
-  const { data: notifications } = useNotifications()
-  const unread = (notifications ?? []).filter((n) => !n.read_at).length
+  const { data: unreadCount } = useUnreadCount()
+  const unread = unreadCount ?? 0
 
   useEffect(() => {
     if (!('setAppBadge' in navigator)) return

@@ -92,6 +92,11 @@ export type Estimate = {
   note: string
   /** A figure typed on the plan stood in for history. */
   typed: boolean
+  /**
+   * Nothing typed and not enough harvests: the estimate is the crop's (or the
+   * variety's) normal yield, shown with a "crop default" marker.
+   */
+  fromDefault: boolean
   /** What history says, typed figure or not. */
   history: ExpectedYield
 }
@@ -124,6 +129,7 @@ export function yieldEstimate(opts: {
     cutPct: est.cutPct,
     note,
     typed: typed != null || est.rangeFrom === 'plan',
+    fromDefault: typed == null && est.rangeFrom !== 'plan' && opts.history.basis === 'goal',
     history: opts.history,
   }
 }
@@ -134,6 +140,11 @@ export type Actual = {
   value: number
   /** Every row behind it is after clean-out. */
   clean: boolean
+  /**
+   * Marked not a normal year: the reason. Still compared with its estimate
+   * (the loss shows), but left out of every average.
+   */
+  abnormal?: string | null
 }
 
 /** This field's harvested yield of a crop in a year, acre-weighted over its rows; null with none. */
@@ -156,7 +167,8 @@ export function actualYield(history: readonly YieldRecord[], at: { fieldId: stri
     w += a
     s += a * Number(r.clean_yield_per_acre ?? r.yield_per_acre)
   }
-  return { value: s / w, clean: rows.every((r) => pos(r.clean_yield_per_acre) != null) }
+  const marked = rows.find((r) => r.exclude_from_averages)
+  return { value: s / w, clean: rows.every((r) => pos(r.clean_yield_per_acre) != null), ...(marked ? { abnormal: marked.abnormal_reason ?? '' } : {}) }
 }
 
 /* ----------------------------------------------------------- comparison */
@@ -259,17 +271,23 @@ export function scoreYield(opts: {
   }
 }
 
+/** " · abnormal — left out of averages: cover crop wouldn't die" on a marked harvest; '' otherwise. */
+function abnormalSuffix(s: YieldScore): string {
+  const a = s.actual?.abnormal
+  return a == null ? '' : ` · abnormal — left out of averages${a ? `: ${a}` : ''}`
+}
+
 /** "62 bu/ac — 7 above estimate (+13%), 3 below goal (−5%)"; empty with no actual. */
 export function scoreText(s: YieldScore, unit: string): string {
   if (!s.actual) return ''
   const parts = [s.vsEstimate && versusText(s.vsEstimate, 'estimate'), s.vsGoal && versusText(s.vsGoal, 'goal')].filter(Boolean)
   const head = `${fmt(s.actual.value)} ${unit}/ac${s.actual.clean ? '' : ' (pre-clean)'}`
-  return parts.length ? `${head} — ${parts.join(', ')}` : head
+  return (parts.length ? `${head} — ${parts.join(', ')}` : head) + abnormalSuffix(s)
 }
 
-/** The comparisons alone: "7 above estimate (+13%), 3 below goal (−5%)". */
+/** The comparisons alone: "7 above estimate (+13%), 3 below goal (−5%)", and a marked year's reason. */
 export function versusSummary(s: YieldScore): string {
-  return [s.vsEstimate && versusText(s.vsEstimate, 'estimate'), s.vsGoal && versusText(s.vsGoal, 'goal')].filter(Boolean).join(', ')
+  return [s.vsEstimate && versusText(s.vsEstimate, 'estimate'), s.vsGoal && versusText(s.vsGoal, 'goal')].filter(Boolean).join(', ') + abnormalSuffix(s)
 }
 
 export { fmt as formatYield }

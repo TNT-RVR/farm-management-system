@@ -291,9 +291,14 @@ export function HookRunner({ useRun, params, ctx, onReady }: { useRun: HookRun; 
   return null
 }
 
-export function BuiltRow({ r, ctx, autoOpen = false }: { r: BuiltReport; ctx: GatherContext; autoOpen?: boolean }) {
+export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport; ctx: GatherContext; autoOpen?: boolean; preset?: ParamValues }) {
   const { cropYear } = useCropYear()
-  const [params, setParams] = useState<ParamValues>(() => initialParams(r.params, cropYear, ctx.today))
+  // A link from another page (?open=…&field=…&year=…) fills in its pickers; unknown keys are ignored.
+  const [params, setParams] = useState<ParamValues>(() => {
+    const start = initialParams(r.params, cropYear, ctx.today)
+    for (const s of r.params) if (preset?.[s.key]) start[s.key] = preset[s.key]
+    return start
+  })
   const [format, setFormat] = useRemembered(r.id, r.formats)
   const [open, setOpen] = useState(autoOpen)
   const [busy, setBusy] = useState(false)

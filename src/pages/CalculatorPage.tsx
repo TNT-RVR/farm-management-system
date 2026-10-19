@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { BushelCalculator } from '@/pages/calculator/BushelCalculator'
 import { useCropYear } from '@/lib/crop-year'
@@ -7,6 +7,11 @@ import { ArrowRightLeft, Calculator, Droplet, Droplets, Timer, Wheat } from 'luc
 import { PillTabs } from '@/components/PillTabs'
 import { Select } from '@/components/Select'
 import { PlanterCalculator } from '@/pages/calculator/PlanterCalculator'
+
+// The two cost calculators read a good deal (every Deere pass, the price book,
+// pivots and pumps), so they load only when their tab is opened.
+const OperationCostCalculator = lazy(() => import('@/pages/calculator/OperationCostCalculator').then((m) => ({ default: m.OperationCostCalculator })))
+const IrrigationCostCalculator = lazy(() => import('@/pages/calculator/IrrigationCostCalculator').then((m) => ({ default: m.IrrigationCostCalculator })))
 import { useFieldPivots } from '@/lib/irrigation'
 import { useAllBoundaries, useFields, boundariesForYear } from '@/lib/queries'
 import {
@@ -503,7 +508,7 @@ function RunTimeCalculator() {
  * the plain unit conversions that belong to no particular job sit together
  * under General.
  */
-type TabKey = 'water' | 'bushels' | 'general' | 'planter'
+type TabKey = 'water' | 'bushels' | 'general' | 'planter' | 'operation' | 'irrigation'
 
 /**
  * Combine loss and Moisture were tabs here too, the same components as on the
@@ -520,6 +525,8 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'bushels', label: 'Bushels & weight' },
   { key: 'general', label: 'General' },
   { key: 'planter', label: 'Planter' },
+  { key: 'operation', label: 'Operation cost' },
+  { key: 'irrigation', label: 'Irrigation cost' },
 ]
 
 /** The four plain converters, each its own calculator rather than a dropdown. */
@@ -604,6 +611,11 @@ function CalculatorView() {
           ))}
 
         {family === 'planter' && <PlanterCalculator />}
+        {(family === 'operation' || family === 'irrigation') && (
+          <Suspense fallback={<p className="text-sm text-gray-400 lg:col-span-2">Loading…</p>}>
+            {family === 'operation' ? <OperationCostCalculator /> : <IrrigationCostCalculator />}
+          </Suspense>
+        )}
       </div>
     </div>
   )

@@ -76,8 +76,9 @@ export function YieldGoalCard() {
   const rows = planned.map((x) => {
     const unit = asUnit(x.crop!.yield_unit)
     const lb = x.crop!.test_weight_lb_per_bu == null ? null : Number(x.crop!.test_weight_lb_per_bu)
+    // A year marked not normal (a failed crop) is no guide to what the field grows.
     const history = inputs.history
-      .filter((h) => h.field_id === x.plan.field_id && h.crop === x.crop!.name && h.crop_year < inputs.cropYear && h.yield_per_acre != null)
+      .filter((h) => h.field_id === x.plan.field_id && h.crop === x.crop!.name && h.crop_year < inputs.cropYear && h.yield_per_acre != null && !h.exclude_from_averages)
       .map((h) => (unit ? convertYield(Number(h.yield_per_acre), asUnit(h.yield_unit) ?? unit, unit, lb) : null))
       .filter((v): v is number => v != null)
     return { ...x, unit, check: yieldGoalCheck({ crop: x.crop!.name, goal: x.goal, unit, lbPerBu: lb, irrigated: x.irrigated, history }) }
