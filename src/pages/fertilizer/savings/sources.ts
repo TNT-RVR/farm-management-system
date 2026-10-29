@@ -6,18 +6,17 @@ import { farmRetailer } from '@/lib/farm-context'
  * every card links to the same place for the same data.
  */
 export const S = {
-  // Labels follow the grouped tabs (Soil, Plan, Prices); the links keep the
-  // old ?tab= names, which still land on the same view.
-  market: { label: 'Prices → Market (DTN weekly)', to: '/fertilizer?tab=Market' },
-  // The retailer's name is the farm's own (Farm setup); the ?tab=ICI key stays.
-  pricing: { get label() { return `Prices → Pricing (${farmRetailer()} invoices)` }, to: '/fertilizer?tab=Pricing' },
-  ici: { get label() { return `Prices → ${farmRetailer()}` }, to: '/fertilizer?tab=ICI' },
-  requirements: { label: 'Plan → Requirements', to: '/fertilizer?tab=Requirements' },
-  soil: { label: 'Soil → Soil tests', to: '/fertilizer?tab=Soil%20Sampling' },
-  manure: { label: 'Manure tab', to: '/fertilizer?tab=Manure' },
-  tissue: { label: 'Soil → Tissue tests', to: '/fertilizer?tab=Tissue%20Tests' },
-  rx: { label: 'Plan → Prescriptions', to: '/fertilizer?tab=Prescriptions' },
-  zones: { label: 'Plan → Productivity zones', to: '/fertilizer?tab=Productivity%20Zones' },
+  // Labels and links follow the five Fertilizer views (Sam, 24 Oct 2026):
+  // view → tab. The retailer's name is the farm's own (Farm setup).
+  market: { label: 'Fertilizer prices → Market (DTN weekly)', to: '/fertilizer/prices?tab=market' },
+  pricing: { get label() { return `Fertilizer prices → Pricing (${farmRetailer()} invoices)` }, to: '/fertilizer/prices?tab=pricing' },
+  ici: { get label() { return `Fertilizer prices → ${farmRetailer()}` }, to: '/fertilizer/prices?tab=retailer' },
+  requirements: { label: 'Fertility plan → Requirements', to: '/fertilizer/plan?tab=requirements' },
+  soil: { label: 'Soil tests', to: '/fertilizer/soil?tab=tests' },
+  manure: { label: 'Manure', to: '/fertilizer/manure' },
+  tissue: { label: 'Soil tests → Tissue tests', to: '/fertilizer/soil?tab=tissue' },
+  rx: { label: 'Fertility plan → Prescriptions', to: '/fertilizer/plan?tab=rx' },
+  zones: { label: 'Fertility plan → Productivity zones', to: '/fertilizer/plan?tab=zones' },
   plan: { label: 'Crop plan', to: '/plan' },
   crops: { label: 'Crop prices (each crop’s page)', to: '/crops' },
   fields: { label: 'Fields (history, soil, work)', to: '/fields' },

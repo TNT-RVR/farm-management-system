@@ -18,17 +18,27 @@
  * block: the contract decides, and the field may well be clean.
  */
 
-export type HerbicideTrait = 'liberty' | 'roundup'
+/**
+ * Liberty and Roundup are this farm's two; Clearfield and conventional
+ * canola are just as common elsewhere (public copy review item 5, 26 Oct
+ * 2026). The database takes any trait name. The volunteer rule below is the
+ * same for each: a volunteer of the crop's own trait survives the crop's
+ * spray. A conventional seed crop has no in-crop canola spray at all, so its
+ * warning is the least of its worries — the contract's isolation rules lead.
+ */
+export type HerbicideTrait = 'liberty' | 'roundup' | 'clearfield' | 'conventional'
 
-export const TRAITS: HerbicideTrait[] = ['liberty', 'roundup']
+export const TRAITS: HerbicideTrait[] = ['liberty', 'roundup', 'clearfield', 'conventional']
 
 /** Short name, for badges and messages. */
-export const TRAIT_SHORT: Record<HerbicideTrait, string> = { liberty: 'Liberty', roundup: 'Roundup' }
+export const TRAIT_SHORT: Record<HerbicideTrait, string> = { liberty: 'Liberty', roundup: 'Roundup', clearfield: 'Clearfield', conventional: 'Conventional' }
 
 /** The full name, for the crop's settings. */
 export const TRAIT_LABEL: Record<HerbicideTrait, string> = {
   liberty: 'Liberty — LibertyLink, survives glufosinate',
   roundup: 'Roundup — Roundup Ready, survives glyphosate',
+  clearfield: 'Clearfield — survives imazamox (Ares, Odyssey)',
+  conventional: 'Conventional — no herbicide trait',
 }
 
 /**
@@ -53,7 +63,7 @@ export type TraitSetting = HerbicideTrait | typeof BOTH_TRAITS
 export const isBothTraits = (v: unknown) => v === BOTH_TRAITS
 
 export function asTrait(v: unknown): HerbicideTrait | null {
-  return v === 'liberty' || v === 'roundup' ? v : null
+  return TRAITS.includes(v as HerbicideTrait) ? (v as HerbicideTrait) : null
 }
 
 export const isCanola = (name: string | null | undefined) => /canola/i.test(name ?? '')

@@ -183,7 +183,8 @@ export type ParamSpec =
   | { key: string; kind: 'field'; label?: string; allLabel?: string }
   | { key: string; kind: 'crop'; label?: string; allLabel?: string }
   | { key: string; kind: 'ranch'; label?: string; allLabel?: string }
-  | { key: string; kind: 'bin'; label?: string }
+  /** One bin; with allLabel it may be left at "all", otherwise the first bin is picked. */
+  | { key: string; kind: 'bin'; label?: string; allLabel?: string }
   /** A date; the default is counted back from today. */
   | { key: string; kind: 'date'; label: string; daysAgo?: number; startOfYear?: boolean }
   | { key: string; kind: 'choice'; label: string; options: { value: string; label: string }[]; default: string }
@@ -193,7 +194,7 @@ export type ParamSpec =
    */
   | { key: string; kind: 'lookup'; label: string; lookup: LookupKey; allLabel?: string }
 
-export type LookupKey = 'suppliers' | 'auditTables' | 'contactTypes' | 'alertKinds' | 'manifests' | 'nTrials' | 'jointVentures' | 'grazingDispositions'
+export type LookupKey = 'suppliers' | 'auditTables' | 'contactTypes' | 'alertKinds' | 'manifests' | 'nTrials' | 'jointVentures' | 'grazingDispositions' | 'drivers'
 
 export type ParamValues = Record<string, string>
 

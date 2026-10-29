@@ -2,16 +2,21 @@ import { admin } from './_jd.mts'
 import { runCropWeatherWatch } from '../shared/crop-weather-watch.ts'
 import { runFreezeWatch } from '../shared/freeze-watch.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { farmTimeIs, farmTimeLabel, type FarmTime } from '../../src/lib/farm-clock.ts'
 
-// Frost and heat by crop stage, every morning at 6:30 (12:30 UTC) and again at
+// Frost and heat by crop stage, every morning at 6:30 on the farm's clock and again at
 // 4:30 in the afternoon, so an evening frost forecast is heard before dark. A
 // warning already sent is not sent again (crop_weather_alerts).
 //
 // Also the freeze watch: checklists due before the first hard freeze
 // (winterizing). Each runs on its own, so one failing doesn't stop the other.
+const WHEN: FarmTime = { hours: [6, 16] }
+
 export default async () => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
+  // Every hour; acts only at its time on the farm's clock (Farm setup's time zone).
+  if (!farmTimeIs(WHEN)) return new Response(`Not yet: runs ${farmTimeLabel(WHEN)}`)
   const sb = admin()
   const out: Record<string, unknown> = {}
   let failed = false
@@ -38,4 +43,4 @@ export default async () => {
   return new Response(JSON.stringify(out), { status: failed ? 500 : 200, headers: { 'Content-Type': 'application/json' } })
 }
 
-export const config = { schedule: '30 12,22 * * *' }
+export const config = { schedule: '30 * * * *' }

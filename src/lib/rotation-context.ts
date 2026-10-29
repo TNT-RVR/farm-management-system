@@ -29,7 +29,7 @@ export function useRotationContext(cropYear: number) {
   const q = useQuery({
     // Versioned: this query is persisted offline, and a restored copy of an
     // older shape (no history) crashed the Rotation view.
-    queryKey: ['rotation-context', 'v19', cropYear],
+    queryKey: ['rotation-context', 'v20', cropYear],
     staleTime: 10 * 60_000,
     queryFn: async () => {
       const since = `${cropYear - 4}-01-01`
@@ -44,7 +44,7 @@ export function useRotationContext(cropYear: number) {
           .gte('started_at', since),
         supabase.from('jd_products').select('id, name, pmra_registration'),
         supabase.from('jd_product_aliases').select('deere_name, product_id, ignored'),
-        supabase.from('chemical_recrop_rules').select('registration_number, crop_key, following_crop, months, status, condition, quote'),
+        supabase.from('chemical_recrop_rules_v').select('registration_number, crop_key, following_crop, months, status, condition, quote'),
         supabase.from('crop_acre_limits').select('id, crop_id, crop_group, crop_year, max_acres'),
         supabase.from('crops').select('id, name, min_return_years, margin_per_acre, margin_source, active, renter_only, yield_unit, default_yield_per_acre, irrigation_need_in, max_in_a_row, stand_min_years, stand_max_years, own_use, feed_dm_pct, test_weight_lb_per_bu, sister_value_per_acre, sister_value_note, herbicide_trait'),
         supabase.from('field_year_tenure').select('field_id, crop_year'),

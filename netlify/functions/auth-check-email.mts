@@ -1,5 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 // Tells the login screen whether an email has an account, so it can show
 // "no account with that email" vs "wrong password" (this is an invite-only
@@ -19,7 +19,7 @@ export default async (req: Request) => {
     new Response(JSON.stringify(b), { headers: { 'content-type': 'application/json' } })
   if (!email || !url || !serviceKey) return json({ exists: null })
   try {
-    const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+    const sb = admin()
     // An exact match only: ilike read the caller's % and _ as wildcards, so
     // narrowing searches could pull out every staff email (security review, 15 Oct 2026).
     const { data } = await sb.from('users').select('id').eq('email', email).maybeSingle()

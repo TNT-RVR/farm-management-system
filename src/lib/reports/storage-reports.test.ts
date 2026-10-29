@@ -120,13 +120,26 @@ describe('deliveries', () => {
     expect(r.loads).toBe(2)
     const c44 = r.groups[0]
     // 88,000 lb of canola at 50 lb a bushel.
-    expect(c44.rows[0][4]).toBe(1760)
+    expect(c44.rows[0][4]).toBe('Cargill Lethbridge')
+    expect(c44.rows[0][5]).toBe(1760)
     expect(c44.note).toBe('Canola · 10,000 bu at $14.5/bu · window 2026-09-01 to 2026-12-31 · 1,760 delivered · 8,240 left to haul · partial')
     expect(r.groups[1].rows).toEqual([])
     expect(r.groups[1].note).toContain('10,000 left to haul')
     // Beans are pounds: the load's kilograms, not its bushels.
-    expect(Number(r.groups[2].rows[0][4])).toBeCloseTo(39865 * 2.20462262, 0)
-    expect(r.groups[2].totals?.[5]).toBe('lb')
+    expect(Number(r.groups[2].rows[0][5])).toBeCloseTo(39865 * 2.20462262, 0)
+    expect(r.groups[2].totals?.[6]).toBe('lb')
+  })
+
+  it('puts grain shipped out of a bin under where it went', () => {
+    const move = { crop_id: 'canola', bin_id: 'b', contract_id: null, bushels: '4000', moved_at: '2026-10-26', ticket_number: null, notes: null }
+    const r = deliveryGroups(
+      { tickets: [], loads: [], contracts: [], moves: [{ ...move, picked_up: true, shipped_to: 'Corteva' }, { ...move, delivery_site_id: 's', bushels: '1000' }] },
+      names,
+    )
+    expect(r.groups.map((g) => g.title)).toEqual(['Corteva', 'Viterra Taber'])
+    expect(r.groups[0].rows[0][4]).toBe('picked up at the yard by Corteva')
+    expect(r.groups[0].rows[0][2]).toBe('shipped from a bin')
+    expect(r.groups[1].rows[0][4]).toBe('Viterra Taber')
   })
 })
 

@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import { Mountain, TriangleAlert } from 'lucide-react'
 import { Select } from '@/components/Select'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import {
   bestPerField,
   colourStops,
@@ -15,8 +14,8 @@ import {
   REM_COLOURS,
   type TopoMode,
 } from '@/lib/topography'
-import { farmMapCenter } from '@/lib/farm-setup'
 import { ImportHint } from '@/components/ImportHint'
+import { HelpNote } from '@/components/HelpNote'
 
 /**
  * The lay of the land, built from what the machines already logged.
@@ -52,35 +51,19 @@ export function TopographyPage() {
   const { data: cells, isFetching } = useTopoCells(surface?.id ?? null)
 
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
-  const [ready, setReady] = useState(false)
   const [mapError, setMapError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: SATELLITE_STYLE,
-      center: farmMapCenter(),
-      zoom: 11,
-      attributionControl: { compact: true },
-    })
-    map.addControl(new maplibregl.NavigationControl(), 'top-right')
-    map.on('load', () => setReady(true))
-
+  const { mapRef, ready } = useFarmMap(containerRef, {
+    zoom: 11,
+    attribution: 'compact',
+    controls: { nav: {} },
     // MapLibre reports its failures HERE and nowhere else, and then carries on
     // drawing an empty map. That is how every symbol layer in this app was
     // invisible for months over a missing glyphs URL: the library said so on
     // this channel every time and nothing was listening. A map that fails
     // silently looks exactly like a map with nothing on it.
-    map.on('error', (e) => setMapError(e.error?.message ?? 'The map failed to draw'))
-
-    mapRef.current = map
-    return () => {
-      map.remove()
-      mapRef.current = null
-    }
-  }, [])
+    onCreate: (map) => map.on('error', (e) => setMapError(e.error?.message ?? 'The map failed to draw')),
+  })
 
   const stops = useMemo(() => colourStops(cells ?? [], mode), [cells, mode])
 
@@ -142,7 +125,7 @@ export function TopographyPage() {
       ],
       { padding: 40, duration: 600 },
     )
-  }, [cells, ready, mode, stops, surface?.cell_m])
+  }, [mapRef, cells, ready, mode, stops, surface?.cell_m])
 
   const legend = rampSteps(stops, mode === 'rem' ? REM_COLOURS : ELEVATION_COLOURS)
 
@@ -152,11 +135,11 @@ export function TopographyPage() {
         <h1 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900">
           <Mountain className="h-5 w-5" /> Topography
         </h1>
-        <p className="mt-0.5 text-xs text-gray-500">
+        <HelpNote className="mt-0.5 text-xs" summary="From Deere's pass elevations; not tied to sea level." title="Where the heights come from">
           Built from the elevation John Deere logs on every pass. Heights are consistent within a
           field and are <strong>not</strong> tied to sea level — good for finding water, not for
           pricing a scraper job.
-        </p>
+        </HelpNote>
 
         <div className="mt-3 flex flex-wrap items-center gap-2 pb-3">
           <Select

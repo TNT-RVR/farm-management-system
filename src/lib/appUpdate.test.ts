@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isChunkLoadError, shouldCheckForUpdate } from './appUpdate'
+import { busyOnPage, isChunkLoadError, shouldCheckForUpdate } from './appUpdate'
 
 // The message differs by browser, and getting this wrong means the tab stays
 // white — so every wording we might actually see is covered.
@@ -56,5 +56,18 @@ describe('shouldCheckForUpdate', () => {
     // A phone crossing a timezone or correcting its clock must not disable
     // update checks until the original time comes round again.
     expect(shouldCheckForUpdate(1_000_000, 900_000, GAP)).toBe(true)
+  })
+})
+
+describe('busyOnPage', () => {
+  // A stand-in page: whether a pop-up is open, and what has the cursor.
+  const page = (dialog: boolean, active: { tagName: string; isContentEditable?: boolean } | null) =>
+    ({ querySelector: () => (dialog ? {} : null), activeElement: active }) as unknown as Document
+  it('holds the reload while a form is open or a box has the cursor, not while reading', () => {
+    expect(busyOnPage(page(false, { tagName: 'BODY' }))).toBe(false)
+    expect(busyOnPage(page(false, { tagName: 'BUTTON' }))).toBe(false)
+    expect(busyOnPage(page(true, { tagName: 'BODY' }))).toBe(true)
+    expect(busyOnPage(page(false, { tagName: 'INPUT' }))).toBe(true)
+    expect(busyOnPage(page(false, { tagName: 'DIV', isContentEditable: true }))).toBe(true)
   })
 })

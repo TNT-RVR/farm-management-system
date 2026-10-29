@@ -21,6 +21,7 @@ export const DELIVERY_COLUMNS = [
   { label: 'Crop' },
   { label: 'Ticket / load' },
   { label: 'From' },
+  { label: 'Delivered to' },
   { label: 'Net', decimals: 0 },
   { label: 'Unit' },
   { label: 'Moisture (%)', decimals: 1 },
@@ -32,7 +33,25 @@ export const DELIVERY_COLUMNS = [
 export type DCrop = { id: string; name: string; yield_unit: string | null }
 export type DTicket = { id: string; crop_id: string | null; contract_id: string | null; bin_id: string | null; buyer: string | null; ticket_no: string | null; delivered_on: string; net_lb: unknown; moisture_pct: unknown; dockage_pct: unknown; protein_pct: unknown; net_units: unknown; unit: string | null; bin_load_id: string | null; notes: string | null }
 export type DLoad = { id: string; crop_id: string | null; field_id: string | null; contract_id: string | null; delivery_site_id: string | null; loaded_on: string; net_kg: unknown; bushels: unknown; moisture_pct: unknown; protein_pct: unknown; note: string | null }
-export type DMove = { crop_id: string | null; bin_id: string | null; contract_id: string | null; bushels: unknown; moved_at: string; ticket_number: string | null; notes: string | null }
+export type DMove = {
+  crop_id: string | null
+  bin_id: string | null
+  contract_id: string | null
+  bushels: unknown
+  moved_at: string
+  ticket_number: string | null
+  notes: string | null
+  /** Where a shipment out of a bin went (26 Oct 2026): a place, or the buyer who picked it up. */
+  delivery_site_id?: string | null
+  shipped_to?: string | null
+  picked_up?: boolean | null
+}
+
+/** Where a shipment out of a bin went, as the report says it. */
+export function moveDestination(m: Pick<DMove, 'delivery_site_id' | 'shipped_to' | 'picked_up'>, site: (id: string | null) => string | null): string | null {
+  if (m.picked_up) return `picked up at the yard${m.shipped_to ? ` by ${m.shipped_to}` : ''}`
+  return site(m.delivery_site_id ?? null) ?? m.shipped_to ?? null
+}
 export type DContract = { id: string; crop_id: string | null; buyer_contact_id: string | null; contract_number: string | null; bushels: unknown; price_per_unit: unknown; delivery_start: string | null; delivery_end: string | null; delivered_bu: unknown; status: string | null }
 
 type Names = { crop: (id: string | null) => DCrop | null; field: (id: string | null) => string | null; bin: (id: string | null) => string | null; site: (id: string | null) => string | null; buyer: (contactId: string | null) => string | null }
@@ -72,7 +91,7 @@ export function deliveryGroups(d: { tickets: DTicket[]; loads: DLoad[]; moves: D
       at: t.delivered_on,
       net,
       unit,
-      cells: [t.delivered_on, crop?.name ?? null, t.ticket_no ? `ticket ${t.ticket_no}` : 'ticket', n.bin(t.bin_id), net, unitWord(unit), num(t.moisture_pct), num(t.dockage_pct), num(t.protein_pct), t.notes],
+      cells: [t.delivered_on, crop?.name ?? null, t.ticket_no ? `ticket ${t.ticket_no}` : 'ticket', n.bin(t.bin_id), t.buyer, net, unitWord(unit), num(t.moisture_pct), num(t.dockage_pct), num(t.protein_pct), t.notes],
     })
   }
   for (const l of d.loads) {
@@ -84,18 +103,20 @@ export function deliveryGroups(d: { tickets: DTicket[]; loads: DLoad[]; moves: D
       at: l.loaded_on,
       net,
       unit,
-      cells: [l.loaded_on, crop?.name ?? null, 'farm load', n.field(l.field_id), net, unitWord(unit), num(l.moisture_pct), null, num(l.protein_pct), [l.note, 'our weights; no buyer ticket matched'].filter(Boolean).join(' · ')],
+      cells: [l.loaded_on, crop?.name ?? null, 'farm load', n.field(l.field_id), n.site(l.delivery_site_id), net, unitWord(unit), num(l.moisture_pct), null, num(l.protein_pct), [l.note, 'our weights; no buyer ticket matched'].filter(Boolean).join(' · ')],
     })
   }
   for (const m of d.moves) {
     if (m.ticket_number && ticketNos.has(m.ticket_number.trim())) continue
     const crop = n.crop(m.crop_id)
     const net = num(m.bushels)
-    keyFor(null, m.contract_id).rows.push({
+    // Under the buyer who picked it up, or the place it was hauled to.
+    const buyer = m.picked_up ? (m.shipped_to ?? null) : (n.site(m.delivery_site_id ?? null) ?? m.shipped_to ?? null)
+    keyFor(buyer, m.contract_id).rows.push({
       at: m.moved_at,
       net,
       unit: 'bu',
-      cells: [m.moved_at, crop?.name ?? null, m.ticket_number && !m.ticket_number.startsWith('load:') ? `ticket ${m.ticket_number}` : 'bin delivery', n.bin(m.bin_id), net, 'bu', null, null, null, m.notes],
+      cells: [m.moved_at, crop?.name ?? null, m.ticket_number && !m.ticket_number.startsWith('load:') ? `ticket ${m.ticket_number}` : 'shipped from a bin', n.bin(m.bin_id), moveDestination(m, n.site), net, 'bu', null, null, null, m.notes],
     })
   }
 
@@ -131,7 +152,7 @@ export function deliveryGroups(d: { tickets: DTicket[]; loads: DLoad[]; moves: D
         title: c ? `${g.buyer} · contract ${c.contract_number ?? '(no number)'}` : g.buyer,
         note,
         rows: g.rows.map((r) => r.cells),
-        totals: g.rows.length && units.length === 1 ? ['Delivered', null, `${g.rows.length} load${g.rows.length === 1 ? '' : 's'}`, null, hauled, unitWord(units[0]), null, null, null, null] : undefined,
+        totals: g.rows.length && units.length === 1 ? ['Delivered', null, `${g.rows.length} load${g.rows.length === 1 ? '' : 's'}`, null, null, hauled, unitWord(units[0]), null, null, null, null] : undefined,
       }
     })
   return { groups: out, loads }
@@ -157,7 +178,7 @@ export async function gatherDeliveries(p: ParamValues, ctx: GatherContext): Prom
         .order('id')
         .range(a, b),
     ),
-    fetchAll<DMove>((a, b) => supabase.from('grain_movements').select('crop_id, bin_id, contract_id, bushels, moved_at, ticket_number, notes').eq('crop_year', year).eq('movement_type', 'delivery_out').order('id').range(a, b)),
+    fetchAll<DMove>((a, b) => supabase.from('grain_movements').select('crop_id, bin_id, contract_id, bushels, moved_at, ticket_number, notes, delivery_site_id, shipped_to, picked_up').eq('crop_year', year).eq('movement_type', 'delivery_out').order('id').range(a, b)),
     fetchAll<DContract>((a, b) =>
       supabase
         .from('contracts')
@@ -194,7 +215,7 @@ export async function gatherDeliveries(p: ParamValues, ctx: GatherContext): Prom
     },
   )
   const summary = [
-    'Every load delivered this crop year, under its buyer and the contract it went against: scale tickets, loads weighed off a field straight to an elevator or plant, and grain moved out of a bin as a delivery. A ticket matched to one of our loads is counted once, as the ticket.',
+    'Every load delivered this crop year, under its buyer and the contract it went against: scale tickets, loads weighed off a field straight to an elevator or plant, and grain shipped out of a bin (under the plant it went to, or the buyer who picked it up at the yard). A ticket matched to one of our loads is counted once, as the ticket.',
     'Amounts are in the crop’s unit — bushels, or pounds for beans. A contract’s delivered figure is the one the tickets keep on it.',
   ]
   if (!contracts.length) summary.push(`No contracts are entered for ${year}; add them on Contracts to see what is left to haul.`)

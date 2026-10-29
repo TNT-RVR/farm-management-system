@@ -33,6 +33,8 @@ import { parseYieldText, planYieldText } from '@/lib/yield-estimate'
 import { usePlanterProfiles } from '@/lib/planter-profiles'
 import { useCropVarietySettings } from '@/lib/crop-variety-settings-data'
 import { VarietyFigures, VarietySettingsEditor } from '@/pages/crops/CropVarietyRows'
+import { askConfirm } from '@/components/askConfirm'
+import { CARD_HEAD } from '@/lib/table-style'
 
 type CropUpdate = Database['public']['Tables']['crops']['Update']
 type InputCategory = CropInputRow['category']
@@ -367,8 +369,9 @@ function VarietiesEditor({ crop, readonly }: { crop: CropRow; readonly: boolean 
   const [figuresOf, setFiguresOf] = useState<string | null>(null)
   const problem = (update.error ?? add.error) as Error | null
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-gray-700">Varieties</h3>
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h3 className={cn('font-medium', CARD_HEAD)}>Varieties</h3>
+      <div className="p-4">
       {mine.length ? (
         <ul className="mt-2 divide-y divide-gray-100">
           {mine.map((v) =>
@@ -379,13 +382,13 @@ function VarietiesEditor({ crop, readonly }: { crop: CropRow; readonly: boolean 
                   onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
                   placeholder="Name"
                   autoFocus
-                  className="min-w-0 flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm"
+                  className="min-w-0 flex-1 basis-full rounded-md border border-gray-300 px-2 py-1 text-sm sm:basis-48"
                 />
                 <input
                   value={draft.company}
                   onChange={(e) => setDraft((d) => ({ ...d, company: e.target.value }))}
                   placeholder="Company (optional)"
-                  className="w-40 rounded-md border border-gray-300 px-2 py-1 text-sm"
+                  className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm sm:w-40"
                 />
                 <button
                   onClick={() =>
@@ -420,7 +423,7 @@ function VarietiesEditor({ crop, readonly }: { crop: CropRow; readonly: boolean 
                   crop={crop}
                   planter={planter}
                   row={varietySettingFor(varietySettings, crop.id, v.name)}
-                  className="min-w-0 flex-1"
+                  className="min-w-0 flex-1 basis-full sm:basis-0"
                 />
                 {!readonly && (
                   <span className="flex items-center gap-0.5">
@@ -437,8 +440,8 @@ function VarietiesEditor({ crop, readonly }: { crop: CropRow; readonly: boolean 
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
                     <button
-                      onClick={() => {
-                        if (window.confirm(`Remove the variety "${v.name}"? Plans that named it keep the name.`))
+                      onClick={async () => {
+                        if (await askConfirm(`Remove the variety "${v.name}"? Plans that named it keep the name.`, { confirmLabel: 'Remove' }))
                           remove.mutate(v.id)
                       }}
                       className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600"
@@ -505,6 +508,8 @@ function VarietiesEditor({ crop, readonly }: { crop: CropRow; readonly: boolean 
           onClose={() => setFiguresOf(null)}
         />
       )}
+
+      </div>
     </div>
   )
 }
@@ -553,9 +558,12 @@ function PriceEditor({ crop, readonly }: { crop: CropRow; readonly: boolean }) {
 
   if (crop.land_rent_only)
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-gray-700">{cropYear} price</h3>
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <h3 className={cn('font-medium', CARD_HEAD)}>{cropYear} price</h3>
+        <div className="p-4">
         <p className="mt-1 text-xs text-gray-500">Land rented out — the rent is on the lease, so no price is needed.</p>
+
+        </div>
       </div>
     )
 
@@ -565,11 +573,12 @@ function PriceEditor({ crop, readonly }: { crop: CropRow; readonly: boolean }) {
       : `${crop.yield_unit === 'lbs' ? fallback.value.toFixed(3) : fallback.value.toFixed(2)} (${fallback.basis === 'market' ? fallback.label : `the ${fallback.fromYear} price`})`
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-gray-700">
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h3 className={cn('font-medium', CARD_HEAD)}>
         {cropYear} {forecast ? 'forecast price' : 'estimated price'}{' '}
-        <span className="font-normal text-gray-400">($/{crop.yield_unit})</span>
+        <span className="font-normal text-brand-100">($/{crop.yield_unit})</span>
       </h3>
+      <div className="p-4">
       <input
         type="number"
         step="0.01"
@@ -594,6 +603,8 @@ function PriceEditor({ crop, readonly }: { crop: CropRow; readonly: boolean }) {
             : `No price yet for ${cropYear}.`}
       </p>
       {save.isError && <p className="mt-1 text-xs text-red-600">{(save.error as Error).message}</p>}
+
+      </div>
     </div>
   )
 }

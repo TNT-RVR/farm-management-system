@@ -73,14 +73,14 @@ export function compareLoss(a: LossHistoryRow, b: LossHistoryRow): number {
 export const SIMILAR = {
   /** Grain moisture, points, when the crop has no moisture bands. */
   moisturePts: 1.5,
-  /** Within one band (dry / tough / damp), still no further apart than this. */
+  /** Within one band (dry / tough / wet), still no further apart than this. */
   moistureBandPts: 2.5,
   /** Relative humidity, points. */
   rhPts: 15,
 } as const
 
 /**
- * Same moisture band (the crop's dry / tough / damp, where it has bands) and
+ * Same moisture band (the crop's dry / tough / wet, where it has bands) and
  * near the same moisture, and near the same humidity. Both need the moisture
  * and the RH known: a check without them is not evidence about conditions.
  */

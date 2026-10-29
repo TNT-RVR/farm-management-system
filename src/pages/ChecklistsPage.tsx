@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useTab } from '@/lib/useTab'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { CheckSquare, Map as MapIcon, Pencil, Play, Plus, Search, Trash2 } from 'lucide-react'
+import { CheckSquare, ClipboardCheck, Map as MapIcon, Pencil, Play, Plus, Search, Trash2 } from 'lucide-react'
 import { useEnsureYearRun } from '@/lib/checklist-map'
 import { ConfirmDialog, PromptDialog } from '@/components/Modal'
 import { PillTabs } from '@/components/PillTabs'
@@ -11,6 +11,10 @@ import { supabase } from '@/lib/supabase'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useCropYear } from '@/lib/crop-year'
 import { useUsers } from '@/lib/queries'
+import { useFeature } from '@/lib/farm-setup'
+import { isDue } from '@/lib/truck-inspection'
+import { useInspectedVehicles, useTruckInspections } from '@/lib/truck-inspection-data'
+import { localDateKey } from '@/lib/ranchWeather'
 import {
   CATEGORIES,
   useCreateRun,
@@ -24,6 +28,7 @@ import type { Database } from '@/lib/database.types'
 
 type RunRow = Database['public']['Tables']['checklist_runs']['Row']
 import { cn } from '@/lib/utils'
+import { CARD_HEAD } from '@/lib/table-style'
 
 const CATEGORY_COLORS: Record<ChecklistCategory, string> = {
   irrigation: 'bg-sky-100 text-sky-800',
@@ -112,6 +117,63 @@ function StartRunDialog({ template, onClose }: { template: TemplateRow; onClose:
   )
 }
 
+/**
+ * The Truck inspection checklist (Sam, 24 Oct 2026: "a generic form under
+ * checklists that they can then select the truck from a drop down"). Not a
+ * template row: it opens the yearly truck inspection form, whose answers and
+ * sign-off live on truck_inspections, the same rows as each truck's
+ * Inspections tab on Equipment service. The line counts the semis the
+ * January reminder asks about.
+ */
+function TruckInspectionCard({ variant }: { variant: 'run' | 'template' }) {
+  const navigate = useNavigate()
+  const { data: vehicles } = useInspectedVehicles()
+  const { data: inspections } = useTruckInspections()
+  const year = Number(localDateKey().slice(0, 4))
+  const semis = (vehicles ?? []).filter((v) => v.equipment_type === 'Truck')
+  const done = semis.filter(
+    (t) => !isDue((inspections ?? []).filter((i) => i.equipment_id === t.id && i.signed_on).map((i) => i.signed_on!).sort().at(-1), year),
+  ).length
+  const open = (inspections ?? []).filter((i) => !i.signed_at).length
+  const line = semis.length
+    ? `${done} of ${semis.length} trucks inspected in ${year}${open ? ` · ${open} in progress` : ''}`
+    : 'Pick the truck on the form'
+  if (variant === 'run') {
+    return (
+      <button
+        onClick={() => navigate('/checklists/truck-inspection')}
+        className="flex items-center gap-3 rounded-lg border border-brand-200 bg-brand-50 p-4 text-left hover:bg-brand-100"
+      >
+        <ClipboardCheck className="h-6 w-6 shrink-0 text-brand-700" />
+        <span className="min-w-0 flex-1">
+          <span className="block font-semibold text-gray-900">Truck inspection · {year}</span>
+          <span className="text-xs text-gray-600">{line}</span>
+        </span>
+      </button>
+    )
+  }
+  return (
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h3 className={cn('font-medium', CARD_HEAD)}>Truck inspection</h3>
+      <div className="p-4">
+      <div className="mt-1 flex items-center gap-2">
+        <span className={cn('rounded-full px-2 py-0.5 text-xs', CATEGORY_COLORS.equipment)}>equipment</span>
+        <span className="text-xs text-gray-500">{line}</span>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button
+          onClick={() => navigate('/checklists/truck-inspection')}
+          className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-800"
+        >
+          <Play className="h-3.5 w-3.5" /> Open
+        </button>
+      </div>
+
+      </div>
+    </div>
+  )
+}
+
 export function ChecklistsPage() {
   const navigate = useNavigate()
   const { profile } = useAuth()
@@ -126,6 +188,9 @@ export function ChecklistsPage() {
   const [search, setSearch] = useState('')
   const [cat, setCat] = useState<ChecklistCategory | 'all'>('all')
   const [starting, setStarting] = useState<TemplateRow | null>(null)
+  // The truck inspection goes with Equipment when the farm switches it off.
+  const trucks = useFeature('equipment')
+  const showTruckTemplate = trucks && (cat === 'all' || cat === 'equipment') && 'truck inspection'.includes(search.trim().toLowerCase())
   const ensure = useEnsureYearRun()
   // Sam, 7 Oct 2026: a run can be renamed or deleted (managers, as the
   // write policy says). Its assignees' "Checklist: …" tasks follow it.
@@ -245,6 +310,7 @@ export function ChecklistsPage() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
+            {showTruckTemplate && <TruckInspectionCard variant="template" />}
             {filteredTemplates.map((t) => (
               <div key={t.id} className="rounded-lg border border-gray-200 bg-white p-4">
                 <div className="flex items-start justify-between gap-2">
@@ -288,15 +354,16 @@ export function ChecklistsPage() {
                 </div>
               </div>
             ))}
-            {filteredTemplates.length === 0 && (
+            {filteredTemplates.length === 0 && !showTruckTemplate && (
               <p className="text-sm text-gray-400">No checklists match.</p>
             )}
           </div>
         </>
       ) : (
         <>
-        {yearly.length > 0 && (
+        {(yearly.length > 0 || trucks) && (
           <div className="mb-3 grid gap-3 sm:grid-cols-2">
+            {trucks && <TruckInspectionCard variant="run" />}
             {yearly.map((t) => {
               const r = runs?.find((x) => x.template_id === t.id)
               return (

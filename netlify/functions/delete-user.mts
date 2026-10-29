@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin as serviceClient } from '../shared/supabase-admin.ts'
 
 // ADMIN-only user deletion. Deleting the auth user is the real removal — the
 // public.users profile row is dropped by its `on delete cascade` FK. RLS alone
@@ -29,7 +29,7 @@ export default async (req: Request) => {
   const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
   if (!jwt) return json({ error: 'Not authenticated' }, 401)
 
-  const admin = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const admin = serviceClient()
 
   const { data: caller, error: callerErr } = await getUserMfa(admin, jwt)
   if (callerErr || !caller.user) return json({ error: 'Invalid session' }, 401)

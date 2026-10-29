@@ -1,3 +1,4 @@
+import { PLANNING_ROLLOVER_MONTH } from '@/lib/fiscal-year'
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -16,9 +17,10 @@ import { HelpNote } from '@/components/HelpNote'
 import { Select } from '@/components/Select'
 import { Fold } from '@/components/Fold'
 import { cn } from '@/lib/utils'
+import { money, n0 } from '@/lib/format'
+import { YearSelect } from '@/components/YearSelect'
+import { CARD_HEAD, TABLE_HEAD, TABLE_TH_MUTED } from '@/lib/table-style'
 
-const n0 = (v: number) => Math.round(v).toLocaleString('en-CA')
-const money = (v: number) => `${v < 0 ? '−' : ''}$${n0(Math.abs(v))}`
 const unitPrice = (v: number) => (v < 1 ? v.toFixed(3) : v.toFixed(2))
 const fmtYield = (v: number, unit: string) => `${unit === 'bu' ? n0(v) : v.toFixed(unit === 'MT' || unit === 'ton' ? 2 : 1)} ${unit}`
 const asNum = (s: string) => (s.trim() === '' || !Number.isFinite(Number(s)) ? null : Number(s))
@@ -53,7 +55,7 @@ export function CropComparePage() {
   const [params, setParams] = useSearchParams()
   const { cropYear } = useCropYear()
   // From August on, the question is next year's crop.
-  const defaultYear = new Date().getMonth() >= 7 ? cropYear + 1 : cropYear
+  const defaultYear = new Date().getMonth() + 1 >= PLANNING_ROLLOVER_MONTH ? cropYear + 1 : cropYear
   const year = Number(params.get('year')) || defaultYear
   const fieldId = params.get('field')
   const cropA = params.get('a') ?? ''
@@ -208,7 +210,7 @@ export function CropComparePage() {
         </label>
         <label className="text-xs text-gray-600">
           Crop year
-          <Select value={String(year)} options={years.map((y) => ({ value: String(y), label: String(y) }))} onChange={(v) => setParam('year', v)} ariaLabel="Crop year" />
+          <YearSelect value={year} years={years} onChange={(y) => setParam('year', String(y))} ariaLabel="Crop year" />
         </label>
         <label className="text-xs text-gray-600">
           Acres
@@ -481,10 +483,11 @@ function Verdict({ A, B, acres }: { A: SideData; B: SideData; acres: number }) {
   const grid = payoffGrid(A.side, B.side, A.basis.unit, B.basis.unit)
   const blockedWinner = win.ev.blocked.length > 0
   return (
-    <section className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
-      <h2 className="text-sm font-semibold text-gray-900">
+    <section className="overflow-hidden mt-3 rounded-lg border border-gray-200 bg-white">
+      <h2 className={cn('font-medium', CARD_HEAD)}>
         {Math.abs(diff) < 1 ? 'They come out even' : `${win.crop.name} makes ${money(Math.abs(diff))}/ac more over its inputs — ${money(Math.abs(diff) * acres)} on the field`}
       </h2>
+      <div className="p-3">
       {blockedWinner && <p className="mt-1 text-xs font-medium text-red-700">But {win.crop.name} is not advised on this field — see its warnings.</p>}
       {!blockedWinner && lose.ev.blocked.length > 0 && <p className="mt-1 text-xs text-gray-600">{lose.crop.name} is not advised here anyway.</p>}
       <ul className="mt-2 space-y-1 text-sm text-gray-700">
@@ -501,13 +504,16 @@ function Verdict({ A, B, acres }: { A: SideData; B: SideData; acres: number }) {
           <caption className="mb-1 text-left text-[11px] text-gray-500">
             {A.crop.name} less {B.crop.name}, $/ac, at yields either side of the expected ones. Green: {A.crop.name} wins. Red: {B.crop.name} wins.
           </caption>
-          <thead>
+          <thead className={TABLE_HEAD}>
             <tr>
-              <th className="p-1 text-left font-medium text-gray-500">
+              <th className="p-1 text-left font-medium">
                 {A.basis.unit} ↓ · {B.basis.unit} →
               </th>
+              {/* The middle column is the expected yield; on the green bar it
+                  is picked out in white against the pale green of the others,
+                  where it used to be dark grey against light. */}
               {grid.yieldsB.map((y, j) => (
-                <th key={j} className={cn('p-1 text-right font-medium', j === 2 ? 'text-gray-900' : 'text-gray-500')}>
+                <th key={j} className={cn('p-1 text-right font-medium', j === 2 ? 'text-white' : TABLE_TH_MUTED)}>
                   {y}
                 </th>
               ))}
@@ -526,6 +532,8 @@ function Verdict({ A, B, acres }: { A: SideData; B: SideData; acres: number }) {
             ))}
           </tbody>
         </table>
+      </div>
+
       </div>
     </section>
   )
@@ -637,8 +645,9 @@ function FarmCheck({
   const avg = result.avg
   const over = fixed != null ? avg - fixed : null
   return (
-    <section className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
-      <h2 className="text-sm font-semibold text-gray-900">Farm check · {year}</h2>
+    <section className="overflow-hidden mt-3 rounded-lg border border-gray-200 bg-white">
+      <h2 className={cn('font-medium', CARD_HEAD)}>Farm check · {year}</h2>
+      <div className="p-3">
       <p className="mt-1 text-sm text-gray-700">
         {n0(result.acres)} ac of crops made <b>{money(avg)}/ac</b> over their inputs
         {fixed != null && over != null ? (
@@ -661,8 +670,8 @@ function FarmCheck({
       )}
       <Fold title="By crop" storageKey="crop-compare-farm-crops" className="mt-2">
         <table className="w-full text-xs tabular-nums">
-          <thead>
-            <tr className="text-gray-500">
+          <thead className={TABLE_HEAD}>
+            <tr>
               <th className="p-1 text-left font-medium">Crop</th>
               <th className="p-1 text-right font-medium">Acres</th>
               <th className="p-1 text-right font-medium">Over inputs /ac</th>
@@ -696,6 +705,8 @@ function FarmCheck({
           {result.unpriced > 0 && ` ${n0(result.unpriced)} ac with no price or yield not counted.`}
         </p>
       </Fold>
+
+      </div>
     </section>
   )
 }

@@ -1,12 +1,12 @@
-import { lazy, Suspense, useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState, type ComponentProps } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { BushelCalculator } from '@/pages/calculator/BushelCalculator'
+import { Card as SharedCard } from '@/components/Card'
 import { useCropYear } from '@/lib/crop-year'
 import { useTab } from '@/lib/useTab'
 import { ArrowRightLeft, Calculator, Droplet, Droplets, Timer, Wheat } from 'lucide-react'
 import { PillTabs } from '@/components/PillTabs'
 import { Select } from '@/components/Select'
-import { PlanterCalculator } from '@/pages/calculator/PlanterCalculator'
 
 // The two cost calculators read a good deal (every Deere pass, the price book,
 // pivots and pumps), so they load only when their tab is opened.
@@ -33,24 +33,8 @@ import {
 const opts = (list: { key: string; label: string }[]) =>
   list.map((u) => ({ value: u.key, label: u.label }))
 
-function Card({
-  title,
-  icon: Icon,
-  children,
-}: {
-  title: string
-  icon: typeof Calculator
-  children: React.ReactNode
-}) {
-  return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-        <Icon className="h-4 w-4 text-brand-700" /> {title}
-      </h2>
-      {children}
-    </section>
-  )
-}
+/** The Calculator's cards: title and icon at the top of the padded card. */
+const Card = (props: ComponentProps<typeof SharedCard>) => <SharedCard header="inline" {...props} />
 
 const numInput =
   'w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-brand-600 focus:outline-none'
@@ -508,7 +492,7 @@ function RunTimeCalculator() {
  * the plain unit conversions that belong to no particular job sit together
  * under General.
  */
-type TabKey = 'water' | 'bushels' | 'general' | 'planter' | 'operation' | 'irrigation'
+type TabKey = 'water' | 'bushels' | 'general' | 'operation' | 'irrigation'
 
 /**
  * Combine loss and Moisture were tabs here too, the same components as on the
@@ -518,13 +502,15 @@ type TabKey = 'water' | 'bushels' | 'general' | 'planter' | 'operation' | 'irrig
 const MOVED: Record<string, string> = {
   combine: '/combine?tab=loss',
   moisture: '/harvest?tab=moisture',
+  // The planter has its own view, Seed & planter, beside each crop's planter
+  // settings: it is a planting-season job, not a unit sum (Sam, 24 Oct 2026).
+  planter: '/planter?tab=planter',
 }
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'water', label: 'Water' },
   { key: 'bushels', label: 'Bushels & weight' },
   { key: 'general', label: 'General' },
-  { key: 'planter', label: 'Planter' },
   { key: 'operation', label: 'Operation cost' },
   { key: 'irrigation', label: 'Irrigation cost' },
 ]
@@ -553,10 +539,8 @@ export function CalculatorPage() {
 }
 
 function CalculatorView() {
-  // ?tab= opens straight on one calculator, so the Planter link under Equipment
-  // and the link from a crop's page land on the planter rather than on water
-  // conversions with an instruction to click again. Read once; after that the
-  // tabs are ordinary state.
+  // ?tab= opens straight on one calculator, so a link lands on it rather than
+  // on water conversions with an instruction to click again.
   const [family, setFamily] = useTab<TabKey>(
     'calculator',
     TABS.map((t) => t.key),
@@ -610,7 +594,6 @@ function CalculatorView() {
             />
           ))}
 
-        {family === 'planter' && <PlanterCalculator />}
         {(family === 'operation' || family === 'irrigation') && (
           <Suspense fallback={<p className="text-sm text-gray-400 lg:col-span-2">Loading…</p>}>
             {family === 'operation' ? <OperationCostCalculator /> : <IrrigationCostCalculator />}

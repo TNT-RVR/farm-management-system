@@ -4,6 +4,7 @@ import type { Feature, FeatureCollection, MultiPolygon } from 'geojson'
 import { Trash2 } from 'lucide-react'
 import { Modal } from '@/components/Modal'
 import { useChemicalSearch } from '@/lib/chemicals'
+import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { PolygonDraw, type DrawState } from '@/lib/geo/polygon-draw'
 import { multiPolygonAcres, labelPointOf } from '@/lib/geo/area'
 import {
@@ -74,7 +75,7 @@ function ChemicalPicker({
   // 'HERBICIDE' — and even cased correctly an exact match drops the seven
   // products registered as a herbicide AND something else. Searching by name is
   // what people do anyway, and it cannot go quietly wrong.
-  const { data: matches } = useChemicalSearch(term, '', 'name')
+  const { data: matches } = useChemicalSearch(useDebouncedValue(term, 250), '', 'name')
   const typed = term.trim()
   return (
     <Modal title="What was sprayed?" onClose={onCancel}>

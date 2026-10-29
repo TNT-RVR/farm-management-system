@@ -25,7 +25,7 @@ export async function checkNewSprays(sb: SupabaseClient): Promise<{ checked: num
   const [{ data: products }, { data: aliases }, { data: rules }, { data: crops }] = await Promise.all([
     sb.from('jd_products').select('id, name, pmra_registration'),
     sb.from('jd_product_aliases').select('deere_name, product_id, ignored'),
-    sb.from('chemical_recrop_rules').select('registration_number, crop_key, following_crop, months, status, condition, quote'),
+    sb.from('chemical_recrop_rules_v').select('registration_number, crop_key, following_crop, months, status, condition, quote'),
     sb.from('crops').select('id, name'),
   ])
   const resolve = productResolver((products ?? []) as PriceBookProduct[], (aliases ?? []) as PriceBookAlias[])

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Gauge, RefreshCw, Search, ShieldCheck, Tractor, Wrench } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { ClipboardCheck, Gauge, RefreshCw, Search, ShieldCheck, Tractor, Wrench } from 'lucide-react'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import {
   categoryRank,
@@ -13,6 +13,10 @@ import {
 import { serviceSummary } from '@/lib/maintenance'
 import { WARRANTY_STYLE, warrantyStatus } from '@/lib/warranty'
 import { staleHoursLabel, staleHoursMachines } from '@/lib/stale-hours'
+import { equipmentKind, kindOptions } from '@/lib/equipment-types'
+import { isDue } from '@/lib/truck-inspection'
+import { useTruckInspections } from '@/lib/truck-inspection-data'
+import { localDateKey } from '@/lib/ranchWeather'
 import { AddButton } from '@/components/RecordEditor'
 import { ManualEquipmentModal } from '@/components/EquipmentEditor'
 import { cn } from '@/lib/utils'
@@ -41,11 +45,14 @@ function EquipmentRow({
   e,
   service,
   staleSince,
+  inspectionDue,
 }: {
   e: Equipment
   service: { overdue: number; dueSoon: number } | undefined
   /** When its hours stopped updating (lib/stale-hours.ts), else null. */
   staleSince: string | null
+  /** A semi with no yearly inspection signed off this year. */
+  inspectionDue: boolean
 }) {
   const hours = engineHoursLabel(e)
   const detail = describe(e)
@@ -89,6 +96,12 @@ function EquipmentRow({
               : `${service.dueSoon} service${service.dueSoon === 1 ? '' : 's'} due soon`}
           </span>
         )}
+        {inspectionDue && (
+          <span className="flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+            <ClipboardCheck className="h-3 w-3" />
+            Inspection due
+          </span>
+        )}
         {staleSince && (
           <span className="flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
             <Gauge className="h-3 w-3" />
@@ -110,7 +123,12 @@ function EquipmentRow({
   )
 }
 
-/** The fleet, grouped the way you would walk the yard. */
+/**
+ * Equipment service: the fleet, grouped the way you would walk the yard, with
+ * a filter by kind (Sam, 24 Oct 2026: "a way to filter to see the trucks").
+ * The kind is in the address (?type=trucks), so the January inspection
+ * reminder and the old /truck-inspections links land on the trucks.
+ */
 export function EquipmentPage() {
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
@@ -120,15 +138,31 @@ export function EquipmentPage() {
   const { data: all, isLoading } = useEquipment(showArchived)
   const sync = useSyncEquipment()
   const { data: plans } = useAllServicePlans()
+  const { data: inspections } = useTruckInspections()
+  const [params, setParams] = useSearchParams()
+  const kinds = useMemo(() => kindOptions((all ?? []).map((e) => e.equipment_type)), [all])
+  const askedKind = params.get('type') ?? 'all'
+  // A kind the fleet has none of (in this view) shows everything rather than nothing.
+  const kind = kinds.some((k) => k.key === askedKind) ? askedKind : 'all'
+  const setKind = (k: string) =>
+    setParams(
+      (p) => {
+        if (k === 'all') p.delete('type')
+        else p.set('type', k)
+        return p
+      },
+      { replace: true },
+    )
 
   const groups = useMemo(() => {
     const needle = q.trim().toLowerCase()
     const rows = (all ?? []).filter(
       (e) =>
-        !needle ||
+        (kind === 'all' || equipmentKind(e.equipment_type) === kind) &&
+        (!needle ||
         [e.name, e.make, e.model, e.equipment_type, e.serial_number, e.vin]
           .filter(Boolean)
-          .some((v) => (v as string).toLowerCase().includes(needle)),
+          .some((v) => (v as string).toLowerCase().includes(needle))),
     )
     const byCategory = new Map<string, Equipment[]>()
     for (const e of rows) {
@@ -136,7 +170,7 @@ export function EquipmentPage() {
       byCategory.set(key, [...(byCategory.get(key) ?? []), e])
     }
     return [...byCategory.entries()].sort((a, b) => categoryRank(a[0]) - categoryRank(b[0]))
-  }, [all, q])
+  }, [all, q, kind])
 
   const total = all?.length ?? 0
   const withHours = (all ?? []).filter((e) => e.engine_hours != null).length
@@ -151,13 +185,22 @@ export function EquipmentPage() {
   }, [plans, all])
   const servicesDue = [...serviceByMachine.values()].reduce((n, s) => n + s.overdue + s.dueSoon, 0)
   const staleHours = useMemo(() => staleHoursMachines(all ?? []), [all])
+  // The semis the January reminder would name: type Truck, nothing signed this year.
+  const inspectionDue = useMemo(() => {
+    const year = Number(localDateKey().slice(0, 4))
+    const last = new Map<string, string>()
+    for (const i of inspections ?? []) {
+      if (i.signed_on && i.signed_on > (last.get(i.equipment_id) ?? '')) last.set(i.equipment_id, i.signed_on)
+    }
+    return new Set((all ?? []).filter((e) => e.equipment_type === 'Truck' && !e.archived && isDue(last.get(e.id), year)).map((e) => e.id))
+  }, [inspections, all])
 
   return (
     <div className="p-4 md:p-6">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-            <Tractor className="h-5 w-5 text-brand-700" /> Equipment
+            <Tractor className="h-5 w-5 text-brand-700" /> Equipment service
           </h1>
           <p className="text-xs text-gray-500">
             {total} machines and implements, from Deere
@@ -219,6 +262,33 @@ export function EquipmentPage() {
           Include sold / archived
         </label>
       </div>
+      {kinds.length > 2 && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by kind">
+          {kinds.map((k) => (
+            <button
+              key={k.key}
+              type="button"
+              aria-pressed={kind === k.key}
+              onClick={() => setKind(k.key)}
+              className={cn(
+                'rounded-full border px-2.5 py-1 text-xs',
+                kind === k.key ? 'border-brand-700 bg-brand-700 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50',
+              )}
+            >
+              {k.label} <span className={kind === k.key ? 'text-white/80' : 'text-gray-400'}>{k.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {(kind === 'trucks' || kind === 'trailers') && (
+        <p className="mb-3 text-xs text-gray-600">
+          Open a truck or trailer for its yearly inspection, or use the{' '}
+          <Link to="/checklists/truck-inspection" className="font-medium text-brand-700 hover:underline">
+            Truck inspection checklist
+          </Link>
+          .
+        </p>
+      )}
 
       {isLoading ? (
         <p className="py-12 text-center text-sm text-gray-400">Loading…</p>
@@ -249,14 +319,20 @@ export function EquipmentPage() {
               </h2>
               <ul>
                 {rows.map((e) => (
-                  <EquipmentRow key={e.id} e={e} service={serviceByMachine.get(e.id)} staleSince={staleHours.get(e.id) ?? null} />
+                  <EquipmentRow
+                    key={e.id}
+                    e={e}
+                    service={serviceByMachine.get(e.id)}
+                    staleSince={staleHours.get(e.id) ?? null}
+                    inspectionDue={inspectionDue.has(e.id)}
+                  />
                 ))}
               </ul>
             </section>
           ))}
           {groups.length === 0 && (
             <p className="rounded-lg border border-gray-200 bg-white px-3 py-8 text-center text-sm text-gray-400">
-              Nothing matched “{q}”.
+              {q ? `Nothing matched “${q}”.` : 'Nothing of that kind.'}
             </p>
           )}
         </div>

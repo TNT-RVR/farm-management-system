@@ -10,12 +10,15 @@ import type { Database } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
 import { InfoPopover } from '@/components/InfoPopover'
 import { RecordEditModal, rowClick } from '@/components/RecordEditor'
+import { money as fmtMoney } from '@/lib/format'
+import { askConfirm } from '@/components/askConfirm'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 type Lease = Database['public']['Tables']['land_leases']['Row']
 type LeaseInsert = Database['public']['Tables']['land_leases']['Insert']
 type Payment = Database['public']['Tables']['land_lease_payments']['Row']
 
-const money = (v: number | null | undefined) => (v == null ? '—' : `$${Math.round(v).toLocaleString('en-CA')}`)
+const money = (v: number | null | undefined) => fmtMoney(v, 0, { neg: 'inside' })
 const fmt = (d: string | null) => (d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '—')
 const num = (s: string) => (s.trim() === '' ? null : Number(s))
 
@@ -139,8 +142,8 @@ export function LeasesPage() {
       {editing && <LeaseForm key={editing === 'new' ? 'new' : editing.id} lease={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-xs text-gray-500">
+        <table className="w-full min-w-[840px] text-sm">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th className="px-3 py-2">Landlord</th>
               <th className="px-3 py-2">Land</th>
@@ -564,7 +567,7 @@ function LeaseForm({ lease, onClose }: { lease: Lease | null; onClose: () => voi
         {lease ? (
           <button
             type="button"
-            onClick={() => confirm(`Delete the lease with ${lease.landlord} and its payment records?`) && del.mutate()}
+            onClick={async () => await askConfirm(`Delete the lease with ${lease.landlord} and its payment records?`) && del.mutate()}
             className="inline-flex items-center gap-1 rounded-md border border-red-200 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50"
           >
             <Trash2 className="h-3.5 w-3.5" /> Delete

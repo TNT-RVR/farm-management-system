@@ -2,8 +2,10 @@ import { extractText, getDocumentProxy } from 'unpdf'
 import { admin, qbAccess, qbGet, type QbAccount } from './_quickbooks.mts'
 import { advisorModel, alwaysThinks, replyProblem, replyText, type MessagesReply } from '../shared/anthropic-reply.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
-import { farmProvinceName, withFarm } from '../../src/lib/farm-context.ts'
+import { farmProvinceName, farmTz, withFarm } from '../../src/lib/farm-context.ts'
+import { fiscalYearEndLabel } from '../../src/lib/fiscal-year.ts'
 import { splitSummary, splitVendorInvoices } from '../shared/qb-invoice-split.ts'
+import { callClaude } from '../shared/anthropic.ts'
 
 /**
  * Ask QuickBooks: answers one question in qb_questions by looking things up
@@ -438,9 +440,9 @@ export default async (req: Request) => {
     qb_query: 'Asking QuickBooks directly…',
   }
 
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Edmonton' })
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: farmTz() })
   const messages: { role: 'user' | 'assistant'; content: string | Block[] }[] = [
-    { role: 'user', content: `Today is ${today}.\n\nQUESTION: ${row.question}` },
+    { role: 'user', content: `Today is ${today}. The farm's fiscal year ends ${fiscalYearEndLabel()} (a fiscal year is named by the year it ends in).\n\nQUESTION: ${row.question}` },
   ]
 
   try {
@@ -459,20 +461,15 @@ export default async (req: Request) => {
       // A look-up turn leaves 2½ minutes for the answer; if it runs into them, the answer comes next.
       let res: Response
       try {
-        res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-          signal: AbortSignal.timeout(last ? left : Math.max(20_000, Math.min(MODEL_TIMEOUT_MS, left - 150_000))),
-          body: JSON.stringify({
-            model,
-            max_tokens: 16000,
-            ...(alwaysThinks(model) ? { output_config: { effort: 'medium' } } : { thinking: { type: 'disabled' } }),
-            system: withFarm(SYSTEM()),
-            tools: TOOLS,
-            ...(last ? { tool_choice: { type: 'none' } } : {}),
-            messages,
-          }),
-        })
+        res = await callClaude({
+          model,
+          maxTokens: 16000,
+          ...(alwaysThinks(model) ? { output_config: { effort: 'medium' } } : { thinking: { type: 'disabled' } }),
+          system: withFarm(SYSTEM()),
+          tools: TOOLS,
+          ...(last ? { tool_choice: { type: 'none' } } : {}),
+          messages,
+        }, { apiKey, signal: AbortSignal.timeout(last ? left : Math.max(20_000, Math.min(MODEL_TIMEOUT_MS, left - 150_000))) })
       } catch (e) {
         if (!last && (e as Error).name === 'TimeoutError' && round > 0) {
           outOfTime = true

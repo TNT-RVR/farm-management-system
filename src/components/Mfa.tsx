@@ -10,6 +10,9 @@ import {
   verifyTotp,
 } from '@/lib/mfa'
 import { supabase } from '@/lib/supabase'
+import { askConfirm } from '@/components/askConfirm'
+import { CARD_HEAD } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 const codeInput =
   'w-36 rounded-md border border-gray-300 px-3 py-2 text-center font-mono text-lg tracking-[0.3em] text-gray-900'
@@ -103,10 +106,11 @@ export function AuthenticatorSettings() {
   }
 
   return (
-    <div className="max-w-md rounded-lg border border-gray-200 bg-white p-4 text-sm">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
-        <ShieldCheck className="h-4 w-4 text-brand-700" /> Authenticator app
+    <div className="overflow-hidden max-w-md rounded-lg border border-gray-200 bg-white text-sm">
+      <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <ShieldCheck className="h-4 w-4 text-white" /> Authenticator app
       </h2>
+      <div className="p-4">
       {isLoading ? (
         <p className="mt-2 text-gray-500">Loading…</p>
       ) : on ? (
@@ -116,8 +120,8 @@ export function AuthenticatorSettings() {
           </p>
           <button
             disabled={busy}
-            onClick={() => {
-              if (!window.confirm('Turn off the authenticator? Signing in will need only your password again.')) return
+            onClick={async () => {
+              if (!(await askConfirm('Turn off the authenticator? Signing in will need only your password again.', { confirmLabel: 'Turn off' }))) return
               void run(async () => {
                 for (const f of factors!.verified) await removeTotp(f.id)
                 refresh()
@@ -180,6 +184,8 @@ export function AuthenticatorSettings() {
         </>
       )}
       {err && <p className="mt-2 text-xs text-red-600">{err}</p>}
+
+      </div>
     </div>
   )
 }

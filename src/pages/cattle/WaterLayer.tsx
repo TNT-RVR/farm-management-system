@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { usePastures } from '@/lib/pastures'
 import { pastureLabel } from '@/lib/pastureLabel'
 import { circleRing } from '@/lib/geo/circle'
+import { askConfirm } from '@/components/askConfirm'
 
 /**
  * The water on the cattle map: pins you can drag, rename and delete, and the
@@ -243,8 +244,8 @@ export function WaterLayer({
       source={selected}
       canEdit={isManager}
       onSave={(patch) => update.mutate({ id: selected.id, ...patch })}
-      onDelete={() => {
-        if (!window.confirm(`Delete ${selected.name || 'this water pin'}?`)) return
+      onDelete={async () => {
+        if (!(await askConfirm(`Delete ${selected.name || 'this water pin'}?`))) return
         remove.mutate(selected.id, { onSuccess: () => setSelectedId(null) })
       }}
       onClose={() => setSelectedId(null)}

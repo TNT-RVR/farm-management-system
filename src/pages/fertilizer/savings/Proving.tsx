@@ -112,7 +112,7 @@ export function OverAppliedCard() {
           lists the farm on one table, which that view cannot. */}
       <p className="mt-2 text-xs text-gray-500">
         Pass by pass, field by field:{' '}
-        <Link to="/fertilizer?tab=Prescriptions" className="text-brand-700 underline decoration-dotted">
+        <Link to="/fertilizer/plan?tab=rx" className="text-brand-700 underline decoration-dotted">
           Prescriptions → Against what was applied
         </Link>
         .

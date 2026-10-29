@@ -5,6 +5,8 @@ import { AddRanchButton } from '@/pages/cattle/AddRanch'
 import { loadRanchUse, ranchDeleteBlockers, useDeleteRanch, useEditRanch } from '@/lib/cattle'
 import { useMainRanch, useRanches, type Ranch } from '@/lib/ranches'
 import { cn } from '@/lib/utils'
+import { askConfirm } from '@/components/askConfirm'
+import { CARD_HEAD } from '@/lib/table-style'
 
 const FIELDS: EditField[] = [
   {
@@ -14,8 +16,7 @@ const FIELDS: EditField[] = [
     required: true,
     hint: 'eShepherd mobs are matched to a ranch by name ("East Ranch Replacement Heifer") — rename the mobs too.',
   },
-  { key: 'latitude', label: 'Latitude', kind: 'number', hint: 'For the weather lookups.' },
-  { key: 'longitude', label: 'Longitude', kind: 'number' },
+  { key: 'latitude', lngKey: 'longitude', label: 'Location', kind: 'latlng', hint: 'For the weather lookups.' },
 ]
 
 /**
@@ -42,7 +43,7 @@ export function ManageRanches({ isManager }: { isManager: boolean }) {
         setRefusal(`${r.name} cannot be deleted while it has ${blockers.join(', ')}. Move or remove those first.`)
         return
       }
-      if (!window.confirm(`Delete the ranch ${r.name}? Its feed plan, rations and mineral programme go with it.`)) return
+      if (!(await askConfirm(`Delete the ranch ${r.name}? Its feed plan, rations and mineral programme go with it.`))) return
       await del.mutateAsync(r.id)
       setEditing(null)
     } catch (e) {
@@ -51,10 +52,10 @@ export function ManageRanches({ isManager }: { isManager: boolean }) {
   }
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-3 py-2">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-          <Home className="h-4 w-4 text-gray-400" /> Ranches
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div className={cn('flex flex-wrap items-center justify-between gap-2', CARD_HEAD)}>
+        <h2 className="flex items-center gap-1.5 font-medium">
+          <Home className="h-4 w-4 text-brand-100" /> Ranches
         </h2>
         {isManager && <AddRanchButton />}
       </div>

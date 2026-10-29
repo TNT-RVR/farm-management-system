@@ -1,8 +1,16 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTab } from '@/lib/useTab'
-import { SavingsTab } from '@/pages/fertilizer/savings/SavingsTab'
-import { IciTab } from '@/pages/fertilizer/IciTab'
+import { useMenuEnabled } from '@/lib/menu-prefs'
+import {
+  FERTILIZER_VIEW_KEYS,
+  FERTILIZER_VIEWS,
+  fertilizerRedirect,
+  fertilizerTabs,
+  oldFertilizerTab,
+  type FertilizerView,
+} from '@/lib/fertilizer-views'
+import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
 import { CheckCircle2, ChevronRight, Loader2, RefreshCw, Sparkles, Sprout, Upload } from 'lucide-react'
 import { Select } from '@/components/Select'
 import { EditButton, RecordEditModal, rowClick, type EditField } from '@/components/RecordEditor'
@@ -34,93 +42,62 @@ import {
 } from '@/lib/soil-help'
 import { RatingLegendInfo } from '@/components/RatingLegendInfo'
 import { PillTabs } from '@/components/PillTabs'
-import { YieldZones } from '@/pages/fertilizer/YieldZones'
 import { cn } from '@/lib/utils'
-import { NutrientHistory } from '@/pages/fertilizer/NutrientHistory'
-import { MarketTab } from '@/pages/fertilizer/MarketTab'
-import { Requirements } from '@/pages/fertilizer/Requirements'
 import { FieldSoilSurvey } from '@/components/FieldSoilSurvey'
-import { Prescriptions } from '@/pages/fertilizer/Prescriptions'
-import { BlendsTab } from '@/pages/fertilizer/BlendsTab'
-import { Manure } from '@/pages/fertilizer/Manure'
 import { useCropYear } from '@/lib/crop-year'
-import { SamplingMap } from '@/pages/fertilizer/SamplingMap'
-import { TissueTests } from '@/pages/fertilizer/TissueTests'
-import { ProductPrices } from '@/components/ProductPrices'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
-import { IciPrices } from '@/pages/fertilizer/IciPrices'
 import { HelpNote } from '@/components/HelpNote'
 import { AdminOnly } from '@/components/TechnicalDetails'
 import { useFarmSettings, useFeature } from '@/lib/farm-setup'
+import { TabSuspense } from '@/components/TabSuspense'
+import { TABLE_HEAD } from '@/lib/table-style'
+
+// Each tab is its own chunk, so opening one view does not load every view's maps and charts.
+const SavingsTab = lazy(() => import('@/pages/fertilizer/savings/SavingsTab').then((m) => ({ default: m.SavingsTab })))
+const IciTab = lazy(() => import('@/pages/fertilizer/IciTab').then((m) => ({ default: m.IciTab })))
+const YieldZones = lazy(() => import('@/pages/fertilizer/YieldZones').then((m) => ({ default: m.YieldZones })))
+const NutrientHistory = lazy(() => import('@/pages/fertilizer/NutrientHistory').then((m) => ({ default: m.NutrientHistory })))
+const MarketTab = lazy(() => import('@/pages/fertilizer/MarketTab').then((m) => ({ default: m.MarketTab })))
+const Requirements = lazy(() => import('@/pages/fertilizer/Requirements').then((m) => ({ default: m.Requirements })))
+const Prescriptions = lazy(() => import('@/pages/fertilizer/Prescriptions').then((m) => ({ default: m.Prescriptions })))
+const BlendsTab = lazy(() => import('@/pages/fertilizer/BlendsTab').then((m) => ({ default: m.BlendsTab })))
+const Manure = lazy(() => import('@/pages/fertilizer/Manure').then((m) => ({ default: m.Manure })))
+const SpreadingCost = lazy(() => import('@/pages/fertilizer/SpreadingCost').then((m) => ({ default: m.SpreadingCost })))
+const SamplingMap = lazy(() => import('@/pages/fertilizer/SamplingMap').then((m) => ({ default: m.SamplingMap })))
+const TissueTests = lazy(() => import('@/pages/fertilizer/TissueTests').then((m) => ({ default: m.TissueTests })))
+const ProductPrices = lazy(() => import('@/components/ProductPrices').then((m) => ({ default: m.ProductPrices })))
+const IciPrices = lazy(() => import('@/pages/fertilizer/IciPrices').then((m) => ({ default: m.IciPrices })))
 
 // Opened a few times a year, so it is not in the page's own bundle.
 const SoilTestImport = lazy(() =>
   import('@/pages/fertilizer/SoilTestImport').then((m) => ({ default: m.SoilTestImport })),
 )
 
-/**
- * Thirteen tabs in a row were a wall of words to find one thing in, so they
- * are five groups now, each with its views as a second row of pills.
- *
- * The URL still carries the VIEW, under the names it always had — `?tab=Soil
- * Sampling`, `?tab=Market` — so every tile, notification and saved link lands
- * where it did. The group is worked out from the view. A group's own name
- * (`?tab=Prices`) is accepted too and opens the view last used in it.
- */
-const GROUPS = [
-  {
-    key: 'Soil',
-    views: [
-      { key: 'Soil Sampling', label: 'Soil tests' },
-      { key: 'Sampling Map', label: 'Sampling map' },
-      { key: 'Nutrient History', label: 'Nutrient history' },
-      { key: 'Tissue Tests', label: 'Tissue tests' },
-    ],
-  },
-  {
-    key: 'Plan',
-    views: [
-      { key: 'Requirements', label: 'Requirements' },
-      { key: 'Productivity Zones', label: 'Productivity zones' },
-      { key: 'Prescriptions', label: 'Prescriptions' },
-      { key: 'Blends', label: 'Blends' },
-    ],
-  },
-  {
-    key: 'Prices',
-    views: [
-      { key: 'Pricing', label: 'Pricing' },
-      { key: 'Market', label: 'Market' },
-      // Key stays 'ICI' so `?tab=ICI` links keep working; the label is the
-      // farm's own retailer, and the view is hidden with retailer invoices off.
-      { key: 'ICI', label: 'ICI' },
-    ],
-  },
-  { key: 'Manure', views: [{ key: 'Manure', label: 'Manure' }] },
-  { key: 'Savings', views: [{ key: 'Savings', label: 'Savings' }] },
-] as const
-
-type Group = (typeof GROUPS)[number]
-type Tab = Group['views'][number]['key']
-const TABS = GROUPS.flatMap((g) => g.views.map((v) => v.key)) as Tab[]
-const groupOf = (t: Tab): Group => GROUPS.find((g) => g.views.some((v) => v.key === t))!
-
-/** The view a group opens on: the one last used in it, else its first. */
-function lastViewIn(group: Group): Tab {
+/** The last view opened, so the old menu's one Fertilizer link lands where you left. */
+const LAST_VIEW_KEY = 'fertilizer-view'
+const readStore = (key: string): string | null => {
   try {
-    const saved = localStorage.getItem(`fertilizer-view:${group.key}`)
-    if (saved && group.views.some((v) => v.key === saved)) return saved as Tab
+    return localStorage.getItem(key)
   } catch {
-    /* private window */
+    return null /* private window */
   }
-  return group.views[0].key
 }
-function rememberView(t: Tab) {
-  try {
-    localStorage.setItem(`fertilizer-view:${groupOf(t).key}`, t)
-  } catch {
-    /* private window */
-  }
+
+/** `/fertilizer`, and every old `/fertilizer?tab=…` link (map in lib/fertilizer-views.ts). */
+export function FertilizerRedirect() {
+  const { search } = useLocation()
+  return <Navigate replace to={fertilizerRedirect(search, readStore(LAST_VIEW_KEY), readStore('tab:fertilizer'))} />
+}
+
+/**
+ * The tab a view opens on when it has no memory of its own yet: the one the
+ * two-row version last had open in that group (`fertilizer-view:<group>`), so
+ * the split does not reset where people were.
+ */
+function firstVisitTab(view: FertilizerView): string {
+  const tabs = fertilizerTabs(view)
+  const saved = readStore(`fertilizer-view:${FERTILIZER_VIEWS[view].group}`)
+  return tabs.find((t) => t.old === saved)?.key ?? tabs[0]?.key ?? ''
 }
 
 const RATING_CLASS: Record<string, string> = {
@@ -219,8 +196,8 @@ function SampleTable({
             />
           ))}
         </colgroup>
-        <thead>
-          <tr className="border-b border-gray-200 text-left align-bottom text-[10px] uppercase tracking-tight text-gray-500">
+        <thead className={cn(TABLE_HEAD, 'align-bottom tracking-tight')}>
+          <tr>
             {shown.map((c) => (
               <th key={c.key} className="px-1 py-1.5 font-medium leading-tight">
                 <span className="inline-flex items-baseline">
@@ -242,7 +219,7 @@ function SampleTable({
                   )}
                 </span>
                 {c.unit && (
-                  <span className="block font-normal normal-case tracking-normal text-gray-400">
+                  <span className="block font-normal normal-case tracking-normal text-brand-200">
                     {c.unit}
                   </span>
                 )}
@@ -360,7 +337,7 @@ function ReportCard({
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          className="flex min-w-0 flex-1 basis-48 items-center gap-2 text-left"
         >
           <ChevronRight
             className={cn('h-4 w-4 shrink-0 text-gray-400 transition-transform', open && 'rotate-90')}
@@ -575,6 +552,8 @@ function Assessment({ report }: { report: SoilReport }) {
         setWaiting(false)
         return
       }
+      // A hidden tab skips the refetch; the next tick after it comes back catches up.
+      if (document.hidden) return
       void qc.invalidateQueries({ queryKey: ['soil_test_reports'] })
     }, 4000)
     return () => clearInterval(id)
@@ -648,10 +627,13 @@ function Assessment({ report }: { report: SoilReport }) {
         </HelpNote>
       ) : (
         <>
+          {/* Timing & why is prose, so five columns in 317 px wrapped to a
+              word a line; it scrolls sideways on a phone instead. */}
           {recs.length > 0 && (
-            <table className="mt-2 w-full table-fixed text-[11px]">
-              <thead>
-                <tr className="border-b border-gray-200 text-left text-[10px] uppercase tracking-wide text-gray-500">
+            <div className="overflow-x-auto">
+            <table className="mt-2 w-full min-w-[560px] table-fixed text-[11px]">
+              <thead className={TABLE_HEAD}>
+                <tr>
                   <th className="px-1 py-1 font-medium" style={{ width: '12%' }}>
                     Nutrient
                   </th>
@@ -688,6 +670,7 @@ function Assessment({ report }: { report: SoilReport }) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
 
           {/* The lab's own numbers stay visible above, so this is deliberately
@@ -724,7 +707,7 @@ function Assessment({ report }: { report: SoilReport }) {
  */
 function SweepBanner() {
   const { data: pending } = useAssessmentsPending()
-  const { data: status } = useAssessmentSweepStatus()
+  const { data: status } = useAssessmentSweepStatus(pending)
   const sweep = useAssessmentSweep()
   const refused = status?.detail?.startsWith('REFUSED')
   if (pending == null) return null
@@ -863,98 +846,152 @@ function SoilSampling({
   )
 }
 
-export function FertilizerPage() {
-  const { profile } = useAuth()
-  const [params] = useSearchParams()
-  // In the URL and remembered: the nav link carries no tab, and before this a
-  // trip away and back always landed on Soil Sampling. A group's name in the
-  // URL opens that group's last view.
-  const { retailerName } = useFarmSettings()
-  const retailerOn = useFeature('retailer_invoices')
-  const [asked, setTab] = useTab<Tab>('fertilizer', TABS, TABS[0], (asked) => {
-    const g = GROUPS.find((x) => x.key.toLowerCase() === asked.toLowerCase())
-    return g ? lastViewIn(g) : undefined
-  })
-  // The retailer view is hidden when the farm has switched retailer invoices
-  // off; a link to it lands on its group's first view instead.
-  const viewShown = (key: Tab) => key !== 'ICI' || retailerOn
-  const tab: Tab = viewShown(asked) ? asked : groupOf(asked).views[0].key
-  // Whatever view is on screen — picked here or arrived at by a link — is the
-  // one its group reopens on.
-  useEffect(() => rememberView(tab), [tab])
-  const group = groupOf(tab)
-  const views = group.views.filter((v) => viewShown(v.key))
-  const [fieldId, setFieldId] = useState(params.get('field') ?? '')
-  const { cropYear } = useCropYear()
+/**
+ * A view's one row of tabs, in the URL (`?tab=`) and remembered per view
+ * (`tab:fertilizer-<view>`). An old tab key on the new address ('Soil
+ * Sampling' on /fertilizer/soil) is read as the tab it became.
+ */
+function useViewTab(view: FertilizerView, hidden: readonly string[] = []) {
+  const all = fertilizerTabs(view)
+  const [asked, setTab] = useTab<string>(
+    `fertilizer-${view}`,
+    all.map((t) => t.key),
+    firstVisitTab(view),
+    (a) => {
+      const m = oldFertilizerTab(a)
+      return m?.view === view ? m.tab : undefined
+    },
+  )
+  const shown = all.filter((t) => !hidden.includes(t.key))
+  // A hidden tab (the retailer's, with retailer invoices off) asked for by a
+  // link lands on the view's first tab instead.
+  const tab = shown.some((t) => t.key === asked) ? asked : shown[0].key
+  return { tab, setTab, shown }
+}
 
+/** Title, the view's tab row, and the page under them. */
+function ViewShell({ view, tabs, children }: { view: FertilizerView; tabs?: ReactNode; children: ReactNode }) {
+  const navigate = useNavigate()
+  const seasonMenu = useMenuEnabled()
+  // Whatever view is on screen is the one the old menu's Fertilizer link and a
+  // bare /fertilizer reopen.
+  useEffect(() => {
+    try {
+      localStorage.setItem(LAST_VIEW_KEY, view)
+    } catch {
+      /* private window */
+    }
+  }, [view])
   return (
     <div className="mx-auto max-w-[1600px]">
       <div className="border-b border-gray-200 bg-white px-4 md:px-6">
         <div className="flex items-center gap-2 py-3">
           <Sprout className="h-5 w-5 text-brand-700" />
-          <h1 className="text-lg font-semibold text-gray-900">Fertilizer</h1>
+          <h1 className="text-lg font-semibold text-gray-900">{FERTILIZER_VIEWS[view].label}</h1>
+          {/* The old menu has one Fertilizer link, so people on it need a way
+              between the five views; the season menu lists them itself. */}
+          {!seasonMenu && (
+            <Select
+              size="sm"
+              value={view}
+              onChange={(v) => navigate(`/fertilizer/${v}`)}
+              options={FERTILIZER_VIEW_KEYS.map((v) => ({ value: v, label: FERTILIZER_VIEWS[v].label }))}
+              ariaLabel="Fertilizer view"
+              className="ml-auto w-44"
+            />
+          )}
         </div>
-        <PillTabs
-          tabs={GROUPS.map((g) => ({ key: g.key, label: g.key }))}
-          value={group.key}
-          onChange={(k) => setTab(lastViewIn(GROUPS.find((g) => g.key === k)!))}
-          className="border-b-0 pb-2"
-        />
-        {views.length > 1 && (
-          <PillTabs
-            tabs={views.map((v) => ({ key: v.key, label: v.key === 'ICI' ? retailerName : v.label }))}
-            value={tab}
-            onChange={setTab}
-            className="border-b-0 border-t border-gray-100 pt-2"
-          />
-        )}
+        {tabs}
       </div>
-
       <div className="p-4 md:p-6">
-        {tab === 'Soil Sampling' ? (
-          <SoilSampling
-            fieldId={fieldId}
-            setFieldId={setFieldId}
-            canEdit={hasManagerAccess(profile?.role)}
-          />
-        ) : tab === 'Sampling Map' ? (
-          <SamplingMap
-            fieldId={fieldId || null}
-            setFieldId={(id) => setFieldId(id ?? '')}
-            cropYear={cropYear}
-            canEdit={hasManagerAccess(profile?.role)}
-          />
-        ) : tab === 'Tissue Tests' ? (
-          <TissueTests cropYear={cropYear} canEdit={hasManagerAccess(profile?.role)} />
-        ) : tab === 'Pricing' ? (
-          // What the retailer charges, then the full price book. Its cards lived
-          // on Market, which made the farm's own prices a three-tab hunt;
-          // Market is the market now and this is what we pay.
-          <div className="space-y-4">
-            {retailerOn && <IciPrices isManager={hasManagerAccess(profile?.role)} />}
-            <ProductPrices category="fertilizer" />
-          </div>
-        ) : tab === 'Nutrient History' ? (
-          <NutrientHistory fieldId={fieldId} setFieldId={setFieldId} />
-        ) : tab === 'Market' ? (
-          <MarketTab isManager={hasManagerAccess(profile?.role)} />
-        ) : tab === 'Requirements' ? (
-          <Requirements />
-        ) : tab === 'Productivity Zones' ? (
-          <YieldZones />
-        ) : tab === 'Prescriptions' ? (
-          <Prescriptions />
-        ) : tab === 'Blends' ? (
-          <BlendsTab />
-        ) : tab === 'Savings' ? (
-          <SavingsTab isManager={hasManagerAccess(profile?.role)} />
-        ) : tab === 'ICI' ? (
-          <IciTab isManager={hasManagerAccess(profile?.role)} />
-        ) : (
-          <Manure isManager={hasManagerAccess(profile?.role)} />
-        )}
+        <TabSuspense>{children}</TabSuspense>
       </div>
     </div>
+  )
+}
+
+function SoilView({ isManager }: { isManager: boolean }) {
+  const [params] = useSearchParams()
+  const { tab, setTab, shown } = useViewTab('soil')
+  // Shared by the tabs that pick a field, so a field chosen on Soil tests is
+  // still chosen on Sampling map and Nutrient history.
+  const [fieldId, setFieldId] = useState(params.get('field') ?? '')
+  const { cropYear } = useCropYear()
+  return (
+    <ViewShell
+      view="soil"
+      tabs={<PillTabs tabs={shown} value={tab} onChange={setTab} className="border-b-0 pb-2" />}
+    >
+      {tab === 'map' ? (
+        <SamplingMap
+          fieldId={fieldId || null}
+          setFieldId={(id) => setFieldId(id ?? '')}
+          cropYear={cropYear}
+          canEdit={isManager}
+        />
+      ) : tab === 'history' ? (
+        <NutrientHistory fieldId={fieldId} setFieldId={setFieldId} />
+      ) : tab === 'tissue' ? (
+        <TissueTests cropYear={cropYear} canEdit={isManager} />
+      ) : (
+        <SoilSampling fieldId={fieldId} setFieldId={setFieldId} canEdit={isManager} />
+      )}
+    </ViewShell>
+  )
+}
+
+function PlanView() {
+  const { tab, setTab, shown } = useViewTab('plan', useFeature('hauling') ? [] : ['spreading'])
+  return (
+    <ViewShell
+      view="plan"
+      tabs={<PillTabs tabs={shown} value={tab} onChange={setTab} className="border-b-0 pb-2" />}
+    >
+      {tab === 'zones' ? <YieldZones /> : tab === 'rx' ? <Prescriptions /> : tab === 'blends' ? <BlendsTab /> : tab === 'spreading' ? <SpreadingCost /> : <Requirements />}
+    </ViewShell>
+  )
+}
+
+function PricesView({ isManager }: { isManager: boolean }) {
+  const { retailerName } = useFarmSettings()
+  const retailerOn = useFeature('retailer_invoices')
+  const { tab, setTab, shown } = useViewTab('prices', retailerOn ? [] : ['retailer'])
+  const tabs = shown.map((t) => (t.key === 'retailer' ? { key: t.key, label: retailerName } : t))
+  return (
+    <ViewShell
+      view="prices"
+      tabs={<PillTabs tabs={tabs} value={tab} onChange={setTab} className="border-b-0 pb-2" />}
+    >
+      {tab === 'market' ? (
+        <MarketTab isManager={isManager} />
+      ) : tab === 'retailer' ? (
+        <IciTab isManager={isManager} />
+      ) : (
+        // What the retailer charges, then the full price book. Its cards lived
+        // on Market, which made the farm's own prices a three-tab hunt;
+        // Market is the market now and this is what we pay.
+        <div className="space-y-4">
+          {retailerOn && <IciPrices isManager={isManager} />}
+          <ProductPrices category="fertilizer" />
+          <SavingsHere ids={[2]} className="space-y-2" />
+        </div>
+      )}
+    </ViewShell>
+  )
+}
+
+export function FertilizerPage({ view }: { view: FertilizerView }) {
+  const { profile } = useAuth()
+  const isManager = hasManagerAccess(profile?.role)
+  // A component per view, so each keeps its own tab memory and nothing of one
+  // view's state leaks into the next when the route changes.
+  if (view === 'soil') return <SoilView isManager={isManager} />
+  if (view === 'plan') return <PlanView />
+  if (view === 'prices') return <PricesView isManager={isManager} />
+  return (
+    <ViewShell view={view}>
+      {view === 'savings' ? <SavingsTab isManager={isManager} /> : <Manure isManager={isManager} />}
+    </ViewShell>
   )
 }
 

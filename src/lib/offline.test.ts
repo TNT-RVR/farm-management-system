@@ -33,6 +33,13 @@ describe('shouldPersistQuery', () => {
     expect(isLiveOnly('ranch_weather')).toBe(true)
   })
 
+  it('refuses typed searches but keeps the unsearched chemical list', () => {
+    // One entry per keystroke, each kept a week, was IndexedDB churn for nothing.
+    expect(shouldPersistQuery(q(['chemicals', 'liberty', '', 'any']))).toBe(false)
+    expect(shouldPersistQuery(q(['search', 'east ranch']))).toBe(false)
+    expect(shouldPersistQuery(q(['chemicals', '', 'Herbicide', 'any']))).toBe(true)
+  })
+
   it('refuses a query that failed', () => {
     // There is no data worth keeping, and persisting the error replays the
     // failure on the next cold start.

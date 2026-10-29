@@ -3,7 +3,6 @@ import { Link, useSearchParams } from 'react-router-dom'
 import maplibregl from 'maplibre-gl'
 import { addPinImages, PIN_ICON_EXPR, withPins } from '@/lib/map-pins'
 import type { FeatureCollection, MultiPolygon, Position } from 'geojson'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import { ChevronRight, Crosshair, Layers, MapPin, Ruler, X } from 'lucide-react'
 import { SoilLayer } from '@/pages/map/SoilLayer'
 import { YieldZoneLayer } from '@/pages/map/YieldZoneLayer'
@@ -57,56 +56,15 @@ import {
   type FieldnetSystem,
 } from '@/lib/fieldnet'
 import { PivotStatusPanel } from '@/components/PivotStatusPanel'
+import { bearingBetween, circleRing, destination } from '@/lib/geo/circle'
+import { haversineM } from '@/lib/geo/measure'
+import { wedgeRing, type LngLat } from '@/lib/pivot-sectors'
 
-// Great-circle metres between two [lon,lat] points.
-function metersBetween(a: number[], b: number[]): number {
-  const R = 6371000
-  const t = (x: number) => (x * Math.PI) / 180
-  const dLat = t(b[1] - a[1])
-  const dLon = t(b[0] - a[0])
-  const q = Math.sin(dLat / 2) ** 2 + Math.cos(t(a[1])) * Math.cos(t(b[1])) * Math.sin(dLon / 2) ** 2
-  return 2 * R * Math.asin(Math.sqrt(q))
-}
 // Pivot radius (m) implied by the irrigated acreage: r = sqrt(area / π).
 const acresRadiusM = (acres: number) => Math.sqrt((acres * 4046.8564224) / Math.PI)
-
-// Destination point [lon,lat] from a start point, bearing (deg from N), distance (m).
-function destination(lon: number, lat: number, bearingDeg: number, distM: number): number[] {
-  const R = 6371000
-  const br = (bearingDeg * Math.PI) / 180
-  const d = distM / R
-  const φ1 = (lat * Math.PI) / 180
-  const λ1 = (lon * Math.PI) / 180
-  const φ2 = Math.asin(Math.sin(φ1) * Math.cos(d) + Math.cos(φ1) * Math.sin(d) * Math.cos(br))
-  const λ2 =
-    λ1 + Math.atan2(Math.sin(br) * Math.sin(d) * Math.cos(φ1), Math.cos(d) - Math.sin(φ1) * Math.sin(φ2))
-  return [(λ2 * 180) / Math.PI, (φ2 * 180) / Math.PI]
-}
-// Bearing (deg from N) from point a to point b.
-function bearingBetween(a: number[], b: number[]): number {
-  const φ1 = (a[1] * Math.PI) / 180
-  const φ2 = (b[1] * Math.PI) / 180
-  const Δλ = ((b[0] - a[0]) * Math.PI) / 180
-  const y = Math.sin(Δλ) * Math.cos(φ2)
-  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ)
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
-}
-// A closed ring approximating the pivot's wetted circle.
-function circleRing(center: number[], radiusM: number): number[][] {
-  const pts: number[][] = []
-  for (let a = 0; a <= 360; a += 6) pts.push(destination(center[0], center[1], a, radiusM))
-  return pts
-}
-// A pie-wedge ring from bearing a0 to a1 (handles wraparound).
-function wedgeRing(center: number[], radiusM: number, a0: number, a1: number): number[][] {
-  let end = a1
-  if (end < a0) end += 360
-  const pts: number[][] = [center]
-  for (let a = a0; a < end; a += 3) pts.push(destination(center[0], center[1], a, radiusM))
-  pts.push(destination(center[0], center[1], end, radiusM))
-  pts.push(center)
-  return pts
-}
+// A pie wedge from bearing a0 to a1, through north when a1 is the smaller.
+const wedge = (center: number[], radiusM: number, a0: number, a1: number) =>
+  wedgeRing(center as LngLat, radiusM, a0, a1 < a0 ? a1 + 360 : a1, 3)
 // Absolute applied-water scale (mm). Band edges are per time window, since a
 // week's water is far less than a season's. Colour runs dry → wet.
 const HEATMAP_COLORS = ['#dc2626', '#f97316', '#facc15', '#84cc16', '#22c55e', '#3b82f6'] as const
@@ -149,7 +107,7 @@ function heatmapLegend(window: AppliedWindow): [string, string][] {
 import { downloadFieldFileData, useGeospatialFiles, type FieldFileRow } from '@/lib/files'
 import { parseBoundaryData } from '@/lib/geo/parse-boundary-file'
 import { SALT_CLASSES, SALT_NO_DATA, fieldSalinity, saltColour, useFieldSalinity, type FieldSalt } from '@/lib/salinity'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { labelPointOf } from '@/lib/geo/area'
 import { cn } from '@/lib/utils'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
@@ -158,7 +116,6 @@ import { InfoPopover } from '@/components/InfoPopover'
 import { ndreColour, useFieldNdre } from '@/lib/ndre'
 import { SOIL_NO_DATA_COLOUR, SOIL_WATER_BANDS, AGRASID_SOURCE } from '@/lib/soil-landscape'
 import { useYieldZones, yieldBands } from '@/lib/yield-zones'
-import { farmMapCenter } from '@/lib/farm-setup'
 
 type Feature = {
   type: 'Feature'
@@ -407,10 +364,8 @@ const FILL_MODES = [
 
 export function MapPage() {
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
   const markersRef = useRef<maplibregl.Marker[]>([])
   const overlayLoaded = useRef<Set<string>>(new Set())
-  const [mapReady, setMapReady] = useState(false)
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -430,8 +385,6 @@ export function MapPage() {
   const [myMapOpen, toggleMyMapOpen] = useLegendOpen('mymap')
   const [showSoil, setShowSoil] = useState(() => localStorage.getItem('map_showSoil') === '1')
   const [showYield, setShowYield] = useState(() => localStorage.getItem('map_showYield') === '1')
-  const [showLocation, setShowLocation] = useState(() => localStorage.getItem('map_showLocation') === '1')
-  const [locError, setLocError] = useState('')
   const layersSigRef = useRef('')
   const myMapPopup = useRef<maplibregl.Popup | null>(null)
   const [activeOverlays, setActiveOverlays] = useState<Set<string>>(new Set())
@@ -610,7 +563,7 @@ export function MapPage() {
       const spec = s.field_id ? pivotByField.get(s.field_id) : undefined
       const geomLen =
         g?.type === 'LineString' && g.coordinates
-          ? metersBetween(g.coordinates[0], g.coordinates[g.coordinates.length - 1])
+          ? haversineM(g.coordinates[0], g.coordinates[g.coordinates.length - 1])
           : 0
       const raw = (s.raw && typeof s.raw === 'object' ? s.raw : {}) as Record<string, unknown>
       // Radius: prefer FieldNET's reported pipe length, then our spec, then acres.
@@ -630,11 +583,11 @@ export function MapPage() {
         type: 'Feature',
         geometry: {
           type: 'Polygon',
-          coordinates: [partial ? wedgeRing(center, radius, ps, pe) : circleRing(center, radius)],
+          coordinates: [partial ? wedge(center, radius, ps, pe) : circleRing(center, radius, 60)],
         },
         properties: props,
       })
-      const tip = destination(center[0], center[1], angle, radius)
+      const tip = destination(center, angle, radius)
       arms.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [center, tip] }, properties: props })
 
       // Direction-of-travel arrowhead sitting just INSIDE the circle at the arm
@@ -651,8 +604,8 @@ export function MapPage() {
         const len = Math.max(24, Math.min(70, radius * 0.14))
         const arcStep = ((len / radius) * 180) / Math.PI // degrees along the arc
         const thick = len * 0.85
-        const apex = destination(center[0], center[1], angle + sign * arcStep, radius)
-        const backInner = destination(center[0], center[1], angle, radius - thick)
+        const apex = destination(center, angle + sign * arcStep, radius)
+        const backInner = destination(center, angle, radius - thick)
         arrows.push({
           type: 'Feature',
           geometry: { type: 'Polygon', coordinates: [[apex, tip, backInner, apex]] },
@@ -660,7 +613,7 @@ export function MapPage() {
         })
       }
       if (typeof raw.service_stop === 'number') {
-        const stopTip = destination(center[0], center[1], raw.service_stop as number, radius)
+        const stopTip = destination(center, raw.service_stop as number, radius)
         stops.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [center, stopTip] }, properties: props })
       }
 
@@ -697,7 +650,7 @@ export function MapPage() {
         }
         sectors.push({
           type: 'Feature',
-          geometry: { type: 'Polygon', coordinates: [wedgeRing(center, radius, a0, a1)] },
+          geometry: { type: 'Polygon', coordinates: [wedge(center, radius, a0, a1)] },
           properties: {
             color: sectorColor(sec.depth, heatWindow),
             depth: sec.depth,
@@ -771,72 +724,65 @@ export function MapPage() {
     return { type: 'FeatureCollection' as const, features }
   }, [fields, boundaries, fieldById, statusByField, fnByField, ndviByField, ndreByField, index, saltByField])
 
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: SATELLITE_STYLE,
-      center: farmMapCenter(),
-      zoom: 10,
-      attributionControl: { compact: true },
-    })
-    map.addControl(new maplibregl.NavigationControl(), 'top-right')
-    map.on('load', () => setMapReady(true))
+  const { mapRef, ready: mapReady } = useFarmMap(containerRef, {
+    zoom: 10,
+    attribution: 'compact',
+    // Zoom buttons bottom-right; the top-right corner holds the tape measure.
+    // No compass: the map does not turn, so it only ever pointed north.
+    controls: { navAt: 'bottom-right' },
+    onCreate: (map) => {
+      // MapLibre's compact attribution renders the "i" button but starts opened,
+      // so the Esri credit sits across the bottom corner of the map until it is
+      // clicked away. The credit still has to be REACHABLE — it is a licence
+      // condition, not decoration — so it is collapsed, never removed.
+      //
+      // Collapsing once is not enough: _updateCompact re-adds the open state
+      // every time it runs, which includes each window resize. So it is held
+      // shut until the reader opens it themselves, and after that left alone.
+      map.on('load', () => {
+        const attrib = containerRef.current?.querySelector<HTMLElement>('.maplibregl-ctrl-attrib')
+        if (!attrib) return
+        let openedByReader = false
+        const collapse = () => {
+          if (openedByReader) return
+          attrib.classList.remove('maplibregl-compact-show')
+          attrib.removeAttribute('open')
+        }
+        attrib.querySelector('summary')?.addEventListener('click', () => {
+          openedByReader = true
+        })
+        collapse()
+        const obs = new MutationObserver(collapse)
+        obs.observe(attrib, { attributes: true, attributeFilter: ['class', 'open'] })
+        map.once('remove', () => obs.disconnect())
+      })
 
-    // MapLibre's compact attribution renders the "i" button but starts opened,
-    // so the Esri credit sits across the bottom corner of the map until it is
-    // clicked away. The credit still has to be REACHABLE — it is a licence
-    // condition, not decoration — so it is collapsed, never removed.
-    //
-    // Collapsing once is not enough: _updateCompact re-adds the open state
-    // every time it runs, which includes each window resize. So it is held
-    // shut until the reader opens it themselves, and after that left alone.
-    map.on('load', () => {
-      const attrib = containerRef.current?.querySelector<HTMLElement>('.maplibregl-ctrl-attrib')
-      if (!attrib) return
-      let openedByReader = false
-      const collapse = () => {
-        if (openedByReader) return
-        attrib.classList.remove('maplibregl-compact-show')
-        attrib.removeAttribute('open')
+      const readView = () => {
+        const b = map.getBounds()
+        setView({
+          zoom: map.getZoom(),
+          bounds: { south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() },
+        })
       }
-      attrib.querySelector('summary')?.addEventListener('click', () => {
-        openedByReader = true
-      })
-      collapse()
-      const obs = new MutationObserver(collapse)
-      obs.observe(attrib, { attributes: true, attributeFilter: ['class', 'open'] })
-      map.once('remove', () => obs.disconnect())
-    })
+      map.on('moveend', readView)
+      map.on('load', readView)
 
-    const readView = () => {
-      const b = map.getBounds()
-      setView({
-        zoom: map.getZoom(),
-        bounds: { south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() },
+      // Anywhere on the map, not just on a field: the point of the tool is to
+      // answer for ground we do not farm.
+      map.on('click', (e) => {
+        if (!identifyingRef.current) return
+        const lngLat: [number, number] = [e.lngLat.lng, e.lngLat.lat]
+        setIdentified({ lngLat, result: reverseLld({ lat: e.lngLat.lat, lng: e.lngLat.lng }, townshipsRef.current) })
       })
-    }
-    map.on('moveend', readView)
-    map.on('load', readView)
-
-    // Anywhere on the map, not just on a field: the point of the tool is to
-    // answer for ground we do not farm.
-    map.on('click', (e) => {
-      if (!identifyingRef.current) return
-      const lngLat: [number, number] = [e.lngLat.lng, e.lngLat.lat]
-      setIdentified({ lngLat, result: reverseLld({ lat: e.lngLat.lat, lng: e.lngLat.lng }, townshipsRef.current) })
-    })
-    mapRef.current = map
-    if (import.meta.env.DEV) {
-      ;(window as unknown as Record<string, unknown>).__map = map
-    }
+      if (import.meta.env.DEV) {
+        ;(window as unknown as Record<string, unknown>).__map = map
+      }
+    },
+  })
+  // After the map's own cleanup: a new map starts with no overlays loaded.
+  useEffect(() => {
     const loadedSet = overlayLoaded.current
-    return () => {
-      map.remove()
-      mapRef.current = null
-      loadedSet.clear()
-      setMapReady(false)
-    }
+    return () => loadedSet.clear()
   }, [])
 
   // Swap the field fill between flat blue, the irrigation-status ramp, and the
@@ -876,7 +822,7 @@ export function MapPage() {
             ? 0.12
             : 0.55,
     )
-  }, [showFieldnet, showIrrigation, showSatellite, showPhoto, showSalt, mapReady, featureCollection])
+  }, [mapRef, showFieldnet, showIrrigation, showSatellite, showPhoto, showSalt, mapReady, featureCollection])
 
   useEffect(() => void localStorage.setItem('map_fillMode', fillMode), [fillMode])
   useEffect(() => void localStorage.setItem('map_ndviScale', ndviScale), [ndviScale])
@@ -904,7 +850,7 @@ export function MapPage() {
       map.off('dragstart', close)
       window.removeEventListener('keydown', onKey)
     }
-  }, [mapReady])
+  }, [mapRef, mapReady])
 
   /**
    * The most recent real photograph of each field.
@@ -1001,7 +947,7 @@ export function MapPage() {
         }
       }
     }
-  }, [fieldImages, ndviRasters, showPhoto, showSatellite, mapReady, ndviScale, index])
+  }, [mapRef, fieldImages, ndviRasters, showPhoto, showSatellite, mapReady, ndviScale, index])
 
   // FieldNET pivot circles + arm + direction arrow + stop line.
   useEffect(() => {
@@ -1044,7 +990,7 @@ export function MapPage() {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis)
     if (map.getLayer('fieldnet-sectors-fill'))
       map.setLayoutProperty('fieldnet-sectors-fill', 'visibility', showFieldnet && showHeatmap ? 'visible' : 'none')
-  }, [fnLayers, showFieldnet, showHeatmap, mapReady])
+  }, [mapRef, fnLayers, showFieldnet, showHeatmap, mapReady])
 
   useEffect(() => void localStorage.setItem('map_fnHeatmap', showHeatmap ? '1' : '0'), [showHeatmap])
   useEffect(() => void localStorage.setItem('map_showSoil', showSoil ? '1' : '0'), [showSoil])
@@ -1159,7 +1105,7 @@ export function MapPage() {
       ],
       { padding: 120, duration: 600, maxZoom: 14 },
     )
-  }, [mapReady, lldLookup])
+  }, [mapRef, mapReady, lldLookup])
 
   // Deep link: /map?field=<id> selects the field and zooms to it. The live
   // pivot colouring comes only with &layer=fieldnet, which the pivot list asks
@@ -1185,7 +1131,7 @@ export function MapPage() {
       poly[0].forEach((p: Position) => bounds.extend([p[0], p[1]])),
     )
     if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 120, maxZoom: 14, animate: true })
-  }, [searchParams, mapReady, boundaryByField])
+  }, [mapRef, searchParams, mapReady, boundaryByField])
 
   useEffect(() => {
     const map = mapRef.current
@@ -1247,7 +1193,7 @@ export function MapPage() {
     )
     // Not over a pin link's zoom (FarmLayersOverlay does that one).
     if (!bounds.isEmpty() && !pinLinkRef.current) map.fitBounds(bounds, { padding: 48, animate: false })
-  }, [featureCollection, mapReady])
+  }, [mapRef, featureCollection, mapReady])
 
   // Layer visibility toggles
   useEffect(() => {
@@ -1257,7 +1203,7 @@ export function MapPage() {
     map.setLayoutProperty('boundaries-fill', 'visibility', vis)
     map.setLayoutProperty('boundaries-line', 'visibility', vis)
     map.setLayoutProperty('boundaries-selected', 'visibility', vis)
-  }, [showBoundaries, mapReady, featureCollection])
+  }, [mapRef, showBoundaries, mapReady, featureCollection])
 
   useEffect(() => {
     markersRef.current.forEach((m) => {
@@ -1269,7 +1215,7 @@ export function MapPage() {
     const map = mapRef.current
     if (!map || !mapReady || !map.getLayer('boundaries-selected')) return
     map.setFilter('boundaries-selected', ['==', ['get', 'field_id'], selectedId ?? ''])
-  }, [selectedId, mapReady])
+  }, [mapRef, selectedId, mapReady])
 
   // Geospatial file overlays (rx / fertility maps)
   useEffect(() => {
@@ -1333,7 +1279,7 @@ export function MapPage() {
         if (map.getSource(srcId)) map.removeSource(srcId)
       }
     }
-  }, [activeOverlays, overlayFiles, mapReady])
+  }, [mapRef, activeOverlays, overlayFiles, mapReady])
 
   // Google My Maps overlay (live KML). Additive layer — existing layers, icons
   // and colours are untouched.
@@ -1362,9 +1308,11 @@ export function MapPage() {
   // /map?pin=<id>&pinLayer=<layer> (a pump's Show on map) opens that pin, its layer on even if hidden here.
   const pinLink = searchParams.get('pin')
   const pinLayer = searchParams.get('pinLayer')
+  // The copied folders are part of the Google My Map: they show only while it
+  // is ticked on. A pump's Show on map still opens its layer either way.
   const farmActive = useMemo(
-    () => new Set((farmLayers ?? []).filter((l) => !farmOff.has(l.id) || l.id === pinLayer).map((l) => l.id)),
-    [farmLayers, farmOff, pinLayer],
+    () => new Set((farmLayers ?? []).filter((l) => (showMyMap && !farmOff.has(l.id)) || l.id === pinLayer).map((l) => l.id)),
+    [farmLayers, farmOff, pinLayer, showMyMap],
   )
   const toggleFarmLayer = (id: string, on: boolean) =>
     setFarmOff((prev) => {
@@ -1385,7 +1333,6 @@ export function MapPage() {
 
   // Remember the map/location toggles across visits.
   useEffect(() => void localStorage.setItem('map_showMyMap', showMyMap ? '1' : '0'), [showMyMap])
-  useEffect(() => void localStorage.setItem('map_showLocation', showLocation ? '1' : '0'), [showLocation])
 
   // On a NEW layer set (not a refetch), restore the last-visible layers for this
   // map from localStorage, else show all.
@@ -1483,23 +1430,19 @@ export function MapPage() {
       for (const id of layerIds) if (map.getLayer(id)) map.removeLayer(id)
       if (map.getSource('mymap')) map.removeSource('mymap')
     }
-  }, [showMyMap, myMapGeo, activeMyMapLayers, mapReady, myMapMid, copiedFolders])
+  }, [mapRef, showMyMap, myMapGeo, activeMyMapLayers, mapReady, myMapMid, copiedFolders])
 
-  // Live user location (toggleable) via the Geolocation API.
+  // My location, always shown: a blue dot wherever I am, seen when the map is
+  // looking at that ground. The map never moves to it (Sam, 29 Oct 2026) —
+  // it opens on the farm, not on wherever the phone happens to be.
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !mapReady) return
+    if (!map || !mapReady || !navigator.geolocation) return
     const clear = () => {
       if (!mapAlive(map)) return
       for (const id of ['user-loc-dot', 'user-loc-halo']) if (map.getLayer(id)) map.removeLayer(id)
       if (map.getSource('user-loc')) map.removeSource('user-loc')
     }
-    if (!showLocation || !navigator.geolocation) {
-      clear()
-      return
-    }
-    setLocError('')
-    let centered = false
     const watch = navigator.geolocation.watchPosition(
       (pos) => {
         const data = { type: 'Point' as const, coordinates: [pos.coords.longitude, pos.coords.latitude] }
@@ -1510,48 +1453,44 @@ export function MapPage() {
           map.addLayer({ id: 'user-loc-halo', type: 'circle', source: 'user-loc', paint: { 'circle-radius': 14, 'circle-color': '#3b82f6', 'circle-opacity': 0.2 } })
           map.addLayer({ id: 'user-loc-dot', type: 'circle', source: 'user-loc', paint: { 'circle-radius': 6, 'circle-color': '#3b82f6', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } })
         }
-        if (!centered) {
-          centered = true
-          map.easeTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: Math.max(map.getZoom(), 13) })
-        }
       },
-      (err) => setLocError(err.code === err.PERMISSION_DENIED ? 'Location permission denied.' : 'Could not get location.'),
+      // No location (permission refused, no fix): no dot, and nothing to say.
+      () => {},
       { enableHighAccuracy: true, maximumAge: 5000 },
     )
     return () => {
       navigator.geolocation.clearWatch(watch)
       clear()
     }
-  }, [showLocation, mapReady])
+  }, [mapRef, mapReady])
 
   const selected = selectedId ? fieldById.get(selectedId) : null
   const summaryRef = useRef<HTMLDivElement>(null)
+  const measureRef = useRef<HTMLButtonElement>(null)
 
   /**
-   * Keep the zoom buttons out from under the field summary.
+   * Keep the corner buttons out from under the field summary.
    *
-   * Both live in the map's top-right corner, so opening a field buries the
-   * zoom controls behind the panel. Rather than move either one permanently —
-   * the corner is where people look for zoom, and the summary wants the same
-   * corner on a wide screen — the controls step down by exactly the panel's
-   * height while it is open, and step back when it closes.
+   * On a wide screen the summary sits in the top-right corner, over the tape
+   * measure; on a phone it is docked along the bottom, over the zoom buttons.
+   * Whichever one it would bury steps aside by exactly the panel's height
+   * while it is open, and steps back when it closes.
    *
    * Measured rather than assumed: the panel grows and shrinks with what the
    * field has (a pivot, a water balance, neither), so a fixed offset would be
-   * wrong for most fields. Below md the panel is docked to the bottom of the
-   * screen instead and nothing needs to move.
+   * wrong for most fields.
    */
   useEffect(() => {
-    const container = containerRef.current
-    const ctrl = container?.querySelector<HTMLElement>('.maplibregl-ctrl-top-right')
-    if (!ctrl) return
-    ctrl.style.transition = 'transform 160ms ease'
+    const zoom = containerRef.current?.querySelector<HTMLElement>('.maplibregl-ctrl-bottom-right')
+    const tape = measureRef.current
+    if (zoom) zoom.style.transition = 'transform 160ms ease'
 
     const wide = window.matchMedia('(min-width: 768px)')
     const apply = () => {
       const panel = summaryRef.current
-      const shift = panel && wide.matches ? panel.offsetHeight + 8 : 0
-      ctrl.style.transform = shift ? `translateY(${shift}px)` : ''
+      const h = panel ? panel.offsetHeight + 8 : 0
+      if (tape) tape.style.transform = h && wide.matches ? `translateY(${h}px)` : ''
+      if (zoom) zoom.style.transform = h && !wide.matches ? `translateY(-${h}px)` : ''
     }
     apply()
 
@@ -1563,7 +1502,8 @@ export function MapPage() {
     return () => {
       ro.disconnect()
       wide.removeEventListener('change', apply)
-      ctrl.style.transform = ''
+      if (tape) tape.style.transform = ''
+      if (zoom) zoom.style.transform = ''
     }
   }, [selected, mapReady])
   useEffect(() => {
@@ -1622,7 +1562,7 @@ export function MapPage() {
         .setLngLat([p.box.center.lng, p.box.center.lat])
         .addTo(map)
     })
-  }, [gridParcels, mapReady])
+  }, [mapRef, gridParcels, mapReady])
 
   // Crosshair while armed, so it is obvious the next click is a question.
   useEffect(() => {
@@ -1630,9 +1570,11 @@ export function MapPage() {
     if (!map) return
     map.getCanvas().style.cursor = identifying ? 'crosshair' : ''
     return () => {
+      // The live map, if there still is one — not the one this effect started with.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       if (mapRef.current) mapRef.current.getCanvas().style.cursor = ''
     }
-  }, [identifying])
+  }, [mapRef, identifying])
 
   // A pin on the point that was asked about — without it the answer floats free
   // of the place it describes.
@@ -1652,7 +1594,7 @@ export function MapPage() {
       identifyMarker.current?.remove()
       identifyMarker.current = null
     }
-  }, [identified])
+  }, [mapRef, identified])
 
   const selectedBoundary = selectedId ? boundaryByField.get(selectedId) : null
 
@@ -1675,6 +1617,28 @@ export function MapPage() {
           onClose={() => setMeasuring(false)}
         />
       )}
+
+      {/* The tape measure: an icon in the top-right corner, where the zoom
+          buttons used to be (they moved bottom-right). */}
+      <button
+        ref={measureRef}
+        onClick={() => {
+          setMeasuring((v) => !v)
+          // The two tools both want the clicks, so only one is out at a
+          // time. Picking up the tape puts the point tool away.
+          setIdentifying(false)
+          setIdentified(null)
+        }}
+        aria-pressed={measuring}
+        aria-label="Measure a distance or an area"
+        title="Measure a distance or an area off the map"
+        className={cn(
+          'absolute right-2 top-2 z-10 flex h-[29px] w-[29px] items-center justify-center rounded-md border shadow transition-transform',
+          measuring ? 'border-amber-500 bg-amber-500 text-white' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50',
+        )}
+      >
+        <Ruler className="h-4 w-4" />
+      </button>
 
       {/* Layer panel + legal-land search */}
       {/* Wraps on a phone: three buttons and the search box are wider than a
@@ -1712,25 +1676,6 @@ export function MapPage() {
             )}
           >
             <Crosshair className="h-3.5 w-3.5" /> {identifying ? 'Click the map' : 'Point'}
-          </button>
-          <button
-            onClick={() => {
-              setMeasuring((v) => !v)
-              // The two tools both want the clicks, so only one is out at a
-              // time. Picking up the tape puts the point tool away.
-              setIdentifying(false)
-              setIdentified(null)
-            }}
-            aria-pressed={measuring}
-            title="Measure a distance or an area off the map"
-            className={cn(
-              'flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium shadow',
-              measuring
-                ? 'border-amber-500 bg-amber-500 text-white'
-                : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50',
-            )}
-          >
-            <Ruler className="h-3.5 w-3.5" /> Measure
           </button>
           <div className="w-48 sm:w-60">
             <input
@@ -2092,7 +2037,7 @@ export function MapPage() {
                   />
                   Google My Map
                 </label>
-                {showMyMap && myMapGeo && myMapGeo.layers.length > 0 && (
+                {showMyMap && ((myMapGeo && myMapGeo.layers.length > 0) || (farmLayers?.length ?? 0) > 0) && (
                   <LegendArrow open={myMapOpen} onToggle={toggleMyMapOpen} label="My Map layer" />
                 )}
               </div>
@@ -2104,9 +2049,10 @@ export function MapPage() {
                     : 'Couldn’t load the map.'}
                 </p>
               )}
-              {showMyMap && myMapOpen && myMapGeo && cropMyMapLayers.length > 0 && (
+              {showMyMap && myMapOpen && (
                 <ul className="ml-6 space-y-0.5">
-                  {cropMyMapLayers.map((layer) => (
+                  <FarmLayersLegend layers={farmLayers ?? []} active={farmActive} onToggle={toggleFarmLayer} isManager={isManager} />
+                  {myMapGeo && cropMyMapLayers.map((layer) => (
                     <MyMapLayerRow
                       key={layer}
                       layer={layer}
@@ -2137,8 +2083,6 @@ export function MapPage() {
                 />
               )}
             </div>
-
-            <FarmLayersLegend layers={farmLayers ?? []} active={farmActive} onToggle={toggleFarmLayer} isManager={isManager} />
 
             <div className="mt-2 border-t border-gray-100 pt-2">
               <div className="flex items-center gap-1">
@@ -2251,20 +2195,6 @@ export function MapPage() {
                 ))}
               </div>
             )}
-            </Fold>
-
-            <Fold
-              title="Tools"
-              storageKey="map-layers-tools"
-              summary={showLocation ? 'location on' : undefined}
-              className="mt-2 border-gray-100"
-              bodyClassName="px-2 py-1.5"
-            >
-              <label className="flex items-center gap-2 py-0.5">
-                <input type="checkbox" checked={showLocation} onChange={(e) => setShowLocation(e.target.checked)} />
-                My location
-              </label>
-              {showLocation && locError && <p className="ml-6 text-[11px] text-red-600">{locError}</p>}
             </Fold>
           </div>
         )}

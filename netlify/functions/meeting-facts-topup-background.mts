@@ -1,7 +1,9 @@
-import { createClient } from '@supabase/supabase-js'
 import { reportHealth, runFactTopUp } from '../shared/meeting-facts-core.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
+import { SONNET_5 } from '../shared/anthropic.ts'
+import { isStaff } from '../shared/staff.ts'
 
 /**
  * Writing more meeting facts, somewhere it has time to finish.
@@ -19,7 +21,7 @@ import { getUserMfa } from '../shared/auth-mfa.ts'
 const url = process.env.SUPABASE_URL
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 let apiKey = process.env.ANTHROPIC_API_KEY
-let model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5'
+let model = process.env.ANTHROPIC_MODEL ?? SONNET_5
 // The key the crons already hold. Named for the label worker because that is
 // what first needed one; a FACT_WORKER_KEY overrides it if these are ever
 // separated.
@@ -29,12 +31,12 @@ export default async (req: Request) => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
   apiKey = process.env.ANTHROPIC_API_KEY
-  model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5'
+  model = process.env.ANTHROPIC_MODEL ?? SONNET_5
   workerKey = process.env.JOB_WORKER_KEY ?? process.env.FACT_WORKER_KEY ?? process.env.LABEL_WORKER_KEY
   if (req.method !== 'POST') return new Response('POST only', { status: 405 })
   if (!url || !serviceKey) return new Response('Not configured', { status: 500 })
 
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
 
   // Either the cron's shared key, or a real signed-in person on the farm. An
   // open endpoint that runs the model on demand is somebody else's API bill.
@@ -48,8 +50,8 @@ export default async (req: Request) => {
   if (!byWorker && bearer) {
     const { data: au } = await getUserMfa(sb, bearer)
     if (au.user) {
-      const { data: prof } = await sb.from('users').select('active').eq('id', au.user.id).single()
-      byUser = Boolean(prof?.active)
+      const { data: prof } = await sb.from('users').select('active, role').eq('id', au.user.id).single()
+      byUser = isStaff(prof)
     }
   }
   if (!byWorker && !byUser) return new Response('Not authorised', { status: 401 })

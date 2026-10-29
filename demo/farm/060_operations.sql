@@ -253,8 +253,8 @@ insert into public.notifications (user_id, kind, title, body, link, read_at, cre
 select (select id from public.users order by created_at limit 1), v.kind, v.title, v.body, v.link,
        case when v.read then now() - interval '1 hour' end, now() - make_interval(hours => v.hrs), v.details::jsonb
 from (values
-  ('fert_buy_window', 'Fall nitrogen price is near its low for the year', 'Anhydrous is quoted 4% under its 12-month average. Worth booking the West Half and Railway Quarter fall application.', '/fertilizer', false, 30, null),
-  ('fert_deadline', 'Prepay discount ends in 9 days', 'Prairie Ag Supply''s 3% prepay discount on spring fertilizer closes soon.', '/fertilizer', true, 50, null),
+  ('fert_buy_window', 'Fall nitrogen price is near its low for the year', 'Anhydrous is quoted 4% under its 12-month average. Worth booking the West Half and Railway Quarter fall application.', '/fertilizer/savings', false, 30, null),
+  ('fert_deadline', 'Prepay discount ends in 9 days', 'Prairie Ag Supply''s 3% prepay discount on spring fertilizer closes soon.', '/fertilizer/savings', true, 50, null),
   ('task_reminder', 'Reminder: fix the west gate at Willow Ridge', 'Due yesterday.', '/tasks', false, 6, null),
   ('task_completed', 'Task completed: Blow down the combine and check the chopper knives', 'by Jordan Pike', '/tasks/0de30000-0000-4000-8000-000000000628', false, 2, null)
 ) as v(kind, title, body, link, read, hrs, details);

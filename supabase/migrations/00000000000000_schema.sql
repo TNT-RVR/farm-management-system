@@ -206,7 +206,9 @@ CREATE TYPE "public"."grain_movement_type" AS ENUM (
     'transfer_out',
     'delivery_out',
     'shrink',
-    'adjustment'
+    'adjustment',
+    'purchase_in',
+    'carryover_in'
 );
 
 
@@ -497,7 +499,7 @@ begin
       on s.crop_id = c.id and lower(btrim(s.variety)) = lower(v_grown)
    where c.id = p_crop;
 
-  select count(*),
+  select count(distinct coalesce(l.id::text, m.id::text)),
          coalesce(sum(m.bushels * dry_shrink(load_moisture(l.id), v_dry)), 0),
          coalesce(sum(m.bushels * coalesce(l.lb_per_bu, v_tw) * dry_shrink(load_moisture(l.id), v_dry)), 0),
          coalesce(sum(m.bushels), 0),
@@ -597,6 +599,46 @@ ALTER FUNCTION "public"."assign_meeting_fact"("p_week" "date", "p_candidates" "t
 
 COMMENT ON FUNCTION "public"."assign_meeting_fact"("p_week" "date", "p_candidates" "text"[], "p_reassign" boolean) IS 'Get or assign the Monday-meeting fact for a week. Candidates are supplied in priority order by the client; the first never-used one is recorded and returned. Null means the library is exhausted.';
 
+
+
+CREATE OR REPLACE FUNCTION "public"."assign_monthly_copy"("p_copy" "uuid", "p_users" "uuid"[]) RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  c record;
+  u uuid;
+  v_task uuid;
+  v_n int := 0;
+begin
+  if not (select is_active()) then raise exception 'Not allowed'; end if;
+  select i.id, i.year, i.month, i.state, t.title, t.notes_md, t.recurrence, t.start_month, t.end_month
+    into c
+    from monthly_task_instances i join monthly_task_templates t on t.id = i.template_id
+   where i.id = p_copy;
+  if c.id is null then raise exception 'Monthly job not found'; end if;
+
+  foreach u in array coalesce(p_users, '{}') loop
+    continue when not exists (select 1 from users where id = u and active);
+    continue when exists (
+      select 1 from tasks k join task_assignees a on a.task_id = k.id
+       where k.source = 'monthly' and k.source_ref = p_copy and a.user_id = u);
+    insert into tasks (title, description_md, created_by, due_at, source, source_ref, crop_year)
+    values (c.title, c.notes_md, auth.uid(),
+            ((monthly_window_end(c.year, c.month, c.recurrence, c.start_month, c.end_month) + time '23:59:59')
+               at time zone public.farm_tz()),
+            'monthly', p_copy, date_part('year', now())::int)
+    returning id into v_task;
+    insert into task_assignees (task_id, user_id, assigned_by) values (v_task, u, auth.uid())
+    on conflict do nothing;
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."assign_monthly_copy"("p_copy" "uuid", "p_users" "uuid"[]) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."can_see_finances"() RETURNS boolean
@@ -915,7 +957,7 @@ CREATE OR REPLACE FUNCTION "public"."create_bale_check_task"() RETURNS "uuid"
     AS $$
 declare
   v_title text := 'Monthly bale temperature & moisture check';
-  v_month date := date_trunc('month', now() at time zone 'America/Edmonton')::date;
+  v_month date := date_trunc('month', now() at time zone public.farm_tz())::date;
   v_who uuid[];
   v_task uuid;
 begin
@@ -923,7 +965,7 @@ begin
     from operating_settings where key = 'bale_check_assignees';
   if coalesce(array_length(v_who, 1), 0) = 0 then return null; end if;
   -- Once a month, however often this runs.
-  if exists (select 1 from tasks where title = v_title and (created_at at time zone 'America/Edmonton')::date >= v_month) then return null; end if;
+  if exists (select 1 from tasks where title = v_title and (created_at at time zone public.farm_tz())::date >= v_month) then return null; end if;
   -- created_by is required and a scheduled job has no user: the first person
   -- it is for stands as its author (which also spares them a "completed"
   -- notification about their own task).
@@ -1133,7 +1175,7 @@ CREATE OR REPLACE FUNCTION "public"."ensure_checklist_year_run"("p_template" "uu
     SET "search_path" TO 'public', 'extensions'
     AS $$
 declare
-  v_year      int := coalesce(p_year, date_part('year', now() at time zone 'America/Edmonton')::int);
+  v_year      int := coalesce(p_year, date_part('year', now() at time zone public.farm_tz())::int);
   v_run       uuid;
   v_name      text;
   v_assignees uuid[];
@@ -1197,6 +1239,50 @@ $$;
 ALTER FUNCTION "public"."ensure_farm"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ensure_monthly_copies"() RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  v_first date := date_trunc('month', (now() at time zone public.farm_tz()))::date;
+  v_n int;
+begin
+  if auth.uid() is not null and not (select is_active()) then
+    raise exception 'Not allowed';
+  end if;
+
+  delete from monthly_task_instances i
+   using monthly_task_templates t
+   where t.id = i.template_id
+     and i.state = 'todo'
+     and i.checklist_run_id is null
+     and not exists (select 1 from tasks k where k.source = 'monthly' and k.source_ref = i.id)
+     and not (case when t.recurrence = 'multi_per_year'
+                   then monthly_in_window(i.month, t.start_month, t.end_month)
+                   else i.month = t.start_month end);
+
+  insert into monthly_task_instances (template_id, crop_year, year, month)
+  select t.id, extract(year from m.d)::int, extract(year from m.d)::int, extract(month from m.d)::int
+    from monthly_task_templates t
+    cross join lateral (
+      select (v_first + make_interval(months => k))::date as d from generate_series(-12, 1) k
+    ) m
+   where t.active
+     and (case when t.recurrence = 'multi_per_year'
+               then monthly_in_window(extract(month from m.d)::int, t.start_month, t.end_month)
+               else extract(month from m.d)::int = t.start_month end)
+     and monthly_window_end(extract(year from m.d)::int, extract(month from m.d)::int, t.recurrence, t.start_month, t.end_month)
+         >= (t.created_at at time zone public.farm_tz())::date
+  on conflict (template_id, year, month) do nothing;
+  get diagnostics v_n = row_count;
+  return v_n;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."ensure_monthly_copies"() OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."monthly_task_instances" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "template_id" "uuid" NOT NULL,
@@ -1204,11 +1290,23 @@ CREATE TABLE IF NOT EXISTS "public"."monthly_task_instances" (
     "completed" boolean DEFAULT false NOT NULL,
     "completed_by" "uuid",
     "completed_at" timestamp with time zone,
-    "task_id" "uuid"
+    "task_id" "uuid",
+    "year" integer NOT NULL,
+    "month" integer NOT NULL,
+    "state" "text" DEFAULT 'todo'::"text" NOT NULL,
+    "skip_note" "text",
+    "checklist_run_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "monthly_task_instances_month_check" CHECK ((("month" >= 1) AND ("month" <= 12))),
+    CONSTRAINT "monthly_task_instances_state_check" CHECK (("state" = ANY (ARRAY['todo'::"text", 'done'::"text", 'skipped'::"text"])))
 );
 
 
 ALTER TABLE "public"."monthly_task_instances" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."monthly_task_instances"."state" IS 'todo | done | skipped. completed_by / completed_at record who closed it and when, for done and skipped alike.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."ensure_monthly_instances"("p_year" integer) RETURNS SETOF "public"."monthly_task_instances"
@@ -1216,16 +1314,8 @@ CREATE OR REPLACE FUNCTION "public"."ensure_monthly_instances"("p_year" integer)
     SET "search_path" TO 'public', 'extensions'
     AS $$
 begin
-  if p_year >= date_part('year', now())::int then
-    insert into monthly_task_instances (template_id, crop_year)
-    select t.id, p_year from monthly_task_templates t
-    where t.active
-    on conflict (template_id, crop_year) do nothing;
-  end if;
-  return query
-    select i.* from monthly_task_instances i
-    join monthly_task_templates t on t.id = i.template_id
-    where i.crop_year = p_year;
+  perform ensure_monthly_copies();
+  return query select i.* from monthly_task_instances i where i.year = p_year;
 end;
 $$;
 
@@ -1353,6 +1443,40 @@ ALTER FUNCTION "public"."farm_rented_out_acres"("p_year" integer) OWNER TO "post
 
 
 COMMENT ON FUNCTION "public"."farm_rented_out_acres"("p_year" integer) IS 'Acres of land rented out (crops.land_rent_only) in a crop year that carry the land share of the fixed expenses.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."farm_time_is"("p_hours" integer[], "p_dow" integer DEFAULT NULL::integer, "p_mday" integer DEFAULT NULL::integer, "p_months" integer[] DEFAULT NULL::integer[]) RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select extract(hour from l)::int = any (p_hours)
+     and (p_dow is null or extract(dow from l)::int = p_dow)
+     and (p_mday is null or extract(day from l)::int = p_mday)
+     and (p_months is null or extract(month from l)::int = any (p_months))
+    from (select now() at time zone public.farm_tz() as l) t
+$$;
+
+
+ALTER FUNCTION "public"."farm_time_is"("p_hours" integer[], "p_dow" integer, "p_mday" integer, "p_months" integer[]) OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."farm_time_is"("p_hours" integer[], "p_dow" integer, "p_mday" integer, "p_months" integer[]) IS 'Is it this local hour (and weekday 0=Sunday, day of month, month) on the farm''s clock? For cron jobs that run hourly and act at a local time.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."farm_tz"() RETURNS "text"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select coalesce((select nullif(trim(s.time_zone), '') from public.farm_setup s limit 1), 'America/Edmonton')
+$$;
+
+
+ALTER FUNCTION "public"."farm_tz"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."farm_tz"() IS 'The farm''s time zone from Farm setup; America/Edmonton until it is set.';
 
 
 
@@ -1485,7 +1609,7 @@ begin
       on s.crop_id = c.id and lower(btrim(s.variety)) = lower(v_grown)
    where c.id = p_crop;
 
-  select count(*),
+  select count(distinct coalesce(l.id::text, m.id::text)),
          coalesce(sum(m.bushels * dry_shrink(load_moisture(l.id), v_dry)), 0),
          coalesce(sum(m.bushels * coalesce(l.lb_per_bu, v_tw) * dry_shrink(load_moisture(l.id), v_dry)), 0),
          coalesce(sum(m.bushels), 0),
@@ -1607,7 +1731,7 @@ CREATE OR REPLACE FUNCTION "public"."fn_app_issue_stall_sweep"() RETURNS integer
 declare
   r record;
   n integer := 0;
-  v_now text := to_char(now() at time zone 'America/Edmonton', 'Mon FMDD, HH24:MI');
+  v_now text := to_char(now() at time zone public.farm_tz(), 'Mon FMDD, HH24:MI');
   v_since text;
 begin
   for r in
@@ -1618,7 +1742,7 @@ begin
        and stalls < 2
      for update skip locked
   loop
-    v_since := to_char(r.working_since at time zone 'America/Edmonton', 'Mon FMDD, HH24:MI');
+    v_since := to_char(r.working_since at time zone public.farm_tz(), 'Mon FMDD, HH24:MI');
     if r.stalls = 0 then
       update app_issues
          set status = 'new',
@@ -1813,6 +1937,9 @@ declare
 begin
   if tg_op <> 'INSERT' then v_old := to_jsonb(old); end if;
   if tg_op <> 'DELETE' then v_new := to_jsonb(new); end if;
+  if tg_op = 'UPDATE' and (v_old - array['updated_at', 'synced_at']) = (v_new - array['updated_at', 'synced_at']) then
+    return new;
+  end if;
   v_id   := coalesce((v_new ->> 'id')::uuid, (v_old ->> 'id')::uuid);
   v_year := coalesce((v_new ->> 'crop_year')::int, (v_old ->> 'crop_year')::int);
   insert into audit_log (table_name, record_id, action, actor_id, actor_role,
@@ -1835,7 +1962,7 @@ CREATE OR REPLACE FUNCTION "public"."fn_bale_check_done"() RETURNS "trigger"
 begin
   update tasks set status = 'done', completed_at = now(), completed_by = coalesce(new.checked_by, auth.uid())
    where title = 'Monthly bale temperature & moisture check' and status = 'open'
-     and date_trunc('month', created_at at time zone 'America/Edmonton') = date_trunc('month', new.checked_on::timestamp);
+     and date_trunc('month', created_at at time zone public.farm_tz()) = date_trunc('month', new.checked_on::timestamp);
   return null;
 end;
 $$;
@@ -1905,21 +2032,83 @@ end $$;
 ALTER FUNCTION "public"."fn_bin_load_field_yield"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_bin_load_marks_harvest"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  v_when timestamptz;
+begin
+  -- The mark taken off, or the load deleted: the record it wrote goes with
+  -- it, unless somebody has hung combine settings on it since.
+  if tg_op in ('UPDATE', 'DELETE') and old.last_from_field
+     and (tg_op = 'DELETE' or not new.last_from_field) then
+    delete from field_work_records w
+     where w.from_bin_load = old.id
+       and not exists (select 1 from combine_settings_used s where s.work_record_id = w.id);
+  end if;
+
+  if tg_op in ('INSERT', 'UPDATE') and new.last_from_field
+     and new.field_id is not null and new.crop_year is not null then
+    -- Only a finish already recorded stops this. A Deere operation or a
+    -- part-way harvesting pass is not one, and the scale knows better than
+    -- either of them which load was the last.
+    if not exists (
+          select 1 from field_work_records w
+           where w.field_id = new.field_id and w.crop_year = new.crop_year
+             and w.counts_as = 'harvest' and w.field_finished) then
+      v_when := coalesce(
+        new.empty_at, new.full_at,
+        (new.loaded_on::timestamp + interval '12 hours') at time zone farm_tz());
+      insert into field_work_records
+        (field_id, crop_year, crop_id, work_type, counts_as, field_finished,
+         finished_at, notes, created_by, entered_at, from_bin_load)
+      values
+        (new.field_id, new.crop_year, new.crop_id, 'field_finished', 'harvest', true,
+         v_when, 'The last load off the field was weighed.', auth.uid(), now(), new.id);
+    end if;
+  end if;
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."fn_bin_load_marks_harvest"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_bin_load_mirror"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
     AS $$
 declare
   v_note text;
+  v_ticket text;
+  v_old_over uuid;
+  v_main uuid;
+  v_over uuid;
+  v_first numeric;
+  v_rest numeric;
 begin
   if tg_op = 'DELETE' then
     delete from grain_movements where ticket_number = 'load:' || old.id::text;
     return old;
   end if;
+  v_ticket := 'load:' || new.id::text;
   if new.bin_id is null or new.bushels is null then
-    delete from grain_movements where ticket_number = 'load:' || new.id::text;
+    delete from grain_movements where ticket_number = v_ticket;
     return new;
   end if;
+  if tg_op = 'UPDATE' then
+    v_old_over := old.overflow_bin_id;
+  end if;
+
+  if new.overflow_bin_id is null then
+    v_first := new.bushels;
+    v_rest := 0;
+  else
+    v_first := least(new.bushels, coalesce(new.first_bin_bu, new.bushels));
+    v_rest := new.bushels - v_first;
+  end if;
+
   v_note := case when new.estimated then 'ESTIMATE, not weighed. ' else '' end
     || case new.entry_kind
       when 'net' then format('Net off the truck: %s kg at %s lb/bu', new.net_kg, new.lb_per_bu)
@@ -1929,15 +2118,50 @@ begin
       else format('Scale load: %s kg full − %s kg empty = %s kg at %s lb/bu', new.gross_kg, new.tare_kg, new.net_kg, new.lb_per_bu)
     end
     || case when new.note is null or new.note = '' then '' else '. ' || new.note end;
-  update grain_movements
-     set bin_id = new.bin_id, crop_id = new.crop_id, crop_year = new.crop_year,
-         field_id = new.field_id, bushels = round(new.bushels, 2), moved_at = new.loaded_on,
-         notes = v_note
-   where ticket_number = 'load:' || new.id::text;
-  if found then return new; end if;
-  insert into grain_movements (crop_year, bin_id, crop_id, field_id, movement_type, bushels, moved_at, ticket_number, notes, created_by)
-  values (new.crop_year, new.bin_id, new.crop_id, new.field_id, 'harvest_in', round(new.bushels, 2), new.loaded_on,
-          'load:' || new.id::text, v_note, new.created_by);
+
+  -- The rest's row is the one that was in the old overflow bin; the main row is the other.
+  if v_old_over is not null then
+    select id into v_over from grain_movements
+     where ticket_number = v_ticket and bin_id = v_old_over
+     order by created_at limit 1;
+  end if;
+  select id into v_main from grain_movements
+   where ticket_number = v_ticket and id is distinct from v_over
+   order by created_at limit 1;
+
+  if v_main is not null then
+    update grain_movements
+       set bin_id = new.bin_id, crop_id = new.crop_id, crop_year = new.crop_year,
+           field_id = new.field_id, bushels = round(v_first, 2), moved_at = new.loaded_on,
+           notes = case when v_rest > 0 then 'Filled the bin; the rest went to another bin. ' else '' end || v_note
+     where id = v_main;
+  else
+    insert into grain_movements (crop_year, bin_id, crop_id, field_id, movement_type, bushels, moved_at, ticket_number, notes, created_by)
+    values (new.crop_year, new.bin_id, new.crop_id, new.field_id, 'harvest_in', round(v_first, 2), new.loaded_on, v_ticket,
+            case when v_rest > 0 then 'Filled the bin; the rest went to another bin. ' else '' end || v_note, new.created_by)
+    returning id into v_main;
+  end if;
+
+  if new.overflow_bin_id is not null and round(v_rest, 2) > 0 then
+    if v_over is not null then
+      update grain_movements
+         set bin_id = new.overflow_bin_id, crop_id = new.crop_id, crop_year = new.crop_year,
+             field_id = new.field_id, bushels = round(v_rest, 2), moved_at = new.loaded_on,
+             notes = 'The rest of a load, after the first bin was full. ' || v_note
+       where id = v_over;
+    else
+      insert into grain_movements (crop_year, bin_id, crop_id, field_id, movement_type, bushels, moved_at, ticket_number, notes, created_by)
+      values (new.crop_year, new.overflow_bin_id, new.crop_id, new.field_id, 'harvest_in', round(v_rest, 2), new.loaded_on, v_ticket,
+              'The rest of a load, after the first bin was full. ' || v_note, new.created_by)
+      returning id into v_over;
+    end if;
+  else
+    v_over := null;
+  end if;
+
+  -- Anything else under this load's ticket is left over from an earlier split.
+  delete from grain_movements
+   where ticket_number = v_ticket and id <> v_main and id is distinct from v_over;
   return new;
 end $$;
 
@@ -1958,6 +2182,78 @@ end $$;
 ALTER FUNCTION "public"."fn_bin_load_moisture_yield"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_bin_load_weigh_times"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if new.gross_kg is null then
+    new.full_at := null;
+    new.weighed_in_by := null;
+  else
+    if new.full_at is null and (tg_op = 'INSERT' or old.gross_kg is null) then
+      new.full_at := now();
+    end if;
+    -- Only as the weight first lands: a load corrected months later keeps
+    -- the name of whoever was at the scale.
+    if new.weighed_in_by is null and (tg_op = 'INSERT' or old.gross_kg is null) then
+      new.weighed_in_by := auth.uid();
+    end if;
+  end if;
+  if new.entry_kind <> 'weighed' or new.tare_kg is null then
+    new.empty_at := null;
+    new.weighed_out_by := null;
+  else
+    if new.empty_at is null and (tg_op = 'INSERT' or old.tare_kg is null or old.entry_kind <> 'weighed') then
+      new.empty_at := now();
+    end if;
+    if new.weighed_out_by is null and (tg_op = 'INSERT' or old.tare_kg is null or old.entry_kind <> 'weighed') then
+      new.weighed_out_by := auth.uid();
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_bin_load_weigh_times"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_bin_yards_touch"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_bin_yards_touch"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_bins_yard_on_list"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if new.site is not null then
+    new.site := nullif(btrim(new.site), '');
+  end if;
+  if new.site is not null then
+    insert into bin_yards (name, sort)
+    values (new.site, coalesce((select max(sort) + 1 from bin_yards), 0))
+    on conflict (name) do nothing;
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_bins_yard_on_list"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_boundary_acres_to_plans"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
@@ -1976,6 +2272,36 @@ end $$;
 
 
 ALTER FUNCTION "public"."fn_boundary_acres_to_plans"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_broadcast_notification"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  perform realtime.send(jsonb_build_object('id', new.id, 'kind', new.kind), 'insert', 'notifications:' || new.user_id::text, true);
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_broadcast_notification"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_broadcast_tv_command"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if new.status is distinct from old.status or new.error is distinct from old.error then
+    perform realtime.send(jsonb_build_object('id', new.id, 'status', new.status, 'error', new.error), 'update', 'tv_command:' || new.requested_by::text, true);
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_broadcast_tv_command"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_classify_operations"() RETURNS integer
@@ -2553,7 +2879,7 @@ begin
   select max(started_at) into newest from eshepherd_activations;
   perform record_integration_heartbeat(
     'eshepherd_activations',
-    'Newest activation ' || to_char(newest at time zone 'America/Edmonton', 'DD Mon HH24:MI'),
+    'Newest activation ' || to_char(newest at time zone public.farm_tz(), 'DD Mon HH24:MI'),
     newest
   );
   return null;
@@ -2807,11 +3133,11 @@ begin
     end if;
 
     -- The farm's day the baling finished.
-    v_tz := coalesce((select nullif(trim(s.time_zone), '') from public.farm_setup s limit 1), 'America/Edmonton');
+    v_tz := coalesce((select nullif(trim(s.time_zone), '') from public.farm_setup s limit 1), public.farm_tz());
     begin
       v_day := (coalesce(new.finished_at, new.started_at, new.entered_at) at time zone v_tz)::date;
     exception when others then
-      v_day := (coalesce(new.finished_at, new.started_at, new.entered_at) at time zone 'America/Edmonton')::date;
+      v_day := (coalesce(new.finished_at, new.started_at, new.entered_at) at time zone public.farm_tz())::date;
     end;
 
     if v_lot.id is null then
@@ -3054,24 +3380,100 @@ end $$;
 ALTER FUNCTION "public"."fn_moisture_test_own_edit"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_monthly_instance_after"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if new.state <> 'todo' and old.state = 'todo' then
+    update tasks set status = 'done'
+     where source = 'monthly' and source_ref = new.id and status = 'open';
+  end if;
+  return null;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_monthly_instance_after"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_monthly_instance_before"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
     AS $$
 begin
-  if new.completed and not old.completed then
-    new.completed_by := auth.uid();
-    new.completed_at := now();
-  elsif not new.completed and old.completed then
-    new.completed_by := null;
-    new.completed_at := null;
+  if tg_op = 'INSERT' then
+    new.crop_year := new.year;
+    new.completed := new.state = 'done';
+    return new;
   end if;
+
+  -- A screen built before the rebuild ticks `completed`; read it as the state.
+  if new.completed is distinct from old.completed and new.state = old.state then
+    new.state := case when new.completed then 'done' else 'todo' end;
+  end if;
+
+  if new.state <> old.state then
+    if new.state = 'todo' then
+      new.completed_by := null;
+      new.completed_at := null;
+      new.skip_note := null;
+    else
+      -- A caller that names the person (the task trigger: whoever ticked the
+      -- task) keeps them; otherwise it is whoever is signed in.
+      if new.completed_by is not distinct from old.completed_by then
+        new.completed_by := auth.uid();
+      end if;
+      new.completed_at := now();
+      if new.state = 'done' then new.skip_note := null; end if;
+    end if;
+  end if;
+  new.completed := new.state = 'done';
   return new;
 end;
 $$;
 
 
 ALTER FUNCTION "public"."fn_monthly_instance_before"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_monthly_run_done"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if new.status = 'done' and old.status is distinct from 'done' then
+    update monthly_task_instances
+       set state = 'done', completed_by = coalesce(auth.uid(), new.created_by)
+     where checklist_run_id = new.id and state = 'todo';
+  end if;
+  return null;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_monthly_run_done"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_monthly_task_done"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if new.source = 'monthly' and new.source_ref is not null
+     and old.status = 'open' and new.status = 'done' then
+    update monthly_task_instances
+       set state = 'done',
+           completed_by = coalesce(new.completed_by, auth.uid(),
+                                   (select a.user_id from task_assignees a where a.task_id = new.id order by a.user_id limit 1))
+     where id = new.source_ref and state = 'todo';
+  end if;
+  return null;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_monthly_task_done"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_movement_field_yield"() RETURNS "trigger"
@@ -3365,8 +3767,8 @@ begin
   if not found or not s.quiet_on or s.quiet_start = s.quiet_end then
     return null;
   end if;
-  select coalesce(nullif(time_zone, ''), 'America/Edmonton') into v_tz from farm_setup limit 1;
-  v_t := (p_at at time zone coalesce(v_tz, 'America/Edmonton'))::time;
+  select coalesce(nullif(time_zone, ''), public.farm_tz()) into v_tz from farm_setup limit 1;
+  v_t := (p_at at time zone coalesce(v_tz, public.farm_tz()))::time;
   if (s.quiet_start < s.quiet_end and v_t >= s.quiet_start and v_t < s.quiet_end)
      or (s.quiet_start > s.quiet_end and (v_t >= s.quiet_start or v_t < s.quiet_end)) then
     return 'quiet';
@@ -3740,6 +4142,92 @@ end $$;
 ALTER FUNCTION "public"."fn_scale_ticket_match_load"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_seed_bin_check_due"("p_harvest" "date", "p_day" "date") RETURNS boolean
+    LANGUAGE "sql" IMMUTABLE
+    AS $$
+  select case
+    when p_harvest is null or extract(isodow from p_day) <> 1 then false
+    else (
+      with k as (select (p_day - (p_harvest + (8 - extract(isodow from p_harvest)::int))) / 7 as n)
+      select n >= 0 and n < 40 and (n < 4 or n % 2 = 1) from k
+    )
+  end
+$$;
+
+
+ALTER FUNCTION "public"."fn_seed_bin_check_due"("p_harvest" "date", "p_day" "date") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_seed_bin_check_reminders"("p_day" "date" DEFAULT CURRENT_DATE) RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $_$
+declare
+  r record;
+  sent integer := 0;
+begin
+  for r in
+    with due as (
+      select s.id, s.company, s.field_id, s.crop_year,
+             case when f.name ~ '^\d+$' then 'Field ' || f.name else f.name end as field,
+             string_agg(coalesce(nullif(b.company_bin_id, ''), 'bin') || coalesce(' (' || bn.name || ')', ''), ', ' order by b.sort, b.created_at) as bins
+        from seed_reports s
+        join fields f on f.id = s.field_id
+        join seed_report_bins b on b.report_id = s.id and b.shipped_on is null
+        left join bins bn on bn.id = b.bin_id
+       where fn_seed_bin_check_due(s.harvest_completed_on, p_day)
+       group by s.id, s.company, s.field_id, s.crop_year, f.name
+    )
+    select company,
+           count(*) as n,
+           min(crop_year) as crop_year,
+           (array_agg(field_id order by field))[1] as one_field,
+           string_agg(field, ', ' order by field) as fields,
+           string_agg(field || ': ' || bins, '; ' order by field) as detail
+      from due
+     group by company
+  loop
+    perform fn_notify_managers(
+      'seed_bin_check',
+      r.company || ' bin temperatures due: ' || r.fields,
+      'Take the readings for ' || r.detail || ', and send the Bin Temperature Monitoring Record' || case when r.n > 1 then 's' else '' end || ' to the agronomist.',
+      case when r.n = 1
+        then '/canola-reports?tab=bin-temps&field=' || r.one_field || '&year=' || r.crop_year
+        else '/canola-reports?tab=bin-temps&year=' || r.crop_year end
+    );
+    sent := sent + 1;
+  end loop;
+  return sent;
+end;
+$_$;
+
+
+ALTER FUNCTION "public"."fn_seed_bin_check_reminders"("p_day" "date") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_seed_report_signing"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  changed boolean;
+begin
+  if tg_op = 'INSERT' then
+    changed := new.signature is not null;
+  else
+    changed := new.signature is distinct from old.signature or new.signed_by is distinct from old.signed_by;
+  end if;
+  if changed and new.signature is not null and new.signed_by is distinct from auth.uid() then
+    raise exception 'A report can only be signed by the person signing it';
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_seed_report_signing"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_service_log_applied"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
@@ -3808,7 +4296,7 @@ begin
      and old.status = 'open' and new.status = 'done'
      and coalesce(current_setting('rvr.service_log_closing', true), 'off') <> 'on' then
     insert into equipment_service_log (equipment_id, plan_id, done_on, engine_hours, notes, done_by)
-    select p.equipment_id, p.id, (now() at time zone 'America/Edmonton')::date, e.engine_hours,
+    select p.equipment_id, p.id, (now() at time zone public.farm_tz())::date, e.engine_hours,
            'Recorded when the task was ticked done, at the hours John Deere last reported.',
            new.completed_by
       from equipment_service_plans p
@@ -3821,6 +4309,106 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_service_task_done"() OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."bins" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "capacity_bu" numeric DEFAULT 0 NOT NULL,
+    "geom" "public"."geometry"(Point,4326),
+    "site" "text",
+    "notes_md" "text",
+    "active" boolean DEFAULT true NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "usual_contents" "text" DEFAULT 'grain'::"text" NOT NULL,
+    "has_aeration" boolean DEFAULT false NOT NULL,
+    "has_heater" boolean DEFAULT false NOT NULL,
+    "aeration_on" boolean DEFAULT false NOT NULL,
+    "heater_on" boolean DEFAULT false NOT NULL,
+    CONSTRAINT "bins_usual_contents_check" CHECK (("usual_contents" = ANY (ARRAY['grain'::"text", 'fertilizer'::"text"])))
+);
+
+
+ALTER TABLE "public"."bins" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."bins"."usual_contents" IS 'What the bin normally holds. Advisory only — any bin can be allocated to any crop.';
+
+
+
+COMMENT ON COLUMN "public"."bins"."has_aeration" IS 'This bin has an aeration fan, so the fan switch is offered.';
+
+
+
+COMMENT ON COLUMN "public"."bins"."has_heater" IS 'This bin has a heater, so the heat switch is offered.';
+
+
+
+COMMENT ON COLUMN "public"."bins"."aeration_on" IS 'The fan is running now.';
+
+
+
+COMMENT ON COLUMN "public"."bins"."heater_on" IS 'The heater is running now.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_set_bin_run"("p_bin" "uuid", "p_aeration" boolean DEFAULT NULL::boolean, "p_heater" boolean DEFAULT NULL::boolean) RETURNS "public"."bins"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  row public.bins;
+begin
+  if not is_active() then
+    raise exception 'Only the farm''s own people can switch a bin fan or heater';
+  end if;
+  if not mfa_ok() then raise exception 'Sign in with your authenticator first'; end if;
+  update public.bins
+     set aeration_on = case when has_aeration then coalesce(p_aeration, aeration_on) else false end,
+         heater_on = case when has_heater then coalesce(p_heater, heater_on) else false end
+   where id = p_bin
+  returning * into row;
+  if row.id is null then
+    raise exception 'No such bin';
+  end if;
+  return row;
+end $$;
+
+
+ALTER FUNCTION "public"."fn_set_bin_run"("p_bin" "uuid", "p_aeration" boolean, "p_heater" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_soil_inputs_changed"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  fid uuid;
+  rid uuid;
+begin
+  if tg_table_name = 'fert_settings' then
+    perform refresh_soil_input_hashes(null);
+    return null;
+  end if;
+  if tg_table_name = 'soil_test_samples' then
+    rid := coalesce((to_jsonb(new) ->> 'report_id')::uuid, (to_jsonb(old) ->> 'report_id')::uuid);
+    perform refresh_soil_input_hashes(array[rid]);
+    return null;
+  end if;
+  if tg_table_name = 'soil_test_reports' then
+    perform refresh_soil_input_hashes(array[new.id]);
+    return null;
+  end if;
+  -- crop_plans, crop_history, manure_applications, field_pivots: every report on that field.
+  for fid in select distinct x from unnest(array[(to_jsonb(new) ->> 'field_id')::uuid, (to_jsonb(old) ->> 'field_id')::uuid]) x where x is not null loop
+    perform refresh_soil_input_hashes(array(select id from soil_test_reports where field_id = fid));
+  end loop;
+  return null;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_soil_inputs_changed"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_soil_inputs_hash"("p_report_id" "uuid") RETURNS "text"
@@ -4106,6 +4694,60 @@ end $$;
 
 
 ALTER FUNCTION "public"."fn_touch_updated_at_yield_adjustments"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_truck_inspection_guard"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if tg_op = 'UPDATE' and old.signed_at is not null then
+    raise exception 'This inspection is signed off and cannot be changed; start a new one';
+  end if;
+  if new.signature is not null and new.signed_by is distinct from auth.uid() then
+    raise exception 'An inspection can only be signed by the person signing it';
+  end if;
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_truck_inspection_guard"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_truck_inspection_reminders"("p_day" "date" DEFAULT CURRENT_DATE) RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  trucks text;
+begin
+  if extract(month from p_day) <> 1 then
+    return 0;
+  end if;
+  select string_agg(e.name, ', ' order by e.name) into trucks
+    from jd_equipment e
+   where e.equipment_type = 'Truck' and not e.archived
+     and not exists (
+       select 1 from truck_inspections i
+        where i.equipment_id = e.id and i.signed_on >= make_date(extract(year from p_day)::int, 1, 1)
+     );
+  if trucks is null then
+    return 0;
+  end if;
+  perform fn_notify_managers(
+    'truck_inspection',
+    'Yearly truck inspections due',
+    'Not inspected yet in ' || extract(year from p_day)::int || ': ' || trucks || '.',
+    '/truck-inspections'
+  );
+  return 1;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_truck_inspection_reminders"("p_day" "date") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_tv_commands_check_url"() RETURNS "trigger"
@@ -4395,6 +5037,31 @@ $$;
 
 
 ALTER FUNCTION "public"."handle_new_user"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."handle_user_invited"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  v_role user_role;
+begin
+  v_role := case new.raw_user_meta_data ->> 'role'
+    when 'admin' then 'admin'::user_role
+    when 'manager' then 'manager'::user_role
+    else 'user'::user_role
+  end;
+
+  update public.users
+     set role = v_role, active = true
+   where id = new.id and role = 'user' and not active and new.last_sign_in_at is null;
+
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."handle_user_invited"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."import_map_layer"("p_name" "text", "p_source" "text", "p_features" "jsonb") RETURNS "uuid"
@@ -4739,7 +5406,7 @@ CREATE OR REPLACE FUNCTION "public"."load_moisture"("p_load" "uuid") RETURNS num
     l.moisture_pct,
     (select round(avg(t.moisture_pct), 1) from moisture_tests t
       where t.field_id = l.field_id and t.crop_id = l.crop_id and t.crop_year = l.crop_year
-        and (t.tested_at at time zone 'America/Edmonton')::date = l.loaded_on
+        and (t.tested_at at time zone public.farm_tz())::date = l.loaded_on
         and t.moisture_pct is not null)
   )
   from bin_loads l where l.id = p_load
@@ -4894,6 +5561,30 @@ $$;
 
 
 ALTER FUNCTION "public"."mfa_ok"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."monthly_in_window"("p_month" integer, "p_start" integer, "p_end" integer) RETURNS boolean
+    LANGUAGE "sql" IMMUTABLE
+    AS $$
+  select case when p_start <= p_end then p_month between p_start and p_end
+              else p_month >= p_start or p_month <= p_end end  -- wraps Dec→Jan
+$$;
+
+
+ALTER FUNCTION "public"."monthly_in_window"("p_month" integer, "p_start" integer, "p_end" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."monthly_window_end"("p_year" integer, "p_month" integer, "p_recurrence" "public"."recurrence_type", "p_start" integer, "p_end" integer) RETURNS "date"
+    LANGUAGE "sql" IMMUTABLE
+    AS $$
+  select (make_date(p_year, p_month, 1)
+          + make_interval(months => case when p_recurrence = 'multi_per_year' then 1
+                                         else ((p_end - p_start + 12) % 12) + 1 end)
+          - interval '1 day')::date
+$$;
+
+
+ALTER FUNCTION "public"."monthly_window_end"("p_year" integer, "p_month" integer, "p_recurrence" "public"."recurrence_type", "p_start" integer, "p_end" integer) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."n_trial_strips"("p_trial" "uuid") RETURNS TABLE("strip" integer, "rep" integer, "rate" numeric, "geojson" "jsonb", "acres" numeric, "heading" numeric)
@@ -5243,17 +5934,20 @@ begin
   if auth.uid() is not null and not public.is_active() then
     raise exception 'Only active accounts can do this';
   end if;
-  delete from pasture_zones where kind = 'water_distance';
 
-  insert into pasture_zones (pasture_id, kind, label, band_order, boundary, boundary_analysis, acres)
+  create temp table if not exists _zones (
+    pasture_id uuid, label text, band_order integer, boundary geometry, boundary_analysis geometry, acres numeric
+  ) on commit drop;
+  delete from _zones;
+  insert into _zones (pasture_id, label, band_order, boundary, boundary_analysis, acres)
   select
-    z.pasture_id, 'water_distance', z.label, z.band_order,
-    st_multi(z.geom),
+    z.pasture_id, z.label, z.band_order,
+    st_multi(z.geom) as boundary,
     case
       when st_isempty(st_buffer(z.geom::geography, -15)::geometry) then null
       else st_multi(st_buffer(z.geom::geography, -15)::geometry)
-    end,
-    round((st_area(z.geom::geography) / 4046.8564224)::numeric, 1)
+    end as boundary_analysis,
+    round((st_area(z.geom::geography) / 4046.8564224)::numeric, 1) as acres
   from (
     select p.id as pasture_id, 'Within 800 m of water' as label, 1 as band_order,
            st_intersection(coalesce(p.boundary_analysis, p.boundary), r.reach) as geom
@@ -5268,7 +5962,25 @@ begin
   where not st_isempty(z.geom)
     and st_area(z.geom::geography) / 4046.8564224 >= 5;
 
-  get diagnostics built = row_count;
+  -- Readings on a band whose ground changed are about the old shape.
+  delete from sat_observations o
+  using pasture_zones pz, _zones n
+  where o.subject_type = 'pasture_zone' and o.subject_id = pz.id
+    and pz.kind = 'water_distance' and n.pasture_id = pz.pasture_id and n.band_order = pz.band_order
+    and not st_equals(n.boundary, pz.boundary);
+
+  delete from pasture_zones pz
+  where pz.kind = 'water_distance'
+    and not exists (select 1 from _zones n where n.pasture_id = pz.pasture_id and n.band_order = pz.band_order);
+
+  insert into pasture_zones as pz (pasture_id, kind, label, band_order, boundary, boundary_analysis, acres)
+  select pasture_id, 'water_distance', label, band_order, boundary, boundary_analysis, acres from _zones
+  on conflict (pasture_id, kind, band_order) do update
+    set label = excluded.label, boundary = excluded.boundary, boundary_analysis = excluded.boundary_analysis,
+        acres = excluded.acres, generated_at = now()
+    where not st_equals(pz.boundary, excluded.boundary) or pz.label is distinct from excluded.label;
+
+  select count(*) into built from pasture_zones where kind = 'water_distance';
   return built;
 end;
 $$;
@@ -5362,6 +6074,27 @@ $$;
 
 
 ALTER FUNCTION "public"."refresh_irrigation_assignments"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."refresh_soil_input_hashes"("p_report_ids" "uuid"[] DEFAULT NULL::"uuid"[]) RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare n integer;
+begin
+  insert into soil_report_input_hashes as h (report_id, hash, computed_at)
+  select r.id, fn_soil_inputs_hash(r.id), now()
+  from soil_test_reports r
+  where p_report_ids is null or r.id = any(p_report_ids)
+  on conflict (report_id) do update set hash = excluded.hash, computed_at = now()
+    where h.hash is distinct from excluded.hash;
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."refresh_soil_input_hashes"("p_report_ids" "uuid"[]) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."replace_boundary"("p_field_id" "uuid", "p_geojson" "jsonb", "p_source" "public"."boundary_source") RETURNS "uuid"
@@ -5499,6 +6232,15 @@ COMMENT ON FUNCTION "public"."retire_meeting_fact"("p_id" "text") IS 'Permanentl
 
 
 
+CREATE OR REPLACE FUNCTION "public"."revoke_task_feed_token"() RETURNS "void"
+    LANGUAGE "sql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$ delete from public.task_feed_tokens where user_id = auth.uid() $$;
+
+
+ALTER FUNCTION "public"."revoke_task_feed_token"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."river_geom"() RETURNS "public"."geometry"
     LANGUAGE "sql" STABLE
     SET "search_path" TO 'public', 'extensions'
@@ -5509,6 +6251,90 @@ $$;
 
 
 ALTER FUNCTION "public"."river_geom"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."rotate_task_feed_token"() RETURNS "text"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  v_token text := encode(gen_random_bytes(24), 'hex');
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in first';
+  end if;
+  insert into public.task_feed_tokens (user_id, token_hash, created_at, last_used_at)
+  values (auth.uid(), encode(digest(v_token, 'sha256'), 'hex'), now(), null)
+  on conflict (user_id) do update set token_hash = excluded.token_hash, created_at = now(), last_used_at = null;
+  return v_token;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."rotate_task_feed_token"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."run_nightly_upkeep"() RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  out jsonb := '{}'::jsonb;
+  n integer;
+begin
+  -- PLC history: a year kept; past 60 days, one numeric reading per tag per
+  -- hour (on/off and text tags — alarms, run states — are kept whole: every
+  -- change is an event). A week's window, so a missed night catches up.
+  n := plc_prune_history(365);
+  out := out || jsonb_build_object('plc_older_than_a_year', n);
+  delete from plc_reading_history h
+  using (
+    select id from (
+      select id, row_number() over (partition by device_id, tag, date_trunc('hour', read_at) order by read_at) as rn
+      from plc_reading_history
+      where read_at < now() - interval '60 days' and read_at >= now() - interval '67 days' and value_num is not null
+    ) s where rn > 1
+  ) d
+  where h.id = d.id;
+  get diagnostics n = row_count;
+  out := out || jsonb_build_object('plc_thinned', n);
+
+  delete from notifications where read_at is not null and created_at < now() - interval '90 days';
+  get diagnostics n = row_count;
+  out := out || jsonb_build_object('notifications', n);
+
+  delete from sat_api_usage where created_at < now() - interval '90 days';
+  get diagnostics n = row_count;
+  out := out || jsonb_build_object('sat_api_usage', n);
+
+  delete from sat_observations o
+  where o.subject_type = 'pasture_zone' and not exists (select 1 from pasture_zones z where z.id = o.subject_id);
+  get diagnostics n = row_count;
+  out := out || jsonb_build_object('orphan_zone_readings', n);
+
+  -- Change-log rows no person made, after six months; 20,000 a night so one
+  -- run never holds the table long.
+  delete from audit_log a
+  using (select id from audit_log where actor_id is null and changed_at < now() - interval '180 days' limit 20000) d
+  where a.id = d.id;
+  get diagnostics n = row_count;
+  out := out || jsonb_build_object('machine_audit_rows', n);
+
+  return out;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."run_nightly_upkeep"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."run_nightly_upkeep_soil"() RETURNS integer
+    LANGUAGE "sql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$ select public.refresh_soil_input_hashes(null) $$;
+
+
+ALTER FUNCTION "public"."run_nightly_upkeep_soil"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."sat_apply_harmonization"() RETURNS integer
@@ -5908,7 +6734,7 @@ COMMENT ON FUNCTION "public"."set_boundary_analysis"() IS 'Derives the 15 m inwa
 
 
 
-CREATE OR REPLACE FUNCTION "public"."set_crop_moisture_levels"("p_crop" "uuid", "p_dry_min" numeric, "p_dry_max" numeric, "p_tough_max" numeric, "p_damp_max" numeric, "p_moist_max" numeric) RETURNS "void"
+CREATE OR REPLACE FUNCTION "public"."set_crop_moisture_levels"("p_crop" "uuid", "p_dry_min" numeric, "p_dry_max" numeric, "p_tough_max" numeric) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
     AS $$
@@ -5918,7 +6744,7 @@ declare
 begin
   if not is_active() then raise exception 'Only active users can change moisture levels'; end if;
   if not mfa_ok() then raise exception 'Sign in with your authenticator first'; end if;
-  foreach v in array array[p_dry_min, p_dry_max, p_tough_max, p_damp_max, p_moist_max] loop
+  foreach v in array array[p_dry_min, p_dry_max, p_tough_max] loop
     if v is null then continue; end if;
     if v < 0 or v >= 60 then raise exception 'Moisture levels must be between 0 and 60%%'; end if;
     if v_prev is not null and v < v_prev then raise exception 'Each level must be at or above the one before it'; end if;
@@ -5928,11 +6754,22 @@ begin
      set moisture_dry_min = p_dry_min,
          moisture_dry_max = p_dry_max,
          moisture_tough_max = p_tough_max,
-         moisture_damp_max = p_damp_max,
-         moisture_moist_max = p_moist_max
+         moisture_damp_max = null,
+         moisture_moist_max = null
    where id = p_crop;
   if not found then raise exception 'No such crop'; end if;
 end $$;
+
+
+ALTER FUNCTION "public"."set_crop_moisture_levels"("p_crop" "uuid", "p_dry_min" numeric, "p_dry_max" numeric, "p_tough_max" numeric) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."set_crop_moisture_levels"("p_crop" "uuid", "p_dry_min" numeric, "p_dry_max" numeric, "p_tough_max" numeric, "p_damp_max" numeric, "p_moist_max" numeric) RETURNS "void"
+    LANGUAGE "sql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select public.set_crop_moisture_levels(p_crop, p_dry_min, p_dry_max, p_tough_max);
+$$;
 
 
 ALTER FUNCTION "public"."set_crop_moisture_levels"("p_crop" "uuid", "p_dry_min" numeric, "p_dry_max" numeric, "p_tough_max" numeric, "p_damp_max" numeric, "p_moist_max" numeric) OWNER TO "postgres";
@@ -5955,6 +6792,48 @@ end $$;
 
 
 ALTER FUNCTION "public"."set_freeze_watch"("p_low" numeric, "p_high" numeric) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."start_monthly_checklist"("p_copy" "uuid") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  c record;
+  v_name text;
+  v_run uuid;
+  v_people uuid[];
+begin
+  if not (select is_active()) then raise exception 'Not allowed'; end if;
+  select i.id, i.year, i.month, i.checklist_run_id, t.checklist_template_id, t.recurrence, t.start_month, t.end_month
+    into c
+    from monthly_task_instances i join monthly_task_templates t on t.id = i.template_id
+   where i.id = p_copy
+   for update of i;
+  if c.id is null then raise exception 'Monthly job not found'; end if;
+  if c.checklist_run_id is not null then return c.checklist_run_id; end if;
+  if c.checklist_template_id is null then raise exception 'This job has no checklist'; end if;
+
+  select name into v_name from checklist_templates where id = c.checklist_template_id;
+  select coalesce(array_agg(distinct a.user_id), '{}') into v_people
+    from tasks k join task_assignees a on a.task_id = k.id
+   where k.source = 'monthly' and k.source_ref = p_copy;
+
+  insert into checklist_runs (template_id, crop_year, name, assigned_to, due_at, created_by)
+  values (c.checklist_template_id, date_part('year', now())::int, v_name, v_people,
+          ((monthly_window_end(c.year, c.month, c.recurrence, c.start_month, c.end_month) + time '23:59:59')
+             at time zone public.farm_tz()),
+          auth.uid())
+  returning id into v_run;
+  perform checklist_snapshot_locations(v_run, c.checklist_template_id);
+
+  update monthly_task_instances set checklist_run_id = v_run where id = p_copy;
+  return v_run;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."start_monthly_checklist"("p_copy" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."topo_cells"("p_surface" "uuid") RETURNS "jsonb"
@@ -5983,6 +6862,35 @@ ALTER FUNCTION "public"."topo_cells"("p_surface" "uuid") OWNER TO "postgres";
 
 COMMENT ON FUNCTION "public"."topo_cells"("p_surface" "uuid") IS 'Every cell of one surface as [lon, lat, elev_ft, rem_ft, n_points]. One row, so PostgREST''s 1000-row cap cannot cut it short.';
 
+
+
+CREATE TABLE IF NOT EXISTS "public"."notifications" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "kind" "text" NOT NULL,
+    "title" "text" NOT NULL,
+    "body" "text",
+    "link" "text",
+    "read_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "details" "jsonb"
+);
+
+
+ALTER TABLE "public"."notifications" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."notifications"."details" IS 'Free-form context from whatever raised the notification (values, error text, what changed). Shown on the notification page and in its copyable error log.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."unread"("n" "public"."notifications") RETURNS boolean
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'extensions'
+    AS $$ select n.read_at is null $$;
+
+
+ALTER FUNCTION "public"."unread"("n" "public"."notifications") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."use_area_scale_yield"("p_id" "uuid") RETURNS "void"
@@ -6076,6 +6984,66 @@ CREATE TABLE IF NOT EXISTS "public"."abnormal_yield_years" (
 
 
 ALTER TABLE "public"."abnormal_yield_years" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."afsc_mdi_land" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "pasture_id" "uuid",
+    "part" "text",
+    "section" "text",
+    "township" "text",
+    "range" "text",
+    "meridian" "text" DEFAULT 'W4'::"text",
+    "acres" numeric,
+    "pasture_type" "text",
+    "tenure" "text",
+    "title_name" "text",
+    "sort" integer DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "afsc_mdi_land_acres_check" CHECK ((("acres" IS NULL) OR ("acres" >= (0)::numeric))),
+    CONSTRAINT "afsc_mdi_land_tenure_check" CHECK ((("tenure" IS NULL) OR ("tenure" = ANY (ARRAY['owned'::"text", 'cash'::"text", 'crop_share'::"text"]))))
+);
+
+
+ALTER TABLE "public"."afsc_mdi_land" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."afsc_mdi_year" (
+    "crop_year" integer NOT NULL,
+    "identification_number" "text",
+    "business_name" "text",
+    "business_address" "text",
+    "gst_bn" "text",
+    "contact_person" "text",
+    "contact_phone" "text",
+    "contact_email" "text",
+    "home_part" "text",
+    "home_section" "text",
+    "home_township" "text",
+    "home_range" "text",
+    "home_meridian" "text",
+    "station_1" "text",
+    "station_2" "text",
+    "station_3" "text",
+    "coverage_option" "text",
+    "price_per_lb" numeric,
+    "insure_native" boolean DEFAULT false NOT NULL,
+    "insure_improved" boolean DEFAULT false NOT NULL,
+    "insure_bush" boolean DEFAULT false NOT NULL,
+    "insure_community" boolean DEFAULT false NOT NULL,
+    "notes" "text",
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_by" "uuid",
+    CONSTRAINT "afsc_mdi_year_coverage_option_check" CHECK ((("coverage_option" IS NULL) OR ("coverage_option" = ANY (ARRAY['A'::"text", 'B'::"text", 'C'::"text", 'D'::"text"])))),
+    CONSTRAINT "afsc_mdi_year_price_per_lb_check" CHECK ((("price_per_lb" IS NULL) OR ("price_per_lb" >= (0)::numeric)))
+);
+
+
+ALTER TABLE "public"."afsc_mdi_year" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."afsc_mdi_year" IS 'One year''s answers for AFSC Moisture Deficiency Insurance: what the forms ask that the app does not already know.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."ag_news" (
@@ -6282,7 +7250,7 @@ CREATE TABLE IF NOT EXISTS "public"."auction_reports" (
     "parsed" "jsonb",
     "model" "text",
     "read_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "auction_reports_market_check" CHECK (("market" = ANY (ARRAY['medicine-hat'::"text", 'lethbridge'::"text", 'calgary'::"text", 'team-online'::"text"]))),
+    CONSTRAINT "auction_reports_market_check" CHECK ((("market" IS NULL) OR (("length"("btrim"("market")) >= 1) AND ("length"("btrim"("market")) <= 80)))),
     CONSTRAINT "auction_reports_status_check" CHECK (("status" = ANY (ARRAY['stored'::"text", 'failed'::"text", 'skipped'::"text"])))
 );
 
@@ -6322,7 +7290,7 @@ ALTER TABLE "public"."bale_check_readings" OWNER TO "postgres";
 
 CREATE TABLE IF NOT EXISTS "public"."bale_checks" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "checked_on" "date" DEFAULT (("now"() AT TIME ZONE 'America/Edmonton'::"text"))::"date" NOT NULL,
+    "checked_on" "date" DEFAULT (("now"() AT TIME ZONE "public"."farm_tz"()))::"date" NOT NULL,
     "checked_by" "uuid" DEFAULT "auth"."uid"(),
     "ranch_id" "uuid",
     "location" "text",
@@ -6410,27 +7378,6 @@ CREATE TABLE IF NOT EXISTS "public"."bin_contents" (
 ALTER TABLE "public"."bin_contents" OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "public"."bins" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "name" "text" NOT NULL,
-    "capacity_bu" numeric DEFAULT 0 NOT NULL,
-    "geom" "public"."geometry"(Point,4326),
-    "site" "text",
-    "notes_md" "text",
-    "active" boolean DEFAULT true NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "usual_contents" "text" DEFAULT 'grain'::"text" NOT NULL,
-    CONSTRAINT "bins_usual_contents_check" CHECK (("usual_contents" = ANY (ARRAY['grain'::"text", 'fertilizer'::"text"])))
-);
-
-
-ALTER TABLE "public"."bins" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."bins"."usual_contents" IS 'What the bin normally holds. Advisory only — any bin can be allocated to any crop.';
-
-
-
 CREATE TABLE IF NOT EXISTS "public"."crops" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "name" "text" NOT NULL,
@@ -6483,11 +7430,12 @@ CREATE TABLE IF NOT EXISTS "public"."crops" (
     "days_to_maturity" integer,
     "goal_yield_per_acre" numeric,
     "on_combines" boolean DEFAULT true NOT NULL,
+    "weighed" boolean DEFAULT true NOT NULL,
     CONSTRAINT "crops_category_new_check" CHECK (("category" = ANY (ARRAY['seed'::"text", 'commercial'::"text", 'own_use'::"text"]))),
     CONSTRAINT "crops_days_to_maturity_check" CHECK ((("days_to_maturity" IS NULL) OR (("days_to_maturity" >= 1) AND ("days_to_maturity" <= 400)))),
     CONSTRAINT "crops_feed_dm_pct_check" CHECK ((("feed_dm_pct" > (0)::numeric) AND ("feed_dm_pct" <= (100)::numeric))),
     CONSTRAINT "crops_goal_yield_positive" CHECK ((("goal_yield_per_acre" IS NULL) OR ("goal_yield_per_acre" > (0)::numeric))),
-    CONSTRAINT "crops_herbicide_trait_check" CHECK (("herbicide_trait" = ANY (ARRAY['liberty'::"text", 'roundup'::"text", 'both'::"text"]))),
+    CONSTRAINT "crops_herbicide_trait_check" CHECK ((("herbicide_trait" IS NULL) OR (("length"("btrim"("herbicide_trait")) >= 1) AND ("length"("btrim"("herbicide_trait")) <= 80)))),
     CONSTRAINT "crops_irrigation_need_in_check" CHECK (("irrigation_need_in" >= (0)::numeric)),
     CONSTRAINT "crops_max_in_a_row_check" CHECK ((("max_in_a_row" >= 1) AND ("max_in_a_row" <= 6))),
     CONSTRAINT "crops_stand_max_years_check" CHECK ((("stand_max_years" >= 1) AND ("stand_max_years" <= 12))),
@@ -6524,6 +7472,14 @@ COMMENT ON COLUMN "public"."crops"."moisture_dry_max" IS 'Highest moisture that 
 
 
 COMMENT ON COLUMN "public"."crops"."moisture_tough_max" IS 'Top of the tough band. Equal to moisture_dry_max where the crop has no tough range at all, which is how the CGC treats beans.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."moisture_damp_max" IS 'Retired 19 Oct 2026: moisture is dry / tough / wet. Always null.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."moisture_moist_max" IS 'Retired 19 Oct 2026: moisture is dry / tough / wet. Always null.';
 
 
 
@@ -6611,6 +7567,10 @@ COMMENT ON COLUMN "public"."crops"."on_combines" IS 'Harvested with the combines
 
 
 
+COMMENT ON COLUMN "public"."crops"."weighed" IS 'Its loads are weighed at the scale (the weigh-in offers it and its fields). Off for potatoes, green feed and hay.';
+
+
+
 CREATE OR REPLACE VIEW "public"."bin_contents_current" WITH ("security_invoker"='true') AS
  SELECT "bc"."id",
     "bc"."bin_id",
@@ -6650,22 +7610,56 @@ CREATE TABLE IF NOT EXISTS "public"."grain_movements" (
     "ticket_number" "text",
     "notes" "text",
     "created_by" "uuid" DEFAULT "auth"."uid"(),
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "product" "text",
+    "tonnes" numeric(12,2),
+    "supplier" "text",
+    "cost" numeric(12,2),
+    "delivery_site_id" "uuid",
+    "shipped_to" "text",
+    "picked_up" boolean DEFAULT false NOT NULL,
+    CONSTRAINT "grain_movements_crop_or_product" CHECK ((("crop_id" IS NOT NULL) OR ("product" IS NOT NULL) OR ("movement_type" = 'adjustment'::"public"."grain_movement_type")))
 );
 
 
 ALTER TABLE "public"."grain_movements" OWNER TO "postgres";
 
 
-CREATE OR REPLACE VIEW "public"."bin_grain_onhand" WITH ("security_invoker"='true') AS
+COMMENT ON COLUMN "public"."grain_movements"."product" IS 'What it is when it is not a crop: a fertilizer, measured in tonnes.';
+
+
+
+COMMENT ON COLUMN "public"."grain_movements"."tonnes" IS 'Tonnes, for a product that is not counted in bushels. Never added to bushels.';
+
+
+
+COMMENT ON COLUMN "public"."grain_movements"."supplier" IS 'Who it was bought from (purchase_in).';
+
+
+
+COMMENT ON COLUMN "public"."grain_movements"."cost" IS 'What the lot cost in total, dollars (purchase_in).';
+
+
+
+COMMENT ON COLUMN "public"."grain_movements"."delivery_site_id" IS 'A shipment (delivery_out): the place it was hauled to.';
+
+
+
+COMMENT ON COLUMN "public"."grain_movements"."shipped_to" IS 'A shipment (delivery_out): who took it, when not a place on the list (a seed company picking up at the yard).';
+
+
+
+COMMENT ON COLUMN "public"."grain_movements"."picked_up" IS 'A shipment (delivery_out): the buyer trucked it from our yard.';
+
+
+
+CREATE OR REPLACE VIEW "public"."bin_grain_onhand" AS
  SELECT "bin_id",
     "crop_id",
     "sum"(
-        CASE "movement_type"
-            WHEN 'harvest_in'::"public"."grain_movement_type" THEN "bushels"
-            WHEN 'transfer_in'::"public"."grain_movement_type" THEN "bushels"
-            WHEN 'adjustment'::"public"."grain_movement_type" THEN "bushels"
-            ELSE (- "bushels")
+        CASE
+            WHEN ("movement_type" = ANY (ARRAY['transfer_out'::"public"."grain_movement_type", 'delivery_out'::"public"."grain_movement_type", 'shrink'::"public"."grain_movement_type"])) THEN (- "bushels")
+            ELSE "bushels"
         END) AS "onhand_bu"
    FROM "public"."grain_movements"
   GROUP BY "bin_id", "crop_id";
@@ -6702,21 +7696,63 @@ CREATE TABLE IF NOT EXISTS "public"."bin_loads" (
     "moisture_pct" numeric,
     "protein_pct" numeric,
     "estimated" boolean DEFAULT false NOT NULL,
+    "full_photo" "text",
+    "empty_photo" "text",
+    "overflow_bin_id" "uuid",
+    "first_bin_bu" numeric,
+    "full_at" timestamp with time zone,
+    "empty_at" timestamp with time zone,
+    "weighed_in_by" "uuid",
+    "weighed_out_by" "uuid",
     CONSTRAINT "bin_loads_bin_or_site" CHECK ((("bin_id" IS NULL) OR ("delivery_site_id" IS NULL))),
     CONSTRAINT "bin_loads_bin_when_weighed" CHECK ((("bin_id" IS NOT NULL) OR ("delivery_site_id" IS NOT NULL) OR ("gross_kg" IS NULL) OR ("tare_kg" IS NULL))),
     CONSTRAINT "bin_loads_check" CHECK (("gross_kg" > "tare_kg")),
     CONSTRAINT "bin_loads_contract_plant" CHECK ((("contract_id" IS NULL) OR ("delivery_site_id" IS NOT NULL))),
     CONSTRAINT "bin_loads_entry_kind_check" CHECK (("entry_kind" = ANY (ARRAY['weighed'::"text", 'net'::"text", 'bin_total'::"text"]))),
+    CONSTRAINT "bin_loads_first_bin_bu_check" CHECK (("first_bin_bu" >= (0)::numeric)),
     CONSTRAINT "bin_loads_gross_kg_check" CHECK (("gross_kg" > (0)::numeric)),
     CONSTRAINT "bin_loads_lb_per_bu_check" CHECK (("lb_per_bu" > (0)::numeric)),
     CONSTRAINT "bin_loads_load_count_check" CHECK ((("load_count" IS NULL) OR ("load_count" > 0))),
     CONSTRAINT "bin_loads_one_weight" CHECK ((("gross_kg" IS NOT NULL) OR ("tare_kg" IS NOT NULL))),
+    CONSTRAINT "bin_loads_overflow_other_bin" CHECK ((("overflow_bin_id" IS NULL) OR (("bin_id" IS NOT NULL) AND ("overflow_bin_id" <> "bin_id") AND ("first_bin_bu" IS NOT NULL)))),
     CONSTRAINT "bin_loads_tare_kg_check" CHECK (("tare_kg" >= (0)::numeric)),
     CONSTRAINT "load_moisture_sane" CHECK ((("moisture_pct" IS NULL) OR (("moisture_pct" >= (0)::numeric) AND ("moisture_pct" <= (60)::numeric))))
 );
 
 
 ALTER TABLE "public"."bin_loads" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."bin_loads"."full_photo" IS 'scale-photos path: the scale with the truck full, or the one number of a net or bin total.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."empty_photo" IS 'scale-photos path: the scale with the truck empty.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."overflow_bin_id" IS 'The bin the rest of the load went into once bin_id was full (Sam, 20 Oct 2026).';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."first_bin_bu" IS 'Bushels that went into bin_id before it was full: its estimated room when the load was saved. The rest is in overflow_bin_id.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."full_at" IS 'When it was weighed in: the full weight (or a net''s one number) was entered.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."empty_at" IS 'When it was weighed out: the empty weight was entered. Null for a net or a bin total.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."weighed_in_by" IS 'Who put the full weight (or a net''s one number) in.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."weighed_out_by" IS 'Who put the empty weight in. Null for a net or a bin total.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."bin_monitor_readings" (
@@ -6734,12 +7770,17 @@ CREATE TABLE IF NOT EXISTS "public"."bin_monitor_readings" (
     "created_by" "uuid" DEFAULT "auth"."uid"(),
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "aeration_on" boolean,
     CONSTRAINT "bin_monitor_readings_levels_check" CHECK (("jsonb_typeof"("levels") = 'array'::"text")),
     CONSTRAINT "bin_monitor_readings_source_check" CHECK (("source" = ANY (ARRAY['manual'::"text", 'screenshot'::"text"])))
 );
 
 
 ALTER TABLE "public"."bin_monitor_readings" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."bin_monitor_readings"."initials" IS 'Who took the reading, by name. Initials in older rows.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."bin_readings" (
@@ -6756,6 +7797,25 @@ CREATE TABLE IF NOT EXISTS "public"."bin_readings" (
 ALTER TABLE "public"."bin_readings" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."bin_yards" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "shown" boolean DEFAULT true NOT NULL,
+    "sort" integer DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "home" boolean DEFAULT false NOT NULL,
+    CONSTRAINT "bin_yards_name_check" CHECK (((("length"("btrim"("name")) >= 1) AND ("length"("btrim"("name")) <= 60)) AND ("name" = "btrim"("name"))))
+);
+
+
+ALTER TABLE "public"."bin_yards" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."bin_yards"."home" IS 'Distances to the fields are measured from this yard''s bins (field_yard_distance). At most one.';
+
+
+
 CREATE OR REPLACE VIEW "public"."bins_located" WITH ("security_invoker"='true') AS
  SELECT "id",
     "name",
@@ -6764,6 +7824,10 @@ CREATE OR REPLACE VIEW "public"."bins_located" WITH ("security_invoker"='true') 
     "notes_md",
     "active",
     "usual_contents",
+    "has_aeration",
+    "has_heater",
+    "aeration_on",
+    "heater_on",
     "public"."st_x"("geom") AS "lng",
     "public"."st_y"("geom") AS "lat"
    FROM "public"."bins" "b";
@@ -7374,6 +8438,24 @@ COMMENT ON COLUMN "public"."chemical_labels"."grazing_rules_status" IS 'read | n
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."chemical_recrop_overrides" (
+    "registration_number" "text" NOT NULL,
+    "max_months" numeric NOT NULL,
+    "reason" "text" NOT NULL,
+    "told_by" "text",
+    "set_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "chemical_recrop_overrides_max_months_check" CHECK (("max_months" >= (0)::numeric))
+);
+
+
+ALTER TABLE "public"."chemical_recrop_overrides" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."chemical_recrop_overrides" IS 'A shorter re-cropping interval than the label gives, on the supplier''s advice. Applied by chemical_recrop_rules_v; the extracted label rules are left as they are.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."chemical_recrop_rules" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "registration_number" "text" NOT NULL,
@@ -7390,6 +8472,42 @@ CREATE TABLE IF NOT EXISTS "public"."chemical_recrop_rules" (
 
 
 ALTER TABLE "public"."chemical_recrop_rules" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."chemical_recrop_rules_v" WITH ("security_invoker"='true') AS
+ SELECT "r"."id",
+    "r"."registration_number",
+    "r"."following_crop",
+    "r"."crop_key",
+        CASE
+            WHEN ("o"."max_months" IS NULL) THEN "r"."months"
+            WHEN ("r"."status" = ANY (ARRAY['bioassay'::"text", 'not_listed'::"text"])) THEN "o"."max_months"
+            WHEN ("r"."status" = 'second_season'::"text") THEN LEAST("o"."max_months", (13)::numeric)
+            WHEN ("r"."months" IS NULL) THEN "r"."months"
+            ELSE LEAST("r"."months", "o"."max_months")
+        END AS "months",
+        CASE
+            WHEN ("o"."max_months" IS NULL) THEN "r"."status"
+            WHEN ("r"."status" = ANY (ARRAY['bioassay'::"text", 'not_listed'::"text", 'second_season'::"text"])) THEN 'wait'::"text"
+            ELSE "r"."status"
+        END AS "status",
+        CASE
+            WHEN ("o"."max_months" IS NULL) THEN "r"."condition"
+            ELSE NULLIF(TRIM(BOTH FROM (COALESCE(("r"."condition" || ' / '::"text"), ''::"text") || "o"."reason")), ''::"text")
+        END AS "condition",
+    "r"."quote",
+    "r"."source",
+    "r"."extracted_at",
+    ("o"."max_months" IS NOT NULL) AS "capped"
+   FROM ("public"."chemical_recrop_rules" "r"
+     LEFT JOIN "public"."chemical_recrop_overrides" "o" ON (("o"."registration_number" = "r"."registration_number")));
+
+
+ALTER VIEW "public"."chemical_recrop_rules_v" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."chemical_recrop_rules_v" IS 'chemical_recrop_rules with any chemical_recrop_overrides cap applied. Read this, not the table: the table holds the label''s own words and is replaced whenever a label is re-read.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."chemicals" (
@@ -7785,7 +8903,7 @@ CREATE TABLE IF NOT EXISTS "public"."crop_history" (
     "scale_wet_total" numeric,
     "herbicide_trait" "text",
     "scale_estimated_bu" numeric,
-    CONSTRAINT "crop_history_herbicide_trait_check" CHECK ((("herbicide_trait" IS NULL) OR ("herbicide_trait" = ANY (ARRAY['liberty'::"text", 'roundup'::"text"]))))
+    CONSTRAINT "crop_history_herbicide_trait_check" CHECK ((("herbicide_trait" IS NULL) OR (("length"("btrim"("herbicide_trait")) >= 1) AND ("length"("btrim"("herbicide_trait")) <= 80))))
 );
 
 
@@ -7823,6 +8941,24 @@ COMMENT ON COLUMN "public"."crop_inputs"."fixed_land_share" IS 'This farm_fixed 
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."crop_plan_options" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "crop_id" "uuid" NOT NULL,
+    "sort" integer DEFAULT 0 NOT NULL,
+    "note" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."crop_plan_options" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."crop_plan_options" IS 'Other crops that could go on a field in a planned year. The first choice is crop_plans; these are the "or" options, each rule-checked the same way.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."crop_plans" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "crop_year" integer NOT NULL,
@@ -7840,7 +8976,7 @@ CREATE TABLE IF NOT EXISTS "public"."crop_plans" (
     "goal_yield" numeric,
     CONSTRAINT "crop_plans_goal_yield_positive" CHECK ((("goal_yield" IS NULL) OR ("goal_yield" > (0)::numeric))),
     CONSTRAINT "crop_plans_harvest_method_check" CHECK ((("harvest_method" IS NULL) OR ("harvest_method" = ANY (ARRAY['swathed'::"text", 'straight'::"text"])))),
-    CONSTRAINT "crop_plans_herbicide_trait_check" CHECK ((("herbicide_trait" IS NULL) OR ("herbicide_trait" = ANY (ARRAY['liberty'::"text", 'roundup'::"text"])))),
+    CONSTRAINT "crop_plans_herbicide_trait_check" CHECK ((("herbicide_trait" IS NULL) OR (("length"("btrim"("herbicide_trait")) >= 1) AND ("length"("btrim"("herbicide_trait")) <= 80)))),
     CONSTRAINT "crop_plans_yield_basis_check" CHECK (("yield_basis" = ANY (ARRAY['clean'::"text", 'pre_clean'::"text"]))),
     CONSTRAINT "crop_plans_yield_range_order" CHECK ((("yield_low" IS NULL) OR ("yield_high" IS NULL) OR ("yield_low" <= "yield_high")))
 );
@@ -8644,8 +9780,11 @@ CREATE TABLE IF NOT EXISTS "public"."farm_setup" (
     "calf_sale_weight_lb" integer,
     "cattle_breed" "text",
     "support_email" "text",
+    "fiscal_year_end_month" smallint DEFAULT 12 NOT NULL,
+    "river_name" "text",
     CONSTRAINT "farm_setup_calf_sale_month_check" CHECK ((("calf_sale_month" >= 1) AND ("calf_sale_month" <= 12))),
     CONSTRAINT "farm_setup_calf_sale_weight_lb_check" CHECK ((("calf_sale_weight_lb" >= 100) AND ("calf_sale_weight_lb" <= 1500))),
+    CONSTRAINT "farm_setup_fiscal_year_end_month_check" CHECK ((("fiscal_year_end_month" >= 1) AND ("fiscal_year_end_month" <= 12))),
     CONSTRAINT "farm_setup_singleton_check" CHECK ("singleton"),
     CONSTRAINT "farm_setup_units_check" CHECK (("units" = ANY (ARRAY['imperial'::"text", 'metric'::"text"])))
 );
@@ -8655,6 +9794,14 @@ ALTER TABLE "public"."farm_setup" OWNER TO "postgres";
 
 
 COMMENT ON COLUMN "public"."farm_setup"."support_email" IS 'Who users and connected services (QuickBooks) contact about this app. Shown on the public legal pages.';
+
+
+
+COMMENT ON COLUMN "public"."farm_setup"."fiscal_year_end_month" IS 'The month the fiscal year ends in (1-12; it ends on that month''s last day). Cash flow, the books, fixed costs and the lender and AgriStability reports follow it.';
+
+
+
+COMMENT ON COLUMN "public"."farm_setup"."river_name" IS 'The river the farm pumps from under its own licences, for labels ("<river> (pumped)"). Generic "River" until set.';
 
 
 
@@ -8684,6 +9831,24 @@ CREATE OR REPLACE VIEW "public"."farm_trails_geojson" WITH ("security_invoker"='
 
 
 ALTER VIEW "public"."farm_trails_geojson" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."farm_yards" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "lat" double precision,
+    "lng" double precision,
+    "ranch_id" "uuid",
+    "bin_yard_id" "uuid",
+    "active" boolean DEFAULT true NOT NULL,
+    "sort" integer DEFAULT 0 NOT NULL,
+    "note" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."farm_yards" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."farms" (
@@ -9412,7 +10577,10 @@ CREATE TABLE IF NOT EXISTS "public"."field_crop_seasons" (
     "harvest_date" "date",
     "calibration_factor" numeric DEFAULT 1 NOT NULL,
     "calibration_note" "text",
+    "irrigation_done_source" "text",
+    "irrigation_done_note" "text",
     CONSTRAINT "field_crop_seasons_calibration_factor_check" CHECK ((("calibration_factor" >= 0.5) AND ("calibration_factor" <= 1.5))),
+    CONSTRAINT "field_crop_seasons_irrigation_done_source_check" CHECK (("irrigation_done_source" = ANY (ARRAY['person'::"text", 'auto'::"text"]))),
     CONSTRAINT "field_crop_seasons_planting_date_source_check" CHECK ((("planting_date_source" IS NULL) OR ("planting_date_source" = ANY (ARRAY['manual'::"text", 'john_deere'::"text"])))),
     CONSTRAINT "field_crop_seasons_start_moisture_mm_check" CHECK ((("start_moisture_mm" IS NULL) OR ("start_moisture_mm" >= (0)::numeric)))
 );
@@ -9426,6 +10594,14 @@ COMMENT ON COLUMN "public"."field_crop_seasons"."irrigation_done_at" IS 'Set whe
 
 
 COMMENT ON COLUMN "public"."field_crop_seasons"."start_moisture_mm" IS 'Available soil moisture (mm over the max root zone) measured in spring. The checkbook starts here on start_moisture_on; blank = estimated at half of field capacity.';
+
+
+
+COMMENT ON COLUMN "public"."field_crop_seasons"."irrigation_done_source" IS 'Who finished the season: ''person'' ticked it, ''auto'' means the app worked it out and says why in irrigation_done_note.';
+
+
+
+COMMENT ON COLUMN "public"."field_crop_seasons"."irrigation_done_note" IS 'Why the season is marked finished, when the app decided it (harvest recorded, or past maturity with the pivot stopped).';
 
 
 
@@ -9505,7 +10681,7 @@ CREATE TABLE IF NOT EXISTS "public"."moisture_tests" (
     "sample_condition" "text",
     "meter_readings" numeric[],
     "tester" "text" DEFAULT 'bench'::"text",
-    CONSTRAINT "moisture_tests_grade_check" CHECK (("grade" = ANY (ARRAY['too_dry'::"text", 'dry'::"text", 'tough'::"text", 'damp'::"text", 'moist'::"text", 'wet'::"text"]))),
+    CONSTRAINT "moisture_tests_grade_check" CHECK (("grade" = ANY (ARRAY['too_dry'::"text", 'dry'::"text", 'tough'::"text", 'wet'::"text"]))),
     CONSTRAINT "moisture_tests_meter_reading_check" CHECK ((("meter_reading" IS NULL) OR (("meter_reading" >= (0)::numeric) AND ("meter_reading" <= (100)::numeric)))),
     CONSTRAINT "moisture_tests_moisture_pct_check" CHECK ((("moisture_pct" >= (0)::numeric) AND ("moisture_pct" < (100)::numeric))),
     CONSTRAINT "moisture_tests_sample_condition_check" CHECK (("sample_condition" = ANY (ARRAY['screened'::"text", 'dirty'::"text"]))),
@@ -9559,7 +10735,8 @@ CREATE TABLE IF NOT EXISTS "public"."field_haul_plans" (
     "notes" "text",
     "updated_by" "uuid",
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "field_haul_plans_mode_check" CHECK (("mode" = ANY (ARRAY['direct'::"text", 'bin_yard'::"text", 'bin_yard_then_elevator'::"text", 'buyer_pickup'::"text"])))
+    "yard_id" "uuid",
+    CONSTRAINT "field_haul_plans_mode_check" CHECK (("mode" = ANY (ARRAY['direct'::"text", 'bin_yard'::"text", 'bin_yard_then_elevator'::"text", 'buyer_pickup'::"text", 'buyer_from_field'::"text", 'grazed'::"text"])))
 );
 
 
@@ -9724,7 +10901,7 @@ CREATE TABLE IF NOT EXISTS "public"."field_pivots" (
     "not_used_note" "text",
     "operated_by" "text",
     CONSTRAINT "field_pivots_phase_check" CHECK (("phase" = ANY (ARRAY[1, 3]))),
-    CONSTRAINT "field_pivots_water_source_check" CHECK (("water_source" = ANY (ARRAY['oldman_river'::"text", 'south_saskatchewan_river'::"text", 'smrid'::"text", 'other'::"text"])))
+    CONSTRAINT "field_pivots_water_source_check" CHECK ((("water_source" IS NULL) OR (("length"("btrim"("water_source")) >= 1) AND ("length"("btrim"("water_source")) <= 80))))
 );
 
 
@@ -9836,6 +11013,7 @@ CREATE TABLE IF NOT EXISTS "public"."fields" (
     "grazing_note" "text",
     "route_via" "text" DEFAULT 'auto'::"text" NOT NULL,
     "route_through" "jsonb",
+    "ours_by_default" boolean DEFAULT true NOT NULL,
     CONSTRAINT "fields_rented_out_acres_check" CHECK ((("rented_out_acres" IS NULL) OR ("rented_out_acres" >= (0)::numeric))),
     CONSTRAINT "fields_route_via_check" CHECK (("route_via" = ANY (ARRAY['auto'::"text", 'trails'::"text"]))),
     CONSTRAINT "fields_soil_source_check" CHECK ((("soil_source" IS NULL) OR ("soil_source" = ANY (ARRAY['survey'::"text", 'manual'::"text"]))))
@@ -9882,6 +11060,10 @@ COMMENT ON COLUMN "public"."fields"."route_via" IS 'auto: the road where it reac
 
 
 COMMENT ON COLUMN "public"."fields"."route_through" IS 'Points the route from the yard must pass through, in order: [{lat, lng}]. Null for none.';
+
+
+
+COMMENT ON COLUMN "public"."fields"."ours_by_default" IS 'Is this field normally in our plan? False for a neighbour''s field we farm a year at a time: then only the years with a field_year_tenure row marked ours count.';
 
 
 
@@ -10026,6 +11208,7 @@ CREATE TABLE IF NOT EXISTS "public"."field_work_records" (
     "feed_ranch_id" "uuid",
     "feed_storage" "text",
     "field_finished" boolean DEFAULT false NOT NULL,
+    "from_bin_load" "uuid",
     CONSTRAINT "field_work_records_acres_check" CHECK ((("acres" IS NULL) OR ("acres" >= (0)::numeric))),
     CONSTRAINT "field_work_records_bale_type_check" CHECK ((("bale_type" IS NULL) OR ("bale_type" = ANY (ARRAY['round'::"text", 'big_square'::"text"])))),
     CONSTRAINT "field_work_records_counts_as_check" CHECK (("counts_as" = ANY (ARRAY['seeding'::"text", 'harvest'::"text", 'tillage'::"text", 'application'::"text"]))),
@@ -10045,6 +11228,10 @@ COMMENT ON TABLE "public"."field_work_records" IS 'Field work entered by hand: j
 
 
 COMMENT ON COLUMN "public"."field_work_records"."field_finished" IS 'This harvest record says the field (or its crop area, zone_id) is finished. The first source of the harvest date.';
+
+
+
+COMMENT ON COLUMN "public"."field_work_records"."from_bin_load" IS 'The weigh-in whose "last load off this field" wrote this record. Cleared when that mark is.';
 
 
 
@@ -10071,7 +11258,23 @@ CREATE OR REPLACE VIEW "public"."field_season_progress" WITH ("security_invoker"
            FROM "public"."jd_field_operations" "o"
           WHERE (("o"."field_id" = "f"."id") AND ("o"."crop_season" = "p"."crop_year")))) OR (EXISTS ( SELECT 1
            FROM "public"."field_work_records" "w"
-          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "p"."crop_year"))))) AS "has_any_operation"
+          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "p"."crop_year"))))) AS "has_any_operation",
+    ((EXISTS ( SELECT 1
+           FROM "public"."jd_field_operations" "o"
+          WHERE (("o"."field_id" = "f"."id") AND ("o"."crop_season" = "p"."crop_year") AND ("o"."operation_type" = 'harvest'::"text")))) OR (EXISTS ( SELECT 1
+           FROM "public"."field_work_records" "w"
+          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "p"."crop_year") AND ("w"."counts_as" = 'harvest'::"text")))) OR (EXISTS ( SELECT 1
+           FROM "public"."bin_loads" "l"
+          WHERE (("l"."field_id" = "f"."id") AND ("l"."crop_year" = "p"."crop_year"))))) AS "harvest_started",
+    (EXISTS ( SELECT 1
+           FROM "public"."field_work_records" "w"
+          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "p"."crop_year") AND ("w"."counts_as" = 'harvest'::"text") AND "w"."field_finished"))) AS "harvest_finished",
+    ( SELECT "max"("l"."loaded_on") AS "max"
+           FROM "public"."bin_loads" "l"
+          WHERE (("l"."field_id" = "f"."id") AND ("l"."crop_year" = "p"."crop_year"))) AS "last_load_on",
+    ( SELECT "count"(*) AS "count"
+           FROM "public"."bin_loads" "l"
+          WHERE (("l"."field_id" = "f"."id") AND ("l"."crop_year" = "p"."crop_year"))) AS "loads"
    FROM ((("public"."fields" "f"
      JOIN "public"."field_boundaries" "b" ON ((("b"."field_id" = "f"."id") AND ("b"."valid_to" IS NULL))))
      JOIN "public"."crop_plans" "p" ON (("p"."field_id" = "f"."id")))
@@ -10082,7 +11285,7 @@ CREATE OR REPLACE VIEW "public"."field_season_progress" WITH ("security_invoker"
 ALTER VIEW "public"."field_season_progress" OWNER TO "postgres";
 
 
-COMMENT ON VIEW "public"."field_season_progress" IS 'Per field per crop year: mapped acres, the planned crop, whether that crop is ours to seed and harvest, and whether Deere or a hand-entered work record shows each operation.';
+COMMENT ON VIEW "public"."field_season_progress" IS 'Per field and crop year: the acres, whether seeding and harvest are started and finished, and what the scale knows. harvest_finished is a person saying the field is off; harvest_started is only that somebody is at it.';
 
 
 
@@ -10155,7 +11358,7 @@ CREATE TABLE IF NOT EXISTS "public"."field_soil_profiles" (
     "survey_awc_mm_m" numeric,
     "survey_note" "text",
     "sample_note" "text",
-    CONSTRAINT "field_soil_profiles_source_check" CHECK (("source" = ANY (ARRAY['default'::"text", 'aimm'::"text", 'survey'::"text", 'manual'::"text", 'decisive'::"text", 'ici'::"text", 'samples'::"text"])))
+    CONSTRAINT "field_soil_profiles_source_check" CHECK ((("source" IS NULL) OR (("length"("btrim"("source")) >= 1) AND ("length"("btrim"("source")) <= 80))))
 );
 
 
@@ -10316,13 +11519,23 @@ ALTER TABLE "public"."field_work_types" OWNER TO "postgres";
 
 
 CREATE OR REPLACE VIEW "public"."field_yard_distance" WITH ("security_invoker"='true') AS
- WITH "yard" AS (
-         SELECT ("public"."st_centroid"("public"."st_collect"(("bins"."geom")::"public"."geometry")))::"public"."geography" AS "g"
-           FROM "public"."bins"
-          WHERE (("bins"."site" = 'Main Yard'::"text") AND ("bins"."geom" IS NOT NULL))
+ WITH "home" AS (
+         SELECT COALESCE(( SELECT "bin_yards"."name"
+                   FROM "public"."bin_yards"
+                  WHERE "bin_yards"."home"
+                 LIMIT 1), ( SELECT "bin_yards"."name"
+                   FROM "public"."bin_yards"
+                  WHERE "bin_yards"."shown"
+                  ORDER BY "bin_yards"."sort", "bin_yards"."name"
+                 LIMIT 1)) AS "name"
+        ), "yard" AS (
+         SELECT ("public"."st_centroid"("public"."st_collect"((("b"."geom")::"public"."geometry")::"public"."geometry")))::"public"."geography" AS "g"
+           FROM "public"."bins" "b",
+            "home"
+          WHERE (("b"."site" = "home"."name") AND ("b"."geom" IS NOT NULL))
         )
  SELECT "f"."id" AS "field_id",
-    "round"((("public"."st_distance"("f"."centroid", "yard"."g") / (1000)::double precision))::numeric, 2) AS "km"
+    "round"((("public"."st_distance"("f"."centroid", ("yard"."g")::"public"."geography") / (1000)::double precision))::numeric, 2) AS "km"
    FROM "public"."fields" "f",
     "yard"
   WHERE (("f"."centroid" IS NOT NULL) AND ("yard"."g" IS NOT NULL));
@@ -10331,7 +11544,7 @@ CREATE OR REPLACE VIEW "public"."field_yard_distance" WITH ("security_invoker"='
 ALTER VIEW "public"."field_yard_distance" OWNER TO "postgres";
 
 
-COMMENT ON VIEW "public"."field_yard_distance" IS 'Straight-line km from the centroid of the Main Yard bins to each field centroid.';
+COMMENT ON VIEW "public"."field_yard_distance" IS 'Straight-line km from the centroid of the home yard''s bins (bin_yards.home, else the first shown yard) to each field centroid.';
 
 
 
@@ -10341,11 +11554,46 @@ CREATE TABLE IF NOT EXISTS "public"."field_year_tenure" (
     "crop_year" integer NOT NULL,
     "rented_to" "text",
     "note" "text",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "ours" boolean DEFAULT false NOT NULL,
+    CONSTRAINT "field_year_tenure_ours_check" CHECK (((NOT "ours") OR ("rented_to" IS NULL)))
 );
 
 
 ALTER TABLE "public"."field_year_tenure" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."field_year_tenure" IS 'Per-year exceptions to who farms a field. A row with ours = false takes the field out of our plan for that year (rented out, lease ended, a skipped year); a row with ours = true brings one in for that year only. No row means fields.ours_by_default.';
+
+
+
+COMMENT ON COLUMN "public"."field_year_tenure"."rented_to" IS 'Who has it this year, when ours = false. Null on an ours = true row: we are the ones farming it.';
+
+
+
+COMMENT ON COLUMN "public"."field_year_tenure"."ours" IS 'Which way this year''s exception runs. False (the default, and what every row before 28 Oct 2026 meant): the whole field is somebody else''s this year. True: it is ours this year although ours_by_default is false -- a neighbour''s field taken for the one season.';
+
+
+
+CREATE OR REPLACE VIEW "public"."field_year_plan_v" WITH ("security_invoker"='true') AS
+ SELECT "f"."id" AS "field_id",
+    "f"."name",
+    "y"."crop_year",
+    COALESCE("t"."ours", "f"."ours_by_default") AS "ours",
+    "t"."rented_to",
+    "t"."note",
+    ("t"."id" IS NOT NULL) AS "by_exception"
+   FROM (("public"."fields" "f"
+     CROSS JOIN ( SELECT "generate_series"((("date_part"('year'::"text", "now"()))::integer - 6), (("date_part"('year'::"text", "now"()))::integer + 6)) AS "crop_year") "y")
+     LEFT JOIN "public"."field_year_tenure" "t" ON ((("t"."field_id" = "f"."id") AND ("t"."crop_year" = "y"."crop_year"))))
+  WHERE "f"."active";
+
+
+ALTER VIEW "public"."field_year_plan_v" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."field_year_plan_v" IS 'Every active field crossed with the years the planner covers, saying whether it is ours that year. Reads fields.ours_by_default with the year''s field_year_tenure exception applied.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."field_yield_zones" (
@@ -10526,6 +11774,50 @@ CREATE TABLE IF NOT EXISTS "public"."fuel_purchases" (
 
 
 ALTER TABLE "public"."fuel_purchases" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."fuel_tank_readings" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "tank_id" "uuid" NOT NULL,
+    "read_at" timestamp with time zone NOT NULL,
+    "pct" numeric NOT NULL,
+    "litres" numeric NOT NULL,
+    "source" "text" DEFAULT 'telus'::"text" NOT NULL
+);
+
+
+ALTER TABLE "public"."fuel_tank_readings" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."fuel_tanks" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "location" "text",
+    "product" "text" DEFAULT 'farm_diesel'::"text" NOT NULL,
+    "capacity_l" numeric NOT NULL,
+    "level_l" numeric,
+    "level_on" "date",
+    "notes" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "lat" numeric,
+    "lng" numeric,
+    "telus_device_id" integer,
+    "level_at" timestamp with time zone,
+    "level_source" "text",
+    "gauge_online" boolean,
+    "gauge_seen_at" timestamp with time zone,
+    "gauge_info" "jsonb",
+    CONSTRAINT "fuel_tanks_capacity_l_check" CHECK (("capacity_l" > (0)::numeric)),
+    CONSTRAINT "fuel_tanks_lat_check" CHECK ((("lat" >= ('-90'::integer)::numeric) AND ("lat" <= (90)::numeric))),
+    CONSTRAINT "fuel_tanks_level_l_check" CHECK (("level_l" >= (0)::numeric)),
+    CONSTRAINT "fuel_tanks_level_source_check" CHECK ((("level_source" IS NULL) OR (("length"("btrim"("level_source")) >= 1) AND ("length"("btrim"("level_source")) <= 80)))),
+    CONSTRAINT "fuel_tanks_lng_check" CHECK ((("lng" >= ('-180'::integer)::numeric) AND ("lng" <= (180)::numeric))),
+    CONSTRAINT "fuel_tanks_product_check" CHECK (("product" = ANY (ARRAY['farm_diesel'::"text", 'clear_diesel'::"text", 'gasoline'::"text", 'farm_gasoline'::"text", 'other'::"text"])))
+);
+
+
+ALTER TABLE "public"."fuel_tanks" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."gas_bill_sites" (
@@ -11730,7 +13022,7 @@ CREATE TABLE IF NOT EXISTS "public"."market_series" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "archived" boolean DEFAULT false NOT NULL,
     CONSTRAINT "market_series_kind_check" CHECK (("kind" = ANY (ARRAY['crop'::"text", 'cattle'::"text", 'fx'::"text", 'index'::"text", 'fertilizer'::"text", 'fuel'::"text"]))),
-    CONSTRAINT "market_series_source_check" CHECK (("source" = ANY (ARRAY['statcan'::"text", 'ab-crop'::"text", 'ab-cattle'::"text", 'cme'::"text", 'manual'::"text", 'quote'::"text", 'dtn'::"text", 'boc'::"text", 'nrcan'::"text", 'mhfc'::"text", 'perlich'::"text", 'calgary-stockyards'::"text", 'team'::"text"])))
+    CONSTRAINT "market_series_source_check" CHECK ((("source" IS NULL) OR (("length"("btrim"("source")) >= 1) AND ("length"("btrim"("source")) <= 80))))
 );
 
 
@@ -11979,30 +13271,15 @@ CREATE TABLE IF NOT EXISTS "public"."notification_settings" (
     "quiet_start" time without time zone DEFAULT '22:00:00'::time without time zone NOT NULL,
     "quiet_end" time without time zone DEFAULT '06:00:00'::time without time zone NOT NULL,
     "digest_at" time without time zone DEFAULT '07:00:00'::time without time zone NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "unread_first" boolean DEFAULT true NOT NULL
 );
 
 
 ALTER TABLE "public"."notification_settings" OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "public"."notifications" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "user_id" "uuid" NOT NULL,
-    "kind" "text" NOT NULL,
-    "title" "text" NOT NULL,
-    "body" "text",
-    "link" "text",
-    "read_at" timestamp with time zone,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "details" "jsonb"
-);
-
-
-ALTER TABLE "public"."notifications" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."notifications"."details" IS 'Free-form context from whatever raised the notification (values, error text, what changed). Shown on the notification page and in its copyable error log.';
+COMMENT ON COLUMN "public"."notification_settings"."unread_first" IS 'true: the bell and the Notifications page list unread notifications first, each part newest first. false: newest first.';
 
 
 
@@ -12303,17 +13580,21 @@ CREATE TABLE IF NOT EXISTS "public"."pivot_photos" (
     "caption" "text",
     "filename" "text",
     "mime" "text" DEFAULT 'image/jpeg'::"text" NOT NULL,
-    "image_b64" "text" NOT NULL,
     "width" integer,
     "height" integer,
     "bytes" integer,
     "source" "text" DEFAULT 'upload'::"text" NOT NULL,
     "created_by" "uuid" DEFAULT "auth"."uid"(),
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "storage_path" "text" NOT NULL
 );
 
 
 ALTER TABLE "public"."pivot_photos" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."pivot_photos"."storage_path" IS 'equipment-photos path (pivot/<pivot_id>/<id>.jpg). Null only on a row still holding image_b64.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."pl_field_lines" (
@@ -13174,17 +14455,21 @@ CREATE TABLE IF NOT EXISTS "public"."pump_photos" (
     "caption" "text",
     "filename" "text",
     "mime" "text" DEFAULT 'image/jpeg'::"text" NOT NULL,
-    "image_b64" "text" NOT NULL,
     "width" integer,
     "height" integer,
     "bytes" integer,
     "source" "text" DEFAULT 'upload'::"text" NOT NULL,
     "created_by" "uuid" DEFAULT "auth"."uid"(),
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "storage_path" "text" NOT NULL
 );
 
 
 ALTER TABLE "public"."pump_photos" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."pump_photos"."storage_path" IS 'equipment-photos path (pump/<pump_id>/<id>.jpg). Null only on a row still holding image_b64.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."push_subscriptions" (
@@ -13625,6 +14910,24 @@ CREATE TABLE IF NOT EXISTS "public"."rotation_advice" (
 ALTER TABLE "public"."rotation_advice" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."rotation_feedback" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "field_id" "uuid",
+    "crop_year" integer NOT NULL,
+    "crop_id" "uuid",
+    "after_crop_id" "uuid",
+    "verdict" "text" NOT NULL,
+    "accepted" boolean NOT NULL,
+    "reason" "text",
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "rotation_feedback_verdict_check" CHECK (("verdict" = ANY (ARRAY['recommended'::"text", 'possible'::"text", 'caution'::"text", 'no_go'::"text"])))
+);
+
+
+ALTER TABLE "public"."rotation_feedback" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."sat_alerts" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "subject_type" "text" DEFAULT 'field'::"text" NOT NULL,
@@ -13935,18 +15238,22 @@ CREATE TABLE IF NOT EXISTS "public"."scale_ticket_photos" (
     "scale_ticket_id" "uuid",
     "filename" "text",
     "mime" "text" DEFAULT 'image/jpeg'::"text" NOT NULL,
-    "image_b64" "text" NOT NULL,
     "width" integer,
     "height" integer,
     "bytes" integer,
     "source" "text" DEFAULT 'upload'::"text" NOT NULL,
     "source_ref" "text",
     "created_by" "uuid" DEFAULT "auth"."uid"(),
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "storage_path" "text" NOT NULL
 );
 
 
 ALTER TABLE "public"."scale_ticket_photos" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."scale_ticket_photos"."storage_path" IS 'scale-ticket-photos path (<scale_ticket_id>/<id>.jpg). Null only on a row still holding image_b64.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."scale_tickets" (
@@ -14021,6 +15328,62 @@ CREATE TABLE IF NOT EXISTS "public"."scouting_notes" (
 ALTER TABLE "public"."scouting_notes" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."seed_report_bins" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "report_id" "uuid" NOT NULL,
+    "bin_id" "uuid",
+    "company_bin_id" "text",
+    "quantity_kg" numeric(12,1),
+    "moisture_pct" numeric(5,2),
+    "seed_temp_c" numeric(5,1),
+    "temp_cables" boolean DEFAULT true NOT NULL,
+    "moisture_cables" boolean DEFAULT true NOT NULL,
+    "aeration" boolean DEFAULT true NOT NULL,
+    "bottom" "text" DEFAULT 'coned'::"text" NOT NULL,
+    "shipped_on" "date",
+    "sort" integer DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "seed_report_bins_bottom_check" CHECK (("bottom" = ANY (ARRAY['flat'::"text", 'coned'::"text"])))
+);
+
+
+ALTER TABLE "public"."seed_report_bins" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."seed_reports" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "company" "text" DEFAULT 'Corteva'::"text" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "grower_name" "text",
+    "field_number" "text",
+    "spin_code" "text",
+    "legal_land" "text",
+    "gps_acres" numeric(10,2),
+    "total_kg" numeric(12,1),
+    "weight_method" "text" DEFAULT 'platform'::"text" NOT NULL,
+    "scale_certified" boolean DEFAULT true,
+    "storage" "text" DEFAULT 'home'::"text" NOT NULL,
+    "storage_other" "text",
+    "harvest_completed_on" "date",
+    "weather" "text",
+    "acknowledged" boolean DEFAULT true NOT NULL,
+    "signed_by" "uuid",
+    "signed_at" timestamp with time zone,
+    "signature" "text",
+    "created_by" "uuid" DEFAULT "auth"."uid"(),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "seed_reports_signature_check" CHECK ((("signature" IS NULL) OR ("signature" ~~ 'data:image/png;base64,%'::"text"))),
+    CONSTRAINT "seed_reports_storage_check" CHECK (("storage" = ANY (ARRAY['same_qtr'::"text", 'home'::"text", 'other'::"text"]))),
+    CONSTRAINT "seed_reports_weight_method_check" CHECK (("weight_method" = ANY (ARRAY['platform'::"text", 'grain_cart'::"text", 'electronic'::"text"])))
+);
+
+
+ALTER TABLE "public"."seed_reports" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."smrid_areas" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "area_number" integer NOT NULL,
@@ -14086,11 +15449,21 @@ CREATE TABLE IF NOT EXISTS "public"."soil_moisture_readings" (
     "created_by" "uuid" DEFAULT "auth"."uid"(),
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     CONSTRAINT "soil_moisture_readings_avail_mm_check" CHECK ((("avail_mm" >= (0)::numeric) AND ("avail_mm" < (600)::numeric))),
-    CONSTRAINT "soil_moisture_readings_method_check" CHECK (("method" = ANY (ARRAY['hand_feel'::"text", 'probe'::"text", 'sensor'::"text", 'lab'::"text", 'aimm'::"text"])))
+    CONSTRAINT "soil_moisture_readings_method_check" CHECK ((("method" IS NULL) OR (("length"("btrim"("method")) >= 1) AND ("length"("btrim"("method")) <= 80))))
 );
 
 
 ALTER TABLE "public"."soil_moisture_readings" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."soil_report_input_hashes" (
+    "report_id" "uuid" NOT NULL,
+    "hash" "text" NOT NULL,
+    "computed_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."soil_report_input_hashes" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."soil_test_assessments" (
@@ -14144,7 +15517,7 @@ CREATE OR REPLACE VIEW "public"."soil_reports_needing_assessment" AS
     "a"."generated_at"
    FROM ("public"."soil_test_reports" "r"
      LEFT JOIN "public"."soil_test_assessments" "a" ON (("a"."report_id" = "r"."id")))
-  WHERE (("a"."id" IS NULL) OR ("a"."inputs_hash" IS NULL) OR ("a"."inputs_hash" IS DISTINCT FROM "public"."fn_soil_inputs_hash"("r"."id")));
+  WHERE ((("a"."id" IS NULL) OR ("a"."inputs_hash" IS NULL) OR ("a"."inputs_hash" IS DISTINCT FROM "public"."fn_soil_inputs_hash"("r"."id"))) AND ( SELECT "public"."is_active"() AS "is_active"));
 
 
 ALTER VIEW "public"."soil_reports_needing_assessment" OWNER TO "postgres";
@@ -14318,6 +15691,17 @@ CREATE TABLE IF NOT EXISTS "public"."task_assignees" (
 ALTER TABLE "public"."task_assignees" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."task_feed_tokens" (
+    "user_id" "uuid" NOT NULL,
+    "token_hash" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "last_used_at" timestamp with time zone
+);
+
+
+ALTER TABLE "public"."task_feed_tokens" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."task_files" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "task_id" "uuid" NOT NULL,
@@ -14374,7 +15758,9 @@ CREATE TABLE IF NOT EXISTS "public"."users" (
     "tile_prefs" "jsonb",
     "is_owner" boolean DEFAULT false NOT NULL,
     "finance_access" boolean DEFAULT false NOT NULL,
-    "avatar_url" "text"
+    "avatar_url" "text",
+    "show_truck_forecast" boolean DEFAULT true NOT NULL,
+    "menu_prefs" "jsonb"
 );
 
 
@@ -14481,6 +15867,38 @@ COMMENT ON COLUMN "public"."tissue_tests"."no3n_ppm" IS 'Petiole nitrate-N, ppm 
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."truck_inspections" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "equipment_id" "uuid" NOT NULL,
+    "answers" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "notes" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "started_by" "uuid" DEFAULT "auth"."uid"(),
+    "started_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "signed_by" "uuid",
+    "signed_on" "date",
+    "signed_at" timestamp with time zone,
+    "signer_name" "text",
+    "signature" "text",
+    CONSTRAINT "truck_inspections_signature_check" CHECK ((("signature" IS NULL) OR ("signature" ~~ 'data:image/png;base64,%'::"text"))),
+    CONSTRAINT "truck_inspections_signed_whole" CHECK (((("signed_at" IS NULL) AND ("signed_on" IS NULL) AND ("signature" IS NULL)) OR (("signed_at" IS NOT NULL) AND ("signed_on" IS NOT NULL) AND ("signed_by" IS NOT NULL) AND ("signature" IS NOT NULL))))
+);
+
+
+ALTER TABLE "public"."truck_inspections" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."user_signatures" (
+    "user_id" "uuid" NOT NULL,
+    "image" "text" NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "user_signatures_image_check" CHECK ((("image" ~~ 'data:image/png;base64,%'::"text") AND ("length"("image") < 400000)))
+);
+
+
+ALTER TABLE "public"."user_signatures" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."water_allotments" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "year" integer NOT NULL,
@@ -14567,7 +15985,7 @@ CREATE TABLE IF NOT EXISTS "public"."water_licences" (
     "expiry" "date",
     "conditions" "text",
     "volume_m3" numeric,
-    CONSTRAINT "water_licences_source_check" CHECK (("source" = ANY (ARRAY['oldman_river'::"text", 'south_saskatchewan_river'::"text", 'other'::"text"]))),
+    CONSTRAINT "water_licences_source_check" CHECK ((("source" IS NULL) OR (("length"("btrim"("source")) >= 1) AND ("length"("btrim"("source")) <= 80)))),
     CONSTRAINT "water_licences_status_check" CHECK (("status" = ANY (ARRAY['issued'::"text", 'draft'::"text", 'pending'::"text"])))
 );
 
@@ -14630,7 +16048,7 @@ CREATE TABLE IF NOT EXISTS "public"."water_quality_stations" (
     "lon" numeric,
     "active" boolean DEFAULT true NOT NULL,
     CONSTRAINT "water_quality_stations_source_check" CHECK (("source" = ANY (ARRAY['aepa'::"text", 'idwq'::"text", 'own'::"text"]))),
-    CONSTRAINT "water_quality_stations_water_source_check" CHECK (("water_source" = ANY (ARRAY['oldman'::"text", 'smrid'::"text"])))
+    CONSTRAINT "water_quality_stations_water_source_check" CHECK ((("water_source" IS NULL) OR (("length"("btrim"("water_source")) >= 1) AND ("length"("btrim"("water_source")) <= 80))))
 );
 
 
@@ -14648,8 +16066,8 @@ CREATE OR REPLACE VIEW "public"."water_quality_summary" WITH ("security_invoker"
             "s"."below_dl",
             "s"."unit",
             "s"."created_at",
-            (EXTRACT("year" FROM ("s"."sampled_at" AT TIME ZONE 'America/Edmonton'::"text")))::integer AS "season",
-            (((EXTRACT("month" FROM ("s"."sampled_at" AT TIME ZONE 'America/Edmonton'::"text")))::integer >= 4) AND ((EXTRACT("month" FROM ("s"."sampled_at" AT TIME ZONE 'America/Edmonton'::"text")))::integer <= 10)) AS "irrigating"
+            (EXTRACT("year" FROM ("s"."sampled_at" AT TIME ZONE "public"."farm_tz"())))::integer AS "season",
+            (((EXTRACT("month" FROM ("s"."sampled_at" AT TIME ZONE "public"."farm_tz"())))::integer >= 4) AND ((EXTRACT("month" FROM ("s"."sampled_at" AT TIME ZONE "public"."farm_tz"())))::integer <= 10)) AS "irrigating"
            FROM "public"."water_quality_samples" "s"
           WHERE ("s"."sampled_at" >= "make_date"(((EXTRACT("year" FROM "now"()))::integer - 5), 1, 1))
         ), "ranked" AS (
@@ -14720,7 +16138,7 @@ CREATE OR REPLACE VIEW "public"."water_s_credit" WITH ("security_invoker"='true'
             "s"."sampled_at"
            FROM ("public"."water_quality_samples" "s"
              JOIN "public"."water_quality_stations" "st" ON (("st"."station_id" = "s"."station_id")))
-          WHERE ("st"."for_credit" AND ("st"."water_source" IS NOT NULL) AND ((EXTRACT("month" FROM ("s"."sampled_at" AT TIME ZONE 'America/Edmonton'::"text")) >= (5)::numeric) AND (EXTRACT("month" FROM ("s"."sampled_at" AT TIME ZONE 'America/Edmonton'::"text")) <= (9)::numeric)) AND ("s"."sampled_at" >= "make_date"(((EXTRACT("year" FROM "now"()))::integer - 5), 1, 1)))
+          WHERE ("st"."for_credit" AND ("st"."water_source" IS NOT NULL) AND ((EXTRACT("month" FROM ("s"."sampled_at" AT TIME ZONE "public"."farm_tz"())) >= (5)::numeric) AND (EXTRACT("month" FROM ("s"."sampled_at" AT TIME ZONE "public"."farm_tz"())) <= (9)::numeric)) AND ("s"."sampled_at" >= "make_date"(((EXTRACT("year" FROM "now"()))::integer - 5), 1, 1)))
         )
  SELECT "water_source",
     "round"((("percentile_cont"((0.5)::double precision) WITHIN GROUP (ORDER BY (("value")::double precision)) FILTER (WHERE ("parameter" = 'so4_mg_l'::"text")))::numeric * 0.0756), 2) AS "lb_s_per_inch",
@@ -14784,6 +16202,36 @@ CREATE TABLE IF NOT EXISTS "public"."water_supply_daily" (
 
 
 ALTER TABLE "public"."water_supply_daily" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."water_supply_stations" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "key" "text" NOT NULL,
+    "name" "text" NOT NULL,
+    "kind" "text" NOT NULL,
+    "section" "text" DEFAULT 'canals'::"text" NOT NULL,
+    "source" "text" NOT NULL,
+    "ts_id" "text",
+    "triplet" "text",
+    "note" "text",
+    "sort" integer DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "water_supply_stations_check" CHECK (((("source" = 'wiski'::"text") AND ("ts_id" IS NOT NULL)) OR (("source" = 'snotel'::"text") AND ("triplet" IS NOT NULL)))),
+    CONSTRAINT "water_supply_stations_kind_check" CHECK (("kind" = ANY (ARRAY['reservoir'::"text", 'snow'::"text"]))),
+    CONSTRAINT "water_supply_stations_section_check" CHECK (("section" = ANY (ARRAY['river'::"text", 'canals'::"text"]))),
+    CONSTRAINT "water_supply_stations_source_check" CHECK (("source" = ANY (ARRAY['wiski'::"text", 'snotel'::"text"])))
+);
+
+
+ALTER TABLE "public"."water_supply_stations" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."water_supply_stations" IS 'Reservoirs and snowpacks the farm watches: Alberta Rivers (wiski, by time-series id) or NRCS SNOTEL (by station triplet). Read by the daily pull (water-daily-cron) into water_supply_daily / water_supply, and by the Season ahead panel.';
+
+
+
+COMMENT ON COLUMN "public"."water_supply_stations"."key" IS 'The station id the readings are stored under (water_supply_daily.station): the Alberta station number, or the SNOTEL triplet.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."weather_daily" (
@@ -14927,6 +16375,16 @@ ALTER TABLE ONLY "public"."abnormal_yield_years"
 
 ALTER TABLE ONLY "public"."abnormal_yield_years"
     ADD CONSTRAINT "abnormal_yield_years_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."afsc_mdi_land"
+    ADD CONSTRAINT "afsc_mdi_land_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."afsc_mdi_year"
+    ADD CONSTRAINT "afsc_mdi_year_pkey" PRIMARY KEY ("crop_year");
 
 
 
@@ -15080,6 +16538,16 @@ ALTER TABLE ONLY "public"."bin_readings"
 
 
 
+ALTER TABLE ONLY "public"."bin_yards"
+    ADD CONSTRAINT "bin_yards_name_key" UNIQUE ("name");
+
+
+
+ALTER TABLE ONLY "public"."bin_yards"
+    ADD CONSTRAINT "bin_yards_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."bins"
     ADD CONSTRAINT "bins_pkey" PRIMARY KEY ("id");
 
@@ -15215,6 +16683,11 @@ ALTER TABLE ONLY "public"."chemical_labels"
 
 
 
+ALTER TABLE ONLY "public"."chemical_recrop_overrides"
+    ADD CONSTRAINT "chemical_recrop_overrides_pkey" PRIMARY KEY ("registration_number");
+
+
+
 ALTER TABLE ONLY "public"."chemical_recrop_rules"
     ADD CONSTRAINT "chemical_recrop_rules_pkey" PRIMARY KEY ("id");
 
@@ -15330,6 +16803,16 @@ ALTER TABLE ONLY "public"."crop_inputs"
 
 
 
+ALTER TABLE ONLY "public"."crop_plan_options"
+    ADD CONSTRAINT "crop_plan_options_field_id_crop_year_crop_id_key" UNIQUE ("field_id", "crop_year", "crop_id");
+
+
+
+ALTER TABLE ONLY "public"."crop_plan_options"
+    ADD CONSTRAINT "crop_plan_options_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."crop_plans"
     ADD CONSTRAINT "crop_plans_crop_year_field_id_key" UNIQUE ("crop_year", "field_id");
 
@@ -15367,11 +16850,6 @@ ALTER TABLE ONLY "public"."crop_succession_rules"
 
 ALTER TABLE ONLY "public"."crop_succession_rules"
     ADD CONSTRAINT "crop_succession_rules_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "public"."crop_succession_rules"
-    ADD CONSTRAINT "crop_succession_rules_prev_crop_id_next_crop_id_key" UNIQUE ("prev_crop_id", "next_crop_id");
 
 
 
@@ -15512,6 +16990,11 @@ ALTER TABLE ONLY "public"."farm_setup"
 
 ALTER TABLE ONLY "public"."farm_trails"
     ADD CONSTRAINT "farm_trails_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."farm_yards"
+    ADD CONSTRAINT "farm_yards_pkey" PRIMARY KEY ("id");
 
 
 
@@ -15865,6 +17348,26 @@ ALTER TABLE ONLY "public"."fuel_purchases"
 
 
 
+ALTER TABLE ONLY "public"."fuel_tank_readings"
+    ADD CONSTRAINT "fuel_tank_readings_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."fuel_tank_readings"
+    ADD CONSTRAINT "fuel_tank_readings_tank_id_read_at_key" UNIQUE ("tank_id", "read_at");
+
+
+
+ALTER TABLE ONLY "public"."fuel_tanks"
+    ADD CONSTRAINT "fuel_tanks_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."fuel_tanks"
+    ADD CONSTRAINT "fuel_tanks_telus_device_id_key" UNIQUE ("telus_device_id");
+
+
+
 ALTER TABLE ONLY "public"."gas_bill_sites"
     ADD CONSTRAINT "gas_bill_sites_pkey" PRIMARY KEY ("id");
 
@@ -16212,11 +17715,6 @@ ALTER TABLE ONLY "public"."moisture_tests"
 
 ALTER TABLE ONLY "public"."monthly_task_instances"
     ADD CONSTRAINT "monthly_task_instances_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "public"."monthly_task_instances"
-    ADD CONSTRAINT "monthly_task_instances_template_id_crop_year_key" UNIQUE ("template_id", "crop_year");
 
 
 
@@ -16610,6 +18108,11 @@ ALTER TABLE ONLY "public"."rotation_advice"
 
 
 
+ALTER TABLE ONLY "public"."rotation_feedback"
+    ADD CONSTRAINT "rotation_feedback_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."sat_alerts"
     ADD CONSTRAINT "sat_alerts_pkey" PRIMARY KEY ("id");
 
@@ -16670,6 +18173,21 @@ ALTER TABLE ONLY "public"."scouting_notes"
 
 
 
+ALTER TABLE ONLY "public"."seed_report_bins"
+    ADD CONSTRAINT "seed_report_bins_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."seed_reports"
+    ADD CONSTRAINT "seed_reports_company_crop_year_field_id_key" UNIQUE ("company", "crop_year", "field_id");
+
+
+
+ALTER TABLE ONLY "public"."seed_reports"
+    ADD CONSTRAINT "seed_reports_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."smrid_areas"
     ADD CONSTRAINT "smrid_areas_area_number_key" UNIQUE ("area_number");
 
@@ -16707,6 +18225,11 @@ ALTER TABLE ONLY "public"."soil_moisture_readings"
 
 ALTER TABLE ONLY "public"."soil_moisture_readings"
     ADD CONSTRAINT "soil_moisture_readings_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."soil_report_input_hashes"
+    ADD CONSTRAINT "soil_report_input_hashes_pkey" PRIMARY KEY ("report_id");
 
 
 
@@ -16785,6 +18308,16 @@ ALTER TABLE ONLY "public"."task_assignees"
 
 
 
+ALTER TABLE ONLY "public"."task_feed_tokens"
+    ADD CONSTRAINT "task_feed_tokens_pkey" PRIMARY KEY ("user_id");
+
+
+
+ALTER TABLE ONLY "public"."task_feed_tokens"
+    ADD CONSTRAINT "task_feed_tokens_token_hash_key" UNIQUE ("token_hash");
+
+
+
 ALTER TABLE ONLY "public"."task_files"
     ADD CONSTRAINT "task_files_pkey" PRIMARY KEY ("id");
 
@@ -16810,8 +18343,18 @@ ALTER TABLE ONLY "public"."tissue_tests"
 
 
 
+ALTER TABLE ONLY "public"."truck_inspections"
+    ADD CONSTRAINT "truck_inspections_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."tv_commands"
     ADD CONSTRAINT "tv_commands_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."user_signatures"
+    ADD CONSTRAINT "user_signatures_pkey" PRIMARY KEY ("user_id");
 
 
 
@@ -16900,6 +18443,16 @@ ALTER TABLE ONLY "public"."water_supply"
 
 
 
+ALTER TABLE ONLY "public"."water_supply_stations"
+    ADD CONSTRAINT "water_supply_stations_key_key" UNIQUE ("key");
+
+
+
+ALTER TABLE ONLY "public"."water_supply_stations"
+    ADD CONSTRAINT "water_supply_stations_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."weather_daily"
     ADD CONSTRAINT "weather_daily_pkey" PRIMARY KEY ("station_id", "date");
 
@@ -16954,6 +18507,10 @@ CREATE INDEX "ab_input_prices_item" ON "public"."ab_input_prices" USING "btree" 
 
 
 CREATE INDEX "abnormal_yield_years_year" ON "public"."abnormal_yield_years" USING "btree" ("crop_year");
+
+
+
+CREATE INDEX "afsc_mdi_land_pasture_idx" ON "public"."afsc_mdi_land" USING "btree" ("pasture_id");
 
 
 
@@ -17033,6 +18590,10 @@ CREATE INDEX "bin_loads_contract_idx" ON "public"."bin_loads" USING "btree" ("co
 
 
 
+CREATE INDEX "bin_loads_field_year_idx" ON "public"."bin_loads" USING "btree" ("field_id", "crop_year");
+
+
+
 CREATE INDEX "bin_loads_open_idx" ON "public"."bin_loads" USING "btree" ("created_at" DESC) WHERE (("gross_kg" IS NULL) OR ("tare_kg" IS NULL));
 
 
@@ -17050,6 +18611,10 @@ CREATE INDEX "bin_monitor_readings_year_idx" ON "public"."bin_monitor_readings" 
 
 
 CREATE INDEX "bin_readings_bin_idx" ON "public"."bin_readings" USING "btree" ("bin_id", "reading_at" DESC);
+
+
+
+CREATE UNIQUE INDEX "bin_yards_one_home" ON "public"."bin_yards" USING "btree" ("home") WHERE "home";
 
 
 
@@ -17226,6 +18791,10 @@ CREATE INDEX "crop_history_year_idx" ON "public"."crop_history" USING "btree" ("
 
 
 CREATE INDEX "crop_inputs_year_idx" ON "public"."crop_inputs" USING "btree" ("crop_year", "crop_id");
+
+
+
+CREATE INDEX "crop_plan_options_year_idx" ON "public"."crop_plan_options" USING "btree" ("crop_year");
 
 
 
@@ -17429,6 +18998,10 @@ CREATE INDEX "fuel_purchases_qb_txn_ref_idx" ON "public"."fuel_purchases" USING 
 
 
 
+CREATE INDEX "fuel_tank_readings_tank_idx" ON "public"."fuel_tank_readings" USING "btree" ("tank_id", "read_at" DESC);
+
+
+
 CREATE INDEX "gas_bill_sites_bill" ON "public"."gas_bill_sites" USING "btree" ("bill_id");
 
 
@@ -17450,6 +19023,10 @@ CREATE INDEX "grain_movements_bin_idx" ON "public"."grain_movements" USING "btre
 
 
 CREATE INDEX "grain_movements_contract_idx" ON "public"."grain_movements" USING "btree" ("contract_id");
+
+
+
+CREATE INDEX "grain_movements_delivery_site_idx" ON "public"."grain_movements" USING "btree" ("delivery_site_id") WHERE ("delivery_site_id" IS NOT NULL);
 
 
 
@@ -17633,7 +19210,15 @@ CREATE INDEX "moisture_tests_recent_idx" ON "public"."moisture_tests" USING "btr
 
 
 
+CREATE UNIQUE INDEX "monthly_task_instances_key" ON "public"."monthly_task_instances" USING "btree" ("template_id", "year", "month");
+
+
+
 CREATE INDEX "monthly_task_instances_year_idx" ON "public"."monthly_task_instances" USING "btree" ("crop_year");
+
+
+
+CREATE INDEX "monthly_task_instances_ym_idx" ON "public"."monthly_task_instances" USING "btree" ("year", "month");
 
 
 
@@ -17777,6 +19362,14 @@ CREATE INDEX "rotation_advice_year_created" ON "public"."rotation_advice" USING 
 
 
 
+CREATE INDEX "rotation_feedback_field_idx" ON "public"."rotation_feedback" USING "btree" ("field_id", "crop_year");
+
+
+
+CREATE INDEX "rotation_feedback_pair_idx" ON "public"."rotation_feedback" USING "btree" ("crop_id", "after_crop_id");
+
+
+
 CREATE UNIQUE INDEX "sat_alerts_open_idx" ON "public"."sat_alerts" USING "btree" ("subject_type", "subject_id", COALESCE("zone_id", '00000000-0000-0000-0000-000000000000'::"uuid"), "alert_type") WHERE ("status" = ANY (ARRAY['pending'::"text", 'confirmed'::"text"]));
 
 
@@ -17829,6 +19422,10 @@ CREATE INDEX "scouting_notes_field_year" ON "public"."scouting_notes" USING "btr
 
 
 
+CREATE INDEX "seed_report_bins_report_idx" ON "public"."seed_report_bins" USING "btree" ("report_id", "sort");
+
+
+
 CREATE INDEX "soil_landscape_geom_idx" ON "public"."soil_landscape_polygons" USING "gist" ("geom");
 
 
@@ -17865,11 +19462,23 @@ CREATE INDEX "tasks_parent_idx" ON "public"."tasks" USING "btree" ("parent_task_
 
 
 
+CREATE INDEX "tasks_source_ref_idx" ON "public"."tasks" USING "btree" ("source", "source_ref") WHERE ("source_ref" IS NOT NULL);
+
+
+
 CREATE INDEX "time_off_dates_idx" ON "public"."time_off" USING "btree" ("starts_on", "ends_on");
 
 
 
 CREATE INDEX "tissue_tests_year_idx" ON "public"."tissue_tests" USING "btree" ("crop_year", "sampled_on" DESC);
+
+
+
+CREATE UNIQUE INDEX "truck_inspections_one_open" ON "public"."truck_inspections" USING "btree" ("equipment_id") WHERE ("signed_at" IS NULL);
+
+
+
+CREATE INDEX "truck_inspections_truck_idx" ON "public"."truck_inspections" USING "btree" ("equipment_id", "signed_on" DESC);
 
 
 
@@ -17925,6 +19534,10 @@ CREATE OR REPLACE TRIGGER "add_fixed" AFTER INSERT ON "public"."crop_inputs" FOR
 
 
 
+CREATE OR REPLACE TRIGGER "afsc_mdi_land_audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."afsc_mdi_land" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "app_issue_from_alert" AFTER INSERT ON "public"."notifications" FOR EACH ROW WHEN (("new"."kind" = 'integration_alert'::"text")) EXECUTE FUNCTION "public"."fn_app_issue_from_alert"();
 
 
@@ -17977,11 +19590,11 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
-CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."bin_monitor_readings" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
-
-
-
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."bin_readings" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."bin_yards" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -17994,10 +19607,6 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."canola_isolation_reports" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
-
-
-
-CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."cash_bids" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -18065,10 +19674,6 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
-CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."combine_monitor_loads" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
-
-
-
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."combine_monitor_names" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -18109,6 +19714,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."crop_plan_options" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."crop_plans" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -18145,10 +19754,6 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
-CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."eshepherd_activations" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
-
-
-
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."events" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -18162,6 +19767,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."farm_trails" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."farm_yards" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -18313,6 +19922,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."fuel_tanks" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."gas_sites" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -18358,10 +19971,6 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."input_movements" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
-
-
-
-CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."irrigation_events" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -18457,10 +20066,6 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
-CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."plc_line_watch" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
-
-
-
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."product_documents" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -18490,6 +20095,14 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."scouting_notes" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."seed_report_bins" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."seed_reports" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -18541,6 +20154,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."truck_inspections" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."users" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -18554,6 +20171,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."water_licences" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."water_supply_stations" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -18605,6 +20226,14 @@ CREATE OR REPLACE TRIGGER "bin_load_yield" AFTER INSERT OR DELETE OR UPDATE ON "
 
 
 
+CREATE OR REPLACE TRIGGER "broadcast_insert" AFTER INSERT ON "public"."notifications" FOR EACH ROW EXECUTE FUNCTION "public"."fn_broadcast_notification"();
+
+
+
+CREATE OR REPLACE TRIGGER "broadcast_update" AFTER UPDATE ON "public"."tv_commands" FOR EACH ROW EXECUTE FUNCTION "public"."fn_broadcast_tv_command"();
+
+
+
 CREATE OR REPLACE TRIGGER "cameras_audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."cameras" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -18614,6 +20243,10 @@ CREATE OR REPLACE TRIGGER "cattle_costs_audit" AFTER INSERT OR DELETE OR UPDATE 
 
 
 CREATE OR REPLACE TRIGGER "cattle_sales_audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."cattle_sales" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "checklist_run_monthly_done" AFTER UPDATE OF "status" ON "public"."checklist_runs" FOR EACH ROW EXECUTE FUNCTION "public"."fn_monthly_run_done"();
 
 
 
@@ -18685,6 +20318,10 @@ CREATE OR REPLACE TRIGGER "grant_new_notify" AFTER INSERT ON "public"."grants" F
 
 
 
+CREATE OR REPLACE TRIGGER "guard" BEFORE INSERT OR UPDATE ON "public"."truck_inspections" FOR EACH ROW EXECUTE FUNCTION "public"."fn_truck_inspection_guard"();
+
+
+
 CREATE OR REPLACE TRIGGER "harvest_op_air" AFTER INSERT OR UPDATE OF "operation_type" ON "public"."jd_field_operations" FOR EACH ROW EXECUTE FUNCTION "public"."fn_harvest_op_air"();
 
 
@@ -18725,7 +20362,11 @@ CREATE OR REPLACE TRIGGER "moisture_test_own_edit" BEFORE UPDATE ON "public"."mo
 
 
 
-CREATE OR REPLACE TRIGGER "monthly_instance_before" BEFORE UPDATE ON "public"."monthly_task_instances" FOR EACH ROW EXECUTE FUNCTION "public"."fn_monthly_instance_before"();
+CREATE OR REPLACE TRIGGER "monthly_instance_after" AFTER UPDATE OF "state" ON "public"."monthly_task_instances" FOR EACH ROW EXECUTE FUNCTION "public"."fn_monthly_instance_after"();
+
+
+
+CREATE OR REPLACE TRIGGER "monthly_instance_before" BEFORE INSERT OR UPDATE ON "public"."monthly_task_instances" FOR EACH ROW EXECUTE FUNCTION "public"."fn_monthly_instance_before"();
 
 
 
@@ -18789,6 +20430,38 @@ CREATE OR REPLACE TRIGGER "scale_ticket_match_load" BEFORE INSERT ON "public"."s
 
 
 
+CREATE OR REPLACE TRIGGER "signing" BEFORE INSERT OR UPDATE ON "public"."seed_reports" FOR EACH ROW EXECUTE FUNCTION "public"."fn_seed_report_signing"();
+
+
+
+CREATE OR REPLACE TRIGGER "soil_inputs_changed" AFTER INSERT OR DELETE OR UPDATE OF "crop_id", "crop_year", "field_id" ON "public"."crop_history" FOR EACH ROW EXECUTE FUNCTION "public"."fn_soil_inputs_changed"();
+
+
+
+CREATE OR REPLACE TRIGGER "soil_inputs_changed" AFTER INSERT OR DELETE OR UPDATE OF "crop_id", "crop_year", "field_id" ON "public"."crop_plans" FOR EACH ROW EXECUTE FUNCTION "public"."fn_soil_inputs_changed"();
+
+
+
+CREATE OR REPLACE TRIGGER "soil_inputs_changed" AFTER INSERT OR DELETE OR UPDATE ON "public"."fert_settings" FOR EACH STATEMENT EXECUTE FUNCTION "public"."fn_soil_inputs_changed"();
+
+
+
+CREATE OR REPLACE TRIGGER "soil_inputs_changed" AFTER INSERT OR DELETE OR UPDATE OF "field_id" ON "public"."field_pivots" FOR EACH ROW EXECUTE FUNCTION "public"."fn_soil_inputs_changed"();
+
+
+
+CREATE OR REPLACE TRIGGER "soil_inputs_changed" AFTER INSERT OR DELETE OR UPDATE ON "public"."manure_applications" FOR EACH ROW EXECUTE FUNCTION "public"."fn_soil_inputs_changed"();
+
+
+
+CREATE OR REPLACE TRIGGER "soil_inputs_changed" AFTER INSERT OR UPDATE OF "crop_label", "field_id", "crop_year" ON "public"."soil_test_reports" FOR EACH ROW EXECUTE FUNCTION "public"."fn_soil_inputs_changed"();
+
+
+
+CREATE OR REPLACE TRIGGER "soil_inputs_changed" AFTER INSERT OR DELETE OR UPDATE ON "public"."soil_test_samples" FOR EACH ROW EXECUTE FUNCTION "public"."fn_soil_inputs_changed"();
+
+
+
 CREATE OR REPLACE TRIGGER "station_geom" BEFORE INSERT OR UPDATE OF "lat", "lon" ON "public"."weather_stations" FOR EACH ROW EXECUTE FUNCTION "public"."fn_station_geom"();
 
 
@@ -18798,6 +20471,10 @@ CREATE OR REPLACE TRIGGER "sync_budgets" AFTER INSERT OR DELETE OR UPDATE ON "pu
 
 
 CREATE OR REPLACE TRIGGER "task_before" BEFORE INSERT OR UPDATE ON "public"."tasks" FOR EACH ROW EXECUTE FUNCTION "public"."fn_task_before"();
+
+
+
+CREATE OR REPLACE TRIGGER "task_monthly_done" AFTER UPDATE OF "status" ON "public"."tasks" FOR EACH ROW EXECUTE FUNCTION "public"."fn_monthly_task_done"();
 
 
 
@@ -18813,11 +20490,19 @@ CREATE OR REPLACE TRIGGER "to_checklist" AFTER UPDATE OF "geom", "label" ON "pub
 
 
 
+CREATE OR REPLACE TRIGGER "touch" BEFORE UPDATE ON "public"."bin_yards" FOR EACH ROW EXECUTE FUNCTION "public"."fn_bin_yards_touch"();
+
+
+
 CREATE OR REPLACE TRIGGER "touch" BEFORE UPDATE ON "public"."field_work_records" FOR EACH ROW EXECUTE FUNCTION "public"."fn_touch_field_work_records"();
 
 
 
 CREATE OR REPLACE TRIGGER "touch" BEFORE UPDATE ON "public"."yield_adjustments" FOR EACH ROW EXECUTE FUNCTION "public"."fn_touch_updated_at_yield_adjustments"();
+
+
+
+CREATE OR REPLACE TRIGGER "trg_bin_load_marks_harvest" AFTER INSERT OR DELETE OR UPDATE ON "public"."bin_loads" FOR EACH ROW EXECUTE FUNCTION "public"."fn_bin_load_marks_harvest"();
 
 
 
@@ -18838,6 +20523,14 @@ CREATE OR REPLACE TRIGGER "users_owner_guard" BEFORE INSERT OR UPDATE ON "public
 
 
 CREATE OR REPLACE TRIGGER "weed_patches_audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."weed_patches" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "weigh_times" BEFORE INSERT OR UPDATE ON "public"."bin_loads" FOR EACH ROW EXECUTE FUNCTION "public"."fn_bin_load_weigh_times"();
+
+
+
+CREATE OR REPLACE TRIGGER "yard_on_list" BEFORE INSERT OR UPDATE OF "site" ON "public"."bins" FOR EACH ROW EXECUTE FUNCTION "public"."fn_bins_yard_on_list"();
 
 
 
@@ -18877,10 +20570,6 @@ CREATE OR REPLACE TRIGGER "year_guard" BEFORE INSERT OR DELETE OR UPDATE ON "pub
 
 
 
-CREATE OR REPLACE TRIGGER "year_guard" BEFORE INSERT OR DELETE OR UPDATE ON "public"."monthly_task_instances" FOR EACH ROW EXECUTE FUNCTION "public"."fn_year_guard"();
-
-
-
 CREATE OR REPLACE TRIGGER "year_guard" BEFORE INSERT OR DELETE OR UPDATE ON "public"."yield_adjustments" FOR EACH ROW EXECUTE FUNCTION "public"."fn_year_guard"();
 
 
@@ -18913,6 +20602,16 @@ ALTER TABLE ONLY "public"."abnormal_yield_years"
 
 ALTER TABLE ONLY "public"."abnormal_yield_years"
     ADD CONSTRAINT "abnormal_yield_years_marked_by_fkey" FOREIGN KEY ("marked_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."afsc_mdi_land"
+    ADD CONSTRAINT "afsc_mdi_land_pasture_id_fkey" FOREIGN KEY ("pasture_id") REFERENCES "public"."pastures"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."afsc_mdi_year"
+    ADD CONSTRAINT "afsc_mdi_year_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "auth"."users"("id");
 
 
 
@@ -19056,6 +20755,11 @@ ALTER TABLE ONLY "public"."bin_loads"
 
 
 
+ALTER TABLE ONLY "public"."bin_loads"
+    ADD CONSTRAINT "bin_loads_overflow_bin_id_fkey" FOREIGN KEY ("overflow_bin_id") REFERENCES "public"."bins"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."bin_monitor_readings"
     ADD CONSTRAINT "bin_monitor_readings_bin_id_fkey" FOREIGN KEY ("bin_id") REFERENCES "public"."bins"("id") ON DELETE CASCADE;
 
@@ -19073,6 +20777,11 @@ ALTER TABLE ONLY "public"."bin_readings"
 
 ALTER TABLE ONLY "public"."bin_readings"
     ADD CONSTRAINT "bin_readings_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id");
+
+
+
+ALTER TABLE ONLY "public"."bins"
+    ADD CONSTRAINT "bins_site_yard_fk" FOREIGN KEY ("site") REFERENCES "public"."bin_yards"("name") ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 
@@ -19381,6 +21090,16 @@ ALTER TABLE ONLY "public"."crop_inputs"
 
 
 
+ALTER TABLE ONLY "public"."crop_plan_options"
+    ADD CONSTRAINT "crop_plan_options_crop_id_fkey" FOREIGN KEY ("crop_id") REFERENCES "public"."crops"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."crop_plan_options"
+    ADD CONSTRAINT "crop_plan_options_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."crop_plans"
     ADD CONSTRAINT "crop_plans_crop_id_fkey" FOREIGN KEY ("crop_id") REFERENCES "public"."crops"("id");
 
@@ -19503,6 +21222,16 @@ ALTER TABLE ONLY "public"."farm_setup"
 
 ALTER TABLE ONLY "public"."farm_trails"
     ADD CONSTRAINT "farm_trails_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."farm_yards"
+    ADD CONSTRAINT "farm_yards_bin_yard_id_fkey" FOREIGN KEY ("bin_yard_id") REFERENCES "public"."bin_yards"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."farm_yards"
+    ADD CONSTRAINT "farm_yards_ranch_id_fkey" FOREIGN KEY ("ranch_id") REFERENCES "public"."ranches"("id") ON DELETE SET NULL;
 
 
 
@@ -19761,6 +21490,11 @@ ALTER TABLE ONLY "public"."field_haul_plans"
 
 
 
+ALTER TABLE ONLY "public"."field_haul_plans"
+    ADD CONSTRAINT "field_haul_plans_yard_id_fkey" FOREIGN KEY ("yard_id") REFERENCES "public"."farm_yards"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."field_inspections"
     ADD CONSTRAINT "field_inspections_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id");
 
@@ -19852,6 +21586,11 @@ ALTER TABLE ONLY "public"."field_work_records"
 
 
 ALTER TABLE ONLY "public"."field_work_records"
+    ADD CONSTRAINT "field_work_records_from_bin_load_fkey" FOREIGN KEY ("from_bin_load") REFERENCES "public"."bin_loads"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."field_work_records"
     ADD CONSTRAINT "field_work_records_zone_id_fkey" FOREIGN KEY ("zone_id") REFERENCES "public"."field_crop_zones"("id") ON DELETE SET NULL;
 
 
@@ -19926,6 +21665,11 @@ ALTER TABLE ONLY "public"."fuel_purchases"
 
 
 
+ALTER TABLE ONLY "public"."fuel_tank_readings"
+    ADD CONSTRAINT "fuel_tank_readings_tank_id_fkey" FOREIGN KEY ("tank_id") REFERENCES "public"."fuel_tanks"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."gas_bill_sites"
     ADD CONSTRAINT "gas_bill_sites_bill_id_fkey" FOREIGN KEY ("bill_id") REFERENCES "public"."gas_bills"("id") ON DELETE CASCADE;
 
@@ -19958,6 +21702,11 @@ ALTER TABLE ONLY "public"."grain_movements"
 
 ALTER TABLE ONLY "public"."grain_movements"
     ADD CONSTRAINT "grain_movements_crop_id_fkey" FOREIGN KEY ("crop_id") REFERENCES "public"."crops"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."grain_movements"
+    ADD CONSTRAINT "grain_movements_delivery_site_id_fkey" FOREIGN KEY ("delivery_site_id") REFERENCES "public"."delivery_sites"("id") ON DELETE SET NULL;
 
 
 
@@ -20267,6 +22016,11 @@ ALTER TABLE ONLY "public"."moisture_tests"
 
 
 ALTER TABLE ONLY "public"."monthly_task_instances"
+    ADD CONSTRAINT "monthly_task_instances_checklist_run_id_fkey" FOREIGN KEY ("checklist_run_id") REFERENCES "public"."checklist_runs"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."monthly_task_instances"
     ADD CONSTRAINT "monthly_task_instances_completed_by_fkey" FOREIGN KEY ("completed_by") REFERENCES "public"."users"("id");
 
 
@@ -20556,6 +22310,26 @@ ALTER TABLE ONLY "public"."rotation_advice"
 
 
 
+ALTER TABLE ONLY "public"."rotation_feedback"
+    ADD CONSTRAINT "rotation_feedback_after_crop_id_fkey" FOREIGN KEY ("after_crop_id") REFERENCES "public"."crops"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."rotation_feedback"
+    ADD CONSTRAINT "rotation_feedback_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."rotation_feedback"
+    ADD CONSTRAINT "rotation_feedback_crop_id_fkey" FOREIGN KEY ("crop_id") REFERENCES "public"."crops"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."rotation_feedback"
+    ADD CONSTRAINT "rotation_feedback_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."sat_alerts"
     ADD CONSTRAINT "sat_alerts_task_id_fkey" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE SET NULL;
 
@@ -20611,6 +22385,31 @@ ALTER TABLE ONLY "public"."scouting_notes"
 
 
 
+ALTER TABLE ONLY "public"."seed_report_bins"
+    ADD CONSTRAINT "seed_report_bins_bin_id_fkey" FOREIGN KEY ("bin_id") REFERENCES "public"."bins"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."seed_report_bins"
+    ADD CONSTRAINT "seed_report_bins_report_id_fkey" FOREIGN KEY ("report_id") REFERENCES "public"."seed_reports"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."seed_reports"
+    ADD CONSTRAINT "seed_reports_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."seed_reports"
+    ADD CONSTRAINT "seed_reports_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."seed_reports"
+    ADD CONSTRAINT "seed_reports_signed_by_fkey" FOREIGN KEY ("signed_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."soil_moisture_measurements"
     ADD CONSTRAINT "soil_moisture_measurements_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
 
@@ -20623,6 +22422,11 @@ ALTER TABLE ONLY "public"."soil_moisture_readings"
 
 ALTER TABLE ONLY "public"."soil_moisture_readings"
     ADD CONSTRAINT "soil_moisture_readings_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."soil_report_input_hashes"
+    ADD CONSTRAINT "soil_report_input_hashes_report_id_fkey" FOREIGN KEY ("report_id") REFERENCES "public"."soil_test_reports"("id") ON DELETE CASCADE;
 
 
 
@@ -20701,6 +22505,11 @@ ALTER TABLE ONLY "public"."task_assignees"
 
 
 
+ALTER TABLE ONLY "public"."task_feed_tokens"
+    ADD CONSTRAINT "task_feed_tokens_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."task_files"
     ADD CONSTRAINT "task_files_task_id_fkey" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE CASCADE;
 
@@ -20746,8 +22555,28 @@ ALTER TABLE ONLY "public"."tissue_tests"
 
 
 
+ALTER TABLE ONLY "public"."truck_inspections"
+    ADD CONSTRAINT "truck_inspections_equipment_id_fkey" FOREIGN KEY ("equipment_id") REFERENCES "public"."jd_equipment"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."truck_inspections"
+    ADD CONSTRAINT "truck_inspections_signed_by_fkey" FOREIGN KEY ("signed_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."truck_inspections"
+    ADD CONSTRAINT "truck_inspections_started_by_fkey" FOREIGN KEY ("started_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."tv_commands"
     ADD CONSTRAINT "tv_commands_requested_by_fkey" FOREIGN KEY ("requested_by") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."user_signatures"
+    ADD CONSTRAINT "user_signatures_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE;
 
 
 
@@ -20836,8 +22665,14 @@ CREATE POLICY "add" ON "public"."bale_checks" FOR INSERT TO "authenticated" WITH
 
 
 
-CREATE POLICY "add" ON "public"."checklist_photos" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_active"() AND (("run_location_id" IS NOT NULL) OR "public"."is_manager"())));
+CREATE POLICY "add" ON "public"."checklist_photos" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND (("run_location_id" IS NOT NULL) OR ( SELECT "public"."is_manager"() AS "is_manager"))));
 
+
+
+ALTER TABLE "public"."afsc_mdi_land" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."afsc_mdi_year" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."ag_news" ENABLE ROW LEVEL SECURITY;
@@ -20938,8 +22773,11 @@ ALTER TABLE "public"."bin_monitor_readings" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."bin_readings" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "bin_readings_update" ON "public"."bin_readings" FOR UPDATE TO "authenticated" USING (("public"."is_manager"() OR ("created_by" = "auth"."uid"()))) WITH CHECK (("public"."is_manager"() OR ("created_by" = "auth"."uid"())));
+CREATE POLICY "bin_readings_update" ON "public"."bin_readings" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid")))) WITH CHECK ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
+
+
+ALTER TABLE "public"."bin_yards" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."bins" ENABLE ROW LEVEL SECURITY;
@@ -21021,7 +22859,7 @@ CREATE POLICY "cattle_water_write" ON "public"."cattle_water" TO "authenticated"
 
 
 
-CREATE POLICY "change" ON "public"."bale_checks" FOR UPDATE TO "authenticated" USING (("public"."is_manager"() OR ("checked_by" = "auth"."uid"()))) WITH CHECK (("public"."is_manager"() OR ("checked_by" = "auth"."uid"())));
+CREATE POLICY "change" ON "public"."bale_checks" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("checked_by" = ( SELECT "auth"."uid"() AS "uid")))) WITH CHECK ((( SELECT "public"."is_manager"() AS "is_manager") OR ("checked_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
@@ -21072,6 +22910,9 @@ CREATE POLICY "chemical_labels_read" ON "public"."chemical_labels" FOR SELECT US
 
 CREATE POLICY "chemical_labels_write" ON "public"."chemical_labels" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
+
+
+ALTER TABLE "public"."chemical_recrop_overrides" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."chemical_recrop_rules" ENABLE ROW LEVEL SECURITY;
@@ -21130,6 +22971,9 @@ ALTER TABLE "public"."crop_history" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."crop_inputs" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."crop_plan_options" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."crop_plans" ENABLE ROW LEVEL SECURITY;
 
 
@@ -21166,6 +23010,10 @@ CREATE POLICY "delete_mgr" ON "public"."water_quality_samples" FOR DELETE TO "au
 
 
 
+CREATE POLICY "delete_open" ON "public"."truck_inspections" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") AND ("signed_at" IS NULL) AND (("started_by" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."is_manager"() AS "is_manager"))));
+
+
+
 CREATE POLICY "delete_own" ON "public"."combine_settings_used" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
@@ -21188,14 +23036,14 @@ CREATE POLICY "dismiss_any" ON "public"."bin_air_alerts" FOR UPDATE TO "authenti
 ALTER TABLE "public"."drive_backup_items" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "drive_backup_items_all" ON "public"."drive_backup_items" TO "authenticated" USING ("public"."can_see_finances"()) WITH CHECK ("public"."can_see_finances"());
+CREATE POLICY "drive_backup_items_all" ON "public"."drive_backup_items" TO "authenticated" USING (( SELECT "public"."can_see_finances"() AS "can_see_finances")) WITH CHECK (( SELECT "public"."can_see_finances"() AS "can_see_finances"));
 
 
 
 ALTER TABLE "public"."drive_backup_runs" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "drive_backup_runs_all" ON "public"."drive_backup_runs" TO "authenticated" USING ("public"."can_see_finances"()) WITH CHECK ("public"."can_see_finances"());
+CREATE POLICY "drive_backup_runs_all" ON "public"."drive_backup_runs" TO "authenticated" USING (( SELECT "public"."can_see_finances"() AS "can_see_finances")) WITH CHECK (( SELECT "public"."can_see_finances"() AS "can_see_finances"));
 
 
 
@@ -21244,27 +23092,27 @@ CREATE POLICY "events_adjust" ON "public"."irrigation_events" FOR UPDATE TO "aut
 
 
 
-CREATE POLICY "events_delete" ON "public"."calendar_events" FOR DELETE TO "authenticated" USING (("public"."is_manager"() OR ("created_by" = "auth"."uid"())));
+CREATE POLICY "events_delete" ON "public"."calendar_events" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
-CREATE POLICY "events_delete" ON "public"."cattle_events" FOR DELETE TO "authenticated" USING (("public"."is_manager"() OR ("created_by" = "auth"."uid"())));
+CREATE POLICY "events_delete" ON "public"."cattle_events" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
-CREATE POLICY "events_delete" ON "public"."irrigation_events" FOR DELETE TO "authenticated" USING (("public"."is_manager"() OR ("created_by" = "auth"."uid"())));
+CREATE POLICY "events_delete" ON "public"."irrigation_events" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
-CREATE POLICY "events_insert" ON "public"."calendar_events" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_active"() AND ("created_by" = "auth"."uid"())));
+CREATE POLICY "events_insert" ON "public"."calendar_events" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
-CREATE POLICY "events_insert" ON "public"."cattle_events" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_active"() AND ("created_by" = "auth"."uid"())));
+CREATE POLICY "events_insert" ON "public"."cattle_events" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
-CREATE POLICY "events_insert" ON "public"."irrigation_events" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_active"() AND ("created_by" = "auth"."uid"())));
+CREATE POLICY "events_insert" ON "public"."irrigation_events" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
@@ -21272,21 +23120,21 @@ CREATE POLICY "events_mgr_upd" ON "public"."cattle_events" FOR UPDATE TO "authen
 
 
 
-CREATE POLICY "events_update" ON "public"."calendar_events" FOR UPDATE TO "authenticated" USING (("public"."is_manager"() OR ("created_by" = "auth"."uid"()))) WITH CHECK (("public"."is_manager"() OR ("created_by" = "auth"."uid"())));
+CREATE POLICY "events_update" ON "public"."calendar_events" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid")))) WITH CHECK ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
 ALTER TABLE "public"."farm_fixed_cost_line_history" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "farm_fixed_cost_line_history_owner" ON "public"."farm_fixed_cost_line_history" FOR SELECT TO "authenticated" USING ("public"."can_see_finances"());
+CREATE POLICY "farm_fixed_cost_line_history_owner" ON "public"."farm_fixed_cost_line_history" FOR SELECT TO "authenticated" USING (( SELECT "public"."can_see_finances"() AS "can_see_finances"));
 
 
 
 ALTER TABLE "public"."farm_fixed_cost_lines" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "farm_fixed_cost_lines_owner" ON "public"."farm_fixed_cost_lines" TO "authenticated" USING ("public"."can_see_finances"()) WITH CHECK ("public"."can_see_finances"());
+CREATE POLICY "farm_fixed_cost_lines_owner" ON "public"."farm_fixed_cost_lines" TO "authenticated" USING (( SELECT "public"."can_see_finances"() AS "can_see_finances")) WITH CHECK (( SELECT "public"."can_see_finances"() AS "can_see_finances"));
 
 
 
@@ -21297,7 +23145,7 @@ CREATE POLICY "farm_fixed_costs_read" ON "public"."farm_fixed_costs" FOR SELECT 
 
 
 
-CREATE POLICY "farm_fixed_costs_write" ON "public"."farm_fixed_costs" TO "authenticated" USING ("public"."can_see_finances"()) WITH CHECK ("public"."can_see_finances"());
+CREATE POLICY "farm_fixed_costs_write" ON "public"."farm_fixed_costs" TO "authenticated" USING (( SELECT "public"."can_see_finances"() AS "can_see_finances")) WITH CHECK (( SELECT "public"."can_see_finances"() AS "can_see_finances"));
 
 
 
@@ -21313,6 +23161,9 @@ CREATE POLICY "farm_setup_write" ON "public"."farm_setup" TO "authenticated" USI
 
 
 ALTER TABLE "public"."farm_trails" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."farm_yards" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."farms" ENABLE ROW LEVEL SECURITY;
@@ -21478,19 +23329,19 @@ CREATE POLICY "fields_user" ON "public"."fields" FOR UPDATE TO "authenticated" U
 
 
 
-CREATE POLICY "files_delete" ON "public"."field_files" FOR DELETE TO "authenticated" USING (("public"."is_manager"() OR ("uploaded_by" = "auth"."uid"())));
+CREATE POLICY "files_delete" ON "public"."field_files" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("uploaded_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
-CREATE POLICY "files_delete" ON "public"."task_files" FOR DELETE TO "authenticated" USING (("public"."is_manager"() OR ("uploaded_by" = "auth"."uid"())));
+CREATE POLICY "files_delete" ON "public"."task_files" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("uploaded_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
-CREATE POLICY "files_insert" ON "public"."field_files" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_active"() AND ("uploaded_by" = "auth"."uid"())));
+CREATE POLICY "files_insert" ON "public"."field_files" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND ("uploaded_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
-CREATE POLICY "files_insert" ON "public"."task_files" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_active"() AND ("uploaded_by" = "auth"."uid"())));
+CREATE POLICY "files_insert" ON "public"."task_files" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND ("uploaded_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
@@ -21506,6 +23357,12 @@ CREATE POLICY "fso_read" ON "public"."field_season_outlook" FOR SELECT TO "authe
 
 
 ALTER TABLE "public"."fuel_purchases" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."fuel_tank_readings" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."fuel_tanks" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."gas_bill_sites" ENABLE ROW LEVEL SECURITY;
@@ -21556,11 +23413,11 @@ ALTER TABLE "public"."grazing_dispositions" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."grazing_events" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "grazing_events_read" ON "public"."grazing_events" FOR SELECT TO "authenticated" USING (true);
+CREATE POLICY "grazing_events_read" ON "public"."grazing_events" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "grazing_events_write" ON "public"."grazing_events" TO "authenticated" USING (true) WITH CHECK (true);
+CREATE POLICY "grazing_events_write" ON "public"."grazing_events" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -21607,7 +23464,7 @@ CREATE POLICY "insert_active" ON "public"."scouting_notes" FOR INSERT TO "authen
 
 
 
-CREATE POLICY "insert_any" ON "public"."moisture_tests" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_active"() AND ("created_by" = "auth"."uid"())));
+CREATE POLICY "insert_any" ON "public"."moisture_tests" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
@@ -21624,11 +23481,11 @@ ALTER TABLE "public"."integration_health" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."irrigation_events" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "items_update" ON "public"."checklist_run_items" FOR UPDATE TO "authenticated" USING (("public"."is_manager"() OR (EXISTS ( SELECT 1
+CREATE POLICY "items_update" ON "public"."checklist_run_items" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR (EXISTS ( SELECT 1
    FROM "public"."checklist_runs" "r"
-  WHERE (("r"."id" = "checklist_run_items"."run_id") AND ("auth"."uid"() = ANY ("r"."assigned_to"))))) OR ("public"."is_active"() AND "public"."checklist_run_is_map"("run_id")))) WITH CHECK (("public"."is_manager"() OR (EXISTS ( SELECT 1
+  WHERE (("r"."id" = "checklist_run_items"."run_id") AND (( SELECT "auth"."uid"() AS "uid") = ANY ("r"."assigned_to"))))) OR (( SELECT "public"."is_active"() AS "is_active") AND "public"."checklist_run_is_map"("run_id")))) WITH CHECK ((( SELECT "public"."is_manager"() AS "is_manager") OR (EXISTS ( SELECT 1
    FROM "public"."checklist_runs" "r"
-  WHERE (("r"."id" = "checklist_run_items"."run_id") AND ("auth"."uid"() = ANY ("r"."assigned_to"))))) OR ("public"."is_active"() AND "public"."checklist_run_is_map"("run_id"))));
+  WHERE (("r"."id" = "checklist_run_items"."run_id") AND (( SELECT "auth"."uid"() AS "uid") = ANY ("r"."assigned_to"))))) OR (( SELECT "public"."is_active"() AS "is_active") AND "public"."checklist_run_is_map"("run_id"))));
 
 
 
@@ -21646,6 +23503,10 @@ ALTER TABLE "public"."jd_dismissed_operations" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."jd_equipment" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "jd_equipment_add_haul_unit" ON "public"."jd_equipment" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND "is_manual" AND (NOT "archived") AND ("jd_id" ~~ 'manual:%'::"text") AND ("equipment_type" = ANY (ARRAY['Truck'::"text", 'Trailers'::"text"])) AND ("category" = 'machine'::"text") AND ("name" IS NOT NULL) AND (("length"("btrim"("name")) >= 1) AND ("length"("btrim"("name")) <= 80)) AND ("make" IS NULL) AND ("model" IS NULL) AND ("serial_number" IS NULL) AND ("vin" IS NULL) AND ("engine_hours" IS NULL) AND ("raw" IS NULL)));
+
 
 
 ALTER TABLE "public"."jd_equipment_alerts" ENABLE ROW LEVEL SECURITY;
@@ -21812,6 +23673,14 @@ CREATE POLICY "mfa_required" ON "public"."abnormal_yield_years" AS RESTRICTIVE T
 
 
 
+CREATE POLICY "mfa_required" ON "public"."afsc_mdi_land" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."afsc_mdi_year" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
 CREATE POLICY "mfa_required" ON "public"."ag_news" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
@@ -21897,6 +23766,10 @@ CREATE POLICY "mfa_required" ON "public"."bin_monitor_readings" AS RESTRICTIVE T
 
 
 CREATE POLICY "mfa_required" ON "public"."bin_readings" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."bin_yards" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -21996,6 +23869,10 @@ CREATE POLICY "mfa_required" ON "public"."chemical_labels" AS RESTRICTIVE TO "au
 
 
 
+CREATE POLICY "mfa_required" ON "public"."chemical_recrop_overrides" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
 CREATE POLICY "mfa_required" ON "public"."chemical_recrop_rules" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
@@ -22057,6 +23934,10 @@ CREATE POLICY "mfa_required" ON "public"."crop_history" AS RESTRICTIVE TO "authe
 
 
 CREATE POLICY "mfa_required" ON "public"."crop_inputs" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."crop_plan_options" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -22149,6 +24030,10 @@ CREATE POLICY "mfa_required" ON "public"."farm_setup" AS RESTRICTIVE TO "authent
 
 
 CREATE POLICY "mfa_required" ON "public"."farm_trails" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."farm_yards" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -22337,6 +24222,14 @@ CREATE POLICY "mfa_required" ON "public"."financial_entries" AS RESTRICTIVE TO "
 
 
 CREATE POLICY "mfa_required" ON "public"."fuel_purchases" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."fuel_tank_readings" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."fuel_tanks" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -22736,6 +24629,10 @@ CREATE POLICY "mfa_required" ON "public"."rotation_advice" AS RESTRICTIVE TO "au
 
 
 
+CREATE POLICY "mfa_required" ON "public"."rotation_feedback" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
 CREATE POLICY "mfa_required" ON "public"."sat_alerts" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
@@ -22772,6 +24669,14 @@ CREATE POLICY "mfa_required" ON "public"."scouting_notes" AS RESTRICTIVE TO "aut
 
 
 
+CREATE POLICY "mfa_required" ON "public"."seed_report_bins" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."seed_reports" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
 CREATE POLICY "mfa_required" ON "public"."smrid_areas" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
@@ -22785,6 +24690,10 @@ CREATE POLICY "mfa_required" ON "public"."soil_moisture_measurements" AS RESTRIC
 
 
 CREATE POLICY "mfa_required" ON "public"."soil_moisture_readings" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."soil_report_input_hashes" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -22824,6 +24733,10 @@ CREATE POLICY "mfa_required" ON "public"."task_assignees" AS RESTRICTIVE TO "aut
 
 
 
+CREATE POLICY "mfa_required" ON "public"."task_feed_tokens" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
 CREATE POLICY "mfa_required" ON "public"."task_files" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
@@ -22840,7 +24753,15 @@ CREATE POLICY "mfa_required" ON "public"."tissue_tests" AS RESTRICTIVE TO "authe
 
 
 
+CREATE POLICY "mfa_required" ON "public"."truck_inspections" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
 CREATE POLICY "mfa_required" ON "public"."tv_commands" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."user_signatures" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -22885,6 +24806,10 @@ CREATE POLICY "mfa_required" ON "public"."water_supply" AS RESTRICTIVE TO "authe
 
 
 CREATE POLICY "mfa_required" ON "public"."water_supply_daily" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."water_supply_stations" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -22945,7 +24870,7 @@ ALTER TABLE "public"."n_rich_strips" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."n_trials" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "note_update" ON "public"."checklist_run_locations" FOR UPDATE TO "authenticated" USING (("public"."is_active"() AND "public"."checklist_run_is_map"("run_id"))) WITH CHECK (("public"."is_active"() AND "public"."checklist_run_is_map"("run_id")));
+CREATE POLICY "note_update" ON "public"."checklist_run_locations" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") AND "public"."checklist_run_is_map"("run_id"))) WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND "public"."checklist_run_is_map"("run_id")));
 
 
 
@@ -22964,62 +24889,74 @@ ALTER TABLE "public"."notifications" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."operating_settings" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "own" ON "public"."anydo_task_links" FOR SELECT TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."is_admin"()));
+CREATE POLICY "own" ON "public"."anydo_task_links" FOR SELECT TO "authenticated" USING ((("user_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."is_admin"()));
 
 
 
-CREATE POLICY "own_add" ON "public"."report_favourites" FOR INSERT TO "authenticated" WITH CHECK ((("user_id" = "auth"."uid"()) AND "public"."is_active"()));
+CREATE POLICY "own_add" ON "public"."report_favourites" FOR INSERT TO "authenticated" WITH CHECK ((("user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "public"."is_active"() AS "is_active")));
 
 
 
-CREATE POLICY "own_all" ON "public"."notification_prefs" TO "authenticated" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
+CREATE POLICY "own_all" ON "public"."notification_prefs" TO "authenticated" USING (("user_id" = ( SELECT "auth"."uid"() AS "uid"))) WITH CHECK (("user_id" = ( SELECT "auth"."uid"() AS "uid")));
 
 
 
-CREATE POLICY "own_all" ON "public"."notification_settings" TO "authenticated" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
+CREATE POLICY "own_all" ON "public"."notification_settings" TO "authenticated" USING (("user_id" = ( SELECT "auth"."uid"() AS "uid"))) WITH CHECK (("user_id" = ( SELECT "auth"."uid"() AS "uid")));
 
 
 
-CREATE POLICY "own_all" ON "public"."push_subscriptions" TO "authenticated" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
+CREATE POLICY "own_all" ON "public"."push_subscriptions" TO "authenticated" USING (("user_id" = ( SELECT "auth"."uid"() AS "uid"))) WITH CHECK (("user_id" = ( SELECT "auth"."uid"() AS "uid")));
 
 
 
-CREATE POLICY "own_delete" ON "public"."notifications" FOR DELETE TO "authenticated" USING (("user_id" = "auth"."uid"()));
+CREATE POLICY "own_delete" ON "public"."notifications" FOR DELETE TO "authenticated" USING (("user_id" = ( SELECT "auth"."uid"() AS "uid")));
 
 
 
-CREATE POLICY "own_or_admin" ON "public"."anydo_connections" FOR SELECT TO "authenticated" USING ((("user_id" = "auth"."uid"()) OR "public"."is_admin"()));
+CREATE POLICY "own_or_admin" ON "public"."anydo_connections" FOR SELECT TO "authenticated" USING ((("user_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."is_admin"()));
 
 
 
-CREATE POLICY "own_read" ON "public"."notification_push_queue" FOR SELECT TO "authenticated" USING (("user_id" = "auth"."uid"()));
+CREATE POLICY "own_read" ON "public"."notification_push_queue" FOR SELECT TO "authenticated" USING (("user_id" = ( SELECT "auth"."uid"() AS "uid")));
 
 
 
-CREATE POLICY "own_read" ON "public"."notifications" FOR SELECT TO "authenticated" USING (("user_id" = "auth"."uid"()));
+CREATE POLICY "own_read" ON "public"."notifications" FOR SELECT TO "authenticated" USING (("user_id" = ( SELECT "auth"."uid"() AS "uid")));
 
 
 
-CREATE POLICY "own_read" ON "public"."report_favourites" FOR SELECT TO "authenticated" USING ((("user_id" = "auth"."uid"()) AND "public"."is_active"()));
+CREATE POLICY "own_read" ON "public"."report_favourites" FOR SELECT TO "authenticated" USING ((("user_id" = ( SELECT "auth"."uid"() AS "uid")) AND ( SELECT "public"."is_active"() AS "is_active")));
 
 
 
-CREATE POLICY "own_remove" ON "public"."report_favourites" FOR DELETE TO "authenticated" USING (("user_id" = "auth"."uid"()));
+CREATE POLICY "own_read" ON "public"."task_feed_tokens" FOR SELECT TO "authenticated" USING (("user_id" = ( SELECT "auth"."uid"() AS "uid")));
 
 
 
-CREATE POLICY "own_update" ON "public"."notifications" FOR UPDATE TO "authenticated" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
+CREATE POLICY "own_remove" ON "public"."report_favourites" FOR DELETE TO "authenticated" USING (("user_id" = ( SELECT "auth"."uid"() AS "uid")));
+
+
+
+CREATE POLICY "own_select" ON "public"."user_signatures" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") AND ("user_id" = ( SELECT "auth"."uid"() AS "uid"))));
+
+
+
+CREATE POLICY "own_update" ON "public"."notifications" FOR UPDATE TO "authenticated" USING (("user_id" = ( SELECT "auth"."uid"() AS "uid"))) WITH CHECK (("user_id" = ( SELECT "auth"."uid"() AS "uid")));
+
+
+
+CREATE POLICY "own_write" ON "public"."user_signatures" TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") AND ("user_id" = ( SELECT "auth"."uid"() AS "uid")))) WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND ("user_id" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
 ALTER TABLE "public"."pasture_biomass_calibration" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "pasture_calibration_read" ON "public"."pasture_biomass_calibration" FOR SELECT TO "authenticated" USING (true);
+CREATE POLICY "pasture_calibration_read" ON "public"."pasture_biomass_calibration" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "pasture_calibration_write" ON "public"."pasture_biomass_calibration" TO "authenticated" USING (true) WITH CHECK (true);
+CREATE POLICY "pasture_calibration_write" ON "public"."pasture_biomass_calibration" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23029,7 +24966,7 @@ ALTER TABLE "public"."pasture_sprays" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."pasture_zones" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "pasture_zones_read" ON "public"."pasture_zones" FOR SELECT TO "authenticated" USING (true);
+CREATE POLICY "pasture_zones_read" ON "public"."pasture_zones" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23107,11 +25044,11 @@ CREATE POLICY "plc_agent_status_read" ON "public"."plc_agent_status" FOR SELECT 
 ALTER TABLE "public"."plc_commands" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "plc_commands_cancel" ON "public"."plc_commands" FOR UPDATE TO "authenticated" USING (("public"."is_manager"() AND ("status" = 'pending'::"text"))) WITH CHECK (("status" = 'cancelled'::"text"));
+CREATE POLICY "plc_commands_cancel" ON "public"."plc_commands" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") AND ("status" = 'pending'::"text"))) WITH CHECK (("status" = 'cancelled'::"text"));
 
 
 
-CREATE POLICY "plc_commands_insert" ON "public"."plc_commands" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_manager"() AND ("requested_by" = "auth"."uid"())));
+CREATE POLICY "plc_commands_insert" ON "public"."plc_commands" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_manager"() AS "is_manager") AND ("requested_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
@@ -23206,53 +25143,53 @@ ALTER TABLE "public"."push_subscriptions" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."qb_account_categories" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "qb_account_categories_select" ON "public"."qb_account_categories" FOR SELECT TO "authenticated" USING ("public"."can_see_finances"());
+CREATE POLICY "qb_account_categories_select" ON "public"."qb_account_categories" FOR SELECT TO "authenticated" USING (( SELECT "public"."can_see_finances"() AS "can_see_finances"));
 
 
 
-CREATE POLICY "qb_account_categories_write" ON "public"."qb_account_categories" TO "authenticated" USING ("public"."can_see_finances"()) WITH CHECK ("public"."can_see_finances"());
+CREATE POLICY "qb_account_categories_write" ON "public"."qb_account_categories" TO "authenticated" USING (( SELECT "public"."can_see_finances"() AS "can_see_finances")) WITH CHECK (( SELECT "public"."can_see_finances"() AS "can_see_finances"));
 
 
 
 ALTER TABLE "public"."qb_attachment_reads" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "qb_attachment_reads_select" ON "public"."qb_attachment_reads" FOR SELECT TO "authenticated" USING ("public"."can_see_finances"());
+CREATE POLICY "qb_attachment_reads_select" ON "public"."qb_attachment_reads" FOR SELECT TO "authenticated" USING (( SELECT "public"."can_see_finances"() AS "can_see_finances"));
 
 
 
 ALTER TABLE "public"."qb_entities" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "qb_entities_finance" ON "public"."qb_entities" FOR SELECT TO "authenticated" USING ("public"."can_see_finances"());
+CREATE POLICY "qb_entities_finance" ON "public"."qb_entities" FOR SELECT TO "authenticated" USING (( SELECT "public"."can_see_finances"() AS "can_see_finances"));
 
 
 
 ALTER TABLE "public"."qb_invoice_splits" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "qb_invoice_splits_select" ON "public"."qb_invoice_splits" FOR SELECT TO "authenticated" USING ("public"."can_see_finances"());
+CREATE POLICY "qb_invoice_splits_select" ON "public"."qb_invoice_splits" FOR SELECT TO "authenticated" USING (( SELECT "public"."can_see_finances"() AS "can_see_finances"));
 
 
 
 ALTER TABLE "public"."qb_lines" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "qb_lines_finance" ON "public"."qb_lines" FOR SELECT TO "authenticated" USING ("public"."can_see_finances"());
+CREATE POLICY "qb_lines_finance" ON "public"."qb_lines" FOR SELECT TO "authenticated" USING (( SELECT "public"."can_see_finances"() AS "can_see_finances"));
 
 
 
 ALTER TABLE "public"."qb_questions" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "qb_questions_select" ON "public"."qb_questions" FOR SELECT TO "authenticated" USING ("public"."can_see_finances"());
+CREATE POLICY "qb_questions_select" ON "public"."qb_questions" FOR SELECT TO "authenticated" USING (( SELECT "public"."can_see_finances"() AS "can_see_finances"));
 
 
 
 ALTER TABLE "public"."qb_report_cache" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "qb_report_cache_select" ON "public"."qb_report_cache" FOR SELECT TO "authenticated" USING ("public"."can_see_finances"());
+CREATE POLICY "qb_report_cache_select" ON "public"."qb_report_cache" FOR SELECT TO "authenticated" USING (( SELECT "public"."can_see_finances"() AS "can_see_finances"));
 
 
 
@@ -23323,6 +25260,14 @@ CREATE POLICY "read_all" ON "public"."abnormal_yield_years" FOR SELECT TO "authe
 
 
 
+CREATE POLICY "read_all" ON "public"."afsc_mdi_land" FOR SELECT USING ("public"."is_active"());
+
+
+
+CREATE POLICY "read_all" ON "public"."afsc_mdi_year" FOR SELECT USING ("public"."is_active"());
+
+
+
 CREATE POLICY "read_all" ON "public"."ag_news" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -23364,6 +25309,10 @@ CREATE POLICY "read_all" ON "public"."bin_monitor_readings" FOR SELECT TO "authe
 
 
 CREATE POLICY "read_all" ON "public"."bin_readings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."bin_yards" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23435,6 +25384,10 @@ CREATE POLICY "read_all" ON "public"."chemical_grazing_rules" FOR SELECT TO "aut
 
 
 
+CREATE POLICY "read_all" ON "public"."chemical_recrop_overrides" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."chemical_recrop_rules" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -23491,7 +25444,11 @@ CREATE POLICY "read_all" ON "public"."crop_history" FOR SELECT TO "authenticated
 
 
 
-CREATE POLICY "read_all" ON "public"."crop_inputs" FOR SELECT TO "authenticated" USING (("public"."is_active"() AND ((NOT "fixed_land_share") OR "public"."can_see_finances"())));
+CREATE POLICY "read_all" ON "public"."crop_inputs" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") AND ((NOT "fixed_land_share") OR ( SELECT "public"."can_see_finances"() AS "can_see_finances"))));
+
+
+
+CREATE POLICY "read_all" ON "public"."crop_plan_options" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23552,6 +25509,10 @@ CREATE POLICY "read_all" ON "public"."events" FOR SELECT TO "authenticated" USIN
 
 
 CREATE POLICY "read_all" ON "public"."farm_trails" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."farm_yards" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23712,6 +25673,14 @@ CREATE POLICY "read_all" ON "public"."financial_entries" FOR SELECT TO "authenti
 
 
 CREATE POLICY "read_all" ON "public"."fuel_purchases" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."fuel_tank_readings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."fuel_tanks" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23915,6 +25884,14 @@ CREATE POLICY "read_all" ON "public"."scouting_notes" FOR SELECT TO "authenticat
 
 
 
+CREATE POLICY "read_all" ON "public"."seed_report_bins" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."seed_reports" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."smrid_areas" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -23924,6 +25901,10 @@ CREATE POLICY "read_all" ON "public"."soil_landscape_polygons" FOR SELECT TO "au
 
 
 CREATE POLICY "read_all" ON "public"."soil_moisture_measurements" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."soil_report_input_hashes" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -23979,6 +25960,10 @@ CREATE POLICY "read_all" ON "public"."tissue_tests" FOR SELECT TO "authenticated
 
 
 
+CREATE POLICY "read_all" ON "public"."truck_inspections" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."water_allotments" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -24011,6 +25996,10 @@ CREATE POLICY "read_all" ON "public"."water_supply_daily" FOR SELECT TO "authent
 
 
 
+CREATE POLICY "read_all" ON "public"."water_supply_stations" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."weather_daily" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -24031,22 +26020,22 @@ CREATE POLICY "read_all" ON "public"."yield_adjustments" FOR SELECT TO "authenti
 
 
 
-CREATE POLICY "readings_delete" ON "public"."bin_readings" FOR DELETE TO "authenticated" USING (("public"."is_manager"() OR ("created_by" = "auth"."uid"())));
+CREATE POLICY "readings_delete" ON "public"."bin_readings" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
-CREATE POLICY "readings_insert" ON "public"."bin_readings" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_active"() AND ("created_by" = "auth"."uid"())));
+CREATE POLICY "readings_insert" ON "public"."bin_readings" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
 ALTER TABLE "public"."reminder_log" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "remove" ON "public"."bale_checks" FOR DELETE TO "authenticated" USING (("public"."is_manager"() OR ("checked_by" = "auth"."uid"())));
+CREATE POLICY "remove" ON "public"."bale_checks" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("checked_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
-CREATE POLICY "remove" ON "public"."checklist_photos" FOR DELETE TO "authenticated" USING (("public"."is_manager"() OR ("created_by" = "auth"."uid"())));
+CREATE POLICY "remove" ON "public"."checklist_photos" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
@@ -24065,14 +26054,33 @@ ALTER TABLE "public"."road_snaps" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."rotation_advice" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."rotation_feedback" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "rotation_feedback_delete" ON "public"."rotation_feedback" FOR DELETE USING (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "rotation_feedback_edit" ON "public"."rotation_feedback" FOR UPDATE USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "rotation_feedback_read" ON "public"."rotation_feedback" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "rotation_feedback_write" ON "public"."rotation_feedback" FOR INSERT WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 ALTER TABLE "public"."sat_alerts" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "sat_alerts_read" ON "public"."sat_alerts" FOR SELECT TO "authenticated" USING (true);
+CREATE POLICY "sat_alerts_read" ON "public"."sat_alerts" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
-CREATE POLICY "sat_alerts_write" ON "public"."sat_alerts" FOR UPDATE TO "authenticated" USING (true) WITH CHECK (true);
+CREATE POLICY "sat_alerts_write" ON "public"."sat_alerts" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -24101,7 +26109,7 @@ CREATE POLICY "sat_daily_write" ON "public"."sat_daily" USING ("public"."is_admi
 ALTER TABLE "public"."sat_images" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "sat_images_read" ON "public"."sat_images" FOR SELECT TO "authenticated" USING (true);
+CREATE POLICY "sat_images_read" ON "public"."sat_images" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -24136,6 +26144,12 @@ ALTER TABLE "public"."scale_tickets" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."scouting_notes" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."seed_report_bins" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."seed_reports" ENABLE ROW LEVEL SECURITY;
+
+
 CREATE POLICY "smr_read" ON "public"."soil_moisture_readings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -24154,6 +26168,9 @@ ALTER TABLE "public"."soil_moisture_measurements" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."soil_moisture_readings" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."soil_report_input_hashes" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."soil_sample_sites" ENABLE ROW LEVEL SECURITY;
@@ -24183,23 +26200,26 @@ ALTER TABLE "public"."stubble_grazing" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."task_assignees" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."task_feed_tokens" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."task_files" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."tasks" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "tasks_delete" ON "public"."tasks" FOR DELETE TO "authenticated" USING (("public"."is_manager"() OR ("created_by" = "auth"."uid"())));
+CREATE POLICY "tasks_delete" ON "public"."tasks" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
-CREATE POLICY "tasks_insert" ON "public"."tasks" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_manager"() OR ("public"."is_active"() AND ("created_by" = "auth"."uid"()))));
+CREATE POLICY "tasks_insert" ON "public"."tasks" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_manager"() AS "is_manager") OR (( SELECT "public"."is_active"() AS "is_active") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid")))));
 
 
 
-CREATE POLICY "tasks_update" ON "public"."tasks" FOR UPDATE TO "authenticated" USING (("public"."is_manager"() OR ("public"."is_active"() AND (("created_by" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+CREATE POLICY "tasks_update" ON "public"."tasks" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR (( SELECT "public"."is_active"() AS "is_active") AND (("created_by" = ( SELECT "auth"."uid"() AS "uid")) OR (EXISTS ( SELECT 1
    FROM "public"."task_assignees" "a"
-  WHERE (("a"."task_id" = "tasks"."id") AND ("a"."user_id" = "auth"."uid"()))))))));
+  WHERE (("a"."task_id" = "tasks"."id") AND ("a"."user_id" = ( SELECT "auth"."uid"() AS "uid")))))))));
 
 
 
@@ -24209,14 +26229,21 @@ ALTER TABLE "public"."time_off" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."tissue_tests" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."truck_inspections" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."tv_commands" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "tv_commands_insert" ON "public"."tv_commands" FOR INSERT TO "authenticated" WITH CHECK ((("requested_by" = "auth"."uid"()) AND ("status" = 'pending'::"text") AND "public"."is_active"()));
+CREATE POLICY "tv_commands_insert" ON "public"."tv_commands" FOR INSERT TO "authenticated" WITH CHECK ((("requested_by" = ( SELECT "auth"."uid"() AS "uid")) AND ("status" = 'pending'::"text") AND ( SELECT "public"."is_active"() AS "is_active")));
 
 
 
-CREATE POLICY "tv_commands_select_own" ON "public"."tv_commands" FOR SELECT TO "authenticated" USING (("requested_by" = "auth"."uid"()));
+CREATE POLICY "tv_commands_select_own" ON "public"."tv_commands" FOR SELECT TO "authenticated" USING (("requested_by" = ( SELECT "auth"."uid"() AS "uid")));
+
+
+
+CREATE POLICY "update_all" ON "public"."truck_inspections" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -24244,10 +26271,13 @@ CREATE POLICY "update_own" ON "public"."scouting_notes" FOR UPDATE TO "authentic
 
 
 
+ALTER TABLE "public"."user_signatures" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."users" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "users_admin_delete" ON "public"."users" FOR DELETE TO "authenticated" USING (("public"."is_admin"() AND ("id" <> "auth"."uid"())));
+CREATE POLICY "users_admin_delete" ON "public"."users" FOR DELETE TO "authenticated" USING (("public"."is_admin"() AND ("id" <> ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
@@ -24255,11 +26285,11 @@ CREATE POLICY "users_mgr_update" ON "public"."users" FOR UPDATE TO "authenticate
 
 
 
-CREATE POLICY "users_read" ON "public"."users" FOR SELECT TO "authenticated" USING (("public"."is_active"() OR ("id" = "auth"."uid"())));
+CREATE POLICY "users_read" ON "public"."users" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") OR ("id" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
-CREATE POLICY "users_self" ON "public"."users" FOR UPDATE TO "authenticated" USING (("id" = "auth"."uid"())) WITH CHECK (("id" = "auth"."uid"()));
+CREATE POLICY "users_self" ON "public"."users" FOR UPDATE TO "authenticated" USING (("id" = ( SELECT "auth"."uid"() AS "uid"))) WITH CHECK (("id" = ( SELECT "auth"."uid"() AS "uid")));
 
 
 
@@ -24291,6 +26321,9 @@ ALTER TABLE "public"."water_supply" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."water_supply_daily" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."water_supply_stations" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "wbw_read" ON "public"."water_balance_wedges" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
@@ -24376,6 +26409,14 @@ CREATE POLICY "write_all" ON "public"."delivery_sites" TO "authenticated" USING 
 
 
 
+CREATE POLICY "write_all" ON "public"."seed_report_bins" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "write_all" ON "public"."seed_reports" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "write_all" ON "public"."soil_sample_sites" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -24385,6 +26426,10 @@ CREATE POLICY "write_all" ON "public"."task_assignees" TO "authenticated" USING 
 
 
 CREATE POLICY "write_all" ON "public"."tissue_tests" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "write_all" ON "public"."truck_inspections" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -24400,6 +26445,14 @@ CREATE POLICY "write_mgr" ON "public"."abnormal_yield_years" TO "authenticated" 
 
 
 
+CREATE POLICY "write_mgr" ON "public"."afsc_mdi_land" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+
+
+
+CREATE POLICY "write_mgr" ON "public"."afsc_mdi_year" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+
+
+
 CREATE POLICY "write_mgr" ON "public"."bale_weight_defaults" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
@@ -24409,6 +26462,10 @@ CREATE POLICY "write_mgr" ON "public"."bin_allocations" TO "authenticated" USING
 
 
 CREATE POLICY "write_mgr" ON "public"."bin_contents" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."bin_yards" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -24453,6 +26510,10 @@ CREATE POLICY "write_mgr" ON "public"."chem_stock_adjustments" TO "authenticated
 
 
 CREATE POLICY "write_mgr" ON "public"."chemical_grazing_rules" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."chemical_recrop_overrides" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -24504,7 +26565,11 @@ CREATE POLICY "write_mgr" ON "public"."crop_history" TO "authenticated" USING ((
 
 
 
-CREATE POLICY "write_mgr" ON "public"."crop_inputs" TO "authenticated" USING (("public"."is_manager"() AND ((NOT "fixed_land_share") OR "public"."can_see_finances"()))) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+CREATE POLICY "write_mgr" ON "public"."crop_inputs" TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") AND ((NOT "fixed_land_share") OR ( SELECT "public"."can_see_finances"() AS "can_see_finances")))) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."crop_plan_options" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -24545,6 +26610,10 @@ CREATE POLICY "write_mgr" ON "public"."events" TO "authenticated" USING (( SELEC
 
 
 CREATE POLICY "write_mgr" ON "public"."farm_trails" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."farm_yards" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -24693,6 +26762,10 @@ CREATE POLICY "write_mgr" ON "public"."financial_entries" TO "authenticated" USI
 
 
 CREATE POLICY "write_mgr" ON "public"."fuel_purchases" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."fuel_tanks" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -24892,6 +26965,10 @@ CREATE POLICY "write_mgr" ON "public"."water_quality_stations" TO "authenticated
 
 
 
+CREATE POLICY "write_mgr" ON "public"."water_supply_stations" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
 CREATE POLICY "write_mgr" ON "public"."weather_stations" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
@@ -24906,9 +26983,9 @@ CREATE POLICY "write_mgr" ON "public"."yield_adjustments" TO "authenticated" USI
 
 CREATE POLICY "write_own" ON "public"."bale_check_readings" TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."bale_checks" "c"
-  WHERE (("c"."id" = "bale_check_readings"."check_id") AND ("public"."is_manager"() OR ("c"."checked_by" = "auth"."uid"())))))) WITH CHECK (("public"."is_active"() AND (EXISTS ( SELECT 1
+  WHERE (("c"."id" = "bale_check_readings"."check_id") AND (( SELECT "public"."is_manager"() AS "is_manager") OR ("c"."checked_by" = ( SELECT "auth"."uid"() AS "uid"))))))) WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND (EXISTS ( SELECT 1
    FROM "public"."bale_checks" "c"
-  WHERE (("c"."id" = "bale_check_readings"."check_id") AND ("public"."is_manager"() OR ("c"."checked_by" = "auth"."uid"())))))));
+  WHERE (("c"."id" = "bale_check_readings"."check_id") AND (( SELECT "public"."is_manager"() AS "is_manager") OR ("c"."checked_by" = ( SELECT "auth"."uid"() AS "uid"))))))));
 
 
 
@@ -24941,48 +27018,6 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
-
-
-
-GRANT ALL ON FUNCTION "public"."box2d_in"("cstring") TO "postgres";
-GRANT ALL ON FUNCTION "public"."box2d_in"("cstring") TO "anon";
-GRANT ALL ON FUNCTION "public"."box2d_in"("cstring") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."box2d_in"("cstring") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."box2d_out"("public"."box2d") TO "postgres";
-GRANT ALL ON FUNCTION "public"."box2d_out"("public"."box2d") TO "anon";
-GRANT ALL ON FUNCTION "public"."box2d_out"("public"."box2d") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."box2d_out"("public"."box2d") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."box2df_in"("cstring") TO "postgres";
-GRANT ALL ON FUNCTION "public"."box2df_in"("cstring") TO "anon";
-GRANT ALL ON FUNCTION "public"."box2df_in"("cstring") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."box2df_in"("cstring") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."box2df_out"("public"."box2df") TO "postgres";
-GRANT ALL ON FUNCTION "public"."box2df_out"("public"."box2df") TO "anon";
-GRANT ALL ON FUNCTION "public"."box2df_out"("public"."box2df") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."box2df_out"("public"."box2df") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."box3d_in"("cstring") TO "postgres";
-GRANT ALL ON FUNCTION "public"."box3d_in"("cstring") TO "anon";
-GRANT ALL ON FUNCTION "public"."box3d_in"("cstring") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."box3d_in"("cstring") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."box3d_out"("public"."box3d") TO "postgres";
-GRANT ALL ON FUNCTION "public"."box3d_out"("public"."box3d") TO "anon";
-GRANT ALL ON FUNCTION "public"."box3d_out"("public"."box3d") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."box3d_out"("public"."box3d") TO "service_role";
 
 
 
@@ -25081,6 +27116,48 @@ GRANT ALL ON FUNCTION "public"."geometry_typmod_out"(integer) TO "postgres";
 GRANT ALL ON FUNCTION "public"."geometry_typmod_out"(integer) TO "anon";
 GRANT ALL ON FUNCTION "public"."geometry_typmod_out"(integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."geometry_typmod_out"(integer) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."box2d_in"("cstring") TO "postgres";
+GRANT ALL ON FUNCTION "public"."box2d_in"("cstring") TO "anon";
+GRANT ALL ON FUNCTION "public"."box2d_in"("cstring") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."box2d_in"("cstring") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."box2d_out"("public"."box2d") TO "postgres";
+GRANT ALL ON FUNCTION "public"."box2d_out"("public"."box2d") TO "anon";
+GRANT ALL ON FUNCTION "public"."box2d_out"("public"."box2d") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."box2d_out"("public"."box2d") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."box2df_in"("cstring") TO "postgres";
+GRANT ALL ON FUNCTION "public"."box2df_in"("cstring") TO "anon";
+GRANT ALL ON FUNCTION "public"."box2df_in"("cstring") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."box2df_in"("cstring") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."box2df_out"("public"."box2df") TO "postgres";
+GRANT ALL ON FUNCTION "public"."box2df_out"("public"."box2df") TO "anon";
+GRANT ALL ON FUNCTION "public"."box2df_out"("public"."box2df") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."box2df_out"("public"."box2df") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."box3d_in"("cstring") TO "postgres";
+GRANT ALL ON FUNCTION "public"."box3d_in"("cstring") TO "anon";
+GRANT ALL ON FUNCTION "public"."box3d_in"("cstring") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."box3d_in"("cstring") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."box3d_out"("public"."box3d") TO "postgres";
+GRANT ALL ON FUNCTION "public"."box3d_out"("public"."box3d") TO "anon";
+GRANT ALL ON FUNCTION "public"."box3d_out"("public"."box3d") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."box3d_out"("public"."box3d") TO "service_role";
 
 
 
@@ -25837,6 +27914,12 @@ GRANT ALL ON FUNCTION "public"."assign_meeting_fact"("p_week" "date", "p_candida
 
 
 
+REVOKE ALL ON FUNCTION "public"."assign_monthly_copy"("p_copy" "uuid", "p_users" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."assign_monthly_copy"("p_copy" "uuid", "p_users" "uuid"[]) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."assign_monthly_copy"("p_copy" "uuid", "p_users" "uuid"[]) TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."box3dtobox"("public"."box3d") TO "postgres";
 GRANT ALL ON FUNCTION "public"."box3dtobox"("public"."box3d") TO "anon";
 GRANT ALL ON FUNCTION "public"."box3dtobox"("public"."box3d") TO "authenticated";
@@ -26067,6 +28150,12 @@ GRANT ALL ON FUNCTION "public"."ensure_farm"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."ensure_monthly_copies"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ensure_monthly_copies"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."ensure_monthly_copies"() TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."monthly_task_instances" TO "authenticated";
 GRANT ALL ON TABLE "public"."monthly_task_instances" TO "service_role";
 
@@ -26104,6 +28193,18 @@ GRANT ALL ON FUNCTION "public"."farm_plan_acres"("p_year" integer) TO "service_r
 REVOKE ALL ON FUNCTION "public"."farm_rented_out_acres"("p_year" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."farm_rented_out_acres"("p_year" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."farm_rented_out_acres"("p_year" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."farm_time_is"("p_hours" integer[], "p_dow" integer, "p_mday" integer, "p_months" integer[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."farm_time_is"("p_hours" integer[], "p_dow" integer, "p_mday" integer, "p_months" integer[]) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."farm_time_is"("p_hours" integer[], "p_dow" integer, "p_mday" integer, "p_months" integer[]) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."farm_tz"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."farm_tz"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."farm_tz"() TO "service_role";
 
 
 
@@ -26212,6 +28313,11 @@ GRANT ALL ON FUNCTION "public"."fn_bin_load_field_yield"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."fn_bin_load_marks_harvest"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_bin_load_marks_harvest"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_bin_load_mirror"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_bin_load_mirror"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_bin_load_mirror"() TO "service_role";
@@ -26224,9 +28330,34 @@ GRANT ALL ON FUNCTION "public"."fn_bin_load_moisture_yield"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."fn_bin_load_weigh_times"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_bin_load_weigh_times"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_bin_yards_touch"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_bin_yards_touch"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_bins_yard_on_list"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_bins_yard_on_list"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_boundary_acres_to_plans"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_boundary_acres_to_plans"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_boundary_acres_to_plans"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_broadcast_notification"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_broadcast_notification"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_broadcast_tv_command"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_broadcast_tv_command"() TO "service_role";
 
 
 
@@ -26431,9 +28562,24 @@ GRANT ALL ON FUNCTION "public"."fn_moisture_test_own_edit"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."fn_monthly_instance_after"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_monthly_instance_after"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_monthly_instance_before"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_monthly_instance_before"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_monthly_instance_before"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_monthly_run_done"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_monthly_run_done"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_monthly_task_done"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_monthly_task_done"() TO "service_role";
 
 
 
@@ -26586,6 +28732,21 @@ GRANT ALL ON FUNCTION "public"."fn_scale_ticket_match_load"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."fn_seed_bin_check_due"("p_harvest" "date", "p_day" "date") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_seed_bin_check_due"("p_harvest" "date", "p_day" "date") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_seed_bin_check_reminders"("p_day" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_seed_bin_check_reminders"("p_day" "date") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_seed_report_signing"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_seed_report_signing"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_service_log_applied"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_service_log_applied"() TO "service_role";
 
@@ -26598,6 +28759,22 @@ GRANT ALL ON FUNCTION "public"."fn_service_plan_rebase"("p_plan" "uuid") TO "ser
 
 REVOKE ALL ON FUNCTION "public"."fn_service_task_done"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_service_task_done"() TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."bins" TO "authenticated";
+GRANT ALL ON TABLE "public"."bins" TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_set_bin_run"("p_bin" "uuid", "p_aeration" boolean, "p_heater" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_set_bin_run"("p_bin" "uuid", "p_aeration" boolean, "p_heater" boolean) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_set_bin_run"("p_bin" "uuid", "p_aeration" boolean, "p_heater" boolean) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_soil_inputs_changed"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_soil_inputs_changed"() TO "service_role";
 
 
 
@@ -26657,6 +28834,16 @@ GRANT ALL ON FUNCTION "public"."fn_touch_field_work_records"() TO "service_role"
 REVOKE ALL ON FUNCTION "public"."fn_touch_updated_at_yield_adjustments"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_touch_updated_at_yield_adjustments"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_touch_updated_at_yield_adjustments"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_truck_inspection_guard"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_truck_inspection_guard"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_truck_inspection_reminders"("p_day" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_truck_inspection_reminders"("p_day" "date") TO "service_role";
 
 
 
@@ -27440,6 +29627,11 @@ GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."handle_user_invited"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."handle_user_invited"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."import_map_layer"("p_name" "text", "p_source" "text", "p_features" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."import_map_layer"("p_name" "text", "p_source" "text", "p_features" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."import_map_layer"("p_name" "text", "p_source" "text", "p_features" "jsonb") TO "service_role";
@@ -27600,6 +29792,16 @@ GRANT ALL ON FUNCTION "public"."merge_jd_products"("p_keep" "uuid", "p_drop" "uu
 REVOKE ALL ON FUNCTION "public"."mfa_ok"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."mfa_ok"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."mfa_ok"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."monthly_in_window"("p_month" integer, "p_start" integer, "p_end" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."monthly_in_window"("p_month" integer, "p_start" integer, "p_end" integer) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."monthly_window_end"("p_year" integer, "p_month" integer, "p_recurrence" "public"."recurrence_type", "p_start" integer, "p_end" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."monthly_window_end"("p_year" integer, "p_month" integer, "p_recurrence" "public"."recurrence_type", "p_start" integer, "p_end" integer) TO "service_role";
 
 
 
@@ -28201,6 +30403,12 @@ GRANT ALL ON FUNCTION "public"."refresh_irrigation_assignments"() TO "service_ro
 
 
 
+REVOKE ALL ON FUNCTION "public"."refresh_soil_input_hashes"("p_report_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."refresh_soil_input_hashes"("p_report_ids" "uuid"[]) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."refresh_soil_input_hashes"("p_report_ids" "uuid"[]) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."replace_boundary"("p_field_id" "uuid", "p_geojson" "jsonb", "p_source" "public"."boundary_source") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."replace_boundary"("p_field_id" "uuid", "p_geojson" "jsonb", "p_source" "public"."boundary_source") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."replace_boundary"("p_field_id" "uuid", "p_geojson" "jsonb", "p_source" "public"."boundary_source") TO "service_role";
@@ -28225,9 +30433,31 @@ GRANT ALL ON FUNCTION "public"."retire_meeting_fact"("p_id" "text") TO "service_
 
 
 
+REVOKE ALL ON FUNCTION "public"."revoke_task_feed_token"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."revoke_task_feed_token"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."revoke_task_feed_token"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."river_geom"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."river_geom"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."river_geom"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."rotate_task_feed_token"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."rotate_task_feed_token"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."rotate_task_feed_token"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."run_nightly_upkeep"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."run_nightly_upkeep"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."run_nightly_upkeep_soil"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."run_nightly_upkeep_soil"() TO "service_role";
 
 
 
@@ -28295,6 +30525,12 @@ GRANT ALL ON FUNCTION "public"."set_bin_location"("p_bin_id" "uuid", "p_lng" dou
 REVOKE ALL ON FUNCTION "public"."set_boundary_analysis"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_boundary_analysis"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_boundary_analysis"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."set_crop_moisture_levels"("p_crop" "uuid", "p_dry_min" numeric, "p_dry_max" numeric, "p_tough_max" numeric) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_crop_moisture_levels"("p_crop" "uuid", "p_dry_min" numeric, "p_dry_max" numeric, "p_tough_max" numeric) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."set_crop_moisture_levels"("p_crop" "uuid", "p_dry_min" numeric, "p_dry_max" numeric, "p_tough_max" numeric) TO "service_role";
 
 
 
@@ -31236,6 +33472,12 @@ GRANT ALL ON FUNCTION "public"."st_zmin"("public"."box3d") TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."start_monthly_checklist"("p_copy" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."start_monthly_checklist"("p_copy" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."start_monthly_checklist"("p_copy" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."topo_cells"("p_surface" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."topo_cells"("p_surface" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."topo_cells"("p_surface" "uuid") TO "service_role";
@@ -31246,6 +33488,16 @@ GRANT ALL ON FUNCTION "public"."unlockrows"("text") TO "postgres";
 GRANT ALL ON FUNCTION "public"."unlockrows"("text") TO "anon";
 GRANT ALL ON FUNCTION "public"."unlockrows"("text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."unlockrows"("text") TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."notifications" TO "authenticated";
+GRANT ALL ON TABLE "public"."notifications" TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."unread"("n" "public"."notifications") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."unread"("n" "public"."notifications") TO "service_role";
 
 
 
@@ -31471,6 +33723,16 @@ GRANT ALL ON TABLE "public"."abnormal_yield_years" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."afsc_mdi_land" TO "authenticated";
+GRANT ALL ON TABLE "public"."afsc_mdi_land" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."afsc_mdi_year" TO "authenticated";
+GRANT ALL ON TABLE "public"."afsc_mdi_year" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."ag_news" TO "authenticated";
 GRANT ALL ON TABLE "public"."ag_news" TO "service_role";
 
@@ -31565,11 +33827,6 @@ GRANT ALL ON TABLE "public"."bin_contents" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."bins" TO "authenticated";
-GRANT ALL ON TABLE "public"."bins" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."crops" TO "authenticated";
 GRANT ALL ON TABLE "public"."crops" TO "service_role";
 
@@ -31602,6 +33859,11 @@ GRANT ALL ON TABLE "public"."bin_monitor_readings" TO "service_role";
 
 GRANT ALL ON TABLE "public"."bin_readings" TO "authenticated";
 GRANT ALL ON TABLE "public"."bin_readings" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."bin_yards" TO "authenticated";
+GRANT ALL ON TABLE "public"."bin_yards" TO "service_role";
 
 
 
@@ -31735,8 +33997,18 @@ GRANT ALL ON TABLE "public"."chemical_labels" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."chemical_recrop_overrides" TO "authenticated";
+GRANT ALL ON TABLE "public"."chemical_recrop_overrides" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."chemical_recrop_rules" TO "authenticated";
 GRANT ALL ON TABLE "public"."chemical_recrop_rules" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."chemical_recrop_rules_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."chemical_recrop_rules_v" TO "service_role";
 
 
 
@@ -31822,6 +34094,11 @@ GRANT ALL ON TABLE "public"."crop_history" TO "service_role";
 
 GRANT ALL ON TABLE "public"."crop_inputs" TO "authenticated";
 GRANT ALL ON TABLE "public"."crop_inputs" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."crop_plan_options" TO "authenticated";
+GRANT ALL ON TABLE "public"."crop_plan_options" TO "service_role";
 
 
 
@@ -31957,6 +34234,11 @@ GRANT ALL ON TABLE "public"."farm_trails" TO "service_role";
 
 GRANT ALL ON TABLE "public"."farm_trails_geojson" TO "authenticated";
 GRANT ALL ON TABLE "public"."farm_trails_geojson" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."farm_yards" TO "authenticated";
+GRANT ALL ON TABLE "public"."farm_yards" TO "service_role";
 
 
 
@@ -32260,6 +34542,11 @@ GRANT ALL ON TABLE "public"."field_year_tenure" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."field_year_plan_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."field_year_plan_v" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."field_yield_zones" TO "authenticated";
 GRANT ALL ON TABLE "public"."field_yield_zones" TO "service_role";
 
@@ -32292,6 +34579,16 @@ GRANT ALL ON TABLE "public"."financial_entries" TO "service_role";
 
 GRANT ALL ON TABLE "public"."fuel_purchases" TO "authenticated";
 GRANT ALL ON TABLE "public"."fuel_purchases" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."fuel_tank_readings" TO "authenticated";
+GRANT ALL ON TABLE "public"."fuel_tank_readings" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."fuel_tanks" TO "authenticated";
+GRANT ALL ON TABLE "public"."fuel_tanks" TO "service_role";
 
 
 
@@ -32606,11 +34903,6 @@ GRANT ALL ON TABLE "public"."notification_settings" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."notifications" TO "authenticated";
-GRANT ALL ON TABLE "public"."notifications" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."operating_settings" TO "authenticated";
 GRANT ALL ON TABLE "public"."operating_settings" TO "service_role";
 
@@ -32886,6 +35178,11 @@ GRANT ALL ON TABLE "public"."rotation_advice" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."rotation_feedback" TO "authenticated";
+GRANT ALL ON TABLE "public"."rotation_feedback" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."sat_alerts" TO "authenticated";
 GRANT ALL ON TABLE "public"."sat_alerts" TO "service_role";
 
@@ -32971,6 +35268,16 @@ GRANT ALL ON TABLE "public"."scouting_notes" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."seed_report_bins" TO "authenticated";
+GRANT ALL ON TABLE "public"."seed_report_bins" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."seed_reports" TO "authenticated";
+GRANT ALL ON TABLE "public"."seed_reports" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."smrid_areas" TO "authenticated";
 GRANT ALL ON TABLE "public"."smrid_areas" TO "service_role";
 
@@ -32988,6 +35295,11 @@ GRANT ALL ON TABLE "public"."soil_moisture_measurements" TO "service_role";
 
 GRANT ALL ON TABLE "public"."soil_moisture_readings" TO "authenticated";
 GRANT ALL ON TABLE "public"."soil_moisture_readings" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."soil_report_input_hashes" TO "authenticated";
+GRANT ALL ON TABLE "public"."soil_report_input_hashes" TO "service_role";
 
 
 
@@ -33041,6 +35353,11 @@ GRANT ALL ON TABLE "public"."task_assignees" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."task_feed_tokens" TO "authenticated";
+GRANT ALL ON TABLE "public"."task_feed_tokens" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."task_files" TO "authenticated";
 GRANT ALL ON TABLE "public"."task_files" TO "service_role";
 
@@ -33068,6 +35385,16 @@ GRANT ALL ON TABLE "public"."time_off" TO "service_role";
 
 GRANT ALL ON TABLE "public"."tissue_tests" TO "authenticated";
 GRANT ALL ON TABLE "public"."tissue_tests" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."truck_inspections" TO "authenticated";
+GRANT ALL ON TABLE "public"."truck_inspections" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."user_signatures" TO "authenticated";
+GRANT ALL ON TABLE "public"."user_signatures" TO "service_role";
 
 
 
@@ -33133,6 +35460,11 @@ GRANT ALL ON TABLE "public"."water_supply" TO "service_role";
 
 GRANT ALL ON TABLE "public"."water_supply_daily" TO "authenticated";
 GRANT ALL ON TABLE "public"."water_supply_daily" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."water_supply_stations" TO "authenticated";
+GRANT ALL ON TABLE "public"."water_supply_stations" TO "service_role";
 
 
 
@@ -33227,14 +35559,18 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 
 -- Added by public-export/schema-extras.sql: storage, scheduled jobs, sign-up trigger
 -- ── Storage buckets and their access rules
+insert into storage.buckets (id, name, public) values ('afsc-forms', 'afsc-forms', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('avatars', 'avatars', true) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('branding', 'branding', true) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('checklist-photos', 'checklist-photos', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('contract-files', 'contract-files', false) on conflict (id) do nothing;
+insert into storage.buckets (id, name, public) values ('equipment-photos', 'equipment-photos', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('field-files', 'field-files', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('field-work-photos', 'field-work-photos', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('invoices', 'invoices', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('satellite-images', 'satellite-images', false) on conflict (id) do nothing;
+insert into storage.buckets (id, name, public) values ('scale-photos', 'scale-photos', false) on conflict (id) do nothing;
+insert into storage.buckets (id, name, public) values ('scale-ticket-photos', 'scale-ticket-photos', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('scouting-photos', 'scouting-photos', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('task-files', 'task-files', false) on conflict (id) do nothing;
 drop policy if exists avatars_own_delete on storage.objects;
@@ -33259,6 +35595,12 @@ drop policy if exists contract_files_read on storage.objects;
 create policy contract_files_read on storage.objects as PERMISSIVE for SELECT to authenticated using (((bucket_id = 'contract-files'::text) AND public.is_active()));
 drop policy if exists contract_files_write on storage.objects;
 create policy contract_files_write on storage.objects as PERMISSIVE for INSERT to authenticated with check (((bucket_id = 'contract-files'::text) AND public.is_manager()));
+drop policy if exists equipment_photos_delete on storage.objects;
+create policy equipment_photos_delete on storage.objects as PERMISSIVE for DELETE to authenticated using (((bucket_id = 'equipment-photos'::text) AND ( SELECT public.is_manager() AS is_manager)));
+drop policy if exists equipment_photos_insert on storage.objects;
+create policy equipment_photos_insert on storage.objects as PERMISSIVE for INSERT to authenticated with check (((bucket_id = 'equipment-photos'::text) AND ( SELECT public.is_manager() AS is_manager)));
+drop policy if exists equipment_photos_read on storage.objects;
+create policy equipment_photos_read on storage.objects as PERMISSIVE for SELECT to authenticated using (((bucket_id = 'equipment-photos'::text) AND ( SELECT public.is_active() AS is_active)));
 drop policy if exists field_files_delete on storage.objects;
 create policy field_files_delete on storage.objects as PERMISSIVE for DELETE to authenticated using (((bucket_id = 'field-files'::text) AND public.is_manager()));
 drop policy if exists field_files_insert on storage.objects;
@@ -33277,6 +35619,18 @@ drop policy if exists "invoices written by managers" on storage.objects;
 create policy "invoices written by managers" on storage.objects as PERMISSIVE for INSERT to authenticated with check (((bucket_id = 'invoices'::text) AND public.is_manager()));
 drop policy if exists satellite_images_read on storage.objects;
 create policy satellite_images_read on storage.objects as PERMISSIVE for SELECT to authenticated using ((bucket_id = 'satellite-images'::text));
+drop policy if exists scale_photos_delete on storage.objects;
+create policy scale_photos_delete on storage.objects as PERMISSIVE for DELETE to authenticated using (((bucket_id = 'scale-photos'::text) AND (( SELECT public.is_manager() AS is_manager) OR (owner = auth.uid()))));
+drop policy if exists scale_photos_read on storage.objects;
+create policy scale_photos_read on storage.objects as PERMISSIVE for SELECT to authenticated using (((bucket_id = 'scale-photos'::text) AND ( SELECT public.is_active() AS is_active)));
+drop policy if exists scale_photos_write on storage.objects;
+create policy scale_photos_write on storage.objects as PERMISSIVE for INSERT to authenticated with check (((bucket_id = 'scale-photos'::text) AND ( SELECT public.is_active() AS is_active)));
+drop policy if exists scale_ticket_photos_delete on storage.objects;
+create policy scale_ticket_photos_delete on storage.objects as PERMISSIVE for DELETE to authenticated using (((bucket_id = 'scale-ticket-photos'::text) AND (( SELECT public.is_manager() AS is_manager) OR (owner = auth.uid()))));
+drop policy if exists scale_ticket_photos_insert on storage.objects;
+create policy scale_ticket_photos_insert on storage.objects as PERMISSIVE for INSERT to authenticated with check (((bucket_id = 'scale-ticket-photos'::text) AND ( SELECT public.is_active() AS is_active)));
+drop policy if exists scale_ticket_photos_read on storage.objects;
+create policy scale_ticket_photos_read on storage.objects as PERMISSIVE for SELECT to authenticated using (((bucket_id = 'scale-ticket-photos'::text) AND ( SELECT public.is_active() AS is_active)));
 drop policy if exists scouting_photos_delete on storage.objects;
 create policy scouting_photos_delete on storage.objects as PERMISSIVE for DELETE to authenticated using (((bucket_id = 'scouting-photos'::text) AND (public.is_manager() OR (owner = auth.uid()))));
 drop policy if exists scouting_photos_insert on storage.objects;
@@ -33293,14 +35647,21 @@ create policy task_files_read on storage.objects as PERMISSIVE for SELECT to aut
 select cron.unschedule('app-issue-stall-sweep') where exists (select 1 from cron.job where jobname = 'app-issue-stall-sweep');
 select cron.schedule('app-issue-stall-sweep', '*/15 * * * *', ' select public.fn_app_issue_stall_sweep() ');
 select cron.unschedule('bale-check-reminder') where exists (select 1 from cron.job where jobname = 'bale-check-reminder');
-select cron.schedule('bale-check-reminder', '0 15 1 * *', ' select public.create_bale_check_task() ');
+select cron.schedule('bale-check-reminder', '0 * * * *', ' select public.create_bale_check_task() where public.farm_time_is(array[9], null, 1) ');
 select cron.unschedule('checklist-new-year') where exists (select 1 from cron.job where jobname = 'checklist-new-year');
-select cron.schedule('checklist-new-year', '0 13 * * *', '
+select cron.schedule('checklist-new-year', '0 * * * *', '
     select public.ensure_checklist_year_run(id)
       from public.checklist_templates
      where yearly and active
-       and extract(month from now() at time zone ''America/Edmonton'') >= coalesce(start_month, 1)
+       and extract(month from now() at time zone public.farm_tz()) >= coalesce(start_month, 1)
+       and public.farm_time_is(array[7])
   ');
+select cron.unschedule('nightly-soil-hashes') where exists (select 1 from cron.job where jobname = 'nightly-soil-hashes');
+select cron.schedule('nightly-soil-hashes', '20 10 * * *', 'select public.run_nightly_upkeep_soil()');
+select cron.unschedule('nightly-upkeep') where exists (select 1 from cron.job where jobname = 'nightly-upkeep');
+select cron.schedule('nightly-upkeep', '15 10 * * *', 'select public.run_nightly_upkeep()');
+select cron.unschedule('seed-bin-check-reminder') where exists (select 1 from cron.job where jobname = 'seed-bin-check-reminder');
+select cron.schedule('seed-bin-check-reminder', '0 * * * *', ' select public.fn_seed_bin_check_reminders() where public.farm_time_is(array[9], 1) ');
 select cron.unschedule('task-reminders') where exists (select 1 from cron.job where jobname = 'task-reminders');
 select cron.schedule('task-reminders', '*/5 * * * *', '
   with due as (
@@ -33325,6 +35686,10 @@ select cron.schedule('task-reminders', '*/5 * * * *', '
   select public.fn_notify(user_id, ''task_reminder'', ''Reminder: '' || title, null, ''/tasks/'' || id)
   from recipients
   ');
+select cron.unschedule('truck-inspection-reminder') where exists (select 1 from cron.job where jobname = 'truck-inspection-reminder');
+select cron.schedule('truck-inspection-reminder', '0 * * * *', ' select public.fn_truck_inspection_reminders() where public.farm_time_is(array[9], 1, null, array[1]) ');
 -- ── Triggers on sign-up
 drop trigger if exists on_auth_user_created on auth.users;
 CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+drop trigger if exists on_auth_user_invited on auth.users;
+CREATE TRIGGER on_auth_user_invited AFTER UPDATE OF invited_at ON auth.users FOR EACH ROW WHEN (((old.invited_at IS NULL) AND (new.invited_at IS NOT NULL))) EXECUTE FUNCTION public.handle_user_invited();

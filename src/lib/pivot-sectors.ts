@@ -1,4 +1,9 @@
 import type { MultiPolygon, Polygon, Position } from 'geojson'
+import { circleRing as circleOf, destination } from './geo/circle'
+import { pointInGeometry } from './geo/point-in'
+
+// One home for the great-circle step and point-in-shape: lib/geo.
+export { destination, pointInGeometry }
 
 /**
  * A pivot circle cut into pie wedges, and what each wedge got.
@@ -40,17 +45,6 @@ export function pivotArc(start: number | null | undefined, end: number | null | 
   const e = norm360(end)
   if (Math.abs(s - e) < 1e-9) return { start: 0, span: 360 }
   return { start: s, span: norm360(e - s) }
-}
-
-/** Destination [lng, lat] from a point, a bearing and a distance in metres (great circle). */
-export function destination(from: LngLat | Position, bearingDeg: number, distM: number): LngLat {
-  const br = bearingDeg * RAD
-  const d = distM / EARTH_R
-  const φ1 = from[1] * RAD
-  const λ1 = from[0] * RAD
-  const φ2 = Math.asin(Math.sin(φ1) * Math.cos(d) + Math.cos(φ1) * Math.sin(d) * Math.cos(br))
-  const λ2 = λ1 + Math.atan2(Math.sin(br) * Math.sin(d) * Math.cos(φ1), Math.cos(d) - Math.sin(φ1) * Math.sin(φ2))
-  return [λ2 / RAD, φ2 / RAD]
 }
 
 /**
@@ -102,12 +96,9 @@ export function wedgeRing(center: LngLat, radiusM: number, a0: number, a1: numbe
   return pts
 }
 
-/** A closed ring round the whole circle. */
+/** A closed ring round the whole circle, a point every `stepDeg` degrees. */
 export function circleRing(center: LngLat, radiusM: number, stepDeg = 3): LngLat[] {
-  const pts: LngLat[] = []
-  for (let a = 0; a < 360; a += stepDeg) pts.push(destination(center, a, radiusM))
-  pts.push(pts[0])
-  return pts
+  return circleOf(center, radiusM, Math.round(360 / stepDeg))
 }
 
 /**
@@ -278,29 +269,6 @@ export const NEED_BANDS: Band[] = [
 // ---------------------------------------------------------------------------
 // Geometry
 // ---------------------------------------------------------------------------
-
-function inRing(pt: LngLat | Position, ring: readonly Position[]): boolean {
-  let inside = false
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i]
-    const [xj, yj] = ring[j]
-    if (yi > pt[1] !== yj > pt[1] && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) inside = !inside
-  }
-  return inside
-}
-
-/** Point in a Polygon or MultiPolygon, holes respected. */
-export function pointInGeometry(pt: LngLat | Position, g: Polygon | MultiPolygon | null | undefined): boolean {
-  if (!g) return false
-  const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates
-  for (const rings of polys) {
-    if (!rings.length || !inRing(pt, rings[0])) continue
-    let inHole = false
-    for (let h = 1; h < rings.length; h++) if (inRing(pt, rings[h])) inHole = true
-    if (!inHole) return true
-  }
-  return false
-}
 
 /** Twice the signed area of a ring in degrees; the sign is its winding. */
 function ringArea2(ring: readonly Position[]): number {

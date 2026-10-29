@@ -1,9 +1,10 @@
-import { createClient } from '@supabase/supabase-js'
 import { MANAGER_ROLES } from './_jd.mts'
 import { advisorModel, alwaysThinks, replyProblem, replyText, type MessagesReply } from '../shared/anthropic-reply.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { farmProvinceName, farmRetailer, withFarm } from '../../src/lib/farm-context.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
+import { callClaude } from '../shared/anthropic.ts'
 
 /**
  * Fertilizer → ICI: Claude's review of what ICI put down — whether each
@@ -39,7 +40,7 @@ export default async (req: Request) => {
   apiKey = process.env.ANTHROPIC_API_KEY
   if (req.method !== 'POST') return new Response('POST only', { status: 405 })
   if (!url || !serviceKey || !apiKey) return new Response('Not configured', { status: 500 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
 
   const bearer = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
   const { data: au } = bearer ? await getUserMfa(sb, bearer) : { data: { user: null } }
@@ -55,18 +56,13 @@ export default async (req: Request) => {
   const finish = (patch: { status: 'done' | 'error'; content?: string; error?: string }) => sb.from('ici_fert_reviews').update({ ...patch, finished_at: new Date().toISOString() }).eq('id', row.id)
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
-      body: JSON.stringify({
-        model,
-        max_tokens: 16000,
-        ...(alwaysThinks(model) ? { output_config: { effort: 'high' } } : {}),
-        system: withFarm(system()),
-        messages: [{ role: 'user', content: `Year ${year}. Fields (JSON):\n${request}` }],
-      }),
-    })
+    const res = await callClaude({
+      model,
+      maxTokens: 16000,
+      ...(alwaysThinks(model) ? { output_config: { effort: 'high' } } : {}),
+      system: withFarm(system()),
+      messages: [{ role: 'user', content: `Year ${year}. Fields (JSON):\n${request}` }],
+    }, { apiKey, signal: AbortSignal.timeout(MODEL_TIMEOUT_MS) })
     if (!res.ok) {
       await finish({ status: 'error', error: `The model could not answer (${res.status}): ${(await res.text()).slice(0, 300)}` })
       return new Response('model error', { status: 200 })

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react'
-import { Download, FileText, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { HelpNote } from '@/components/HelpNote'
 import { Select } from '@/components/Select'
 import { useAuth } from '@/lib/auth'
@@ -34,6 +34,8 @@ import { farmBrand } from '@/lib/farm-setup'
 import { cn } from '@/lib/utils'
 import { lastSeedCanola } from '@/lib/seed-canola-year'
 import { IsolationMap, type IsolationMapHandle, type MapQuarter } from './IsolationMap'
+import { TABLE_HEAD } from '@/lib/table-style'
+import { ExportButton } from '@/components/ExportButton'
 
 /** What a neighbour's quarter is likely to be, beside the farm's own crops, for the picker. */
 const COMMON = ['Canola', 'Wheat', 'Durum', 'Barley', 'Oats', 'Peas', 'Dry beans', 'Potatoes', 'Sugar beets', 'Corn', 'Alfalfa', 'Hay', 'Pasture', 'Native grass', 'Summerfallow', 'Yard / farmstead', 'Not farmed', 'Unknown']
@@ -119,7 +121,7 @@ export function IsolationTab() {
 
   const report = useIsolationReport(fieldId, year)
   const saveReport = useSaveIsolationReport()
-  const [busy, setBusy] = useState<'pdf' | 'csv' | null>(null)
+  const [, setBusy] = useState<'pdf' | 'csv' | null>(null)
   const unknown = rows.filter((r) => !r.isTheField && !r.cells[0]?.crop).length
   const canolaNear = rows.filter((r) => !r.isTheField && isCanolaCrop(r.cells[0]?.crop)).length
 
@@ -229,18 +231,13 @@ export function IsolationTab() {
                 {` · last seed canola on this field: ${lastSeed ? `${lastSeed.year}, ${lastSeed.label}` : 'none on record'}`}
               </span>
             </h2>
-            <span className="flex gap-2">
-              <button type="button" onClick={() => exportAs('pdf')} disabled={busy != null} className="flex items-center gap-1 rounded-md bg-brand-700 px-2.5 py-1 text-xs font-semibold text-white hover:bg-brand-800 disabled:opacity-50">
-                <FileText className="h-3.5 w-3.5" /> {busy === 'pdf' ? 'Making…' : 'PDF'}
-              </button>
-              <button type="button" onClick={() => exportAs('csv')} disabled={busy != null} className="flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-                <Download className="h-3.5 w-3.5" /> CSV
-              </button>
-            </span>
+            {/* One button that asks which, rather than one for each format
+                (Sam, 29 Oct 2026). */}
+            <ExportButton label="Export the quarters within a mile" onExport={(f) => exportAs(f === 'PDF' ? 'pdf' : 'csv')} />
           </div>
           <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
-              <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+              <thead className={TABLE_HEAD}>
                 <tr>
                   <th className="py-1 font-medium">Quarter</th>
                   <th className="py-1 font-medium">Whose</th>

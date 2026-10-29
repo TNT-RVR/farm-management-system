@@ -119,7 +119,7 @@ export async function gatherFuel(p: ParamValues, ctx: GatherContext): Promise<Re
       ['Road from the shop', `${Math.round(r.all.km).toLocaleString('en-CA')} km`],
     ],
     summary: [
-      'In the field: the litres the machine logged while working, from its per-point export; a pass with none logged is estimated at the farm’s own litres an acre for that kind of work once three or more passes are logged, else the stated default (Travel & trucking → Fuel).',
+      'In the field: the litres the machine logged while working, from its per-point export; a pass with none logged is estimated at the farm’s own litres an acre for that kind of work once three or more passes are logged, else the stated default (Fuel & trucking → Fuel, under Fuel use by field).',
       'Road: one round trip from the shop to the field’s entry a day worked, at the machine’s road burn. A pass Deere logged no points for was never driven to and costs nothing.',
       ...(averages.length ? [`The farm’s own rates: ${averages.join('; ')}.`] : []),
       ...(r.noRoad.length ? [`No distance from the shop on file, so no road fuel: ${r.noRoad.join(', ')}.`] : []),

@@ -2,6 +2,8 @@ import { useMemo } from 'react'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { DISCHARGE, lossCheckMode } from '@/lib/combine'
 import type { Database } from '@/lib/database.types'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 type Check = Database['public']['Tables']['combine_loss_checks']['Row']
 
@@ -42,8 +44,9 @@ export function LossTrend({ checks, crop, fieldId, fieldName }: { checks: Check[
 
   if (mine.length < 2) return null
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3">
-      <h3 className="mb-1 text-sm font-semibold text-gray-900">{fieldId ? `${fieldName(fieldId)} — checks compared` : 'Checks compared'}</h3>
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h3 className={cn('font-medium', CARD_HEAD)}>{fieldId ? `${fieldName(fieldId)} — checks compared` : 'Checks compared'}</h3>
+      <div className="p-3">
       <ResponsiveContainer width="100%" height={200}>
         <LineChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
@@ -63,8 +66,8 @@ export function LossTrend({ checks, crop, fieldId, fieldName }: { checks: Check[
       </ResponsiveContainer>
       {!fieldId && byField.length > 1 && (
         <table className="mt-2 w-full text-xs">
-          <thead>
-            <tr className="text-left text-gray-500">
+          <thead className={TABLE_HEAD}>
+            <tr>
               <th className="py-1 font-medium">Field</th>
               <th className="py-1 text-right font-medium">Checks</th>
               <th className="py-1 text-right font-medium">Average</th>
@@ -85,6 +88,8 @@ export function LossTrend({ checks, crop, fieldId, fieldName }: { checks: Check[
           </tbody>
         </table>
       )}
+
+      </div>
     </div>
   )
 }

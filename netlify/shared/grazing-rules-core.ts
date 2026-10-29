@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { GRAZING_CROP_KEYS, grazingKeys, type GrazingKind } from '../../src/lib/grazing-restrictions.ts'
+import { callClaude } from './anthropic.ts'
 
 /**
  * Grazing and feeding restrictions, read off a product's label into rules a
@@ -117,17 +118,13 @@ export function grazingKeysIn(text: string): string[] {
 const ALL_CROPS = /^(all|any|every)\b|all crops|crops? on (this|the) label/i
 
 export async function extractGrazingRules(summary: string, passages: string, apiKey: string, model: string): Promise<{ has: boolean; rules: ExtractedGrazingRule[] }> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      max_tokens: 8192,
-      tools: [TOOL],
-      tool_choice: { type: 'tool', name: TOOL.name },
-      messages: [{ role: 'user', content: `${PROMPT}\n\n--- GRAZING RESTRICTION (summary) ---\n${summary || '(none recorded)'}\n\n--- LABEL PASSAGES ---\n${passages || '(none)'}` }],
-    }),
-  })
+  const res = await callClaude({
+    model,
+    maxTokens: 8192,
+    tools: [TOOL],
+    tool_choice: { type: 'tool', name: TOOL.name },
+    messages: [{ role: 'user', content: `${PROMPT}\n\n--- GRAZING RESTRICTION (summary) ---\n${summary || '(none recorded)'}\n\n--- LABEL PASSAGES ---\n${passages || '(none)'}` }],
+  }, { apiKey })
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`)
   const payload = (await res.json()) as { content?: { type: string; name?: string; input?: unknown }[]; stop_reason?: string }
   if (payload.stop_reason === 'max_tokens') throw new Error('Too many rules to record in one reply')

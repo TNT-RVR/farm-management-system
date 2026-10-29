@@ -15,6 +15,9 @@ import {
 } from '@/lib/checklists'
 import { useUsers } from '@/lib/queries'
 import { TemplatePlaces } from './checklists/TemplatePlaces'
+import { askConfirm } from '@/components/askConfirm'
+import { CARD_HEAD } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
@@ -219,8 +222,9 @@ export function ChecklistTemplatePage() {
         )}
       </div>
 
-      <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-gray-700">{template.map_based ? 'General jobs (not tied to a place)' : 'Items'}</h3>
+      <div className="overflow-hidden mt-4 rounded-lg border border-gray-200 bg-white">
+        <h3 className={cn('font-medium', CARD_HEAD)}>{template.map_based ? 'General jobs (not tied to a place)' : 'Items'}</h3>
+        <div className="p-4">
         <ul className="mt-2 divide-y divide-gray-100">
           {items?.map((item) => (
             <li key={item.id} className="flex items-center gap-2 py-2">
@@ -285,14 +289,16 @@ export function ChecklistTemplatePage() {
             </button>
           </form>
         )}
+
+        </div>
       </div>
 
       {template.map_based && <TemplatePlaces templateId={template.id} readonly={readonly} />}
 
       {!readonly && (
         <button
-          onClick={() => {
-            if (confirm(`Delete the “${template.name}” template? Past runs are kept.`))
+          onClick={async () => {
+            if (await askConfirm(`Delete the “${template.name}” template? Past runs are kept.`))
               removeTemplate.mutate()
           }}
           className="mt-4 flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"

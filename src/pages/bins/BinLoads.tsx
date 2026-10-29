@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Flag, Scale, Trash2 } from 'lucide-react'
+import { ChevronDown, Flag, Scale, Trash2 } from 'lucide-react'
 import { Modal } from '@/components/Modal'
 import { useCrops, useFields } from '@/lib/queries'
-import { isOpenLoad, useBinLoads, useDeleteBinLoad, useSetLastLoad, type BinLoad } from '@/lib/bin-loads'
+import { isOpenLoad, loadInBin, weighTime, useBinLoads, useDeleteBinLoad, useSetLastLoad, type BinLoad } from '@/lib/bin-loads'
 import { cn } from '@/lib/utils'
 import { rowClick } from '@/components/RecordEditor'
 import { OpenLoads, WeighInForm } from './WeighIn'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const kg = (v: number | string | null | undefined) =>
   v == null ? '—' : `${Number(v).toLocaleString('en-CA', { maximumFractionDigits: 0 })} kg`
@@ -51,14 +52,19 @@ export function BinLoadsDialog({
   const [fresh, setFresh] = useState(0)
   const [confirm, setConfirm] = useState<string | null>(null)
   const formRef = useRef<HTMLDivElement>(null)
+  // The bin's loads fold away while a load is being weighed in (Sam, 23 Oct
+  // 2026), and open with a tap; with no form up they are what this is for.
+  const [listChoice, setListOpen] = useState<boolean | null>(null)
+  const listOpen = listChoice ?? !(adding || finishing)
   useEffect(() => {
     if (finishing) formRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [finishing])
 
   const fieldName = (id: string | null) => (fields ?? []).find((f) => f.id === id)?.name ?? '—'
   const cropName = (id: string) => (crops ?? []).find((c) => c.id === id)?.name ?? '—'
-  const total = loads.reduce((s, l) => s + Number(l.bushels ?? 0), 0)
-  const totalKg = loads.reduce((s, l) => s + Number(l.net_kg ?? 0), 0)
+  // A load that filled one bin and went on into another counts its share here.
+  const total = loads.reduce((s, l) => s + loadInBin(l, binId).bushels, 0)
+  const totalKg = loads.reduce((s, l) => s + loadInBin(l, binId).kg, 0)
 
   return (
     <Modal title={`Loads into ${binName}`} onClose={onClose}>
@@ -96,23 +102,24 @@ export function BinLoadsDialog({
         )}
 
         <div className="overflow-hidden rounded-lg border border-gray-200">
-          <div className="flex items-baseline justify-between border-b border-gray-200 bg-gray-50 px-3 py-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <div className={cn('flex items-center justify-between bg-gray-50 px-3 py-2', listOpen && 'border-b border-gray-200')}>
+            <button type="button" onClick={() => setListOpen(!listOpen)} aria-expanded={listOpen} className="flex items-center gap-1.5 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <ChevronDown className={cn('h-4 w-4 transition-transform', !listOpen && '-rotate-90')} />
               {loads.length} load{loads.length === 1 ? '' : 's'}
-            </h3>
+            </button>
             {!!loads.length && (
               <span className="text-xs tabular-nums text-gray-600">
                 {bu(total)} · {kg(totalKg)}
               </span>
             )}
           </div>
-          {!loads.length ? (
+          {!listOpen ? null : !loads.length ? (
             <p className="px-3 py-4 text-center text-xs text-gray-400">No loads weighed in yet.</p>
           ) : (
             // Scrolls on its own on a phone, so the dialog around it never does.
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+                <thead className={TABLE_HEAD}>
                   <tr>
                     <th className="px-2 py-1 font-medium">Date</th>
                     <th className="px-2 py-1 font-medium">From</th>
@@ -134,6 +141,11 @@ export function BinLoadsDialog({
                     >
                       <td className="px-2 py-1 tabular-nums text-gray-800">
                         {l.loaded_on}
+                        {(l.full_at || l.empty_at) && (
+                          <span className="block text-[10px] text-gray-500">
+                            {[l.full_at ? `in ${weighTime(l.full_at, false)}` : null, l.empty_at ? `out ${weighTime(l.empty_at, l.empty_at.slice(0, 10) !== l.full_at?.slice(0, 10))}` : null].filter(Boolean).join(' · ')}
+                          </span>
+                        )}
                         {l.estimated && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-semibold uppercase text-amber-800" title="Not weighed: a best guess. Open the load to put in the real weight.">est.</span>}
                       </td>
                       <td className="px-2 py-1 text-gray-700">
@@ -171,10 +183,13 @@ export function BinLoadsDialog({
                           {l.entry_kind === 'bin_total' ? `bin total${l.load_count ? `, ${l.load_count} loads` : ''}` : 'net off the truck'}
                         </td>
                       )}
-                      <td className="px-2 py-1 text-right tabular-nums text-gray-800">{kg(l.net_kg)}</td>
+                      <td className="px-2 py-1 text-right tabular-nums text-gray-800">{kg(loadInBin(l, binId).kg)}</td>
                       <td className="px-2 py-1 text-right tabular-nums font-semibold text-gray-900">
-                        {bu(l.bushels)}
-                        <span className="block text-[10px] font-normal text-gray-400">{Number(l.lb_per_bu)} lb/bu</span>
+                        {bu(loadInBin(l, binId).bushels)}
+                        <span className="block text-[10px] font-normal text-gray-400">
+                          {l.overflow_bin_id ? `${loadInBin(l, binId).part === 'first' ? 'filled the bin' : 'the rest'} of ${bu(l.bushels)} · ` : ''}
+                          {Number(l.lb_per_bu)} lb/bu
+                        </span>
                       </td>
                       <td className="px-2 py-1 text-gray-600">
                         {l.driver ?? '—'}

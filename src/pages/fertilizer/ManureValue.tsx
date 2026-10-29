@@ -15,6 +15,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { FieldLink, Sources, money, n1 } from './savings/ui'
 import { SettingsGroup, type NumberField } from '../hauling/ui'
 import { S } from './savings/sources'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /** The job each field is priced on: ten tonnes an acre over the whole field. */
 const TONS_PER_ACRE = 10
@@ -165,7 +166,7 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
             S.requirements,
             S.market,
             S.pricing,
-            { label: 'Distance: from the shop to the field entry', to: '/hauling?tab=distances' },
+            { label: 'Distance: from the shop to the field entry', to: '/fuel?tab=distances' },
             { label: 'Custom rate: N & K invoices, below' },
           ]}
         />
@@ -202,7 +203,7 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
         )}
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="px-2 py-1 font-medium">Field</th>
                 <th className="px-2 py-1 font-medium">Needs</th>
@@ -260,7 +261,7 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
             <h3 className="text-xs font-semibold text-gray-700">Against what N &amp; K actually billed</h3>
             <div className="overflow-x-auto">
               <table className="mt-1 w-full text-xs">
-                <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+                <thead className={TABLE_HEAD}>
                   <tr>
                     <th className="px-2 py-1 font-medium">Job</th>
                     <th className="px-2 py-1 text-right font-medium">Tonnes</th>
@@ -291,10 +292,10 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
                 </tbody>
               </table>
             </div>
-            <p className="mt-1 text-[11px] text-gray-400">
+            <HelpNote className="mt-1" summary="Each job priced again with our tractor.">
               Each job priced again with our tractor at the rate it was spread at. The spreader&apos;s size and the machine costs are still placeholders, so
               “ourselves” moves once they are known.
-            </p>
+            </HelpNote>
           </div>
         )}
         <details className="mt-2">

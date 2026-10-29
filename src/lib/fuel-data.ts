@@ -340,3 +340,94 @@ export function fuelCostingInputsQuery() {
 export function useFuelCostingInputs() {
   return useQuery({ ...fuelCostingInputsQuery(), staleTime: 30 * 60_000 })
 }
+
+/* ── Fuel tanks ──────────────────────────────────────────────────────────── */
+
+/** A tank on the farm. capacity and level in litres; level is the last gauge reading, if any. */
+export type FuelTank = {
+  id: string
+  name: string
+  location: string | null
+  product: FuelProduct
+  capacity_l: number
+  level_l: number | null
+  level_on: string | null
+  notes: string | null
+  /** Its pin on the Fuel page map. */
+  lat: number | null
+  lng: number | null
+  /** The TELUS gauge on it, if any; its readings then fill the level. */
+  telus_device_id: number | null
+  level_at: string | null
+  level_source: 'typed' | 'telus' | null
+  /** What the gauge says about itself at the last sync: Telus has it online, when Telus last heard from it, battery and signal. */
+  gauge_online: boolean | null
+  gauge_seen_at: string | null
+  gauge_info: Record<string, number | string | boolean> | null
+}
+
+export function useFuelTanks() {
+  return useQuery({
+    queryKey: ['fuel_tanks'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('fuel_tanks')
+        .select('id, name, location, product, capacity_l, level_l, level_on, notes, lat, lng, telus_device_id, level_at, level_source, gauge_online, gauge_seen_at, gauge_info')
+        .order('product')
+        .order('name')
+      if (error) throw error
+      return (data ?? []).map((t) => ({
+        ...t,
+        product: t.product as FuelProduct,
+        capacity_l: Number(t.capacity_l),
+        level_l: t.level_l == null ? null : Number(t.level_l),
+        lat: t.lat == null ? null : Number(t.lat),
+        lng: t.lng == null ? null : Number(t.lng),
+      })) as FuelTank[]
+    },
+  })
+}
+
+export function useSaveFuelTank() {
+  const qc = useQueryClient()
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: async ({ id, patch }: { id: string | null; patch: Partial<Omit<FuelTank, 'id'>> }) => {
+      const row = { ...patch, updated_at: new Date().toISOString() }
+      const { error } = id
+        ? await supabase.from('fuel_tanks').update(row).eq('id', id)
+        : await supabase.from('fuel_tanks').insert(row as typeof row & { name: string; capacity_l: number })
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['fuel_tanks'] }),
+  })
+}
+
+export function useDeleteFuelTank() {
+  const qc = useQueryClient()
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('fuel_tanks').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['fuel_tanks'] }),
+  })
+}
+
+/** Read the TELUS gauges now, as the signed-in manager (the same read the 15-minute job does). */
+export function useSyncTelusGauges() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const res = await fetch('/api/telus-fuel-sync', { method: 'POST', headers: { Authorization: `Bearer ${session?.access_token ?? ''}` } })
+      const body = (await res.json().catch(() => ({}))) as { detail?: string; error?: string }
+      if (!res.ok) throw new Error(body.detail ?? body.error ?? `Failed: ${res.status}`)
+      return body.detail ?? 'done'
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['fuel_tanks'] }),
+  })
+}

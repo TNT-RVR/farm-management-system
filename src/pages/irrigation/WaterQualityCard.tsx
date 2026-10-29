@@ -1,11 +1,12 @@
 import { Droplets, RefreshCw } from 'lucide-react'
 import { useWaterSCredit } from '@/lib/fert-savings/data'
-import { WATER_S_BY_SOURCE } from '@/lib/fert-savings/alberta'
+import { WATER_S_BY_SOURCE, waterSourceLabel } from '@/lib/fert-savings/alberta'
 import { WQ_PARAMS, usePullWaterQuality, useWaterQualityLatest } from '@/lib/water-quality'
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
 import { WaterConcerns } from './WaterConcerns'
 import { useFarmSettings } from '@/lib/farm-setup'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const fmt = (v: number, digits: number) =>
   v.toLocaleString('en-CA', { minimumFractionDigits: 0, maximumFractionDigits: digits })
@@ -25,15 +26,18 @@ export function WaterQualityCard({ isManager }: { isManager: boolean }) {
   const { data, isLoading } = useWaterQualityLatest()
   const { data: credit, isLoading: creditLoading } = useWaterSCredit()
   const pull = usePullWaterQuality()
-  const { districtName } = useFarmSettings()
+  const { districtName, riverName } = useFarmSettings()
   const stations = (data?.stations ?? []).filter((s) => s.water_source)
+  // The sources this farm samples (a farm on a creek alone has no canal); both until any station is set up.
+  const sources = (['smrid', 'oldman'] as const).filter((k) => !stations.length || stations.some((s) => s.water_source === k))
+  const sourceNames = sources.map((k) => (k === 'oldman' ? riverName : `${districtName} canal`)).join(' and ')
 
   return (
     <div className="mt-4 rounded-lg border border-gray-200 bg-white p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <Droplets className="h-4 w-4 text-sky-600" />
         <h3 className="text-sm font-semibold text-gray-900">Water quality</h3>
-        <span className="text-xs text-gray-500">Oldman River and {districtName} canal, pulled monthly from the province</span>
+        <span className="text-xs text-gray-500">{sourceNames}, pulled monthly from the province</span>
         {isManager && (
           <button
             type="button"
@@ -48,11 +52,11 @@ export function WaterQualityCard({ isManager }: { isManager: boolean }) {
       </div>
 
       <div className="mb-3 grid gap-2 sm:grid-cols-2">
-        {(['smrid', 'oldman'] as const).map((k) => {
+        {sources.map((k) => {
           const c = credit?.get(k)
           return (
             <div key={k} className="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-900">
-              <p className="font-semibold">{WATER_S_BY_SOURCE[k].label}</p>
+              <p className="font-semibold">{waterSourceLabel(k)}</p>
               {creditLoading ? (
                 <p className="text-sky-700">Reading…</p>
               ) : c?.lb_s_per_inch != null ? (
@@ -80,15 +84,15 @@ export function WaterQualityCard({ isManager }: { isManager: boolean }) {
         <p className="text-xs text-gray-500">Loading…</p>
       ) : !stations.length ? null : (
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+          <table className="w-full min-w-[560px] text-xs">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="px-2 py-1 font-medium">Station</th>
                 <th className="px-2 py-1 font-medium">Latest</th>
                 {WQ_PARAMS.map((p) => (
                   <th key={p.key} className="px-2 py-1 text-right font-medium">
                     {p.label}
-                    {p.unit && <span className="block normal-case text-gray-300">{p.unit}</span>}
+                    {p.unit && <span className="block normal-case text-brand-200">{p.unit}</span>}
                   </th>
                 ))}
               </tr>

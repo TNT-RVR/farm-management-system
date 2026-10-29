@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { FileUp, Loader2, RefreshCw } from 'lucide-react'
 import { Fold } from '@/components/Fold'
-import { HelpNote } from '@/components/HelpNote'
 import { DeleteButton } from '@/components/RecordEditor'
 import { Select } from '@/components/Select'
 import { canSeeFinances, hasManagerAccess, useAuth } from '@/lib/auth'
@@ -24,7 +23,10 @@ import {
   type PowerBill,
 } from '@/lib/power-bills'
 import { supabase } from '@/lib/supabase'
+import { PUBLIC_COPY } from '@/config/edition'
+import { EnergyProviderNote } from '@/pages/utilities/EnergyProviderNote'
 import { cn } from '@/lib/utils'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const money0 = (v: number) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
 const kwh0 = (v: number) => `${Math.round(v).toLocaleString('en-CA')} kWh`
@@ -117,13 +119,7 @@ export function PowerBills() {
           />
         </div>
       </div>
-      <HelpNote summary="Add the power bill PDFs; each site lands on its pump by the meter number." className="mt-0.5">
-        <p>
-          QuickBooks only has the power as bank payments to the retailer, with no sites, so the bills themselves are read. Add the monthly PDFs from the retailer
-          (Epcor, Azgard/UtilNet, Hudson) or FortisAlberta; each site on a bill is matched to a pump by the meter number under Pump Information, or by its legal
-          land. A site that matches no pump is listed below to pick by hand. Cost is before GST.
-        </p>
-      </HelpNote>
+      {PUBLIC_COPY && <EnergyProviderNote />}
       {(upload.error || fromQb.error) && <p className="mt-2 text-sm text-red-600">{((upload.error ?? fromQb.error) as Error).message}</p>}
       {fromQb.data && <p className="mt-2 text-xs text-gray-600">{fromQb.data.queued ? `Reading ${fromQb.data.queued} bills from QuickBooks…` : 'Every power bill in QuickBooks is read already.'}</p>}
       {pending > 0 && (
@@ -164,7 +160,7 @@ export function PowerBills() {
           </div>
           <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
-              <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+              <thead className={TABLE_HEAD}>
                 <tr>
                   <th className="py-1 pr-3 font-medium">Pump</th>
                   <th className="py-1 pr-3 text-right font-medium">Bills</th>

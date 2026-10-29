@@ -25,6 +25,7 @@ import {
   type CattleRow,
 } from '@/lib/cattle'
 import { cn } from '@/lib/utils'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * The individually tagged animals, on the Herd page (Sam, 7 Oct 2026: every
@@ -116,7 +117,7 @@ export function HerdAnimals({
       ) : (
         <div className="max-h-[28rem] overflow-auto">
           <table className="w-full min-w-[560px] text-sm">
-            <thead className="sticky top-0 bg-white text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <thead className={cn(TABLE_HEAD, 'sticky top-0')}>
               <tr>
                 <th className="px-3 py-1.5 font-medium">Tag</th>
                 <th className="px-2 py-1.5 font-medium">Name</th>
@@ -204,10 +205,10 @@ export function CattleGroupsCard({ ranchId, ranches, isManager }: { ranchId: str
 
   if (!isManager && !(groups ?? []).length) return null
   return (
-    <section className="mb-4 rounded-lg border border-gray-200 bg-white">
-      <div className="flex items-center justify-between gap-2 border-b border-gray-200 px-3 py-2">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
-          <Users className="h-4 w-4 text-gray-400" /> Animal groups
+    <section className="overflow-hidden mb-4 rounded-lg border border-gray-200 bg-white">
+      <div className={cn('flex items-center justify-between gap-2', CARD_HEAD)}>
+        <h2 className="flex items-center gap-1.5 font-medium">
+          <Users className="h-4 w-4 text-brand-100" /> Animal groups
         </h2>
         {isManager && <AddButton label="Add group" onClick={() => setEditing('new')} />}
       </div>

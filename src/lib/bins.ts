@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { currentFill, type FillMove } from './bin-fill'
+import { loadInBin } from './bin-loads'
 import { supabase } from './supabase'
 import type { Database } from './database.types'
+import { REFERENCE_STALE_MS } from './stale'
 import type { CropPlanRow, CropRow } from './queries'
 import { cutFor, cutLabel, estimateYield, type EstimatedYield, type YieldCut } from './yield-estimate'
 import { applyVarietyToCrop, varietyLookup, type VarietySettingRow } from './crop-variety-settings'
@@ -57,6 +60,20 @@ export type BinEstimateLine = {
   policy: CropRow['bin_policy']
   allocatedBins: number
   allocatedCapacityBu: number
+  /**
+   * Bushels of this crop sitting in a bin right now.
+   *
+   * The estimate used to compare the whole crop against the whole capacity of
+   * the bins allocated to it, whatever was in them (Sam, 27 Oct 2026: "the
+   * assessment is off as it takes allocation over what was actually binned").
+   * A bin is not a promise: once grain is in it, what is still to come is the
+   * question, and the space left over is space the farm actually has.
+   */
+  binnedBu: number
+  /** What is still to come off: the stored figure less what is already binned. */
+  toComeBu: number | null
+  /** Room left in the bins allocated to it — the empty half of a part-full bin counts. */
+  freeInAllocatedBu: number
   neededBins: number | null // segregated policies
   shortfallBins: number | null
   shortfallBu: number | null // mixable
@@ -92,7 +109,16 @@ export type BinEstimateLine = {
  * a missing yield or a missing boundary, and "1 bin" hides that behind a
  * plausible number.
  */
-export type FieldNeed = { fieldId: string; bushels: number | null }
+export type FieldNeed = {
+  fieldId: string
+  bushels: number | null
+  /**
+   * Room already standing open for this field — the empty half of a bin that
+   * holds nothing but its grain. Taken before the field draws another bin,
+   * because that is what happens in the yard.
+   */
+  ownRoom?: number
+}
 
 export function planBinsForFields(
   needs: FieldNeed[],
@@ -108,7 +134,7 @@ export function planBinsForFields(
 
   let total = 0
   for (const n of sized) {
-    let left = n.bushels as number
+    let left = (n.bushels as number) - (n.ownRoom ?? 0)
     let bins = 0
     while (left > 0) {
       if (!pool.length) {
@@ -123,8 +149,8 @@ export function planBinsForFields(
       left -= take
       bins++
     }
-    perField.set(n.fieldId, bins)
-    total += bins
+    perField.set(n.fieldId, Math.max(0, bins))
+    total += Math.max(0, bins)
   }
   return { total, perField }
 }
@@ -204,14 +230,10 @@ export function planYieldEstimate(p: CropPlanRow, crop: CropRow, cuts?: YieldCut
   })
 }
 
-export function estimateBins(
-  crops: CropRow[],
-  plans: CropPlanRow[],
-  bins: BinRow[],
-  allocations: BinAllocationRow[],
-  acresFor: (fieldId: string) => number | null,
-  /** This year's per-crop overrides, keyed by crop id. Optional. */
-  overrideByCrop?: Map<string, CropBinOverride>,
+/** Everything the estimate uses beyond the crops, the plans, the bins and the plan for them. */
+export type BinEstimateInputs = {
+  /** This year's per-crop overrides, keyed by crop id. */
+  overrideByCrop?: Map<string, CropBinOverride>
   /**
    * Bins with something already in them — last year's durum in #2, say.
    *
@@ -220,16 +242,46 @@ export function estimateBins(
    * capacity: an allocation onto an occupied bin is still an allocation, and
    * hiding it would turn a conflict somebody should see into a silent one.
    */
-  occupiedBinIds?: Set<string>,
+  occupiedBinIds?: Set<string>
   /** This year's cuts to estimated yields (hail, disease). */
-  cuts?: YieldCut[],
+  cuts?: YieldCut[]
   /** Varieties' own figures: a plan's variety brings its own normal yield and test weight. */
-  varieties?: readonly VarietySettingRow[],
+  varieties?: readonly VarietySettingRow[]
+  /**
+   * What is in each bin now. Without it the estimate reads the plan alone and
+   * every allocated bin counts as empty, which is right in April and wrong
+   * from the first load of the harvest on.
+   */
+  onHand?: readonly BinOnHand[]
+  /** Bushels of each field's grain in a bin now, for the crops kept field by field. */
+  binnedByField?: ReadonlyMap<string, number>
+  /** The fields whose grain is in each bin now — a bin with one field's grain has room for more of it. */
+  fieldsInBin?: ReadonlyMap<string, string[]>
+}
+
+export function estimateBins(
+  crops: CropRow[],
+  plans: CropPlanRow[],
+  bins: BinRow[],
+  allocations: BinAllocationRow[],
+  acresFor: (fieldId: string) => number | null,
+  more: BinEstimateInputs = {},
 ): BinEstimateLine[] {
+  const { overrideByCrop, occupiedBinIds, cuts, varieties, onHand, binnedByField, fieldsInBin } = more
   const varietyOf = varietyLookup(varieties)
   const cropById = new Map(crops.map((c) => [c.id, c]))
   const activeBins = bins.filter((b) => b.active)
   const capById = new Map(activeBins.map((b) => [b.id, b.capacity_bu]))
+  const activeById = new Map(activeBins.map((b) => [b.id, b]))
+  // What is in each bin, and of it what belongs to which crop.
+  const inBin = new Map<string, number>()
+  const binnedByCrop = new Map<string, number>()
+  for (const o of onHand ?? []) {
+    inBin.set(o.bin_id, (inBin.get(o.bin_id) ?? 0) + o.onhand_bu)
+    if (o.crop_id) binnedByCrop.set(o.crop_id, (binnedByCrop.get(o.crop_id) ?? 0) + o.onhand_bu)
+  }
+  /** The room left in a bin. Its whole capacity where nothing says otherwise. */
+  const roomIn = (b: BinRow) => Math.max(0, b.capacity_bu - (inBin.get(b.id) ?? 0))
   const avgCapacity =
     activeBins.length > 0
       ? activeBins.reduce((s, b) => s + b.capacity_bu, 0) / activeBins.length
@@ -238,11 +290,26 @@ export function estimateBins(
   // average. The yard is not uniform — 4,000 bushel grain bins, a pair of
   // 5,800 bushel fertiliser bins, and some 400s — and an average of them all
   // describes no bin that exists.
-  const binSizes = activeBins
-    .filter((b) => !occupiedBinIds?.has(b.id))
-    .map((b) => b.capacity_bu)
-    .filter((c) => c > 0)
-    .sort((a, b) => b - a)
+  //
+  // EMPTY bins, because this ladder sizes the crops kept field by field and
+  // such a field cannot be augered in on top of another one's grain — that is
+  // the whole policy. The room left over a field's own grain is set aside for
+  // that field instead (ownRoom below), so a half-filled bin is half a bin of
+  // storage for the field already in it and none at all for anybody else.
+  const binSizes: number[] = []
+  /** Room standing open for one field, in the bins holding only its grain. */
+  const ownRoom = new Map<string, number>()
+  for (const b of activeBins) {
+    if (occupiedBinIds?.has(b.id)) continue
+    const room = roomIn(b)
+    if (room <= 0) continue
+    const held = (inBin.get(b.id) ?? 0) > 0.5
+    const fields = fieldsInBin?.get(b.id) ?? []
+    if (!held) binSizes.push(room)
+    // A bin with two fields' grain in it already is nobody's room.
+    else if (fields.length === 1) ownRoom.set(fields[0], (ownRoom.get(fields[0]) ?? 0) + room)
+  }
+  binSizes.sort((a, b) => b - a)
 
   // group plans by crop
   const plansByCrop = new Map<string, CropPlanRow[]>()
@@ -288,13 +355,21 @@ export function estimateBins(
         policy: crop.bin_policy,
         allocatedBins: 0,
         allocatedCapacityBu: 0,
+        binnedBu: binnedByCrop.get(cropId) ?? 0,
+        toComeBu: null,
+        freeInAllocatedBu: 0,
         neededBins: 0,
         shortfallBins: 0,
         shortfallBu: 0,
         summary:
-          ov?.needs_bins === false
-            ? `Not binned this year${ov.note ? ` — ${ov.note}` : ''}.`
-            : 'Not stored in bins — baled or shipped direct from the field.',
+          // A crop nobody expected to bin, with grain in the bins. Said out
+          // loud rather than left as a line reading "not stored in bins" over
+          // eight thousand bushels of it (Sam, 27 Oct 2026).
+          (binnedByCrop.get(cropId) ?? 0) > 0.5
+            ? `${Math.round(binnedByCrop.get(cropId) ?? 0).toLocaleString()} bu of it is in the bins, although it is marked as not binned.`
+            : ov?.needs_bins === false
+              ? `Not binned this year${ov.note ? ` — ${ov.note}` : ''}.`
+              : 'Not stored in bins — baled or shipped direct from the field.',
         note: undefined,
         needsBins: false,
         overridden: ov?.needs_bins === false,
@@ -306,6 +381,18 @@ export function estimateBins(
     const alloc = allocations.filter((a) => a.crop_id === cropId)
     const allocatedBins = alloc.length
     const allocatedCapacityBu = alloc.reduce((s, a) => s + (capById.get(a.bin_id) ?? 0), 0)
+    // The room its own bins still have. Equal to their capacity before harvest,
+    // and the number that matters once the grain starts coming in.
+    const freeInAllocatedBu = alloc.reduce((s, a) => {
+      const b = activeById.get(a.bin_id)
+      return s + (b ? roomIn(b) : 0)
+    }, 0)
+    const allocatedBinsWithRoom = alloc.filter((a) => {
+      const b = activeById.get(a.bin_id)
+      // A bin the estimate cannot see is left as it was: counted.
+      return !b || roomIn(b) > 1
+    }).length
+    const binnedBu = binnedByCrop.get(cropId) ?? 0
     const fieldCount = new Set(cropPlans.map((p) => p.field_id)).size
 
     // Each plan's yield per acre: its range, after any cut for hail or disease.
@@ -339,6 +426,9 @@ export function estimateBins(
     const storedBu = ov?.stored_bu == null ? null : Number(ov.stored_bu)
     const productionBu = storedBu ?? conv.bushels
     const note = conv.note
+    // Storage is only needed for what has not been put away yet.
+    const toComeBu = productionBu == null ? null : Math.max(0, productionBu - binnedBu)
+    const inSoFar = binnedBu > 0.5 ? `${Math.round(binnedBu).toLocaleString()} bu in the bins` : ''
 
     let neededBins: number | null = null
     let shortfallBins: number | null = null
@@ -358,15 +448,32 @@ export function estimateBins(
       // than a conservative one.
       // A field cut to nothing (hailed out) needs no bin, rather than the one
       // an unsized field is given.
+      //
+      // Sized on what is still in the field, field by field: a field already
+      // augered away needs no more bins, and the bin it went into is counted
+      // as the part of it that is left.
       const needs = est
         .filter((e) => !(e.y.cutPct >= 100))
-        .map((e) => ({ fieldId: e.p.field_id, bushels: productionToBushels(e.vc, e.acres * (e.y.expected ?? 0)).bushels }))
+        .map((e) => {
+          const grown = productionToBushels(e.vc, e.acres * (e.y.expected ?? 0)).bushels
+          const already = binnedByField?.get(e.p.field_id) ?? 0
+          return {
+            fieldId: e.p.field_id,
+            bushels: grown == null ? null : Math.max(0, grown - already),
+            ownRoom: ownRoom.get(e.p.field_id) ?? 0,
+            done: grown != null && already > 0.5 && grown - already <= 0.5,
+          }
+        })
       const plan = planBinsForFields(needs, binSizes)
       // A field nobody could size still needs somewhere to go, so it counts as
-      // one rather than disappearing out of the total.
-      const unsized = needs.length - plan.perField.size
+      // one rather than disappearing out of the total. A field whose grain is
+      // already in a bin does not.
+      const unsized = needs.filter((n) => !n.done && !plan.perField.has(n.fieldId)).length
       neededBins = plan.total + unsized
-      shortfallBins = Math.max(0, neededBins - allocatedBins)
+      // Against the allocated bins that still have room in them: a full one is
+      // not somewhere the rest of the crop can go.
+      shortfallBins = Math.max(0, neededBins - allocatedBinsWithRoom)
+      const fieldsIn = needs.filter((n) => n.done).length
 
       // Named where it is more than one, because "7 bins for 3 fields" invites
       // the reader to think something has gone wrong with the arithmetic.
@@ -377,10 +484,35 @@ export function estimateBins(
         splits > 0
           ? ` ${splits === 1 ? 'One field needs' : `${splits} fields need`} more than one bin${biggest > 1 ? ` — the largest takes ${biggest}` : ''}.`
           : ''
+      const fieldsLeft = fieldCount - fieldsIn
+      const out = `${fieldsLeft} ${fieldsLeft === 1 ? 'field' : 'fields'} still out`
+      const binWord = (n: number) => `${n} bin${n === 1 ? '' : 's'}`
+      const fieldWord = (n: number) => `${n} field${n === 1 ? '' : 's'}`
+      // A bin set aside for this crop with somebody else's grain in it is not
+      // somewhere the crop can go, and the line has to say so — #20 is held
+      // for the Corteva canola and is full of corn.
+      const noRoom = allocatedBins - allocatedBinsWithRoom
+      const fullNote =
+        noRoom === 0
+          ? ''
+          : allocatedBins === 1
+            ? ' Its one bin is full.'
+            : noRoom === allocatedBins
+              ? ` All ${allocatedBins} of its bins are full.`
+              : ` ${noRoom} of its ${allocatedBins} bins ${noRoom === 1 ? 'is' : 'are'} full.`
       summary =
-        shortfallBins > 0
-          ? `${neededBins} bins for ${fieldCount} fields kept apart, ${allocatedBins} allocated. Short ${shortfallBins}.${detail}`
-          : `${allocatedBins} bins allocated across ${fieldCount} fields, none shared. Covered.${detail}`
+        // Before the harvest the question is the plan: bins needed against
+        // bins set aside. Once grain is going in it is what is left to come,
+        // which is a different sentence and not the same arithmetic.
+        binnedBu <= 0.5
+          ? shortfallBins > 0
+            ? `${binWord(neededBins)} for ${fieldWord(fieldCount)} kept apart, ${allocatedBins} allocated. Short ${shortfallBins}.${detail}${fullNote}`
+            : `${binWord(allocatedBins)} allocated across ${fieldWord(fieldCount)}, none shared. Covered.${detail}`
+          : neededBins === 0
+            ? `All of it is in the bins — ${Math.round(binnedBu).toLocaleString()} bu across ${binWord(allocatedBins)}, none shared.`
+            : shortfallBins > 0
+              ? `${inSoFar}. ${binWord(neededBins)} more for ${out}, ${allocatedBinsWithRoom} allocated with room. Short ${shortfallBins}.${detail}${fullNote}`
+              : `${inSoFar}. ${binWord(neededBins)} more for ${out}, covered.${detail}`
     } else if (crop.bin_policy === 'segregate_by_variety') {
       const varieties = new Set(cropPlans.map((p) => p.variety ?? '—')).size
       neededBins = varieties
@@ -388,18 +520,23 @@ export function estimateBins(
       summary =
         shortfallBins > 0
           ? `Needs ${neededBins} bins for ${varieties} varieties, ${allocatedBins} allocated. Short ${shortfallBins}.`
-          : `${neededBins} bins for ${varieties} varieties — covered.`
+          : `${neededBins} bins for ${varieties} varieties — covered.${inSoFar ? ` ${inSoFar}.` : ''}`
     } else {
       // mixable
-      if (productionBu == null) {
+      if (productionBu == null || toComeBu == null) {
         summary = note ?? 'Not bin-stored.'
       } else {
-        shortfallBu = Math.max(0, productionBu - allocatedCapacityBu)
+        // What is still to come against the room left, not the whole crop
+        // against the whole of the bins it was promised.
+        shortfallBu = Math.max(0, toComeBu - freeInAllocatedBu)
         shortfallBins = avgCapacity > 0 ? Math.ceil(shortfallBu / avgCapacity) : null
+        const room = `${Math.round(freeInAllocatedBu).toLocaleString()} bu room`
         summary =
           shortfallBu > 0
-            ? `${Math.round(productionBu).toLocaleString()} bu vs ${Math.round(allocatedCapacityBu).toLocaleString()} bu allocated — short ${Math.round(shortfallBu).toLocaleString()} bu${shortfallBins != null ? ` (~${shortfallBins} bins)` : ''}.`
-            : `${Math.round(productionBu).toLocaleString()} bu vs ${Math.round(allocatedCapacityBu).toLocaleString()} bu allocated — covered.`
+            ? `${Math.round(toComeBu).toLocaleString()} bu still to come vs ${room} — short ${Math.round(shortfallBu).toLocaleString()} bu${shortfallBins != null ? ` (~${shortfallBins} bins)` : ''}.${inSoFar ? ` ${inSoFar}.` : ''}`
+            : toComeBu <= 0.5 && binnedBu > 0.5
+              ? `All of it is in the bins — ${Math.round(binnedBu).toLocaleString()} bu, with ${room} to spare.`
+              : `${Math.round(toComeBu).toLocaleString()} bu still to come vs ${room} — covered.${inSoFar ? ` ${inSoFar}.` : ''}`
       }
     }
 
@@ -416,6 +553,9 @@ export function estimateBins(
       policy: crop.bin_policy,
       allocatedBins,
       allocatedCapacityBu,
+      binnedBu,
+      toComeBu,
+      freeInAllocatedBu,
       neededBins,
       shortfallBins,
       shortfallBu,
@@ -427,6 +567,56 @@ export function estimateBins(
     })
   }
   return lines.sort((a, b) => a.crop.name.localeCompare(b.crop.name))
+}
+
+/**
+ * The room left in the yard (Sam, 27 Oct 2026: "there is wasted space not
+ * being shown as available").
+ *
+ * "Unallocated" counted whole bins nobody had claimed and nothing else, so the
+ * 4,711 bushels left over the canola and the 7,684 over the corn — space that
+ * is there, in bins with grain in them — never appeared anywhere. A yard with
+ * 17,900 bushels of empty bins and 30,219 bushels of actual room read as the
+ * first number.
+ *
+ * A bin holding a previous year's grain is left out: its room is not room until
+ * somebody hauls that grain away.
+ */
+export function yardRoom(
+  bins: readonly BinRow[],
+  onHand?: readonly BinOnHand[],
+  occupiedBinIds?: Set<string>,
+): {
+  /** Bushels of space, over every bin that has any. */
+  roomBu: number
+  /** Of that, the space in bins that already have grain in them. */
+  inUseRoomBu: number
+  /** Bins with nothing in them at all. */
+  emptyBins: number
+  /** Bins with room to spare but something in them already. */
+  partBins: number
+  /** Bins full to their capacity. */
+  fullBins: number
+} {
+  const inBin = new Map<string, number>()
+  for (const o of onHand ?? []) inBin.set(o.bin_id, (inBin.get(o.bin_id) ?? 0) + o.onhand_bu)
+  let roomBu = 0
+  let inUseRoomBu = 0
+  let emptyBins = 0
+  let partBins = 0
+  let fullBins = 0
+  for (const b of bins) {
+    if (!b.active || occupiedBinIds?.has(b.id)) continue
+    const held = inBin.get(b.id) ?? 0
+    const room = Math.max(0, b.capacity_bu - held)
+    roomBu += room
+    if (held <= 0.5) emptyBins++
+    else if (room > 1) {
+      partBins++
+      inUseRoomBu += room
+    } else fullBins++
+  }
+  return { roomBu, inUseRoomBu, emptyBins, partBins, fullBins }
 }
 
 /** Just enough of a bin to sort a yard list. */
@@ -455,6 +645,61 @@ export function byYardThenNumber(a: Placeable, b: Placeable): number {
  */
 export type BinOnHand = { bin_id: string; crop_id: string | null; onhand_bu: number }
 
+/**
+ * One bin's movements, for working out what is in it lot by lot (bin-fill.ts):
+ * which field's grain a move out of it would carry.
+ */
+export type BinProduct = { bin_id: string; product: string; tonnes: number }
+
+/**
+ * What a bin holds that is not a crop: fertilizer, counted in tonnes (Sam,
+ * 26 Oct 2026). Kept apart from the bushels — a bin reads in the unit of what
+ * is actually in it, and the two are never added together.
+ */
+export function useBinProducts() {
+  return useQuery({
+    // Under ['bins', 'onhand'] so a save that refreshes the bushels refreshes this.
+    queryKey: ['bins', 'onhand', 'products'],
+    queryFn: async (): Promise<Map<string, BinProduct[]>> => {
+      const { data, error } = await supabase
+        .from('grain_movements')
+        .select('bin_id, product, tonnes, movement_type')
+        .not('tonnes', 'is', null)
+      if (error) throw error
+      const by = new Map<string, Map<string, number>>()
+      for (const m of data ?? []) {
+        const name = (m.product ?? '').trim() || 'Fertilizer'
+        const out = m.movement_type === 'transfer_out' || m.movement_type === 'delivery_out' || m.movement_type === 'shrink'
+        const t = (Number(m.tonnes) || 0) * (out ? -1 : 1)
+        const inBin = by.get(m.bin_id) ?? new Map<string, number>()
+        inBin.set(name, (inBin.get(name) ?? 0) + t)
+        by.set(m.bin_id, inBin)
+      }
+      const res = new Map<string, BinProduct[]>()
+      for (const [bin, items] of by) {
+        const kept = [...items].filter(([, t]) => t > 0.001).map(([product, tonnes]) => ({ bin_id: bin, product, tonnes }))
+        if (kept.length) res.set(bin, kept.sort((a, b) => b.tonnes - a.tonnes))
+      }
+      return res
+    },
+  })
+}
+
+export function useBinMovements(binId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['bins', 'movements', binId],
+    enabled: !!binId,
+    queryFn: async (): Promise<FillMove[]> => {
+      const { data, error } = await supabase
+        .from('grain_movements')
+        .select('movement_type, bushels, moved_at, created_at, field_id, ticket_number')
+        .eq('bin_id', binId!)
+      if (error) throw error
+      return (data ?? []) as FillMove[]
+    },
+  })
+}
+
 export function useBinOnHand() {
   return useQuery({
     queryKey: ['bins', 'onhand'],
@@ -482,20 +727,53 @@ export function useBinFieldsIn() {
     queryFn: async (): Promise<Map<string, string[]>> => {
       const { data, error } = await supabase
         .from('grain_movements')
-        .select('bin_id, field_id, crop_year, bushels')
-        .in('movement_type', ['harvest_in', 'transfer_in'])
-        .not('field_id', 'is', null)
+        .select('bin_id, field_id, crop_year, bushels, movement_type, moved_at, created_at, ticket_number')
+        .order('bin_id')
       if (error) throw error
-      const latest = new Map<string, number>()
-      for (const m of data ?? []) latest.set(m.bin_id, Math.max(latest.get(m.bin_id) ?? 0, m.crop_year))
-      const bu = new Map<string, Map<string, number>>()
-      for (const m of data ?? []) {
-        if (m.crop_year !== latest.get(m.bin_id) || !m.field_id) continue
-        const f = bu.get(m.bin_id) ?? new Map<string, number>()
-        f.set(m.field_id, (f.get(m.field_id) ?? 0) + Number(m.bushels))
-        bu.set(m.bin_id, f)
+      // What is in it NOW, not everything ever put in it: grain leaves oldest
+      // first (bin-fill.ts), so a bin whose earlier field was hauled out no
+      // longer names it. #21 kept saying Moreau after its 5,496 bu went to #22
+      // (Sam, 23 Oct 2026). The same rule the bin's own pop-up uses.
+      const byBin = new Map<string, FillMove[]>()
+      for (const m of data ?? []) byBin.set(m.bin_id, [...(byBin.get(m.bin_id) ?? []), m as FillMove])
+      const out = new Map<string, string[]>()
+      for (const [bin, moves] of byBin) {
+        const bu = new Map<string, number>()
+        for (const lot of currentFill(moves)) if (lot.fieldId) bu.set(lot.fieldId, (bu.get(lot.fieldId) ?? 0) + lot.bushels)
+        if (bu.size) out.set(bin, [...bu].sort((a, b) => b[1] - a[1]).map(([id]) => id))
       }
-      return new Map([...bu].map(([bin, f]) => [bin, [...f].sort((a, b) => b[1] - a[1]).map(([id]) => id)]))
+      return out
+    },
+  })
+}
+
+/**
+ * Bushels of each field's grain sitting in a bin right now, by field.
+ *
+ * The estimate needs it for the crops kept field by field: Moreaus' canola is
+ * in #21 and #22, so Moreaus needs no more bins, and counting its whole yield
+ * against the yard again is how the page reports a shortfall that was dealt
+ * with three weeks ago.
+ */
+export function useBinnedByField() {
+  return useQuery({
+    // Under ['bins', 'onhand'] so every save that refreshes on-hand refreshes this.
+    queryKey: ['bins', 'onhand', 'field-bushels'],
+    queryFn: async (): Promise<Map<string, number>> => {
+      const { data, error } = await supabase
+        .from('grain_movements')
+        .select('bin_id, field_id, crop_year, bushels, movement_type, moved_at, created_at, ticket_number')
+        .order('bin_id')
+      if (error) throw error
+      const byBin = new Map<string, FillMove[]>()
+      for (const m of data ?? []) byBin.set(m.bin_id, [...(byBin.get(m.bin_id) ?? []), m as FillMove])
+      const out = new Map<string, number>()
+      // What is in each bin NOW, lot by lot — grain leaves oldest first, the
+      // same rule the bin's own list uses.
+      for (const moves of byBin.values())
+        for (const lot of currentFill(moves))
+          if (lot.fieldId) out.set(lot.fieldId, (out.get(lot.fieldId) ?? 0) + lot.bushels)
+      return out
     },
   })
 }
@@ -509,10 +787,16 @@ export function useEstimatedByBin() {
     // Under ['bins', 'onhand'] so a saved load refreshes it with the bin figures.
     queryKey: ['bins', 'onhand', 'estimates'],
     queryFn: async (): Promise<Map<string, number>> => {
-      const { data, error } = await supabase.from('bin_loads').select('bin_id, bushels').eq('estimated', true).not('bin_id', 'is', null)
+      const { data, error } = await supabase
+        .from('bin_loads')
+        .select('bin_id, overflow_bin_id, first_bin_bu, bushels, net_kg')
+        .eq('estimated', true)
+        .not('bin_id', 'is', null)
       if (error) throw error
       const out = new Map<string, number>()
-      for (const l of data ?? []) out.set(l.bin_id as string, (out.get(l.bin_id as string) ?? 0) + Number(l.bushels ?? 0))
+      // A load split across two bins counts its share in each.
+      for (const l of data ?? [])
+        for (const b of [l.bin_id, l.overflow_bin_id].filter((x): x is string => !!x)) out.set(b, (out.get(b) ?? 0) + loadInBin(l, b).bushels)
       return out
     },
   })
@@ -530,6 +814,7 @@ export function binsQuery() {
       // tester's bin picker, the air alerts — agrees without each remembering.
       return [...data].sort(byYardThenNumber)
     },
+    staleTime: REFERENCE_STALE_MS,
   }
 }
 
@@ -547,6 +832,57 @@ export function useBinAllocations(cropYear: number) {
         .eq('crop_year', cropYear)
       if (error) throw error
       return data
+    },
+  })
+}
+
+/** Which switches a bin offers, and whether each is running. */
+export type BinRun = Pick<BinRow, 'has_aeration' | 'has_heater' | 'aeration_on' | 'heater_on'>
+
+/**
+ * Switch a bin's fan or heater on or off. Writing to a bin is otherwise a
+ * manager's job; this one goes through fn_set_bin_run so whoever is standing
+ * at the bin can flip it, and nothing else on the bin can be touched that way.
+ *
+ * The switch shows its new state at once rather than after the round trip —
+ * it is a light switch, and a light switch that waits reads as broken.
+ */
+export function useSetBinRun() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, aeration, heater }: { id: string; aeration?: boolean; heater?: boolean }) => {
+      const { error } = await supabase.rpc('fn_set_bin_run', {
+        p_bin: id,
+        p_aeration: aeration ?? null,
+        p_heater: heater ?? null,
+      })
+      if (error) throw error
+    },
+    onMutate: async ({ id, aeration, heater }) => {
+      // The two lists of bins themselves. Everything else under ['bins'] is a
+      // different shape — on-hand bushels, a Map of fields — and must be left alone.
+      const keys = [['bins'], ['bins', 'located']] as const
+      for (const key of keys) await qc.cancelQueries({ queryKey: key, exact: true })
+      const before = keys.map((key) => [key, qc.getQueryData(key)] as const)
+      const patch = <T extends { id: string } & BinRun>(rows: T[] | undefined) =>
+        rows?.map((b) =>
+          b.id !== id
+            ? b
+            : {
+                ...b,
+                aeration_on: b.has_aeration ? (aeration ?? b.aeration_on) : false,
+                heater_on: b.has_heater ? (heater ?? b.heater_on) : false,
+              },
+        )
+      for (const key of keys) qc.setQueryData(key, patch)
+      return { before }
+    },
+    onError: (_e, _v, c) => {
+      for (const [key, data] of c?.before ?? []) qc.setQueryData(key, data)
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['bins'], exact: true })
+      void qc.invalidateQueries({ queryKey: ['bins', 'located'], exact: true })
     },
   })
 }

@@ -1,12 +1,14 @@
 import { useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { AlertTriangle, ChevronLeft, ChevronRight, ImagePlus, Loader2, Pencil, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Modal } from '@/components/Modal'
 import { shrinkPhoto } from '@/pages/contracts/TicketPhoto'
 import { flagLines, type PlateLine } from '@/lib/equipment-details'
 import { PHOTO_TABLES, useEquipmentPhotoIndex, type EquipmentPhotoMeta, type PhotoKind } from '@/lib/equipment-photos'
+import { EQUIPMENT_PHOTO_BUCKET, savePhoto, uploadPhoto, usePhotoUrls } from '@/lib/stored-photos'
+import { askConfirm } from '@/components/askConfirm'
 
 /**
  * The pieces a pump's and a pivot's details are both made of: a plate (label /
@@ -51,22 +53,11 @@ export function FlagList({ text }: { text: string | null | undefined }) {
   )
 }
 
-type PhotoImage = { mime: string; image_b64: string; filename: string | null; created_at: string }
+type PhotoUrls = UseQueryResult<Map<string, string>>
 
-/** One photo's image, fetched when it is shown and never saved on the device (a LIVE_ONLY key). */
-function usePhotoImage(kind: PhotoKind, id: string | null) {
-  const t = PHOTO_TABLES[kind]
-  return useQuery({
-    queryKey: [t.imageKey, id],
-    enabled: Boolean(id),
-    staleTime: Infinity,
-    gcTime: 5 * 60_000,
-    queryFn: async () => {
-      const { data, error } = await supabase.from(t.table).select('mime, image_b64, filename, created_at').eq('id', id!).single()
-      if (error) throw error
-      return data as PhotoImage
-    },
-  })
+/** One photo's image: its signed link from the batch the list made (never saved on the device). */
+function usePhotoSrc(photo: EquipmentPhotoMeta, urls: PhotoUrls) {
+  return { src: urls.data?.get(photo.storage_path) ?? null, isLoading: urls.isLoading, error: urls.error }
 }
 
 /**
@@ -92,6 +83,7 @@ export function EquipmentPhotos({
   const t = PHOTO_TABLES[kind]
   const { data: index } = useEquipmentPhotoIndex(kind)
   const photos = index?.get(ownerId) ?? []
+  const urls = usePhotoUrls(EQUIPMENT_PHOTO_BUCKET, photos.flatMap((p) => (p.storage_path ? [p.storage_path] : [])))
   const [openAt, setOpenAt] = useState<number | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const qc = useQueryClient()
@@ -99,12 +91,15 @@ export function EquipmentPhotos({
     mutationFn: async (files: File[]) => {
       for (const file of files) {
         const p = await shrinkPhoto(file)
+        const id = crypto.randomUUID()
+        const path = await uploadPhoto(EQUIPMENT_PHOTO_BUCKET, `${kind}/${ownerId}/${id}.jpg`, p.b64)
         const row = {
+          id,
           [t.owner]: ownerId,
           caption: file.name.replace(/\.\w+$/, ''),
           filename: file.name,
           mime: 'image/jpeg',
-          image_b64: p.b64,
+          storage_path: path,
           width: p.width,
           height: p.height,
           bytes: p.bytes,
@@ -112,15 +107,19 @@ export function EquipmentPhotos({
         }
         // The two tables share a shape; only the owner column differs.
         const { error } = await supabase.from(t.table).insert(row as never)
-        if (error) throw error
+        if (error) {
+          await supabase.storage.from(EQUIPMENT_PHOTO_BUCKET).remove([path])
+          throw error
+        }
       }
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: [t.indexKey] }),
   })
   const remove = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from(t.table).delete().eq('id', id)
+    mutationFn: async (photo: EquipmentPhotoMeta) => {
+      const { error } = await supabase.from(t.table).delete().eq('id', photo.id)
       if (error) throw error
+      if (photo.storage_path) await supabase.storage.from(EQUIPMENT_PHOTO_BUCKET).remove([photo.storage_path])
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: [t.indexKey] }),
   })
@@ -170,7 +169,7 @@ export function EquipmentPhotos({
         <ul className="mt-1.5 grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-2">
           {photos.map((p, i) => (
             <li key={p.id}>
-              <Thumb kind={kind} photo={p} onOpen={() => setOpenAt(i)} />
+              <Thumb photo={p} urls={urls} onOpen={() => setOpenAt(i)} />
             </li>
           ))}
         </ul>
@@ -181,6 +180,7 @@ export function EquipmentPhotos({
           key={open.id}
           kind={kind}
           photo={open}
+          urls={urls}
           ownerName={ownerName}
           position={`${openAt + 1} of ${photos.length}`}
           onPrev={photos.length > 1 ? () => setOpenAt((openAt - 1 + photos.length) % photos.length) : undefined}
@@ -189,9 +189,9 @@ export function EquipmentPhotos({
           onRename={isManager ? (caption) => rename.mutate({ id: open.id, caption }) : undefined}
           onDelete={
             isManager
-              ? () => {
-                  if (window.confirm('Remove this photo?')) {
-                    remove.mutate(open.id)
+              ? async () => {
+                  if (await askConfirm('Remove this photo?', { confirmLabel: 'Remove' })) {
+                    remove.mutate(open)
                     setOpenAt(null)
                   }
                 }
@@ -204,8 +204,8 @@ export function EquipmentPhotos({
   )
 }
 
-function Thumb({ kind, photo, onOpen }: { kind: PhotoKind; photo: EquipmentPhotoMeta; onOpen: () => void }) {
-  const { data, isLoading } = usePhotoImage(kind, photo.id)
+function Thumb({ photo, urls, onOpen }: { photo: EquipmentPhotoMeta; urls: PhotoUrls; onOpen: () => void }) {
+  const { src, isLoading } = usePhotoSrc(photo, urls)
   return (
     <button
       type="button"
@@ -214,8 +214,8 @@ function Thumb({ kind, photo, onOpen }: { kind: PhotoKind; photo: EquipmentPhoto
       className="group block w-full overflow-hidden rounded-md border border-gray-200 bg-white text-left hover:border-brand-400"
     >
       <div className="flex aspect-[4/3] items-center justify-center bg-gray-100">
-        {data ? (
-          <img src={`data:${data.mime};base64,${data.image_b64}`} alt={photo.caption ?? 'Photo'} loading="lazy" className="h-full w-full object-cover" />
+        {src ? (
+          <img src={src} alt={photo.caption ?? 'Photo'} loading="lazy" className="h-full w-full object-cover" />
         ) : isLoading ? (
           <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
         ) : null}
@@ -228,6 +228,7 @@ function Thumb({ kind, photo, onOpen }: { kind: PhotoKind; photo: EquipmentPhoto
 function PhotoViewer({
   kind,
   photo,
+  urls,
   ownerName,
   position,
   onPrev,
@@ -238,6 +239,7 @@ function PhotoViewer({
 }: {
   kind: PhotoKind
   photo: EquipmentPhotoMeta
+  urls: PhotoUrls
   ownerName: string
   position: string
   onPrev?: () => void
@@ -246,10 +248,9 @@ function PhotoViewer({
   onRename?: (caption: string) => void
   onDelete?: () => void
 }) {
-  const { data, isLoading, error } = usePhotoImage(kind, photo.id)
+  const { src, isLoading, error } = usePhotoSrc(photo, urls)
   const [editing, setEditing] = useState(false)
   const [caption, setCaption] = useState(photo.caption ?? '')
-  const src = data ? `data:${data.mime};base64,${data.image_b64}` : null
   const label = `${ownerName} — ${photo.caption || 'photo'}`
   return (
     <Modal title={label} onClose={onClose} wide>
@@ -296,7 +297,7 @@ function PhotoViewer({
           ) : (
             <span>
               {position}
-              {data && ` · added ${data.created_at.slice(0, 10)}`}
+              {` · added ${photo.created_at.slice(0, 10)}`}
             </span>
           )}
           <span className="flex items-center gap-3">
@@ -310,10 +311,14 @@ function PhotoViewer({
                 <Trash2 className="h-3.5 w-3.5" /> Remove
               </button>
             )}
-            {src && data && (
-              <a href={src} download={(data.filename ?? kind).replace(/\.\w+$/, '') + '.jpg'} className="font-medium text-brand-700 hover:underline">
+            {src && (
+              <button
+                type="button"
+                onClick={() => void savePhoto(src, (photo.filename ?? kind).replace(/\.\w+$/, '') + '.jpg')}
+                className="font-medium text-brand-700 hover:underline"
+              >
                 Download
-              </a>
+              </button>
             )}
           </span>
         </div>

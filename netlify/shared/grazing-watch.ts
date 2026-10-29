@@ -47,7 +47,7 @@ const restrictionFinding = (place: Place, r: Restriction) => ({
   assumed: r.assumed,
 })
 
-const placeLink = (p: Place) => (p.kind === 'field' ? `/fields/${p.id}` : '/grazing-restrictions')
+const placeLink = (p: Place) => (p.kind === 'field' ? `/fields/${p.id}` : '/cattle?tab=restrictions')
 
 /** "11 Aug 2026", or "spring 2027" for a not-at-all (it runs to 1 May). */
 const untilText = (r: Restriction) => (r.never ? `spring ${r.until!.slice(0, 4)}` : fmtDay(r.until!))

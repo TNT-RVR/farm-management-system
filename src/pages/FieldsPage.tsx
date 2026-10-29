@@ -15,15 +15,18 @@ import {
   useCrops,
   useFieldMutations,
   useHailEvents,
-  useHailMutations,
   type FieldRow,
 } from '@/lib/queries'
-import { useFieldSeasons, useSetIrrigationDone } from '@/lib/irrigation'
+import { useFieldSeasons } from '@/lib/irrigation'
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
 import { useAllowJdField, useDismissedJdFields } from '@/lib/jd-dismissed'
 import { withDisplay } from '@/lib/reports/columns'
-import { doneWateringFields, fieldListColumns, fieldListRows, fieldSeasonMap, type FieldListRow } from '@/lib/reports/lists'
+import { fieldListColumns, fieldListRows, fieldSeasonMap, type FieldListRow } from '@/lib/reports/lists'
+import { useSeasonProgress, progressByField } from '@/lib/field-progress-data'
+import { fieldState, hailLabel, hailSummary, FIELD_STATE_CLASS, type HailSummary } from '@/lib/field-state'
+import { HailEventDialog } from '@/components/HailEventDialog'
+import { CARD_HEAD } from '@/lib/table-style'
 
 type Row = FieldListRow
 
@@ -38,23 +41,60 @@ export function FieldsPage() {
   const { data: crops } = useCrops()
   const { create, setArchived, remove } = useFieldMutations()
   const { data: hailEvents } = useHailEvents(cropYear)
-  const { setHail } = useHailMutations(cropYear)
   const { data: seasons } = useFieldSeasons(cropYear)
-  const setDone = useSetIrrigationDone(cropYear)
+  const { data: progress } = useSeasonProgress(cropYear)
   const isManager = hasManagerAccess(profile?.role)
-  const hailFields = useMemo(
-    () => new Set((hailEvents ?? []).map((h) => h.field_id)),
-    [hailEvents],
-  )
 
-  // One season row per field for this year; the whole-field row carries the
-  // "done watering" checkbox the to-do generator reads.
+  // The year's hail per field: a count and the worst assessed loss, which is
+  // what the chip says. A field can hail twice.
+  const hailByField = useMemo(() => {
+    const m = new Map<string, HailSummary>()
+    const byField = new Map<string, typeof hailEvents>()
+    for (const h of hailEvents ?? []) {
+      const list = byField.get(h.field_id) ?? []
+      list.push(h)
+      byField.set(h.field_id, list)
+    }
+    for (const [id, list] of byField) {
+      const s = hailSummary(list ?? [])
+      if (s) m.set(id, s)
+    }
+    return m
+  }, [hailEvents])
+
+  // One season row per field for this year; the whole-field row is the one
+  // the season's watering belongs on.
   const seasonByField = useMemo(() => fieldSeasonMap(seasons ?? []), [seasons])
-  const doneFields = useMemo(() => doneWateringFields(seasonByField), [seasonByField])
+  const progressBy = useMemo(() => progressByField(progress), [progress])
+
+  // Where each field is in the season. Derived, not ticked: see lib/field-state.ts.
+  const stateByField = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof fieldState>>()
+    for (const [id, p] of progressBy) {
+      const season = seasonByField.get(id)
+      m.set(
+        id,
+        fieldState({
+          cropName: p.cropName,
+          harvestFinished: p.harvestFinished,
+          harvestStarted: p.harvestStarted,
+          lastLoadOn: p.lastLoadOn,
+          wateringDoneAt: season?.irrigation_done_at ?? null,
+          wateringDoneSource: season?.irrigation_done_source ?? null,
+          wateringDoneNote: season?.irrigation_done_note ?? null,
+          irrigated: Boolean(season),
+        }),
+      )
+    }
+    return m
+  }, [progressBy, seasonByField])
+
+  const stateOf = (id: string) => stateByField.get(id) ?? fieldState({ cropName: null })
 
   const [tab, setTab] = useState<'active' | 'archive'>('active')
   const [adding, setAdding] = useState(false)
   const [deleting, setDeleting] = useState<FieldRow | null>(null)
+  const [hailFor, setHailFor] = useState<{ id: string; name: string } | null>(null)
 
   const buildRows = (list: FieldRow[]): Row[] =>
     fieldListRows(list, {
@@ -74,57 +114,60 @@ export function FieldsPage() {
 
   // The columns the CSV carries are shared with the Reports page; only what is
   // drawn on screen is added here.
-  const columns: DataTableColumn<Row>[] = withDisplay(fieldListColumns({ cropYear, hailFields, doneFields }), {
-    name: { className: 'font-medium' },
-    map_acres: {
-      // A dash already says "no boundary"; the separate Boundary column said it twice.
-      render: (r) => (r.map_acres != null ? r.map_acres.toFixed(1) : '—'),
-      className: 'text-right tabular-nums',
-    },
-    hail: {
-      className: 'text-center',
-      render: (r) => (
-        <input
-          type="checkbox"
-          checked={hailFields.has(r.id)}
-          disabled={!isManager}
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => setHail.mutate({ fieldId: r.id, on: e.target.checked })}
-          className="h-4 w-4 cursor-pointer accent-brand-700 disabled:cursor-default"
-          title={`Mark a hail event on ${r.name} in ${cropYear}`}
-          aria-label={`Hail event on ${r.name}`}
-        />
-      ),
-    },
-    watered: {
-      className: 'text-center',
-      render: (r) => {
-        const season = seasonByField.get(r.id)
-        // No season row means the field is not being scheduled at all — there
-        // is nothing raising to-dos, so there is nothing to silence. A dash
-        // rather than an unticked box, which would read as "still to do".
-        if (!season) return <span className="text-xs text-gray-300">—</span>
-        return (
-          <input
-            type="checkbox"
-            checked={Boolean(season.irrigation_done_at)}
-            disabled={!isManager}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) =>
-              setDone.mutate({
-                seasonId: season.id,
-                done: e.target.checked,
-                userId: profile?.id ?? null,
-              })
-            }
-            className="h-4 w-4 cursor-pointer accent-brand-700 disabled:cursor-default"
-            title={`Finished watering ${r.name} for ${cropYear} — stops the irrigation to-dos`}
-            aria-label={`Done watering ${r.name}`}
-          />
-        )
+  const columns: DataTableColumn<Row>[] = withDisplay(
+    fieldListColumns({
+      cropYear,
+      state: stateOf,
+      hail: (id) => {
+        const s = hailByField.get(id)
+        return s ? hailLabel(s) : null
+      },
+    }),
+    {
+      name: { className: 'font-medium' },
+      map_acres: {
+        // A dash already says "no boundary"; the separate Boundary column said it twice.
+        render: (r) => (r.map_acres != null ? r.map_acres.toFixed(1) : '—'),
+        className: 'text-right tabular-nums',
+      },
+      state: {
+        render: (r) => {
+          const s = stateOf(r.id)
+          if (s.key === 'no-crop') return <span className="text-xs text-gray-300">—</span>
+          return (
+            <span
+              className={cn('inline-block rounded px-1.5 py-0.5 text-xs font-medium', FIELD_STATE_CLASS[s.key])}
+              title={s.why}
+            >
+              {s.label}
+            </span>
+          )
+        },
+      },
+      hail: {
+        render: (r) => {
+          const s = hailByField.get(r.id)
+          return (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setHailFor({ id: r.id, name: r.name })
+              }}
+              title={s ? `Hail on ${r.name} in ${cropYear}` : `Record hail on ${r.name}`}
+              aria-label={s ? `Hail on ${r.name}: ${hailLabel(s)}` : `Record hail on ${r.name}`}
+              className={cn(
+                'relative rounded px-1.5 py-0.5 text-xs after:absolute after:-inset-2 after:content-[\'\'] sm:after:content-none',
+                s ? 'bg-red-50 font-medium text-red-700 hover:bg-red-100' : 'text-gray-300 hover:bg-gray-100 hover:text-gray-600',
+              )}
+            >
+              {s ? hailLabel(s) : 'none'}
+            </button>
+          )
+        },
       },
     },
-  })
+  )
   if (isManager) {
     columns.push({
       key: 'actions',
@@ -218,6 +261,16 @@ export function FieldsPage() {
       )}
 
       {tab === 'archive' && <DismissedJdFields />}
+
+      {hailFor && (
+        <HailEventDialog
+          fieldId={hailFor.id}
+          fieldName={hailFor.name}
+          cropYear={cropYear}
+          canEdit={isManager}
+          onClose={() => setHailFor(null)}
+        />
+      )}
 
       {deleting && (
         <ConfirmDialog
@@ -398,8 +451,9 @@ function DismissedJdFields() {
   if (!data?.length) return null
 
   return (
-    <div className="mt-6 rounded-lg border border-gray-200 bg-white p-4">
-      <h2 className="text-sm font-semibold text-gray-700">Deleted John Deere fields</h2>
+    <div className="overflow-hidden mt-6 rounded-lg border border-gray-200 bg-white">
+      <h2 className={cn('font-medium', CARD_HEAD)}>Deleted John Deere fields</h2>
+      <div className="p-4">
       <p className="mt-1 text-xs text-gray-500">
         Deere still has these. They are not brought back in, because they were deleted here on
         purpose.
@@ -426,6 +480,8 @@ function DismissedJdFields() {
           </li>
         ))}
       </ul>
+
+      </div>
     </div>
   )
 }

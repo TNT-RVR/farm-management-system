@@ -28,7 +28,7 @@ export type AgendaInput = {
   carried: AgendaTask[]
   due: AgendaTask[]
   unassigned: AgendaTask[]
-  monthly: { title: string; who: string | null }[]
+  monthly: { title: string; who: string | null; when?: string | null }[]
   runs: { name: string }[]
   water: { field: string; date: string; mm: number | null }[]
   doneWatering: string[]
@@ -102,7 +102,7 @@ export function agendaGroups(a: AgendaInput): ReportGroup[] {
   const month = weekDays(a.monday)[0].toLocaleDateString('en-CA', { month: 'long' })
   groups.push({
     title: `${month} checklist`,
-    rows: [...a.monthly.map((m): Cell[] => [m.title, null, m.who, 'monthly job']), ...a.runs.map((r): Cell[] => [r.name, null, null, 'run in progress'])],
+    rows: [...a.monthly.map((m): Cell[] => [m.title, m.when ?? null, m.who, 'monthly job']), ...a.runs.map((r): Cell[] => [r.name, null, null, 'run in progress'])],
     empty: 'Nothing outstanding for the month.',
   })
   // Water and conferences are on the agenda only when there is something to

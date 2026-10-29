@@ -1,9 +1,10 @@
-import { createClient } from '@supabase/supabase-js'
 import { JD_ACCEPT, jdAccessToken } from './_jd.mts'
 import { sessionsFromTimes, workMinutes } from '../../src/lib/op-sessions.ts'
 import { dbfTimesAndSum, zipEntryChunks } from '../shared/dbf-stream.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
+import { isStaff } from '../shared/staff.ts'
 
 /**
  * Read the sprayer's clock off Deere's per-point export.
@@ -38,7 +39,7 @@ export default async (req: Request) => {
   await hydrateSecrets()
   workerKey = process.env.JOB_WORKER_KEY ?? process.env.FACT_WORKER_KEY ?? process.env.LABEL_WORKER_KEY
   if (!url || !serviceKey) return new Response('Not configured', { status: 500 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
 
   const bearer = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
   const byWorker = Boolean(workerKey) && req.headers.get('x-worker-key') === workerKey
@@ -46,8 +47,8 @@ export default async (req: Request) => {
   if (!byWorker && bearer) {
     const { data: au } = await getUserMfa(sb, bearer)
     if (au.user) {
-      const { data: prof } = await sb.from('users').select('active').eq('id', au.user.id).single()
-      byUser = Boolean(prof?.active)
+      const { data: prof } = await sb.from('users').select('active, role').eq('id', au.user.id).single()
+      byUser = isStaff(prof)
     }
   }
   if (!byWorker && !byUser) return new Response('Not authorised', { status: 401 })

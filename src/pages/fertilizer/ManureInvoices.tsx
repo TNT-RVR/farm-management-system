@@ -5,6 +5,8 @@ import { useDeleteManureInvoice, useManureInvoices, useSaveManureInvoice, type M
 import { useFields } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 import { money, n1 } from './savings/ui'
+import { askConfirm } from '@/components/askConfirm'
+import { CARD_HEAD } from '@/lib/table-style'
 
 const input = 'rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900'
 
@@ -29,10 +31,10 @@ export function ManureInvoices({ isManager }: { isManager: boolean }) {
 
   return (
     <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-gray-200 px-3 py-2">
-        <h2 className="text-sm font-semibold text-gray-900">Custom hauling, as billed</h2>
+      <div className={cn('flex flex-wrap items-baseline justify-between gap-2', CARD_HEAD)}>
+        <h2 className="font-medium">Custom hauling, as billed</h2>
         {isManager && !adding && (
-          <button type="button" onClick={() => setAdding(true)} className="text-xs text-brand-700 underline">
+          <button type="button" onClick={() => setAdding(true)} className="text-xs text-white underline">
             Add an invoice line
           </button>
         )}
@@ -71,8 +73,8 @@ export function ManureInvoices({ isManager }: { isManager: boolean }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        if (window.confirm(`Delete the ${l.hauler} line${l.invoice_no ? ` on invoice #${l.invoice_no}` : ''} for ${nameOf(l.field_id)}?`)) del.mutate(l.id)
+                      onClick={async () => {
+                        if (await askConfirm(`Delete the ${l.hauler} line${l.invoice_no ? ` on invoice #${l.invoice_no}` : ''} for ${nameOf(l.field_id)}?`)) del.mutate(l.id)
                       }}
                       className="text-red-700 hover:text-red-800"
                       title="Delete this invoice line"

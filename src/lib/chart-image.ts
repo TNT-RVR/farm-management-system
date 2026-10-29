@@ -57,3 +57,4 @@ export async function chartToPng(container: HTMLElement, scale = 2): Promise<{ d
     URL.revokeObjectURL(url)
   }
 }
+

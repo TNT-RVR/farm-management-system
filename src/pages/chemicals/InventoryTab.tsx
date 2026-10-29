@@ -11,6 +11,8 @@ import { L_PER_US_GAL, currentAcres, inPacks, shedStock, type InvAdjustment, typ
 import { InfoPopover } from '@/components/InfoPopover'
 import { cn } from '@/lib/utils'
 import { useFarmSettings } from '@/lib/farm-setup'
+import { askConfirm } from '@/components/askConfirm'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /** Everything the inventory needs: invoices, every Deere application, and the counts. */
 function useInventoryData() {
@@ -192,8 +194,8 @@ export function InventoryTab() {
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-[10px] uppercase tracking-wide text-gray-400">
+        <table className="w-full min-w-[480px] text-sm">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th className="px-3 py-2 font-medium">Product</th>
               {/* The method behind On hand = Bought − Sprayed ± counts. On this
@@ -288,8 +290,8 @@ export function InventoryTab() {
                                       <button
                                         type="button"
                                         aria-label="Delete this count"
-                                        onClick={() => {
-                                          if (window.confirm(`Delete this ${e.kind === 'count' ? 'count' : 'adjustment'} of ${l.product.name} on ${e.date}?`)) delAdj.mutate(e.adjustment!.id)
+                                        onClick={async () => {
+                                          if (await askConfirm(`Delete this ${e.kind === 'count' ? 'count' : 'adjustment'} of ${l.product.name} on ${e.date}?`)) delAdj.mutate(e.adjustment!.id)
                                         }}
                                         className="rounded p-0.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
                                       >

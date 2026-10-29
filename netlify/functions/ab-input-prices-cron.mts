@@ -1,7 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
 import { MANAGER_ROLES } from './_jd.mts'
 import { runAbInputPricesPull } from '../shared/ab-input-prices'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 // Alberta Agriculture publish the monthly input price survey a few weeks after
 // the month ends, and not on a fixed day — so this looks four times a month
@@ -16,7 +16,7 @@ export default async () => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
   if (!url || !serviceKey) return new Response('Not configured', { status: 500 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
 
   try {
     const r = await runAbInputPricesPull(sb)
@@ -39,7 +39,7 @@ export default async () => {
         body:
           (r.loaded.length ? `Loaded ${r.loaded.join(', ')}. ` : '') +
           (r.skipped.length ? `Could not read: ${r.skipped.join('; ')}.` : ''),
-        link: '/fertilizer?tab=Pricing',
+        link: '/fertilizer/prices?tab=pricing',
       }))
       if (rows.length) await sb.from('notifications').insert(rows)
     }

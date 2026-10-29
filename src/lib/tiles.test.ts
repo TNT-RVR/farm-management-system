@@ -29,13 +29,32 @@ const NOT_SHORTCUTS = new Set([
   '/topography', // merged into the Map as a tab 25 Sep 2026; redirects there
   '/solar', // moved into Utilities as a tab 6 Oct 2026; redirects there
   '/whats-new', // a tab of the Monday meeting since 7 Oct 2026; redirects there
+  '/hauling', // Travel & trucking, tabs of Fuel & trucking since 24 Oct 2026; redirects there
+  '/truck-inspections', // under Equipment service since 24 Oct 2026; redirects to the trucks
+  '/fertilizer', // five views since 24 Oct 2026, each with its own tile; redirects to one
   '/login',
   '/reset-password', // signed out; there is no home screen to put them on
   '/legal/privacy', // public legal pages for Intuit and outsiders, not somewhere staff go
   '/legal/terms',
-  '/settings', // pinned in the nav and reachable from the home screen header
-  '/integrations', // a settings tab, reached from inside Settings
+  '/settings', // only forwards old links to one of the four views below
+  '/integrations', // the same, to Settings › Connections (OAuth returns still land here)
+  // Settings' four views (24 Oct 2026): reached from pinned Settings and the
+  // header avatar. Tiles carry no role check, and three of these are managers
+  // or admins only, so a tile would bounce most people back to My account.
+  '/settings/account',
+  '/settings/people',
+  '/settings/connections',
+  '/settings/farm',
   '/fields/import', // a one-off setup job, not somewhere you go from a field
+  // Cattle pages that became tabs of its five views (24 Oct 2026); each
+  // redirects to its tab, which has the tile.
+  '/grazing',
+  '/grazing-restrictions',
+  '/pregnancy',
+  '/feed-records',
+  '/bale-checks',
+  '/manifests',
+  '/grazing-leases',
 ])
 
 describe('the tile catalogue', () => {
@@ -70,10 +89,10 @@ describe('the tile catalogue', () => {
 
 describe('resolveTiles', () => {
   it('keeps the order the person chose', () => {
-    const { visible } = resolveTiles({ order: ['tasks', 'turbine', 'map'], hidden: [] })
+    const { visible } = resolveTiles({ order: ['tasks', 'pumps', 'map'], hidden: [] })
     // Their three, in their order, ahead of anything appended for being the
     // only way into a view.
-    expect(visible.slice(0, 3).map((t) => t.key)).toEqual(['tasks', 'turbine', 'map'])
+    expect(visible.slice(0, 3).map((t) => t.key)).toEqual(['tasks', 'pumps', 'map'])
   })
 
   it('does not put a newly shipped tile on an arranged home screen', () => {

@@ -1,6 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { farmName } from '../../src/lib/farm-context.ts'
+import { admin as serviceClient } from '../shared/supabase-admin.ts'
+import { isStaff } from '../shared/staff.ts'
 
 // Minimal RRULE expander (inlined to avoid cross-bundle imports; mirrors
 // src/lib/recur.ts — keep in sync). Supports FREQ/INTERVAL/COUNT/UNTIL.
@@ -76,13 +77,13 @@ export default async (req: Request) => {
   const token = new URL(req.url).searchParams.get('token')
   if (!token) return new Response('Missing token', { status: 400 })
 
-  const admin = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const admin = serviceClient()
   const { data: user } = await admin
     .from('users')
-    .select('id, active')
+    .select('id, active, role')
     .eq('calendar_feed_token', token)
     .single()
-  if (!user || !user.active) return new Response('Invalid token', { status: 403 })
+  if (!user || !isStaff(user)) return new Response('Invalid token', { status: 403 })
 
   const now = new Date()
   const windowStart = new Date(now.getFullYear() - 1, 0, 1)

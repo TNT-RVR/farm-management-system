@@ -111,7 +111,7 @@ no key, the AI features simply don't appear and everything else works.
 2. **Billing → Add credit.** Turn on auto-reload with a monthly limit so a
    runaway job can't surprise you.
 3. **API keys → Create key**, and copy it.
-4. In the app: **Settings → Farm setup → Connections and keys → AI key**,
+4. In the app: **Settings → Connections → AI features → AI key**,
    paste it, save. Press **Generate** next to **Background jobs key** too.
 5. Check spending any time under **Usage** in the console.
 
@@ -162,7 +162,7 @@ volume pricing isn't listed.
 2. Open the [Sentinel Hub dashboard](https://shapps.dataspace.copernicus.eu/dashboard/)
    → **User settings → OAuth clients → Create**. Copy the client ID and the
    secret; the secret is shown only once.
-3. In the app: **Settings → Farm setup → Connections and keys → Satellite
+3. In the app: **Settings → Connections → Satellite
    imagery**: paste both, and type `true` in *Fetch imagery automatically*.
 4. New images arrive overnight. Usage shows on the same dashboard.
 
@@ -202,23 +202,23 @@ These work as soon as the app is running. No account, no key.
 | Service | What it gives the app | Cost | Set it up |
 | --- | --- | --- | --- |
 | **GitHub** | your copy of the code; the nightly backup and update jobs | free; private repositories get 2,000 job minutes a month, far more than this uses | [SETUP.md step 1](../SETUP.md#1-your-own-copy-of-the-code) |
-| **John Deere Operations Center** | fields, boundaries, every pass, yield, work orders | API free; needs your Operations Center org | developer.deere.com → create an application → **Redirect URI** `<your site>/api/jd-callback` → paste the ID and secret in Farm setup → **Connect John Deere** in the app. Deere approves new applications, which can take a few days. Also needs `TOKEN_ENC_KEY` (SETUP.md). |
-| **Lindsay FieldNET** | live pivot position, water applied, faults | API free; needs FieldNET on your pivots (Lindsay's subscription) | Ask Lindsay for developer access → callback `<your site>/api/fieldnet/callback` → paste the ID and secret in Farm setup → **Connect FieldNET**. |
+| **John Deere Operations Center** | fields, boundaries, every pass, yield, work orders | API free; needs your Operations Center org | developer.deere.com → create an application → **Redirect URI** `<your site>/api/jd-callback` → paste the ID and secret in Settings → Connections → **Connect John Deere**. Deere approves new applications, which can take a few days. Also needs `TOKEN_ENC_KEY` (SETUP.md). |
+| **Lindsay FieldNET** | live pivot position, water applied, faults | API free; needs FieldNET on your pivots (Lindsay's subscription) | Ask Lindsay for developer access → callback `<your site>/api/fieldnet/callback` → paste the ID and secret in Settings → Connections → **Connect FieldNET**. |
 | **Email for invites** | sign-up and password emails to your staff | Supabase's built-in sender only reaches your own team, a couple an hour. [Resend](https://resend.com) is free for 3,000 a month (100 a day) | Resend → add your domain → **API keys** → in Supabase, **Authentication → Emails → SMTP Settings**: host `smtp.resend.com`, port 465, user `resend`, password = the key. A Gmail app password also works for a small crew. |
-| **Gmail + Apps Script** | forwards emailed reports (hail inspections) into the app | free | a new plain Gmail address → set `INBOUND_EMAIL_SECRET` (Netlify, a long random string) and `INBOUND_EMAIL_SENDERS` (Farm setup) → paste `docs/inbound-email.gs` into [script.google.com](https://script.google.com) under that account, fill in your site address and the same secret → **Triggers → Add trigger**, `forwardDocuments`, time-driven, every 15 minutes |
-| **Google Sheets** | reads a daily feeding sheet | free | Google Cloud → a service account → share the sheet with its email → Farm setup → *Feed sheet* |
-| **eShepherd** | heat and pregnancy from collars | needs eShepherd collars (their pricing) | ask eShepherd for your herd's public dashboard link; the long code in it is the token. Farm setup → *eShepherd collars*. |
-| **QuickBooks Online** | reads your books (bills, expenses, invoices and their PDFs) for finance users; never writes | API free; needs a QuickBooks Online subscription (Intuit's pricing) | create an app at [developer.intuit.com](https://developer.intuit.com) → redirect URI `<your site>/api/quickbooks/callback` → paste the ID and secret in Farm setup → *QuickBooks Online* → **Connect**. Start with the sandbox keys. Intuit's production questionnaire, with the answers about what the app does: [docs/QUICKBOOKS.md](QUICKBOOKS.md). Also needs `TOKEN_ENC_KEY` (SETUP.md). |
-| **SolisCloud** | what your solar panels made, hourly | free; needs Solis inverters on SolisCloud | email Solis support to ask for API access → on a computer, soliscloud.com → **Service → API Management → Activate** → **View Key** gives the KeyID, KeySecret and API URL → Farm setup → *SolisCloud solar* → switch **Solar** on |
-| **Authenticator sign-in** | an optional second step at sign-in (a 6-digit code), per person | free; any authenticator app (Google Authenticator, Microsoft Authenticator, 1Password and the like) | each person turns it on under **Settings → My account → Sign-in security**. An admin can reset a lost one under **Users**. Supabase has it switched on by default; check **Authentication → Multi-Factor** shows TOTP enabled |
-| **Staff time-off calendar** | who is away, on the calendar and the Monday meeting | free; uses the calendar link most HR, payroll and shared calendars (Google, Outlook) can give you | on your HR system's time-off page, find **Subscribe** or **Calendar feed** and copy the link (it starts `webcal://` or `https://`) → Farm setup → *Staff time off* → paste it → switch **Staff time off** on → press **refresh** on the Calendar page |
+| **Gmail + Apps Script** | forwards emailed reports (hail inspections) into the app | free | a new plain Gmail address → set `INBOUND_EMAIL_SECRET` (Netlify, a long random string) and `INBOUND_EMAIL_SENDERS` (Settings → Connections) → paste `docs/inbound-email.gs` into [script.google.com](https://script.google.com) under that account, fill in your site address and the same secret → **Triggers → Add trigger**, `forwardDocuments`, time-driven, every 15 minutes |
+| **Google Sheets** | reads a daily feeding sheet | free | Google Cloud → a service account → share the sheet with its email → Settings → Connections → *Feed sheet* |
+| **eShepherd** | heat and pregnancy from collars | needs eShepherd collars (their pricing) | ask eShepherd for your herd's public dashboard link; the long code in it is the token. Settings → Connections → *eShepherd collars*. |
+| **QuickBooks Online** | reads your books (bills, expenses, invoices and their PDFs) for finance users; never writes | API free; needs a QuickBooks Online subscription (Intuit's pricing) | create an app at [developer.intuit.com](https://developer.intuit.com) → redirect URI `<your site>/api/quickbooks/callback` → paste the ID and secret in Settings → Connections → *QuickBooks Online* → **Connect**. Start with the sandbox keys. Intuit's production questionnaire, with the answers about what the app does: [docs/QUICKBOOKS.md](QUICKBOOKS.md). Also needs `TOKEN_ENC_KEY` (SETUP.md). |
+| **SolisCloud** | what your solar panels made, hourly | free; needs Solis inverters on SolisCloud | email Solis support to ask for API access → on a computer, soliscloud.com → **Service → API Management → Activate** → **View Key** gives the KeyID, KeySecret and API URL → Settings → Connections → *SolisCloud solar* → switch **Solar** on in Farm setup → Parts of the app |
+| **Authenticator sign-in** | an optional second step at sign-in (a 6-digit code), per person | free; any authenticator app (Google Authenticator, Microsoft Authenticator, 1Password and the like) | each person turns it on under **Settings → My account → Sign-in security**. An admin can reset a lost one under **Settings → Users & access**. Supabase has it switched on by default; check **Authentication → Multi-Factor** shows TOTP enabled |
+| **Staff time-off calendar** | who is away, on the calendar and the Monday meeting | free; uses the calendar link most HR, payroll and shared calendars (Google, Outlook) can give you | on your HR system's time-off page, find **Subscribe** or **Calendar feed** and copy the link (it starts `webcal://` or `https://`) → Settings → Connections → *Staff time off* → paste it → switch **Staff time off** on in Farm setup → Parts of the app → press **refresh** on the Calendar page |
 
 ## Keeping the bill down
 
 - **Batch your changes.** On Netlify every deploy is 15 credits, and that's
   where most overage comes from.
-- **Switch off what you don't use** in Settings → Farm setup. Its pages
-  disappear and its AI calls stop.
+- **Switch off what you don't use** in Settings → Farm setup → Parts of the
+  app. Its pages leave the menu and its AI calls stop.
 - **Set limits** on everything that has them: a Netlify credit alert, an
   Anthropic monthly limit, a Supabase spend cap (on by default on Pro).
 - **Skip point-in-time restore** unless losing a day of entries would really

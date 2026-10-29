@@ -10,17 +10,24 @@ import type { Database } from './database.types'
 
 export type NotificationRow = Database['public']['Tables']['notifications']['Row']
 
-export function useNotifications() {
+/**
+ * My list order: unread first, each part newest first, or plain newest first.
+ * Ordered by the database (the `unread` computed field) so paging stays right.
+ */
+function inMyOrder<Q extends { order: (column: string, o: { ascending: boolean }) => Q }>(q: Q, unreadFirst: boolean): Q {
+  return (unreadFirst ? q.order('unread', { ascending: false }) : q).order('created_at', { ascending: false })
+}
+
+/** The newest hundred, unread first if I list them that way. `enabled` off holds the fetch: the header bell reads them only while its dropdown is open. */
+export function useNotifications(enabled = true) {
   const { session } = useAuth()
+  const { data: order } = useNotificationOrder()
+  const unreadFirst = order ?? true
   return useQuery({
-    queryKey: ['notifications'],
-    enabled: Boolean(session),
+    queryKey: ['notifications', 'recent', { unreadFirst }],
+    enabled: Boolean(session) && enabled && order !== undefined,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100)
+      const { data, error } = await inMyOrder(supabase.from('notifications').select('*'), unreadFirst).limit(100)
       if (error) throw error
       return data
     },
@@ -33,18 +40,18 @@ export function useNotificationsRealtime() {
   const queryClient = useQueryClient()
   useEffect(() => {
     if (!session) return
+    // A private Broadcast topic per person, sent by a trigger on insert: the
+    // table change feed made the database read every write the farm makes.
     const channel = supabase
-      .channel('notifications')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${session.user.id}`,
-        },
-        () => void queryClient.invalidateQueries({ queryKey: ['notifications'] }),
-      )
+      .channel(`notifications:${session.user.id}`, { config: { private: true } })
+      .on('broadcast', { event: 'insert' }, () => {
+        // The count, the newest-hundred list and the Notifications page's
+        // feed. Only those on screen refetch: the bell's list is held while
+        // its dropdown is shut, so a new notification costs one count query.
+        void queryClient.invalidateQueries({ queryKey: UNREAD_COUNT_KEY })
+        void queryClient.invalidateQueries({ queryKey: ['notifications', 'recent'] })
+        void queryClient.invalidateQueries({ queryKey: ['notifications', 'feed'] })
+      })
       .subscribe()
     return () => void supabase.removeChannel(channel)
   }, [session, queryClient])
@@ -73,20 +80,20 @@ export const NOTIFICATION_PAGE = 30
 
 export type NotificationFilter = { unread: boolean; kinds: string[] | null }
 
-/** The Notifications page: newest first, a page at a time, optionally unread only or of some kinds. */
+/** The Notifications page: in my order, a page at a time, optionally unread only or of some kinds. */
 export function useNotificationFeed(filter: NotificationFilter) {
   const { session } = useAuth()
+  const { data: order } = useNotificationOrder()
+  const unreadFirst = order ?? true
   return useInfiniteQuery({
-    queryKey: ['notifications', 'feed', { unread: filter.unread, kinds: filter.kinds }],
-    enabled: Boolean(session),
+    queryKey: ['notifications', 'feed', { unread: filter.unread, kinds: filter.kinds, unreadFirst }],
+    enabled: Boolean(session) && order !== undefined,
     initialPageParam: 0,
     queryFn: async ({ pageParam }) => {
       let q = supabase.from('notifications').select('*')
       if (filter.unread) q = q.is('read_at', null)
       if (filter.kinds?.length) q = q.in('kind', filter.kinds)
-      const { data, error } = await q
-        .order('created_at', { ascending: false })
-        .range(pageParam, pageParam + NOTIFICATION_PAGE - 1)
+      const { data, error } = await inMyOrder(q, unreadFirst && !filter.unread).range(pageParam, pageParam + NOTIFICATION_PAGE - 1)
       if (error) throw error
       return data
     },
@@ -255,6 +262,43 @@ export function useNotificationTiming() {
         digest_at: data.digest_at.slice(0, 5),
       }
     },
+  })
+}
+
+const ORDER_KEY = ['notification_settings', 'order']
+
+/** true: my bell and Notifications page list unread first. On until I turn it off (no settings row reads as on). */
+export function useNotificationOrder() {
+  const { session } = useAuth()
+  return useQuery({
+    queryKey: ORDER_KEY,
+    enabled: Boolean(session),
+    queryFn: async (): Promise<boolean> => {
+      const { data, error } = await supabase.from('notification_settings').select('unread_first').maybeSingle()
+      if (error) throw error
+      return data?.unread_first ?? true
+    },
+  })
+}
+
+/** Save my list order; the lists re-read in the new order. */
+export function useSetNotificationOrder() {
+  const { session } = useAuth()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (unreadFirst: boolean) => {
+      const { error } = await supabase
+        .from('notification_settings')
+        .upsert({ user_id: session!.user.id, unread_first: unreadFirst, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      if (error) throw error
+    },
+    onMutate: async (unreadFirst) => {
+      const before = queryClient.getQueryData<boolean>(ORDER_KEY)
+      queryClient.setQueryData(ORDER_KEY, unreadFirst)
+      return { before }
+    },
+    onError: (_e, _v, ctx) => queryClient.setQueryData(ORDER_KEY, ctx?.before),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: ORDER_KEY }),
   })
 }
 

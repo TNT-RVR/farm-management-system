@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
-import { createClient } from '@supabase/supabase-js'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
+import { isStaff } from '../shared/staff.ts'
 
 /**
  * Rotation → recommendations: takes the request and hands it to the
@@ -34,11 +35,11 @@ export default async (req: Request) => {
   if (!apiKey) return json({ error: 'ANTHROPIC_API_KEY is not set' }, 501)
   if (!workerKey || !site) return json({ error: `${!workerKey ? 'JOB_WORKER_KEY' : 'URL'} is not set` }, 501)
 
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
   const bearer = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
   const { data: au } = bearer ? await getUserMfa(sb, bearer) : { data: { user: null } }
-  const { data: prof } = au.user ? await sb.from('users').select('active').eq('id', au.user.id).single() : { data: null }
-  if (!prof?.active) return json({ error: 'Not authorised' }, 401)
+  const { data: prof } = au.user ? await sb.from('users').select('active, role').eq('id', au.user.id).single() : { data: null }
+  if (!isStaff(prof)) return json({ error: 'Not authorised' }, 401)
 
   // Kept as the exact text sent: the page hashes the same string to tell
   // whether the plans have changed since the advice was written.

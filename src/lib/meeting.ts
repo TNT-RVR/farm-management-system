@@ -96,24 +96,6 @@ export function weekEventsOf(events: { starts_at: string; rrule: string | null; 
 }
 
 /**
- * The monthly checklist for the month the MEETING is in, which is not always
- * the month the week ends in: active jobs in season, not yet ticked off.
- */
-export function monthlyOutstanding<T extends { id: string; active: boolean; start_month: number; end_month: number }, I extends { template_id: string; completed: boolean | null }>(
-  templates: T[],
-  instances: I[],
-  mondayISO: string,
-): { template: T; instance: I | null }[] {
-  const month = weekDays(mondayISO)[0].getMonth() + 1
-  const byTemplate = new Map(instances.map((i) => [i.template_id, i]))
-  return templates
-    .filter((t) => t.active)
-    .filter((t) => (t.start_month <= t.end_month ? month >= t.start_month && month <= t.end_month : month >= t.start_month || month <= t.end_month))
-    .map((t) => ({ template: t, instance: byTemplate.get(t.id) ?? null }))
-    .filter((r) => !r.instance?.completed)
-}
-
-/**
  * Fields the model says will hit the trigger inside this week — the input to
  * the field-work discussion, not the answer to it. Fields finished for the
  * season are left out: the balance still crosses, but the pivot is shut off.

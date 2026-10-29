@@ -11,14 +11,14 @@ before it hands out production keys; this page is the checklist, with what the
 app actually does so you can answer each one truthfully. Answers marked
 **(you)** depend on your business, not the app — answer those yourself.
 
-Throughout, `your-farm.netlify.app` means your site's address (Settings → Farm
-setup → Keys → Site address).
+Throughout, `your-farm.netlify.app` means your site's address (Settings →
+Connections → Your site → Site address).
 
 ---
 
 ## Part 1 — Before you start (in the app)
 
-- [ ] **Settings → Farm setup → Names and defaults → Support contact email.**
+- [ ] **Settings → Farm setup → Your farm → Names and defaults → Support contact email.**
       Fill it in. It appears on your privacy policy, licence agreement and the
       QuickBooks card, and Intuit's review looks for a contact. Leave it blank
       and those pages say "contact the owners".
@@ -45,10 +45,10 @@ setup → Keys → Site address).
 
 - [ ] developer.intuit.com → **Sandbox** → add a sandbox company in your
       country if you don't have one. It's sample data, not your books.
-- [ ] In the app: **Settings → Farm setup → Keys → QuickBooks Online** — paste
+- [ ] In the app: **Settings → Connections → QuickBooks Online** — paste
       the development Client ID and secret. Leave *Sandbox or production* blank.
-- [ ] **Settings → Integrations → QuickBooks Online → Connect QuickBooks**, sign
-      in, pick the sandbox company. You land back on Integrations and the first
+- [ ] **Settings → Connections → QuickBooks Online → Connect QuickBooks**, sign
+      in, pick the sandbox company. You land back on Connections and the first
       sync starts by itself.
 - [ ] Open the **QuickBooks** page — it shows a yellow "Sandbox" banner and the
       sample company's transactions. Open one with an attachment.
@@ -132,7 +132,7 @@ setup → Keys → Site address).
 | Security breach requiring notification | **(you)** |
 | Security team that assesses risks | **(you)** — a farm usually answers No |
 | Client ID and secret stored securely | Yes — saved server-side in a table no signed-in user can read; never in the code or the browser |
-| Multi-factor authentication | Yes if your owners and accountant turn on authenticator-app sign-in (Settings → Your account); otherwise No |
+| Multi-factor authentication | Yes if your owners and accountant turn on authenticator-app sign-in (Settings → My account → Sign-in security); otherwise No |
 | Captcha | No |
 | WebSocket | Yes — the live notification bell; no QuickBooks data travels over it |
 | Intuit data shown to anyone other than that customer | No — only your own owners and accountant |
@@ -141,9 +141,9 @@ setup → Keys → Site address).
 
 - [ ] When Intuit approves, copy the **production** Client ID and secret.
 - [ ] Add the same redirect URI under **production** settings.
-- [ ] Farm setup → Keys → paste the production keys and type `production` in
+- [ ] Settings → Connections → paste the production keys and type `production` in
       *Sandbox or production*.
-- [ ] Integrations → **Connect QuickBooks** again and choose your real company.
+- [ ] Settings → Connections → **Connect QuickBooks** again and choose your real company.
       The sandbox rows stay behind under the sandbox company and never mix in.
 
 ## If something goes wrong

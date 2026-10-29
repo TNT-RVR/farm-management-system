@@ -5,6 +5,8 @@ import { AlertTriangle, CalendarClock, ChevronDown, ChevronRight } from 'lucide-
 import { fieldPhi, type FieldPhi } from '@/lib/phi'
 import { loadPhiSeason } from '@/lib/phi-data'
 import { cn } from '@/lib/utils'
+import { HelpNote } from '@/components/HelpNote'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * Every chemical sprayed this season with its pre-harvest interval, and the
@@ -25,9 +27,11 @@ const fmt = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-CA'
  * The fields not yet clear to harvest, and any harvested too soon. Stays out
  * of the way when there is nothing to say.
  */
-export function PhiPanel({ cropYear }: { cropYear: number }) {
+export function PhiPanel({ cropYear, defaultOpen = false, emptyText, flat = false }: { cropYear: number; defaultOpen?: boolean; emptyText?: string; flat?: boolean }) {
   const { data } = usePhiSeason(cropYear)
-  const [open, setOpen] = useState(false)
+  const [openState, setOpen] = useState(defaultOpen)
+  // On its own tab it does not fold (Sam, 23 Oct 2026).
+  const open = flat || openState
   const today = new Date().toLocaleDateString('en-CA')
 
   const fields = useMemo(() => {
@@ -40,12 +44,12 @@ export function PhiPanel({ cropYear }: { cropYear: number }) {
 
   const waiting = fields.filter((f) => f.safeFrom && f.safeFrom > today && !data?.harvestStart.get(f.fieldId))
   const early = fields.filter((f) => f.violation)
-  if (!fields.length) return null
+  if (!fields.length) return emptyText ? <p className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-500">{emptyText}</p> : null
 
   return (
     <div className="mb-3 rounded-lg border border-gray-200 bg-white">
-      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full flex-wrap items-center gap-2 px-3 py-2 text-left text-sm">
-        {open ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+      <button type="button" disabled={flat} onClick={() => setOpen((o) => !o)} className="flex w-full flex-wrap items-center gap-2 px-3 py-2 text-left text-sm disabled:cursor-default">
+        {!flat && (open ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />)}
         <CalendarClock className="h-4 w-4 text-gray-500" />
         <span className="font-semibold text-gray-900">Pre-harvest intervals</span>
         {early.length > 0 && (
@@ -72,45 +76,97 @@ export function PhiPanel({ cropYear }: { cropYear: number }) {
         </div>
       )}
       {open && (
-        <div className="overflow-x-auto border-t border-gray-100">
-          <table className="w-full text-xs">
-            <thead className="bg-gray-50 text-left text-[10px] uppercase tracking-wide text-gray-400">
+        <div className="border-t border-gray-100">
+          {/*
+            Phone: one card a field. Five columns on a 375 px screen squeezed
+            every cell to about a word wide — "Reglone Ion · 7 d from Sep 25"
+            ran to four lines and a single row stood half a screen tall
+            (Sam, 28 Oct 2026).
+          */}
+          <ul className="divide-y divide-gray-100 sm:hidden">
+            {fields.map((f) => {
+              const started = data?.harvestStart.get(f.fieldId) ?? null
+              const notClear = !!f.safeFrom && f.safeFrom > today && !started
+              const unknown = [...new Set(f.unknown.map((u) => u.product))]
+              return (
+                <li key={f.fieldId} className="px-3 py-2.5">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <Link to={`/fields/${f.fieldId}/work`} className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 hover:underline">
+                      {f.name}
+                    </Link>
+                    <span
+                      className={cn(
+                        'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums',
+                        f.violation ? 'bg-red-100 text-red-800' : notClear ? 'bg-amber-100 text-amber-900' : 'bg-green-100 text-green-800',
+                      )}
+                    >
+                      {f.violation ? 'Harvested early' : notClear ? `Clear ${fmt(f.safeFrom!)}` : 'Clear'}
+                    </span>
+                  </div>
+                  <dl className="mt-1 space-y-0.5 text-xs text-gray-600">
+                    {f.limiting && (
+                      <div className="flex gap-1.5">
+                        <dt className="shrink-0 text-gray-400">Set by</dt>
+                        <dd className="min-w-0 flex-1">
+                          {f.limiting.product} · {f.limiting.phiDays} d from {fmt(f.limiting.appliedOn)}
+                        </dd>
+                      </div>
+                    )}
+                    {started && (
+                      <div className="flex gap-1.5">
+                        <dt className="shrink-0 text-gray-400">Harvest started</dt>
+                        <dd className="tabular-nums">{fmt(started)}</dd>
+                      </div>
+                    )}
+                    {unknown.length > 0 && (
+                      <div className="flex gap-1.5">
+                        <dt className="shrink-0 text-gray-400">Interval unknown</dt>
+                        <dd className="min-w-0 flex-1">{unknown.join(', ')}</dd>
+                      </div>
+                    )}
+                  </dl>
+                </li>
+              )
+            })}
+          </ul>
+          <table className="hidden w-full text-sm sm:table">
+            <thead className={TABLE_HEAD}>
               <tr>
-                <th className="px-3 py-1 font-medium">Field</th>
-                <th className="px-3 py-1 font-medium">Clear to harvest</th>
-                <th className="px-3 py-1 font-medium">Set by</th>
-                <th className="px-3 py-1 font-medium">Harvest started</th>
-                <th className="px-3 py-1 font-medium">Interval unknown</th>
+                <th className="px-3 py-2 font-medium">Field</th>
+                <th className="px-3 py-2 font-medium">Clear to harvest</th>
+                <th className="px-3 py-2 font-medium">Set by</th>
+                <th className="px-3 py-2 font-medium">Harvest started</th>
+                <th className="px-3 py-2 font-medium">Interval unknown</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {fields.map((f) => (
                 <tr key={f.fieldId}>
-                  <td className="px-3 py-1">
-                    <Link to={`/fields/${f.fieldId}/work`} className="text-gray-800 hover:underline">
+                  <td className="px-3 py-2 font-medium">
+                    <Link to={`/fields/${f.fieldId}/work`} className="text-gray-900 hover:underline">
                       {f.name}
                     </Link>
                   </td>
-                  <td className={cn('px-3 py-1 tabular-nums', f.safeFrom && f.safeFrom > today && 'font-semibold text-amber-800')}>
+                  <td className={cn('px-3 py-2 tabular-nums', f.safeFrom && f.safeFrom > today && 'font-semibold text-amber-800')}>
                     {f.safeFrom ? fmt(f.safeFrom) : '—'}
                   </td>
-                  <td className="px-3 py-1 text-gray-600">
+                  <td className="px-3 py-2 text-gray-700">
                     {f.limiting ? `${f.limiting.product} · ${f.limiting.phiDays} d from ${fmt(f.limiting.appliedOn)}` : '—'}
                   </td>
-                  <td className="px-3 py-1 tabular-nums text-gray-600">{data?.harvestStart.get(f.fieldId) ? fmt(data.harvestStart.get(f.fieldId)!) : '—'}</td>
-                  <td className="px-3 py-1 text-gray-500">{f.unknown.length ? [...new Set(f.unknown.map((u) => u.product))].join(', ') : '—'}</td>
+                  <td className="px-3 py-2 tabular-nums text-gray-700">{data?.harvestStart.get(f.fieldId) ? fmt(data.harvestStart.get(f.fieldId)!) : '—'}</td>
+                  <td className="px-3 py-2 text-gray-500">{f.unknown.length ? [...new Set(f.unknown.map((u) => u.product))].join(', ') : '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="px-3 py-1.5 text-[11px] text-gray-400">
+          <HelpNote className="px-3 py-1.5" summary="An unread label is listed as unknown, never as clear." title="Where these come from">
             From every chemical pass Deere logged this season and the label&apos;s pre-harvest interval for the crop on that pass. A product
             whose label is unread, or that gives no interval for this crop, is listed as unknown — never as clear. Harvest start is the
             first Deere harvest pass or the first weighed load, whichever came first.{' '}
             <Link to="/chemicals" className="underline">
               Labels
             </Link>
-          </p>
+          </HelpNote>
         </div>
       )}
     </div>

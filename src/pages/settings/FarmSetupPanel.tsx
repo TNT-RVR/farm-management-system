@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import { CheckCircle2, Circle, ImageUp, MapPin, RotateCcw } from 'lucide-react'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { supabase } from '@/lib/supabase'
 import { BRAND } from '@/config/brand'
 import {
@@ -18,14 +17,15 @@ import { useRanches } from '@/lib/ranches'
 import { HelpNote } from '@/components/HelpNote'
 import { Select } from '@/components/Select'
 import { cn } from '@/lib/utils'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { FRESH_OFF } from '@/lib/farm-context'
 import { WEATHER_SITES, type WeatherSite } from '@/lib/weatherSites'
-import { PillTabs } from '@/components/PillTabs'
+import { SETTINGS_PATHS, type FarmTab } from '@/lib/settings-routes'
 import { CompanyMark, GroupBadge, useKeyStatus } from '@/pages/settings/SetupKeys'
 import { KEY_GROUPS, groupState } from '@/lib/setup-keys'
 import { connectionForKeyGroup } from '@/lib/connections'
 import { CustomizingGuide } from '@/pages/settings/CustomizingGuide'
+import { FISCAL_YEAR_ENDS } from '@/lib/fiscal-year'
 
 const PROVINCES = [
   ['AB', 'Alberta'],
@@ -63,21 +63,6 @@ const TIME_ZONES = [
   'Europe/London',
 ]
 
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-]
-
 const card = 'rounded-lg border border-gray-200 bg-white p-4'
 const field = 'mt-1 w-full rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm'
 const label = 'text-xs font-medium text-gray-600'
@@ -91,34 +76,26 @@ function LocationPicker({
   onChange: (v: [number, number]) => void
 }) {
   const box = useRef<HTMLDivElement>(null)
-  const map = useRef<maplibregl.Map | null>(null)
   const pin = useRef<maplibregl.Marker | null>(null)
   const changed = useRef(onChange)
   useEffect(() => {
     changed.current = onChange
   }, [onChange])
 
-  useEffect(() => {
-    if (!box.current) return
-    const m = new maplibregl.Map({
-      container: box.current,
-      style: SATELLITE_STYLE,
-      center: value,
-      zoom: 9,
-      attributionControl: { compact: true },
-    })
-    m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-    pin.current = new maplibregl.Marker({ color: '#15803d' }).setLngLat(value).addTo(m)
-    m.on('click', (e) => {
-      const v: [number, number] = [Number(e.lngLat.lng.toFixed(4)), Number(e.lngLat.lat.toFixed(4))]
-      pin.current?.setLngLat(v)
-      changed.current(v)
-    })
-    map.current = m
-    return () => m.remove()
-    // Created once; later moves come from the click above or the effect below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Created once; later moves come from the click below or the effect after it.
+  useFarmMap(box, {
+    center: value,
+    zoom: 9,
+    attribution: 'compact',
+    onCreate: (m) => {
+      pin.current = new maplibregl.Marker({ color: '#15803d' }).setLngLat(value).addTo(m)
+      m.on('click', (e) => {
+        const v: [number, number] = [Number(e.lngLat.lng.toFixed(4)), Number(e.lngLat.lat.toFixed(4))]
+        pin.current?.setLngLat(v)
+        changed.current(v)
+      })
+    },
+  })
 
   useEffect(() => {
     pin.current?.setLngLat(value)
@@ -133,21 +110,15 @@ function LocationPicker({
  * or may not use, counted but not demanded.
  */
 /**
- * The parts of Farm setup, each its own view. `?part=` in the address opens one.
+ * The parts of Farm setup. Since 24 Oct 2026 (Sam, season menu step 3) they
+ * are the tab row of the Farm setup view, /settings/farm?tab=<key>, drawn by
+ * SettingsPage (FARM_PARTS in lib/settings-routes).
  *
- * Connections is a step here but not a view: it has one home, Settings →
- * Connections, merged with the old Integrations tab (14 Oct 2026). Its pill
- * goes there, an old `?part=connections` link opens that tab (SettingsPage),
- * and everything below that points at a connection opens it there.
+ * Connections is a step here but not a tab: it has one home, Settings →
+ * Connections (/settings/connections), and everything below that points at a
+ * connection opens it there.
  */
-const PARTS = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'farm', label: 'Your farm' },
-  { key: 'features', label: 'Parts of the app' },
-  { key: 'customize', label: 'Fitting it to your farm' },
-] as const
-type Part = (typeof PARTS)[number]['key']
-const isPart = (v: string | null): v is Part => PARTS.some((p) => p.key === v)
+type Part = FarmTab
 
 /**
  * What is done and what is left. The essentials are what the app needs to be
@@ -276,7 +247,7 @@ function SetupOverview({
  * Profile and location save together from one button; feature switches save
  * the moment they are flipped, because each one is a single decision.
  */
-export function FarmSetupPanel() {
+export function FarmSetupPanel({ part, go }: { part: Part; go: (p: Part) => void }) {
   const { data: setup, isLoading } = useFarmSetup()
   const save = useSaveFarmSetup()
   const brand = useBrand()
@@ -284,21 +255,10 @@ export function FarmSetupPanel() {
   const [draft, setDraft] = useState<Partial<FarmSetup> | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
-  const [search, setSearch] = useSearchParams()
-  const fromUrl = search.get('part')
-  // Connections has one home: Settings → Connections (SettingsPage follows ?tab=).
-  const openConnection = (id?: string) => setSearch(new URLSearchParams({ tab: 'Connections', ...(id ? { c: id } : {}) }))
-  // An old ?part=connections link is sent to the Connections tab by SettingsPage.
-  const part: Part = isPart(fromUrl) ? fromUrl : 'overview'
-  const go = (p: Part) =>
-    setSearch(
-          (prev) => {
-            const next = new URLSearchParams(prev)
-            next.set('part', p)
-            return next
-          },
-          { replace: true },
-        )
+  const navigate = useNavigate()
+  // Connections has one home: Settings → Connections, with ?c= opening one.
+  const openConnection = (id?: string) =>
+    navigate(`${SETTINGS_PATHS.connections}${id ? `?c=${encodeURIComponent(id)}` : ''}`)
 
   // The form starts from the saved row (or the brand.ts fallback on a fresh
   // install) and only becomes a draft once something is changed.
@@ -311,6 +271,7 @@ export function FarmSetupPanel() {
     map_center_lat: BRAND.mapCenter[1],
     time_zone: 'America/Edmonton',
     province: 'AB',
+    fiscal_year_end_month: 12,
     units: 'metric',
     farm_description: '',
     features: {},
@@ -373,8 +334,6 @@ export function FarmSetupPanel() {
           save.
         </p>
       )}
-
-      <PillTabs tabs={PARTS} value={part} onChange={go} />
 
       {part === 'overview' && <SetupOverview setup={setup ?? null} go={go} openConnection={openConnection} />}
 
@@ -485,6 +444,15 @@ export function FarmSetupPanel() {
                         label: t.replace('America/', '').replace('_', ' '),
                       }),
                     )}
+                  />
+                </label>
+                <label className={label}>
+                  Fiscal year ends
+                  <Select
+                    className="mt-1"
+                    value={String(v.fiscal_year_end_month ?? 12)}
+                    onChange={(m) => set({ fiscal_year_end_month: Number(m) })}
+                    options={FISCAL_YEAR_ENDS.map((o) => ({ value: String(o.month), label: o.label }))}
                   />
                 </label>
                 <div className={label}>
@@ -635,12 +603,12 @@ export function FarmSetupPanel() {
                   />
                 </label>
                 <label className={label}>
-                  Combine model
+                  River you pump from
                   <input
                     className={field}
-                    placeholder="e.g. CR9090, S780, 8250"
-                    value={v.combine_model ?? ''}
-                    onChange={(e) => set({ combine_model: e.target.value })}
+                    placeholder="e.g. Red Deer River"
+                    value={v.river_name ?? ''}
+                    onChange={(e) => set({ river_name: e.target.value })}
                   />
                 </label>
                 <label className={label}>
@@ -654,28 +622,6 @@ export function FarmSetupPanel() {
                       { value: '', label: 'The first ranch' },
                       ...(ranches ?? []).map((r) => ({ value: r.id, label: r.name })),
                     ]}
-                  />
-                </label>
-                <label className={label}>
-                  Calves usually sold in
-                  <span className="block text-[11px] font-normal text-gray-400">
-                    Each ranch can set its own in Cattle settings; this is for a ranch that
-                    hasn&apos;t.
-                  </span>
-                  <Select
-                    className="mt-1"
-                    value={String(v.calf_sale_month ?? settings.calfSaleMonth)}
-                    onChange={(m) => set({ calf_sale_month: Number(m) })}
-                    options={MONTHS.map((m, i) => ({ value: String(i + 1), label: m }))}
-                  />
-                </label>
-                <label className={label}>
-                  At about (lb)
-                  <input
-                    className={field}
-                    inputMode="numeric"
-                    value={v.calf_sale_weight_lb ?? settings.calfSaleWeightLb}
-                    onChange={(e) => set({ calf_sale_weight_lb: Number(e.target.value) || null })}
                   />
                 </label>
                 <label className={label}>

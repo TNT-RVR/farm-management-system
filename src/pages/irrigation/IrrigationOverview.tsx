@@ -12,6 +12,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { OVERVIEW_HELP } from '@/lib/irrigation-overview-help'
 import { allocationRows, useAllocation, VERDICT } from './AllocationTab'
 import { IrrigationPlanner } from './IrrigationPlanner'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const WaterSeasonReview = lazy(() => import('./WaterSeasonReview').then((m) => ({ default: m.WaterSeasonReview })))
 
@@ -76,7 +77,7 @@ export function IrrigationOverview({ year, onOpenField }: { year: number; onOpen
               .filter((x): x is string => Boolean(x)),
           ),
         ].join(', ')
-        // Marked finished for the season (Fields → done watering): the model
+        // Finished for the season (worked out daily, or ticked on Setup): the model
         // does not know the pivot is shut off, so its "irrigate now" late in
         // the year is not a call to act — the to-dos are already held back.
         const done = (seasons ?? []).some((s) => s.field_id === f.id && s.active && s.irrigation_done_at)
@@ -135,7 +136,7 @@ export function IrrigationOverview({ year, onOpenField }: { year: number; onOpen
         ) : (
           <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[860px] text-xs">
-              <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+              <thead className={TABLE_HEAD}>
                 <tr>
                   <th className="py-1 pr-2 font-medium">Field</th>
                   <Th help="status">Status</Th>

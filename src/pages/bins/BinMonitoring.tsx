@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ClipboardPaste, Download, ImageUp, Loader2, Plus, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ClipboardPaste, ImageUp, Loader2, Plus, Trash2, X } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { emcKind, flagsFor, moistureFor, type Level } from '@/lib/bin-monitor'
+import { aboveGrain, differentBin, emcKind, flagsFor, moistureFor, type Level } from '@/lib/bin-monitor'
 import {
-  fetchCanolaReportBins,
   readCableScreenshot,
   useBinMonitorReadings,
   useDeleteBinMonitor,
@@ -12,20 +11,18 @@ import {
 } from '@/lib/bin-monitor-data'
 import { levelsToForm } from '@/lib/record-edits'
 import { rowClick } from '@/components/RecordEditor'
-import { buildBasfReport, download, type ReportBin } from '@/lib/bin-monitor-export'
-import { HelpNote } from '@/components/HelpNote'
-import { useFeature } from '@/lib/farm-setup'
 import { cn } from '@/lib/utils'
+import { askConfirm } from '@/components/askConfirm'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 type Crop = { id: string; name: string; moisture_dry_max: number | string | null }
 
-const initialsOf = (name: string | null | undefined) =>
-  (name ?? '')
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((w) => w[0]!.toUpperCase())
-    .join('')
-    .slice(0, 4)
+/**
+ * Whoever took the reading, by name. It was their initials; a report that
+ * says "DG" is no use to anybody reading it later (Sam, 27 Oct 2026). The
+ * column still holds whatever is typed, so old initials stay as they are.
+ */
+const readerName = (name: string | null | undefined) => (name ?? '').trim()
 
 const num = (s: string) => {
   const t = s.trim()
@@ -35,12 +32,12 @@ const num = (s: string) => {
 }
 
 type RowIn = { temp: string; pct: string; air: boolean }
-const blankRows = (n: number): RowIn[] => Array.from({ length: n }, () => ({ temp: '', pct: '', air: false }))
+const blankRows = (n: number, air: boolean[] = []): RowIn[] => Array.from({ length: n }, (_, i) => ({ temp: '', pct: '', air: air[i] ?? false }))
 
 /**
  * Bin monitoring for the bin view: readings down the sensor cable, what they
- * say about the grain, and BASF's report (behind the basf_report switch; the
- * readings stay either way).
+ * say about the grain, and a seed company's report where the farm has one
+ * (behind its own switch; the readings stay either way).
  *
  * Readings come in two ways, both ending at the same form the person checks
  * before saving: typed from the Bin-Sense screen, or a screenshot of it pasted
@@ -51,6 +48,8 @@ export function BinMonitoring({
   binName,
   cropYear,
   crop,
+  heldBu,
+  capacityBu,
   lldDefault,
   canEdit,
 }: {
@@ -58,6 +57,9 @@ export function BinMonitoring({
   binName: string
   cropYear: number
   crop: Crop | null
+  /** What is in the bin and what it holds, which say where the grain line is. */
+  heldBu: number
+  capacityBu: number
   lldDefault: string | null
   canEdit: boolean
 }) {
@@ -66,47 +68,17 @@ export function BinMonitoring({
   const [adding, setAdding] = useState(false)
   // A saved reading opened to correct it (Sam, 7 Oct 2026).
   const [editing, setEditing] = useState<MonitorRow | null>(null)
-  const [exporting, setExporting] = useState<string | null>(null)
   const dryMax = crop?.moisture_dry_max != null ? Number(crop.moisture_dry_max) : null
   const canola = emcKind(crop?.name) === 'canola'
-  // Both downloads are BASF's template, so the switch takes them with it.
-  const basf = useFeature('basf_report')
 
   const latest = readings?.[0] ?? null
   const flags = latest ? flagsFor(crop?.name, latest.levels, readings?.[1]?.levels ?? null, dryMax) : []
 
-  const exportBins = async (all: boolean) => {
-    setExporting(all ? 'all' : 'one')
-    try {
-      let bins: ReportBin[]
-      if (!all) {
-        bins = [
-          {
-            name: binName,
-            lot: readings?.find((r) => r.lot_number)?.lot_number ?? null,
-            lld: readings?.find((r) => r.lld)?.lld ?? lldDefault,
-            crop: crop?.name ?? null,
-            readings: (readings ?? []).filter((r) => r.crop_year === cropYear),
-          },
-        ]
-      } else {
-        bins = await fetchCanolaReportBins(cropYear)
-      }
-      if (!bins.some((b) => b.readings.length)) throw new Error('No readings to put in the report yet.')
-      const blob = await buildBasfReport(bins)
-      download(blob, all ? `BASF canola bin monitoring ${cropYear}.xlsx` : `BASF bin monitoring ${binName} ${cropYear}.xlsx`)
-    } catch (e) {
-      alert((e as Error).message)
-    } finally {
-      setExporting(null)
-    }
-  }
 
   return (
     <div>
       <div className="mb-1 flex flex-wrap items-center gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Bin monitoring</h3>
-        {basf && canola && <span className="rounded bg-yellow-100 px-1.5 text-[10px] font-semibold text-yellow-900">BASF canola report</span>}
         <div className="ml-auto flex flex-wrap gap-1.5">
           {canEdit && !adding && !editing && (
             <button
@@ -115,27 +87,6 @@ export function BinMonitoring({
               className="flex items-center gap-1 rounded-md bg-brand-700 px-2 py-1 text-xs font-semibold text-white hover:bg-brand-800"
             >
               <Plus className="h-3.5 w-3.5" /> Add reading
-            </button>
-          )}
-          {basf && (readings?.length ?? 0) > 0 && (
-            <button
-              type="button"
-              onClick={() => exportBins(false)}
-              disabled={!!exporting}
-              className="flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            >
-              {exporting === 'one' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} This bin
-            </button>
-          )}
-          {basf && canola && (
-            <button
-              type="button"
-              onClick={() => exportBins(true)}
-              disabled={!!exporting}
-              title="Every canola bin with readings this crop year, in BASF's template"
-              className="flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            >
-              {exporting === 'all' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} All canola bins
             </button>
           )}
         </div>
@@ -150,6 +101,8 @@ export function BinMonitoring({
           lldDefault={readings?.find((r) => r.lld)?.lld ?? lldDefault}
           lotDefault={readings?.find((r) => r.lot_number)?.lot_number ?? null}
           levelsDefault={Math.max(latest?.levels.length ?? 0, canola ? 6 : 5)}
+          heldBu={heldBu}
+          capacityBu={capacityBu}
           onDone={() => setAdding(false)}
         />
       )}
@@ -164,6 +117,8 @@ export function BinMonitoring({
           lldDefault={editing.lld}
           lotDefault={editing.lot_number}
           levelsDefault={editing.levels.length}
+          heldBu={heldBu}
+          capacityBu={capacityBu}
           onDone={() => setEditing(null)}
         />
       )}
@@ -179,15 +134,11 @@ export function BinMonitoring({
       )}
 
       {!readings?.length ? (
-        !adding && (
-          <p className="text-xs text-gray-400">
-            No readings yet. Add one from the sensor cables — type it in, or paste a sensor-cable screenshot and check what it reads.
-          </p>
-        )
+        !adding && <p className="text-xs text-gray-400">No readings yet.</p>
       ) : (
         <div className="max-h-72 overflow-auto rounded-md border border-gray-200">
           <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-gray-50 text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <thead className={cn(TABLE_HEAD, 'sticky top-0')}>
               <tr>
                 <th className="px-2 py-1 font-medium">Date</th>
                 {Array.from({ length: Math.max(...readings.map((r) => r.levels.length), 1) }, (_, i) => (
@@ -237,14 +188,14 @@ export function BinMonitoring({
                       </td>
                     )
                   })}
-                  <td className="px-2 py-1 text-gray-600">{r.initials ?? '—'}</td>
+                  <td className="px-2 py-1 text-gray-600">{r.initials ?? '—'}</td>{/* who read it */}
                   {canEdit && (
                     <td className="px-1 py-1 text-right">
                       <button
                         type="button"
                         aria-label="Delete this reading"
-                        onClick={() => {
-                          if (!confirm(`Delete the ${r.read_on} reading?`)) return
+                        onClick={async () => {
+                          if (!(await askConfirm(`Delete the ${r.read_on} reading?`))) return
                           if (editing?.id === r.id) setEditing(null)
                           del.mutate(r.id)
                         }}
@@ -260,10 +211,6 @@ export function BinMonitoring({
           </table>
         </div>
       )}
-      <HelpNote className="mt-1" summary="Moisture per level, with temperature and humidity under it." title="How moisture is worked out">
-        Moisture per level, with temperature and humidity under it. Canola is converted with BASF's own table (35–85% RH,
-        −2 to 28 °C, as their sheet reads it); other crops use their published moisture equation.
-      </HelpNote>
     </div>
   )
 }
@@ -277,6 +224,8 @@ function ReadingForm({
   lldDefault,
   lotDefault,
   levelsDefault,
+  heldBu,
+  capacityBu,
   onDone,
 }: {
   /** A saved reading to correct; saved over the same row. */
@@ -288,6 +237,8 @@ function ReadingForm({
   lldDefault: string | null
   lotDefault: string | null
   levelsDefault: number
+  heldBu: number
+  capacityBu: number
   onDone: () => void
 }) {
   const { profile } = useAuth()
@@ -295,16 +246,25 @@ function ReadingForm({
   const del = useDeleteBinMonitor()
   const saved = existing ? levelsToForm(existing.levels) : null
   const [readOn, setReadOn] = useState(existing?.read_on ?? new Date().toLocaleDateString('en-CA'))
-  const [initials, setInitials] = useState(existing ? (existing.initials ?? '') : initialsOf(profile?.full_name))
+  const [initials, setInitials] = useState(existing ? (existing.initials ?? '') : readerName(profile?.full_name))
   const [lot, setLot] = useState(lotDefault ?? '')
   const [lld, setLld] = useState(lldDefault ?? '')
-  const basf = useFeature('basf_report')
   const [mode, setMode] = useState<'rh' | 'moisture'>(saved?.mode ?? 'rh')
-  const [rows, setRows] = useState<RowIn[]>(saved?.rows ?? blankRows(levelsDefault))
+  // Where the grain line is, from what the app already knows is in the bin.
+  const fillShare = capacityBu > 0 ? heldBu / capacityBu : null
+  const fromBushels = (n: number) => aboveGrain(n, fillShare)
+  const [rows, setRows] = useState<RowIn[]>(saved?.rows ?? blankRows(levelsDefault, fromBushels(levelsDefault)))
+  /** Set when the app ticked the headspace sensors itself, so it can say so. */
+  const [airFrom, setAirFrom] = useState<'bushels' | 'screenshot' | null>(existing ? null : fromBushels(levelsDefault).some(Boolean) ? 'bushels' : null)
   const [notes, setNotes] = useState(existing?.notes ?? '')
+  // One fan on the bottom blows the whole bin, so this is one switch for the
+  // reading, not one a level (Sam, 27 Oct 2026).
+  const [aeration, setAeration] = useState(existing?.aeration_on ?? false)
   const [source, setSource] = useState<'manual' | 'screenshot'>((existing?.source as 'manual' | 'screenshot' | undefined) ?? 'manual')
   const [reading, setReading] = useState(false)
   const [readNote, setReadNote] = useState<string | null>(null)
+  /** The bin named on the screenshot, when it is not this one. */
+  const [wrongBin, setWrongBin] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const boxRef = useRef<HTMLDivElement>(null)
 
@@ -321,18 +281,31 @@ function ReadingForm({
       }),
     [rows, mode, crop],
   )
-  const filled = levels.some((l) => l.temp_c != null || l.rh_pct != null || l.moisture_pct != null)
+  // Only the sensors in the grain are saved (Sam, 27 Oct 2026: "I dont want
+  // it submitting the temp and moisture for the cable levels above the grain").
+  // Numbered afresh, so level 1 is the top of the GRAIN, not the top of the cable.
+  const inGrain: Level[] = useMemo(() => levels.filter((l) => !l.air).map((l, i) => ({ ...l, level: i + 1 })), [levels])
+  const skipped = levels.length - inGrain.length
+  const filled = inGrain.some((l) => l.temp_c != null || l.rh_pct != null || l.moisture_pct != null)
 
   const readImage = async (file: Blob) => {
     setReading(true)
     setReadNote(null)
+    setWrongBin(null)
     try {
       const r = await readCableScreenshot(file)
       if (!r.levels.length) {
         setReadNote(r.note || 'No sensors could be read off that screenshot. Type them in.')
         return
       }
-      setRows(r.levels.map((l) => ({ temp: l.temp_c != null ? String(l.temp_c) : '', pct: l.pct != null ? String(l.pct) : '', air: false })))
+      // Sensors in the headspace are ticked off, so they are not saved as a
+      // reading of the grain (Sam, 27 Oct 2026). The screenshot wins where it
+      // found the grain line itself — it can see where the colour stops; the
+      // bushels answer only where it could not tell.
+      const sawLine = r.levels.some((l) => l.above_grain)
+      const guess = sawLine ? r.levels.map((l) => !!l.above_grain) : fromBushels(r.levels.length)
+      setAirFrom(guess.some(Boolean) ? (sawLine ? 'screenshot' : 'bushels') : null)
+      setRows(r.levels.map((l, i) => ({ temp: l.temp_c != null ? String(l.temp_c) : '', pct: l.pct != null ? String(l.pct) : '', air: guess[i] })))
       if (r.percent_kind !== 'unknown') setMode(r.percent_kind)
       setSource('screenshot')
       const parts = [
@@ -344,8 +317,8 @@ function ReadingForm({
             ? '— the % looks like relative humidity'
             : '— could not tell whether the % is humidity or moisture; set it below',
       ].filter(Boolean)
+      if (differentBin(r.bin_name, binName)) setWrongBin(r.bin_name)
       const warn = [
-        r.bin_name && !r.bin_name.replace(/\D/g, '').includes(binName.replace(/\D/g, '')) ? `the screenshot says ${r.bin_name}, this is ${binName}` : null,
         r.confidence !== 'high' ? 'not a confident read' : null,
         r.note ? r.note.trim().replace(/[.\s]+$/, '') : null,
       ].filter(Boolean)
@@ -419,6 +392,18 @@ function ReadingForm({
           }}
         />
       </div>
+      {wrongBin && (
+        <div className="flex flex-wrap items-start gap-2 rounded-md border border-amber-400 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+          <p className="min-w-0 flex-1 basis-48">
+            <b>That screenshot says {wrongBin}, and this is {binName}.</b> Check you picked the right bin in Bin-Sense before you save, or close this and add
+            the reading to the other bin.
+          </p>
+          <button type="button" onClick={() => setWrongBin(null)} className="rounded-md border border-amber-400 px-2 py-1 font-medium hover:bg-amber-100">
+            It is the right bin
+          </button>
+        </div>
+      )}
       {readNote && <p className="rounded-md bg-sky-50 px-2.5 py-1.5 text-xs text-sky-900">{readNote}</p>}
 
       <div className="grid gap-2 sm:grid-cols-4">
@@ -427,8 +412,8 @@ function ReadingForm({
           <input type="date" value={readOn} onChange={(e) => setReadOn(e.target.value)} className={cn(inputCls, 'mt-1')} />
         </label>
         <label className="text-xs text-gray-600">
-          Initials
-          <input value={initials} onChange={(e) => setInitials(e.target.value.toUpperCase())} className={cn(inputCls, 'mt-1')} />
+          Read by
+          <input value={initials} onChange={(e) => setInitials(e.target.value)} placeholder="Who took the reading" className={cn(inputCls, 'mt-1')} />
         </label>
         <label className="text-xs text-gray-600">
           Lot #
@@ -449,22 +434,16 @@ function ReadingForm({
           <input type="radio" checked={mode === 'moisture'} onChange={() => setMode('moisture')} /> grain moisture
         </label>
       </div>
-      {basf && mode === 'moisture' && emcKind(crop?.name) === 'canola' && (
-        <p className="text-[11px] text-amber-800">
-          BASF's sheet asks for relative humidity. Grain moisture from the sensor goes in the moisture columns; the
-          humidity columns stay blank. If Bin-Sense can show humidity, that is the reading BASF wants.
-        </p>
-      )}
 
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
-          <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th className="px-1 py-1 font-medium">Level</th>
               <th className="px-1 py-1 font-medium">Temp °C</th>
               <th className="px-1 py-1 font-medium">{mode === 'rh' ? 'RH %' : 'Moisture %'}</th>
               <th className="px-1 py-1 text-right font-medium">Moisture</th>
-              <th className="px-1 py-1 font-medium" title="Sensor above the grain, reading air">Air</th>
+              <th className="px-1 py-1 font-medium" title="The sensor is in the headspace, not buried in the grain. Left out of the reading.">Above grain</th>
               <th />
             </tr>
           </thead>
@@ -498,7 +477,7 @@ function ReadingForm({
                     )}
                   </td>
                   <td className="px-1 py-0.5 text-center">
-                    <input type="checkbox" checked={r.air} onChange={(e) => set(i, { air: e.target.checked })} aria-label={`Level ${i + 1} is above the grain`} />
+                    <input type="checkbox" checked={r.air} onChange={(e) => set(i, { air: e.target.checked })} aria-label={`Level ${i + 1} is above the grain, leave it out`} />
                   </td>
                   <td className="px-1 py-0.5 text-right">
                     {rows.length > 1 && (
@@ -519,7 +498,25 @@ function ReadingForm({
         )}
       </div>
 
-      <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes (aeration on, smell, crusting…)" className={inputCls} />
+      <label className="flex items-center gap-2 text-sm text-gray-700">
+        <input type="checkbox" checked={aeration} onChange={(e) => setAeration(e.target.checked)} className="h-4 w-4" />
+        The fan has been running since the last reading
+      </label>
+      {skipped > 0 && (
+        <p className="text-xs text-gray-500">
+          {skipped} sensor{skipped === 1 ? '' : 's'} above the grain {skipped === 1 ? 'is' : 'are'} left out: {skipped === 1 ? 'it is' : 'they are'} reading the air, not the
+          grain. Untick one to keep it.
+          {airFrom === 'bushels' && fillShare != null && (
+            <>
+              {' '}
+              Ticked from the bushels: {Math.round(heldBu).toLocaleString('en-CA')} bu in a {Math.round(capacityBu).toLocaleString('en-CA')} bu bin fills it about{' '}
+              {Math.round(fillShare * 100)}% of the way up.
+            </>
+          )}
+          {airFrom === 'screenshot' && ' Ticked from the grain line on the screenshot.'}
+        </p>
+      )}
+      <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes (smell, crusting…)" className={inputCls} />
 
       <div className="flex gap-2">
         <button
@@ -537,8 +534,9 @@ function ReadingForm({
                 lot_number: lot.trim() || null,
                 lld: lld.trim() || null,
                 initials: initials.trim() || null,
-                levels,
+                levels: inGrain,
                 source,
+                aeration_on: aeration,
                 notes: notes.trim() || null,
               },
               { onSuccess: onDone },
@@ -555,8 +553,8 @@ function ReadingForm({
           <button
             type="button"
             disabled={del.isPending}
-            onClick={() => {
-              if (confirm(`Delete the ${existing.read_on} reading?`)) del.mutate(existing.id, { onSuccess: onDone })
+            onClick={async () => {
+              if (await askConfirm(`Delete the ${existing.read_on} reading?`)) del.mutate(existing.id, { onSuccess: onDone })
             }}
             className="ml-auto flex items-center gap-1 rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
           >

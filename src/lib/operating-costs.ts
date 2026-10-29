@@ -19,14 +19,17 @@ import { useAllBoundaries, useCrops } from './queries'
 import {
   fieldKey,
   siteKey,
+  yardKey,
   useAllFuelOps,
   useBasics,
+  useFarmYards,
   useFuelSettings,
   useHaulPlans,
   useSites,
   useTrips,
   useTruckSettings,
   type Basics,
+  type FarmYard,
   type FuelOpRow,
   type HaulPlan,
   type Site,
@@ -90,6 +93,8 @@ export function fuelByOp(ops: FuelOpRow[], fieldId: string, m: FuelModel): Map<s
 export type Trucking = {
   plan: HaulPlan | null
   site: Site | null
+  /** The farm yard it unloads at; null = the main yard, or a plan with no yard. */
+  yard: FarmYard | null
   tonnes: number | null
   cost: HaulCost | null
   /** Why there is no cost, when there is none. */
@@ -101,6 +106,7 @@ export function truckingFor(args: {
   fieldId: string
   plan: HaulPlan | null
   sites: Site[]
+  yards?: FarmYard[]
   crop: { name: string | null; unit: string | null; quantity: number | null; lbPerBu: number | null } | null
   trip: (a: string, b: string) => Trip | null
   truck: { field: TruckSettings; highway: TruckSettings }
@@ -108,27 +114,32 @@ export function truckingFor(args: {
 }): Trucking {
   const { plan, crop } = args
   const site = plan?.delivery_site_id ? (args.sites.find((s) => s.id === plan.delivery_site_id) ?? null) : null
-  if (!plan) return { plan, site, tonnes: null, cost: null, why: 'no haul plan set' }
-  if (!crop?.name || crop.quantity == null) return { plan, site, tonnes: null, cost: null, why: 'no yield yet' }
+  const yard = plan?.yard_id ? (args.yards?.find((y) => y.id === plan.yard_id) ?? null) : null
+  if (!plan) return { plan, site, yard, tonnes: null, cost: null, why: 'no haul plan set' }
+  if (plan.mode === 'grazed') return { plan, site, yard, tonnes: null, cost: null, why: null }
+  if (!crop?.name || crop.quantity == null) return { plan, site, yard, tonnes: null, cost: null, why: 'no yield yet' }
   const lb = bushelWeightFor(crop.name, crop.lbPerBu)?.lbPerBu ?? null
   const tonnes = tonnesOf(crop.quantity, crop.unit, lb)
-  if (tonnes == null) return { plan, site, tonnes: null, cost: null, why: `cannot weigh ${crop.unit ?? 'that unit'}` }
+  if (tonnes == null) return { plan, site, yard, tonnes: null, cost: null, why: `cannot weigh ${crop.unit ?? 'that unit'}` }
   const f = fieldKey(args.fieldId)
   const s = site ? siteKey(site.id) : null
+  // The yard it unloads at: a farm yard's own pin, or the main yard's bins.
+  const y = yard ? yardKey(yard.id) : startFor('grain')
   const cost = haulCost({
     tonnes,
     mode: plan.mode,
     trips: {
-      fieldYard: args.trip(startFor('grain'), f),
+      fieldYard: args.trip(y, f),
       fieldSite: s ? args.trip(f, s) : null,
-      yardSite: s ? args.trip(startFor('grain'), s) : null,
+      yardSite: s ? args.trip(y, s) : null,
     },
     siteName: site?.name ?? null,
+    yardName: yard?.name ?? null,
     truck: args.truck,
     dieselPerL: args.basics.dieselPerL,
     wage: args.basics.wage,
   })
-  return { plan, site, tonnes, cost, why: cost.missing }
+  return { plan, site, yard, tonnes, cost, why: cost.missing }
 }
 
 /**
@@ -190,7 +201,7 @@ export function operatingLines(args: {
       unit: 't',
       price: t.cost.fuel / t.tonnes,
       amount: t.tonnes,
-      source: `${mode?.label.toLowerCase() ?? 'haul plan'}${t.site ? ` (${t.site.name})` : ''}: the truck's fuel, ${t.cost.legs.reduce((n, l) => n + l.loads, 0)} loads (the driver is on the payroll, in the fixed expenses)`,
+      source: `${mode?.label.toLowerCase() ?? 'haul plan'}${t.yard ? ` (${t.yard.name})` : ''}${t.site ? ` (${t.site.name})` : ''}: the truck's fuel, ${t.cost.legs.reduce((n, l) => n + l.loads, 0)} loads (the driver is on the payroll, in the fixed expenses)`,
       passes: [],
       problem: t.cost.missing,
     })
@@ -239,6 +250,7 @@ export function useOperatingCostLines(year: number, ops: FuelOpRow[] | undefined
   const truck = useTruckSettings()
   const { data: plans } = useHaulPlans(year)
   const { data: sites } = useSites()
+  const { data: yards } = useFarmYards()
   const { data: crops } = useCrops()
   const { trip } = useTrips()
   const { data: pivots } = useFieldPivots()
@@ -268,6 +280,7 @@ export function useOperatingCostLines(year: number, ops: FuelOpRow[] | undefined
         fieldId,
         plan: plans?.get(fieldId) ?? null,
         sites: sites ?? [],
+        yards: yards ?? [],
         crop: season ? { name: season.cropName, unit: season.yieldUnit, quantity: season.yieldTotal, lbPerBu: lbOf(season.cropName) } : null,
         trip,
         truck,
@@ -296,5 +309,5 @@ export function useOperatingCostLines(year: number, ops: FuelOpRow[] | undefined
         : null
       return [...operatingLines({ fuel, dieselPerL: basics.dieselPerL, trucking, harvested }), ...(water ? [water] : []), ...(powerLine ? [powerLine] : [])]
     }
-  }, [ops, year, model, basics, truck, plans, sites, crops, trip, pivots, rate, deals, seasons, pumps])
+  }, [ops, year, model, basics, truck, plans, sites, yards, crops, trip, pivots, rate, deals, seasons, pumps])
 }

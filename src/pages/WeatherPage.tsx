@@ -1,5 +1,6 @@
 import { Suspense, useMemo, useState } from 'react'
-import { BookOpen, CloudRain, Droplets, Moon, Settings2, Sprout, SprayCan, Sunrise, Sunset, Wind } from 'lucide-react'
+import { BookOpen, CloudRain, Droplets, Moon, Sprout, SprayCan, Sunrise, Sunset, Wind } from 'lucide-react'
+import { SettingsButton } from '@/components/SettingsButton'
 import {
   describeToday,
   forecastDate,
@@ -19,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { PillTabs } from '@/components/PillTabs'
 import { Modal } from '@/components/Modal'
 import { lazyWithRetry } from '@/lib/lazyWithRetry'
+import { useTab } from '@/lib/useTab'
 import { SprayLegend, sprayCellClass } from './weather/SprayLegend'
 import { rhClass } from './weather/rh'
 import { tempBarLayout } from './weather/tempBar'
@@ -520,6 +522,17 @@ function TempBarKey({ lo, hi }: { lo: number | null; hi: number | null }) {
  * Weather: the three sites now, then one site's week with a spray call, a
  * bee-safe spray window and a fertilizer call for every day.
  */
+const WEATHER_VIEWS = ['day', 'week'] as const
+
+/** The view the page remembered before it kept its tab in the address (26 Oct 2026). */
+function oldWeatherView(): 'day' | 'week' {
+  try {
+    return localStorage.getItem('weather_view') === 'day' ? 'day' : 'week'
+  } catch {
+    return 'week'
+  }
+}
+
 export function WeatherPage() {
   const { sites, main } = useWeatherSites()
   const [siteName, setSiteName] = useState(() => {
@@ -529,21 +542,9 @@ export function WeatherPage() {
       return main.name
     }
   })
-  const [view, setView] = useState<'day' | 'week'>(() => {
-    try {
-      return localStorage.getItem('weather_view') === 'day' ? 'day' : 'week'
-    } catch {
-      return 'week'
-    }
-  })
-  const pickView = (v: 'day' | 'week') => {
-    setView(v)
-    try {
-      localStorage.setItem('weather_view', v)
-    } catch {
-      /* private window */
-    }
-  }
+  // ?tab=day|week, so a link can open the 24 hours. With none, the view last
+  // used; the old 'weather_view' memory seeds that for anyone who set it before.
+  const [view, pickView] = useTab('weather', WEATHER_VIEWS, oldWeatherView())
   const [settings, setSettings, shown] = useWeatherSettings()
   const [dialog, setDialog] = useState<'settings' | 'legend' | null>(null)
   const site = sites.find((s) => s.name === siteName) ?? main
@@ -586,9 +587,7 @@ export function WeatherPage() {
           <button type="button" onClick={() => setDialog('legend')} className="flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-sm text-gray-700 hover:bg-gray-50">
             <BookOpen className="h-4 w-4" /> Legend
           </button>
-          <button type="button" onClick={() => setDialog('settings')} className="flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-sm text-gray-700 hover:bg-gray-50">
-            <Settings2 className="h-4 w-4" /> Settings
-          </button>
+          <SettingsButton label="Weather settings" onClick={() => setDialog('settings')} />
         </span>
       </div>
       {view === 'day' ? <SiteDay key={site.name} site={site} show={shown} /> : <SiteWeek key={site.name} site={site} show={shown} />}

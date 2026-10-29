@@ -1,12 +1,8 @@
 import { useState } from 'react'
 import { Sliders } from 'lucide-react'
 import { cn } from '@/lib/utils'
-
-const money = (v: number, dp = 0) =>
-  `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString('en-CA', {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  })}`
+import { money } from '@/lib/format'
+import { CARD_HEAD } from '@/lib/table-style'
 
 /**
  * Crop features 8 and 11: the break-even price, and what happens when yield,
@@ -42,23 +38,27 @@ export function ScenarioPanel({
 
   if (costPerAcre == null && defaultYield == null && todayBidPerBushel == null) {
     return (
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
-          <Sliders className="h-4 w-4 text-gray-400" /> Break-even
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <h3 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+          <Sliders className="h-4 w-4 text-brand-100" /> Break-even
         </h3>
+        <div className="p-4">
         <p className="mt-1 text-xs text-gray-500">
           Needs a budgeted cost per acre and a yield for {cropName}. Both come from the Budget tab
           and the crop&rsquo;s own settings — nothing to type in twice.
         </p>
+
+        </div>
       </section>
     )
   }
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
-        <Sliders className="h-4 w-4 text-gray-400" /> Break-even and what-ifs · {cropName}
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h3 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <Sliders className="h-4 w-4 text-brand-100" /> Break-even and what-ifs · {cropName}
       </h3>
+      <div className="p-4">
       <p className="mt-0.5 text-xs text-gray-500">
         Starting from this year&rsquo;s budget and today&rsquo;s bid. Move any of the three and the
         rest follow.
@@ -121,6 +121,8 @@ export function ScenarioPanel({
             breakEvenYield != null ? `${breakEvenYield.toFixed(1)} ${yieldUnit ?? 'bu'}/ac` : '—'
           }
         />
+      </div>
+
       </div>
     </section>
   )

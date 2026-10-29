@@ -27,8 +27,6 @@ export const VARIETY_CROP_KEYS = [
   'moisture_dry_min',
   'moisture_dry_max',
   'moisture_tough_max',
-  'moisture_damp_max',
-  'moisture_moist_max',
 ] as const satisfies readonly (keyof CropRow & keyof VarietySettingRow)[]
 
 /** Settings a variety can carry that live on the crop's planter profile. */
@@ -65,8 +63,6 @@ export const VARIETY_LABELS: Record<VarietyKey, string> = {
   moisture_dry_min: 'Too dry below %',
   moisture_dry_max: 'Dry up to %',
   moisture_tough_max: 'Tough up to %',
-  moisture_damp_max: 'Damp up to %',
-  moisture_moist_max: 'Moist up to %',
   seeds_per_acre_min: 'Seeds/ac from',
   seeds_per_acre_max: 'Seeds/ac to',
   seed_spacing_in: 'Seed spacing in',
@@ -321,8 +317,6 @@ export function varietyParts(v: Partial<Record<VarietyKey, unknown>>, yieldUnit 
   if (isSet(v.moisture_dry_min)) push('moisture_dry_min', `too dry < ${n(v.moisture_dry_min)}%`)
   if (isSet(v.moisture_dry_max)) push('moisture_dry_max', `dry ≤ ${n(v.moisture_dry_max)}%`)
   if (isSet(v.moisture_tough_max)) push('moisture_tough_max', `tough ≤ ${n(v.moisture_tough_max)}%`)
-  if (isSet(v.moisture_damp_max)) push('moisture_damp_max', `damp ≤ ${n(v.moisture_damp_max)}%`)
-  if (isSet(v.moisture_moist_max)) push('moisture_moist_max', `moist ≤ ${n(v.moisture_moist_max)}%`)
   if (isSet(v.seeds_per_acre_min) || isSet(v.seeds_per_acre_max)) push('seeds_per_acre_min', `${range(v.seeds_per_acre_min, v.seeds_per_acre_max, '')} seeds/ac`)
   if (isSet(v.seed_spacing_in)) push('seed_spacing_in', `${n(v.seed_spacing_in)} in spacing`)
   if (isSet(v.depth_in_min) || isSet(v.depth_in_max)) push('depth_in_min', `${range(v.depth_in_min, v.depth_in_max, ' in')} deep`)

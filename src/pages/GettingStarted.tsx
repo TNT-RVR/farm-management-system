@@ -63,7 +63,7 @@ export function GettingStarted() {
 
   const steps: { done: boolean; to: string; label: string; note?: React.ReactNode }[] = [
     // Farm setup is an admin's tab; a manager sent there would land on My account.
-    ...(hasAdminAccess(profile?.role) ? [{ done: Boolean(setup.data), to: '/settings?tab=Farm%20setup', label: 'Farm setup' }] : []),
+    ...(hasAdminAccess(profile?.role) ? [{ done: Boolean(setup.data), to: '/settings/farm', label: 'Farm setup' }] : []),
     { done: crops.data > 0, to: '/crops', label: 'Add your crops' },
     {
       done: fields.data > 0,

@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl, { type GeoJSONSource, type MapLayerMouseEvent, type MapMouseEvent } from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Feature, FeatureCollection, Geometry } from 'geojson'
 import { MapPinPlus, Pencil, Spline, Trash2, Undo2, X } from 'lucide-react'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
-import { farmMapCenter } from '@/lib/farm-setup'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { useAllBoundaries, useFields } from '@/lib/queries'
 import {
   fieldRoute,
   useDeleteTrail,
+  useFarmYards,
   useFieldEntries,
   usePlaces,
   useRecomputeRoutes,
   useRoadLine,
   useRoadRoutes,
+  useSaveFarmYard,
   useSaveFieldEntry,
   useSaveOperatingSetting,
   useSaveSite,
@@ -27,6 +27,7 @@ import { insertVia, metresBetween, type LatLng, type StartKey } from '@/lib/road
 import { SNAP_M, snapCoord, type Coord } from '@/lib/trail-router'
 import { cn } from '@/lib/utils'
 import { input } from './ui'
+import { askConfirm } from '@/components/askConfirm'
 
 /**
  * The Distances map: the shop and the bins, the silage pit, every elevator
@@ -119,8 +120,6 @@ export function RouteMap({
   onStart: (s: StartKey) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
-  const [ready, setReady] = useState(false)
   const { data: fields } = useFields()
   const { data: boundaries } = useAllBoundaries()
   const { data: entries } = useFieldEntries()
@@ -128,6 +127,8 @@ export function RouteMap({
   const { data: trails } = useTrails()
   const places = usePlaces()
   const { data: sites } = useSites()
+  const { data: yards } = useFarmYards()
+  const saveYard = useSaveFarmYard()
   const saveEntry = useSaveFieldEntry()
   const saveSetting = useSaveOperatingSetting()
   const saveSite = useSaveSite()
@@ -162,9 +163,9 @@ export function RouteMap({
   const viaEnd: LatLng | null = approach ?? (selected ? (entries?.get(selected) ?? null) : null)
 
   // Map handlers are registered once; they read the current values here.
-  const live = useRef({ drawing, finished, onSelect, saveEntry, saveSetting, saveSite, recompute, editing: !!edit, extend, addingVia, selected, vias, setThrough, from, viaEnd })
+  const live = useRef({ drawing, finished, onSelect, saveEntry, saveSetting, saveSite, saveYard, recompute, editing: !!edit, extend, addingVia, selected, vias, setThrough, from, viaEnd })
   useEffect(() => {
-    live.current = { drawing, finished, onSelect, saveEntry, saveSetting, saveSite, recompute, editing: !!edit, extend, addingVia, selected, vias, setThrough, from, viaEnd }
+    live.current = { drawing, finished, onSelect, saveEntry, saveSetting, saveSite, saveYard, recompute, editing: !!edit, extend, addingVia, selected, vias, setThrough, from, viaEnd }
   })
 
   /** Change the trail being edited, keeping the old shape for undo. */
@@ -173,18 +174,9 @@ export function RouteMap({
   const current = useMemo(() => (boundaries ?? []).filter((b) => b.valid_to == null), [boundaries])
   const names = useMemo(() => new Map((fields ?? []).map((f) => [f.id, f.name])), [fields])
 
-  useEffect(() => {
-    if (!containerRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: SATELLITE_STYLE,
-      center: farmMapCenter(),
-      zoom: 12,
-      attributionControl: false,
-    })
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-    map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
-    map.on('load', () => {
+  const { mapRef, ready } = useFarmMap(containerRef, {
+    controls: { scale: true },
+    onReady: (map) => {
       map.addSource(FIELDS_SRC, { type: 'geojson', data: EMPTY })
       map.addSource(TRAILS_SRC, { type: 'geojson', data: EMPTY })
       map.addSource(ROUTE_SRC, { type: 'geojson', data: EMPTY })
@@ -231,64 +223,60 @@ export function RouteMap({
         filter: ['==', ['geometry-type'], 'Point'],
         paint: { 'circle-radius': 4, 'circle-color': '#f59e0b', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 },
       })
-      setReady(true)
-    })
-    const pickField = (e: MapLayerMouseEvent) => {
-      if (live.current.drawing || live.current.editing || live.current.addingVia) return
-      const id = e.features?.[0]?.properties?.id as string | undefined
-      if (id) live.current.onSelect(id)
-    }
-    const pickTrail = (e: MapLayerMouseEvent) => {
-      if (live.current.drawing || live.current.editing) return
-      setTrailId((e.features?.[0]?.properties?.id as string | undefined) ?? null)
-      e.preventDefault()
-    }
-    const addPoint = (e: MapMouseEvent) => {
-      const at: Coord = [e.lngLat.lng, e.lngLat.lat]
-      // A via point for the picked field, in the gap along the way where it belongs.
-      const L = live.current
-      if (L.addingVia && L.selected) {
-        setAddingVia(false)
-        L.setThrough.mutate({ fieldId: L.selected, points: insertVia(L.vias, { lat: at[1], lng: at[0] }, L.from, L.viaEnd) }, { onSuccess: () => L.recompute.mutate(false) })
-        return
+    },
+    onCreate: (map) => {
+      const pickField = (e: MapLayerMouseEvent) => {
+        if (live.current.drawing || live.current.editing || live.current.addingVia) return
+        const id = e.features?.[0]?.properties?.id as string | undefined
+        if (id) live.current.onSelect(id)
       }
-      // Carrying an edited trail on from one of its ends.
-      const end = live.current.editing ? live.current.extend : null
-      if (end) {
-        setEdit((ed) => (ed ? { ...ed, coords: end === 'end' ? [...ed.coords, at] : [at, ...ed.coords], history: [...ed.history.slice(-30), ed.coords] } : ed))
-        return
-      }
-      if (!live.current.drawing || live.current.finished) return
-      setDraft((d) => [...d, at])
-    }
-    const finish = (e: MapMouseEvent) => {
-      if (live.current.editing && live.current.extend) {
+      const pickTrail = (e: MapLayerMouseEvent) => {
+        if (live.current.drawing || live.current.editing) return
+        setTrailId((e.features?.[0]?.properties?.id as string | undefined) ?? null)
         e.preventDefault()
-        setExtend(null)
-        return
       }
-      if (!live.current.drawing) return
-      e.preventDefault()
-      setFinished(true)
-    }
-    map.on('click', 'rt-field-fill', pickField)
-    map.on('click', 'rt-trail', pickTrail)
-    map.on('click', addPoint)
-    map.on('dblclick', finish)
-    for (const id of ['rt-field-fill', 'rt-trail']) {
-      map.on('mouseenter', id, () => {
-        if (!live.current.drawing && !live.current.editing) map.getCanvas().style.cursor = 'pointer'
-      })
-      map.on('mouseleave', id, () => {
-        if (!live.current.drawing && !live.current.editing) map.getCanvas().style.cursor = ''
-      })
-    }
-    mapRef.current = map
-    return () => {
-      map.remove()
-      mapRef.current = null
-    }
-  }, [])
+      const addPoint = (e: MapMouseEvent) => {
+        const at: Coord = [e.lngLat.lng, e.lngLat.lat]
+        // A via point for the picked field, in the gap along the way where it belongs.
+        const L = live.current
+        if (L.addingVia && L.selected) {
+          setAddingVia(false)
+          L.setThrough.mutate({ fieldId: L.selected, points: insertVia(L.vias, { lat: at[1], lng: at[0] }, L.from, L.viaEnd) }, { onSuccess: () => L.recompute.mutate(false) })
+          return
+        }
+        // Carrying an edited trail on from one of its ends.
+        const end = live.current.editing ? live.current.extend : null
+        if (end) {
+          setEdit((ed) => (ed ? { ...ed, coords: end === 'end' ? [...ed.coords, at] : [at, ...ed.coords], history: [...ed.history.slice(-30), ed.coords] } : ed))
+          return
+        }
+        if (!live.current.drawing || live.current.finished) return
+        setDraft((d) => [...d, at])
+      }
+      const finish = (e: MapMouseEvent) => {
+        if (live.current.editing && live.current.extend) {
+          e.preventDefault()
+          setExtend(null)
+          return
+        }
+        if (!live.current.drawing) return
+        e.preventDefault()
+        setFinished(true)
+      }
+      map.on('click', 'rt-field-fill', pickField)
+      map.on('click', 'rt-trail', pickTrail)
+      map.on('click', addPoint)
+      map.on('dblclick', finish)
+      for (const id of ['rt-field-fill', 'rt-trail']) {
+        map.on('mouseenter', id, () => {
+          if (!live.current.drawing && !live.current.editing) map.getCanvas().style.cursor = 'pointer'
+        })
+        map.on('mouseleave', id, () => {
+          if (!live.current.drawing && !live.current.editing) map.getCanvas().style.cursor = ''
+        })
+      }
+    },
+  })
 
   // While drawing, a double-click ends the trail instead of zooming.
   useEffect(() => {
@@ -303,7 +291,7 @@ export function RouteMap({
     // Next tick: MapLibre's own dblclick runs after ours.
     const t = window.setTimeout(() => map.getCanvas() && map.doubleClickZoom.enable(), 0)
     return () => window.clearTimeout(t)
-  }, [drawing, extend, addingVia, ready])
+  }, [mapRef, drawing, extend, addingVia, ready])
 
   useEffect(() => {
     const map = mapRef.current
@@ -314,7 +302,7 @@ export function RouteMap({
       geometry: b.geometry as unknown as Geometry,
     }))
     ;(map.getSource(FIELDS_SRC) as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features })
-  }, [ready, current, names, selected])
+  }, [mapRef, ready, current, names, selected])
 
   useEffect(() => {
     const map = mapRef.current
@@ -327,7 +315,7 @@ export function RouteMap({
         geometry: { type: 'LineString', coordinates: t.coords },
       }))
     ;(map.getSource(TRAILS_SRC) as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features })
-  }, [ready, trails, trailId, edit?.id])
+  }, [mapRef, ready, trails, trailId, edit?.id])
 
   useEffect(() => {
     const map = mapRef.current
@@ -337,7 +325,7 @@ export function RouteMap({
     const features: Feature[] = edit ? [] : draft.map((p) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: p } }))
     if (line.length >= 2) features.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: line } })
     ;(map.getSource(DRAFT_SRC) as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features })
-  }, [ready, draft, edit])
+  }, [mapRef, ready, draft, edit])
 
   // The edited trail's points: drag one to move it, drag a hollow midpoint to
   // add a bend, click one to pick it. Let go near another trail (or the shop
@@ -380,7 +368,7 @@ export function RouteMap({
       made.push(mid)
     })
     return () => made.forEach((m) => m.remove())
-  }, [ready, edit, picked, trails, places])
+  }, [mapRef, ready, edit, picked, trails, places])
 
   const { data: roadLine } = useRoadLine(route && route.method !== 'typed' ? from : null, approach, vias)
 
@@ -393,9 +381,9 @@ export function RouteMap({
       const el = placeEl(String(i + 1), '#be185d', `Via point ${i + 1}: the route passes here${isManager ? '. Drag to move; click to take it away.' : ''}`)
       Object.assign(el.style, { width: '20px', height: '20px', font: '700 11px/20px system-ui, sans-serif', borderRadius: '50%' })
       if (isManager)
-        el.addEventListener('click', (e) => {
+        el.addEventListener('click', async (e) => {
           e.stopPropagation()
-          if (window.confirm(`Take via point ${i + 1} away?`))
+          if (await askConfirm(`Take via point ${i + 1} away?`, { confirmLabel: 'Take it away' }))
             setThrough.mutate({ fieldId: selected, points: vias.filter((_, k) => k !== i) }, { onSuccess: () => recompute.mutate(false) })
         })
       const m = new maplibregl.Marker({ element: el, draggable: isManager, anchor: 'center' }).setLngLat([v.lng, v.lat]).addTo(map)
@@ -418,7 +406,7 @@ export function RouteMap({
     const off = Array.isArray(route?.trail_path) ? (route.trail_path as Coord[]) : []
     if (off.length >= 2) features.push({ type: 'Feature', properties: { part: 'off', method: route?.method ?? '' }, geometry: { type: 'LineString', coordinates: off } })
     ;(map.getSource(ROUTE_SRC) as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features })
-  }, [ready, roadLine, route])
+  }, [mapRef, ready, roadLine, route])
 
   // The shop and the bins.
   useEffect(() => {
@@ -445,7 +433,7 @@ export function RouteMap({
       made.push(m)
     }
     return () => made.forEach((m) => m.remove())
-  }, [ready, places, isManager])
+  }, [mapRef, ready, places, isManager])
 
   // The silage pit: only the silage haul measures from it. Its note says
   // whether it is still a guess; a drag makes it a pin somebody placed.
@@ -466,7 +454,7 @@ export function RouteMap({
     return () => {
       m.remove()
     }
-  }, [ready, places.pit, isManager])
+  }, [mapRef, ready, places.pit, isManager])
 
   // Elevators and plants. A manager drags one onto the real elevator; the
   // "approximate — town centre" note goes with the first move.
@@ -491,7 +479,32 @@ export function RouteMap({
       made.push(m)
     }
     return () => made.forEach((m) => m.remove())
-  }, [ready, sites, isManager])
+  }, [mapRef, ready, sites, isManager])
+
+  // The farm's other unloading yards (a hay yard, a ranch). One whose pin was
+  // only put down at the bins to be dragged keeps a note until it is moved.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    const made: maplibregl.Marker[] = []
+    for (const y of yards ?? []) {
+      if (!y.active || y.lat == null || y.lng == null) continue
+      const title = `${y.name}${y.note ? ` — ${y.note}` : ''}${isManager ? '. Drag to the yard.' : ''}`
+      const el = placeEl('Y', y.note ? '#64748b' : '#be123c', title)
+      if (y.note) el.style.border = '2px dashed #fff'
+      const m = new maplibregl.Marker({ element: el, draggable: isManager, anchor: 'center' }).setLngLat([y.lng, y.lat]).addTo(map)
+      if (isManager)
+        m.on('dragend', () => {
+          const { lng, lat } = m.getLngLat()
+          live.current.saveYard.mutate(
+            { id: y.id, name: y.name, lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6, note: null },
+            { onSuccess: () => live.current.recompute.mutate(false) },
+          )
+        })
+      made.push(m)
+    }
+    return () => made.forEach((m) => m.remove())
+  }, [mapRef, ready, yards, isManager])
 
   // Entry pins: dropped (solid) or suggested (dashed).
   useEffect(() => {
@@ -519,7 +532,7 @@ export function RouteMap({
       made.push(m)
     }
     return () => made.forEach((m) => m.remove())
-  }, [ready, fields, entries, routes, selected, isManager])
+  }, [mapRef, ready, fields, entries, routes, selected, isManager])
 
   // Frame the home fields once: everything within 25 km of the shop.
   const framed = useRef(false)
@@ -533,7 +546,7 @@ export function RouteMap({
         if (ring[0] && metresBetween(shop, { lat: ring[0][1], lng: ring[0][0] }) < 25_000) for (const c of ring) b.extend([c[0], c[1]])
     map.fitBounds(b, { padding: 40, duration: 0, maxZoom: 15 })
     framed.current = true
-  }, [ready, places.shop, current])
+  }, [mapRef, ready, places.shop, current])
 
   // Picking a field shows it with its start.
   useEffect(() => {
@@ -548,7 +561,7 @@ export function RouteMap({
     const mid = b.getCenter()
     if (p && metresBetween(p, { lat: mid.lat, lng: mid.lng }) < 25_000) b.extend([p.lng, p.lat])
     map.fitBounds(b, { padding: 50, duration: 400, maxZoom: 16 })
-  }, [ready, selected, current, places, start])
+  }, [mapRef, ready, selected, current, places, start])
 
   const stopDrawing = () => {
     setDrawing(false)
@@ -567,6 +580,7 @@ export function RouteMap({
   const goTo = [
     ...(places.pit ? [{ key: 'pit', label: 'the silage pit', lat: places.pit.lat, lng: places.pit.lng }] : []),
     ...(sites ?? []).filter((s) => s.active && s.lat != null && s.lng != null).map((s) => ({ key: s.id, label: s.name, lat: s.lat!, lng: s.lng! })),
+    ...(yards ?? []).filter((y) => y.active && y.lat != null && y.lng != null).map((y) => ({ key: y.id, label: y.name, lat: y.lat!, lng: y.lng! })),
   ]
   const draftM = draft.reduce((s, p, i) => (i ? s + metresBetween({ lat: draft[i - 1][1], lng: draft[i - 1][0] }, { lat: p[1], lng: p[0] }) : 0), 0)
 
@@ -798,8 +812,8 @@ export function RouteMap({
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        if (window.confirm(`Delete the trail “${trail.name}”? Routes along it are worked out again without it.`))
+                      onClick={async () => {
+                        if (await askConfirm(`Delete the trail “${trail.name}”? Routes along it are worked out again without it.`))
                           deleteTrail.mutate(trail.id, {
                             onSuccess: () => {
                               setTrailId(null)
@@ -837,6 +851,11 @@ export function RouteMap({
         <span className="inline-flex items-center gap-1">
           <span className="inline-block h-3 w-3 rounded-[3px] bg-[#0e7490]" /> E elevator or plant (grey: still the town centre)
         </span>
+        {(yards ?? []).some((y) => y.active && y.lat != null) && (
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-3 w-3 rounded-[3px] bg-[#be123c]" /> Y farm yard (grey: not dragged into place yet)
+          </span>
+        )}
         <span className="inline-flex items-center gap-1">
           <span className="inline-block h-3 w-3 rounded-full border-2 border-white bg-[#16a34a] ring-1 ring-gray-400" /> entry pin
         </span>

@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCropYear } from './crop-year'
-import { warmOffline } from './offline-warm'
 
 /**
  * Keeping the records current without being asked.
@@ -56,6 +55,9 @@ export function useAutoOfflineSave(): void {
     // already on screen or soon to be; a spinner or a toast for it would be
     // interrupting somebody to tell them nothing happened.
     void (async () => {
+      // Imported here, after the twelve-hour check, so the warm-up's query
+      // definitions are not in the entry chunk for every launch that skips it.
+      const { warmOffline } = await import('./offline-warm')
       const result = await warmOffline(qc, cropYear)
       // Only stamp a clean run. A partial one on bad signal should be retried
       // on the next launch rather than counted as done for twelve hours.

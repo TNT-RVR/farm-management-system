@@ -11,13 +11,13 @@ import {
   totalsByNutrient,
   totalsByProduct,
 } from '@/lib/fertilizer-plan'
+import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
 
-const n0 = (v: number | null) => (v == null ? '—' : Math.round(v).toLocaleString('en-CA'))
-const n2 = (v: number | null) => (v == null ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 2 }))
-// Tonnes to one place: an order is placed in tenths of a tonne at best, and
+// n1 = tonnes to one place: an order is placed in tenths of a tonne at best, and
 // the second decimal was 2 kg of false precision on a truckload.
-const n1 = (v: number | null) =>
-  v == null ? '—' : v.toLocaleString('en-CA', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+import { n0, n1Fixed as n1, n2 } from '@/lib/format'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 export function Requirements() {
   const { cropYear } = useCropYear()
@@ -67,7 +67,7 @@ export function Requirements() {
           <p className="mt-0.5">
             {staleManure.map((r) => r.fieldName).join(', ')} had manure recorded after the
             recommendation was written, so the fertilizer here still covers what the manure supplies.{' '}
-            <Link to="/fertilizer?tab=Savings" className="font-medium underline">
+            <Link to="/fertilizer/savings" className="font-medium underline">
               Rewrite them from Savings → Manure credits in the prescription
             </Link>
             .
@@ -96,14 +96,17 @@ export function Requirements() {
       )}
 
       {/* Product totals — the order sheet. */}
-      <div className="mb-4 rounded-lg border border-gray-200 bg-white">
-        <div className="flex items-center gap-1.5 border-b border-gray-200 px-3 py-2">
-          <Package className="h-4 w-4 text-brand-700" />
-          <h3 className="text-sm font-semibold text-gray-900">Product needed across the farm · {cropYear}</h3>
+      <div className="overflow-hidden mb-4 rounded-lg border border-gray-200 bg-white">
+        <div className={cn('flex items-center gap-1.5', CARD_HEAD)}>
+          <Package className="h-4 w-4 text-white" />
+          <h3 className="font-medium">Product needed across the farm · {cropYear}</h3>
         </div>
-        <table className="w-full table-fixed text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-[11px] uppercase tracking-wide text-gray-500">
+        {/* Scrolls sideways on a phone rather than squeezing each cell to a
+            word a line. */}
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[480px] table-fixed text-sm">
+          <thead className={TABLE_HEAD}>
+            <tr>
               <th className="px-3 py-2 font-medium">Product</th>
               <th className="px-3 py-2 text-right font-medium" style={{ width: '14%' }}>Fields</th>
               <th className="px-3 py-2 text-right font-medium" style={{ width: '20%' }}>Total lb</th>
@@ -136,6 +139,7 @@ export function Requirements() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Micronutrients, as actual nutrient. A 10% chelate and a 36% sulphate
@@ -187,10 +191,13 @@ export function Requirements() {
 
       {/* Per field. */}
       <div className="rounded-lg border border-gray-200 bg-white">
-        <p className="border-b border-gray-200 px-3 py-2 text-sm font-semibold text-gray-900">By field</p>
-        <table className="w-full table-fixed text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-[11px] uppercase tracking-wide text-gray-500">
+        <p className={cn('font-medium', CARD_HEAD)}>By field</p>
+        {/* Scrolls sideways on a phone rather than squeezing each cell to a
+            word a line. */}
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] table-fixed text-sm">
+          <thead className={TABLE_HEAD}>
+            <tr>
               <th className="px-3 py-2 font-medium">Field</th>
               <th className="px-3 py-2 font-medium" style={{ width: '18%' }}>Crop</th>
               <th className="px-3 py-2 text-right font-medium" style={{ width: '12%' }}>Acres</th>
@@ -221,8 +228,8 @@ export function Requirements() {
                   <tr className="border-b border-gray-100 bg-gray-50/60">
                     <td colSpan={4} className="px-3 py-2">
                       <table className="w-full table-fixed text-[11px]">
-                        <thead>
-                          <tr className="text-left text-[10px] uppercase tracking-wide text-gray-500">
+                        <thead className={TABLE_HEAD}>
+                          <tr>
                             <th className="py-1 font-medium" style={{ width: '10%' }}>Nutrient</th>
                             <th className="py-1 font-medium" style={{ width: '22%' }}>Product</th>
                             <th className="py-1 text-right font-medium" style={{ width: '12%' }}>lb/ac actual</th>
@@ -261,6 +268,7 @@ export function Requirements() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       <HelpNote className="mt-2" summary="Each field's programme × its acres. Check rates before ordering." title="How the quantities are worked out">
@@ -272,6 +280,8 @@ export function Requirements() {
         text split potash across four rows. Anything without an analysis is counted as actual
         nutrient instead. Check rates before ordering.
       </HelpNote>
+      {/* Savings tool, kept with this tab since 26 Oct 2026 (lib/fert-savings/homes.ts). */}
+      <SavingsHere ids={[4]} />
     </div>
   )
 }

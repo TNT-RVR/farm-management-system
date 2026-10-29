@@ -39,7 +39,7 @@ export type Content = { bin_id: string; crop_id: string | null; crop_year: numbe
 export type Quote = { crop_id: string; series: string; unit: string | null; value: number; on: string }
 export type PlanPrice = { crop_id: string; crop_year: number; price_per_unit: unknown }
 
-const INFLOW = new Set(['harvest_in', 'transfer_in', 'adjustment'])
+const INFLOW = new Set(['harvest_in', 'transfer_in', 'purchase_in', 'carryover_in', 'adjustment'])
 
 /** A crop's unit an amount of bushels makes: 1 for bushels, the bushel's pounds for lbs, a hundredth of that for cwt. */
 export function unitsPerBushel(unit: string | null, lbPerBu: number | null): number | null {

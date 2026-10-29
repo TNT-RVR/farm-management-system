@@ -6,6 +6,7 @@ import { BID_CODES, breakeven } from '@/lib/breakeven'
 import { money } from '@/lib/profit-loss-lines'
 import type { FarmInputs, FieldBooks } from '@/lib/profit-loss-farm'
 import { cn } from '@/lib/utils'
+import { HelpNote } from '@/components/HelpNote'
 
 /** Latest elevator bid per series code, in $/tonne. */
 export function useElevatorBids() {
@@ -88,11 +89,11 @@ export function BreakevenCard({ books, seasons }: { books: FieldBooks[]; seasons
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[11px] leading-snug text-gray-400">
+          <HelpNote className="mt-2" summary="Cost is every priced input on the field this year. Worst first." title="Cost and price">
             Cost is every priced input on the field this year. Today&apos;s bid is the Alberta elevator bid (canola, durum, feed barley, oats, and
             CPS for wheat — the review carries no CWRS elevator bid) turned into $/bu by bushel weight; other crops use the
             target or contract price. Worst first.
-          </p>
+          </HelpNote>
         </>
       )}
     </section>

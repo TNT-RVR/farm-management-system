@@ -36,11 +36,12 @@ import { AIMM_CALIBRATION, KC_MODE_HELP } from '@/lib/aimm'
 import { setUnitSystem, useUnitSystem } from '@/lib/units'
 import { PivotInfoLink, SoilProfileEditor } from '@/pages/irrigation/SetupExtras'
 import { PivotDepthChecks } from '@/pages/irrigation/PivotDepthChecks'
-import { PivotTab, PumpTab, TurbineControlTab } from '@/pages/irrigation/PivotPumpTabs'
+import { PivotTab, PumpTab } from '@/pages/irrigation/PivotPumpTabs'
 import { IrrigationOverview } from '@/pages/irrigation/IrrigationOverview'
-import { RIVER_RANCHES, RIVER_TABS, type RiverRanch, type RiverTab } from '@/lib/river'
+import { RIVER_RANCHES, RIVER_TABS, riverTabFromKey, riverTabKey, type RiverRanch, type RiverTab } from '@/lib/river'
 import { useMainRanch } from '@/lib/ranches'
 import { cn } from '@/lib/utils'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 // Lazy so recharts (the chart library) splits into its own chunk and only loads
 // when the Graph tab is opened — keeps the app shell small + PWA-precacheable.
@@ -81,8 +82,8 @@ function AppliedBackfillCard({ isManager, cropYear }: { isManager: boolean; crop
   const spanDays = (new Date(to).getTime() - new Date(from).getTime()) / 864e5
   const tooWide = spanDays > 400
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h3 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
         <CloudDownload className="h-4 w-4" /> Backfill applied water
         <InfoPopover title="Backfill applied water">
           <p>
@@ -93,6 +94,7 @@ function AppliedBackfillCard({ isManager, cropYear }: { isManager: boolean; crop
           </p>
         </InfoPopover>
       </h3>
+      <div className="p-4">
       <p className="mt-0.5 text-xs text-gray-500">
         Fills in pivot water from FieldNET for days it is missing. Safe to run more than once.
       </p>
@@ -143,6 +145,8 @@ function AppliedBackfillCard({ isManager, cropYear }: { isManager: boolean; crop
           {(backfill.error as Error).message}
         </p>
       )}
+
+      </div>
     </div>
   )
 }
@@ -237,7 +241,14 @@ function DoneWateringBox({
   cropYear,
   label,
 }: {
-  season: { id: string; irrigation_done_at?: string | null } | undefined
+  season:
+    | {
+        id: string
+        irrigation_done_at?: string | null
+        irrigation_done_source?: 'person' | 'auto' | null
+        irrigation_done_note?: string | null
+      }
+    | undefined
   disabled: boolean
   cropYear: number
   label: string
@@ -246,12 +257,19 @@ function DoneWateringBox({
   const setDone = useSetIrrigationDone(cropYear)
   if (!season) return <span className="text-xs text-gray-300">—</span>
   const done = Boolean(season.irrigation_done_at)
+  // The app sets this itself once harvest is recorded, or once the pivot has
+  // been quiet a week past maturity (lib/watering-done.ts). Its reason is the
+  // tooltip, so a tick nobody made is something to disagree with rather than
+  // guess at.
+  const auto = season.irrigation_done_source === 'auto'
   return (
     <label
       className={cn('inline-flex items-center', disabled ? 'cursor-not-allowed' : 'cursor-pointer')}
       title={
         done
-          ? `${label} is marked finished for the season — no irrigation to-dos will be raised`
+          ? auto && season.irrigation_done_note
+            ? `${label}: ${season.irrigation_done_note} Untick it if the pivot is going back on.`
+            : `${label} is marked finished for the season — no irrigation to-dos will be raised`
           : `Mark ${label} finished watering for the season`
       }
     >
@@ -395,9 +413,9 @@ function Setup({ isManager, focusField }: { isManager: boolean; focusField: stri
     </div>
     )}
     <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
+      <table className="w-full min-w-[820px] text-sm">
+        <thead className={TABLE_HEAD}>
+          <tr>
             <th className="whitespace-nowrap px-3 py-2 font-medium">
               Field <ColumnHelp help={SETUP_HELP.field} />
             </th>
@@ -772,7 +790,10 @@ type AimmTab = (typeof AIMM_TABS)[number]['key']
  * others show no top tabs at all, since the sidebar is now that navigation and
  * a second row saying the same thing is just a row to scroll past.
  */
-export type IrrigationSection = 'aimm' | 'river' | 'turbine' | 'general'
+export type IrrigationSection =
+  | 'aimm'
+  | 'river'
+  | 'general'
 
 const GENERAL_TABS = [
   { key: 'pivot', label: 'Pivot Information' },
@@ -783,7 +804,7 @@ export function IrrigationPage({ section = 'aimm' }: { section?: IrrigationSecti
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
   const sync = useIrrigationSync()
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   // Inside General Info the tab is real state; everywhere else the section IS
   // the tab, so it follows the route rather than being remembered.
   const [generalTab, setGeneralTab] = useState<'pivot' | 'pump'>(
@@ -791,7 +812,7 @@ export function IrrigationPage({ section = 'aimm' }: { section?: IrrigationSecti
   )
   // 'general' is not itself a view — it resolves to whichever of its two the
   // tab bar has selected.
-  const tab: 'aimm' | 'river' | 'pivot' | 'pump' | 'turbine' =
+  const tab: Exclude<IrrigationSection, 'general'> | 'pivot' | 'pump' =
     section === 'general' ? generalTab : section
   // Records and Allocation now sit under the graph for the chosen field, so
   // an old ?view=records or ?view=allocation link lands on the Graph.
@@ -818,9 +839,16 @@ export function IrrigationPage({ section = 'aimm' }: { section?: IrrigationSecti
   // mouth; East Ranch below the Oldman–Bow confluence on the South Saskatchewan).
   // Opens on the farm's main ranch when it has a River tab of its own.
   const mainRanch = useMainRanch()
-  const [pickedRiver, setRiverRanch] = useState<RiverTab | null>(null)
+  // The tab is in the address (?tab=home-ranch|east-ranch|map) so a link can
+  // open one; with none it follows the main ranch, which loads after the page.
+  const pickedRiver = section === 'river' ? riverTabFromKey(params.get('tab')) : null
   const riverRanch: RiverTab =
     pickedRiver ?? ((RIVER_RANCHES as readonly string[]).includes(mainRanch?.name ?? '') ? (mainRanch!.name as RiverRanch) : 'Home Ranch')
+  const setRiverRanch = (t: RiverTab) => {
+    const next = new URLSearchParams(params)
+    next.set('tab', riverTabKey(t))
+    setParams(next, { replace: true })
+  }
 
   return (
     <div>
@@ -892,8 +920,6 @@ export function IrrigationPage({ section = 'aimm' }: { section?: IrrigationSecti
           </Suspense>
         ) : tab === 'pivot' ? (
           <PivotTab isManager={isManager} />
-        ) : tab === 'turbine' ? (
-          <TurbineControlTab isManager={isManager} />
         ) : tab === 'pump' ? (
           <PumpTab isManager={isManager} />
         ) : aimmTab === 'overview' ? (

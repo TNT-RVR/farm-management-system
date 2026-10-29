@@ -1,11 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import maplibregl, { type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
+import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
 import type { Feature, FeatureCollection, MultiPolygon, Position } from 'geojson'
 import { AlertTriangle, Pencil, Trash2, Tractor } from 'lucide-react'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { PolygonDraw, type DrawState } from '@/lib/geo/polygon-draw'
 import { largestRing } from '@/lib/geo/rings'
+import { pointInRing } from '@/lib/geo/point-in'
 import { Select } from '@/components/Select'
 import { ConfirmDialog, Modal } from '@/components/Modal'
 import { useCropYear } from '@/lib/crop-year'
@@ -37,8 +37,11 @@ import { useManureInvoices } from '@/lib/hauling-data'
 import { ManureValue } from './ManureValue'
 import { ManureInvoices } from './ManureInvoices'
 import { useFertSettings, useIrrigatedFields } from '@/lib/fert-savings/data'
-import { farmMapCenter } from '@/lib/farm-setup'
 import { ImportHint } from '@/components/ImportHint'
+import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
+import { n0, n1 } from '@/lib/format'
+import { YearSelect } from '@/components/YearSelect'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 const SRC = 'manure'
 const FILL = 'manure-fill'
@@ -51,11 +54,6 @@ const SETLINE = 'manure-setback-line'
 const COLOUR = '#92400e'
 
 const EMPTY_DRAW: DrawState = { count: 0, acres: 0, mode: 'draw', selected: null, closed: false }
-
-const n0 = (v: number | null | undefined) =>
-  v == null ? '—' : Math.round(v).toLocaleString('en-CA')
-const n1 = (v: number | null | undefined) =>
-  v == null ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 1 })
 
 function toFeatures(apps: ManureApplication[], hideId?: string | null): FeatureCollection {
   return {
@@ -88,18 +86,6 @@ function centreOf(mp: MultiPolygon): [number, number] | null {
   return [lng, lat]
 }
 
-/** Whether a point falls inside a ring. Ray casting, the ordinary way. */
-function inRing(pt: [number, number], ring: number[][]): boolean {
-  let inside = false
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i]
-    const [xj, yj] = ring[j]
-    const hits = yi > pt[1] !== yj > pt[1] && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi
-    if (hits) inside = !inside
-  }
-  return inside
-}
-
 /**
  * Which field a spread landed on, from its own boundary.
  *
@@ -121,7 +107,7 @@ function fieldUnder(
       geom.type === 'MultiPolygon'
         ? (geom.coordinates as number[][][][])
         : [geom.coordinates as number[][][]]
-    for (const poly of polys) if (poly[0] && inRing(c, poly[0])) return b.field_id
+    for (const poly of polys) if (poly[0] && pointInRing(c, poly[0])) return b.field_id
   }
   return null
 }
@@ -276,10 +262,11 @@ function SaveSpread({
       : null
 
   return (
-    <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50/60 p-4">
-      <h3 className="text-sm font-semibold text-gray-900">
+    <div className="overflow-hidden space-y-3 rounded-lg border border-amber-300 bg-amber-50/60">
+      <h3 className={cn('font-medium', CARD_HEAD)}>
         New spread — {acres < 1 ? acres.toFixed(2) : acres.toFixed(1)} ac
       </h3>
+      <div className="p-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <label className="text-xs text-gray-600">
           Field
@@ -416,6 +403,8 @@ function SaveSpread({
           {existing ? 'Cancel' : 'Discard'}
         </button>
       </div>
+
+      </div>
     </div>
   )
 }
@@ -493,8 +482,8 @@ function Ranking({ year }: { year: number }) {
       <h2 className="text-sm font-semibold text-gray-900">Where a load would do the most good</h2>
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase text-gray-500">
+          <thead className={TABLE_HEAD}>
+            <tr>
               <th className="px-3 py-2 font-medium">#</th>
               <th className="px-3 py-2 font-medium">Field</th>
               <th className="px-3 py-2 text-right font-medium">Acres</th>
@@ -623,9 +612,8 @@ export function Manure({ isManager = false }: { isManager?: boolean } = {}) {
   // Only for the folded invoices' count; ManureInvoices reads the same query.
   const { data: invoiceLines } = useManureInvoices()
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
+  const { mapRef, ready } = useFarmMap(containerRef, { zoom: 11 })
   const drawRef = useRef<PolygonDraw | null>(null)
-  const [ready, setReady] = useState(false)
   const [drawing, setDrawing] = useState(false)
   const [draw, setDraw] = useState<DrawState>(EMPTY_DRAW)
   const [pending, setPending] = useState<{ mp: MultiPolygon; acres: number } | null>(null)
@@ -654,24 +642,6 @@ export function Manure({ isManager = false }: { isManager?: boolean } = {}) {
   const nameOf = (id: string | null) =>
     id ? (fields?.find((f) => f.id === id)?.name ?? 'Unknown field') : 'Not in a field'
 
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: SATELLITE_STYLE,
-      center: farmMapCenter(),
-      zoom: 11,
-      attributionControl: false,
-    })
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-    map.on('load', () => setReady(true))
-    mapRef.current = map
-    return () => {
-      map.remove()
-      mapRef.current = null
-    }
-  }, [])
-
   // Field outlines, so a spread can be placed against something.
   useEffect(() => {
     const map = mapRef.current
@@ -698,7 +668,7 @@ export function Manure({ isManager = false }: { isManager?: boolean } = {}) {
       source: BSRC,
       paint: { 'line-color': '#fff', 'line-width': 1, 'line-opacity': 0.55 },
     })
-  }, [ready, boundaries])
+  }, [mapRef, ready, boundaries])
 
   /** The ground AOPA puts out of bounds. */
   useEffect(() => {
@@ -732,7 +702,7 @@ export function Manure({ isManager = false }: { isManager?: boolean } = {}) {
       source: SETSRC,
       paint: { 'line-color': '#dc2626', 'line-width': 1, 'line-opacity': 0.8 },
     })
-  }, [ready, setbacks])
+  }, [mapRef, ready, setbacks])
 
   useEffect(() => {
     const map = mapRef.current
@@ -742,7 +712,7 @@ export function Manure({ isManager = false }: { isManager?: boolean } = {}) {
         map.setLayoutProperty(id, 'visibility', showSetbacks ? 'visible' : 'none')
       }
     }
-  }, [ready, showSetbacks, setbacks])
+  }, [mapRef, ready, showSetbacks, setbacks])
 
   useEffect(() => {
     const map = mapRef.current
@@ -766,7 +736,7 @@ export function Manure({ isManager = false }: { isManager?: boolean } = {}) {
       source: SRC,
       paint: { 'line-color': COLOUR, 'line-width': 2 },
     })
-  }, [ready, apps, editingId])
+  }, [mapRef, ready, apps, editingId])
 
   // Tap a spread to select it. Suspended while drawing, so the click that
   // places a corner does not also select whatever is under it.
@@ -784,7 +754,7 @@ export function Manure({ isManager = false }: { isManager?: boolean } = {}) {
     }
     map.on('click', onClick)
     return () => void map.off('click', onClick)
-  }, [ready, drawing])
+  }, [mapRef, ready, drawing])
 
   useEffect(() => {
     const map = mapRef.current
@@ -797,7 +767,7 @@ export function Manure({ isManager = false }: { isManager?: boolean } = {}) {
       drawRef.current = null
       setDraw(EMPTY_DRAW)
     }
-  }, [drawing])
+  }, [mapRef, drawing])
 
   const finishDraw = () => {
     // Read the ring BEFORE clearing the flag: the cleanup above destroys the
@@ -841,14 +811,7 @@ export function Manure({ isManager = false }: { isManager?: boolean } = {}) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
-        <Select
-          value={String(year)}
-          options={years.map((y) => ({ value: String(y), label: String(y) }))}
-          onChange={(v) => setYear(Number(v))}
-          ariaLabel="Crop year"
-          size="sm"
-          className="w-28"
-        />
+        <YearSelect value={year} years={years} onChange={setYear} ariaLabel="Crop year" size="sm" className="w-28" />
         <span className="text-sm text-gray-500">
           {(apps ?? []).length} spread{(apps ?? []).length === 1 ? '' : 's'} ·{' '}
           {n1((apps ?? []).reduce((a, x) => a + (x.acres ?? 0), 0))} ac
@@ -960,7 +923,7 @@ export function Manure({ isManager = false }: { isManager?: boolean } = {}) {
           which polygon it was and clicking it. */}
       {(apps ?? []).length > 0 && (
         <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <h2 className="border-b border-gray-200 px-3 py-2 text-sm font-semibold text-gray-900">
+          <h2 className={cn('font-medium', CARD_HEAD)}>
             Spreads in {year}
           </h2>
           <ul className="divide-y divide-gray-100">
@@ -1116,6 +1079,8 @@ export function Manure({ isManager = false }: { isManager?: boolean } = {}) {
       <Fold title="What a load is worth" summary="value of a load against the haul, by field" storageKey="fert-manure-value">
         <ManureValue year={year} isManager={isManager} />
       </Fold>
+      {/* Savings tool, kept with this tab since 26 Oct 2026 (lib/fert-savings/homes.ts). */}
+      <SavingsHere ids={[9]} className="space-y-2" />
     </div>
   )
 }

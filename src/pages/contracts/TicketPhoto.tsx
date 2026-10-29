@@ -3,12 +3,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Camera, ImagePlus, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Modal } from '@/components/Modal'
+import { savePhoto, TICKET_PHOTO_BUCKET, uploadPhoto } from '@/lib/stored-photos'
 
 /**
  * The picture of a scale ticket, kept with the ticket so anyone can look at
- * the original (Sam, 3 Oct 2026). Stored as a resized JPEG in
- * scale_ticket_photos; only which tickets have one is read with the list, the
- * image itself when it is opened — and never saved on the device.
+ * the original (Sam, 3 Oct 2026). A resized JPEG in the scale-ticket-photos
+ * bucket, its path in scale_ticket_photos (26 Oct 2026). Only which tickets have one is read with the list,
+ * the image itself (a signed link) when it is opened — never saved on the
+ * device.
  */
 
 /** Long side of the copy the app keeps: sharp enough to read every figure. */
@@ -53,17 +55,23 @@ export function TicketPhotoButton({ ticketId, photoId, label, canEdit }: { ticke
   const add = useMutation({
     mutationFn: async (file: File) => {
       const p = await shrinkPhoto(file)
+      const id = crypto.randomUUID()
+      const path = await uploadPhoto(TICKET_PHOTO_BUCKET, `${ticketId}/${id}.jpg`, p.b64)
       const { error } = await supabase.from('scale_ticket_photos').insert({
+        id,
         scale_ticket_id: ticketId,
         filename: file.name,
         mime: 'image/jpeg',
-        image_b64: p.b64,
+        storage_path: path,
         width: p.width,
         height: p.height,
         bytes: p.bytes,
         source: 'upload',
       })
-      if (error) throw error
+      if (error) {
+        await supabase.storage.from(TICKET_PHOTO_BUCKET).remove([path])
+        throw error
+      }
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['scale_ticket_photo_index'] }),
   })
@@ -116,15 +124,18 @@ export function TicketPhotoButton({ ticketId, photoId, label, canEdit }: { ticke
 function TicketPhotoViewer({ photoId, label, onClose }: { photoId: string; label: string; onClose: () => void }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['scale-ticket-photo', photoId],
-    staleTime: Infinity,
+    // The signed link lasts an hour.
+    staleTime: 50 * 60_000,
     gcTime: 5 * 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase.from('scale_ticket_photos').select('mime, image_b64, filename, source, created_at').eq('id', photoId).single()
+      const { data, error } = await supabase.from('scale_ticket_photos').select('mime, storage_path, filename, source, created_at').eq('id', photoId).single()
       if (error) throw error
-      return data
+      const signed = await supabase.storage.from(TICKET_PHOTO_BUCKET).createSignedUrl(data.storage_path, 3600)
+      if (signed.error) throw signed.error
+      return { ...data, src: signed.data.signedUrl }
     },
   })
-  const src = data ? `data:${data.mime};base64,${data.image_b64}` : null
+  const src = data?.src ?? null
   return (
     <Modal title={label} onClose={onClose} wide>
       {isLoading && <p className="py-10 text-center text-sm text-gray-400">Loading the photo…</p>}
@@ -134,9 +145,13 @@ function TicketPhotoViewer({ photoId, label, onClose }: { photoId: string; label
           <img src={src} alt={label} className="mx-auto max-h-[75dvh] w-auto rounded border border-gray-200" />
           <div className="flex items-center justify-between text-xs text-gray-500">
             <span>{data!.source === 'email' ? 'From the email it came on' : 'Added in the app'} · {data!.created_at.slice(0, 10)}</span>
-            <a href={src} download={(data!.filename ?? 'ticket').replace(/\.\w+$/, '') + '.jpg'} className="font-medium text-brand-700 hover:underline">
+            <button
+              type="button"
+              onClick={() => void savePhoto(src, (data!.filename ?? 'ticket').replace(/\.\w+$/, '') + '.jpg')}
+              className="font-medium text-brand-700 hover:underline"
+            >
               Download
-            </a>
+            </button>
           </div>
         </div>
       )}

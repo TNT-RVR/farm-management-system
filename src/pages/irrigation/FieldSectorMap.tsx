@@ -6,6 +6,7 @@ import type { Feature, FeatureCollection, MultiPolygon, Polygon, Position } from
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { supabase } from '@/lib/supabase'
 import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { bboxOfRings } from '@/lib/geo/area'
 import { boundariesForYear } from '@/lib/queries'
 import { NDVI_RAMP } from '@/lib/pastures'
 import { rangeLabel, useYieldZones } from '@/lib/yield-zones'
@@ -458,20 +459,6 @@ const deg = (b: number) => `${Math.round(norm360(b))}°`
 const pct = (rel: number) => `${rel >= 0 ? '+' : '−'}${Math.abs(Math.round(rel * 100))}%`
 const md = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
 
-function bboxOf(rings: Position[][]) {
-  let west = Infinity
-  let south = Infinity
-  let east = -Infinity
-  let north = -Infinity
-  for (const ring of rings)
-    for (const [x, y] of ring) {
-      west = Math.min(west, x)
-      east = Math.max(east, x)
-      south = Math.min(south, y)
-      north = Math.max(north, y)
-    }
-  return { west, south, east, north }
-}
 const ringsOf = (g: Polygon | MultiPolygon) => (g.type === 'Polygon' ? g.coordinates : g.coordinates.flat())
 const fc = (features: Feature[]): FeatureCollection => ({ type: 'FeatureCollection', features })
 const EMPTY = fc([])
@@ -621,7 +608,7 @@ export function FieldSectorMap({ fieldId, year }: { fieldId: string; year: numbe
     if (!pivot?.center || !pivot.radiusM) return null
     const rings: Position[][] = [circleRing(pivot.center, pivot.radiusM)]
     if (boundary) rings.push(...ringsOf(boundary))
-    return bboxOf(rings)
+    return bboxOfRings(rings)
   }, [pivot, boundary])
 
   const maskFc = useMemo(() => {

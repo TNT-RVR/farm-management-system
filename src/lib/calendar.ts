@@ -4,8 +4,6 @@ import type { Database } from './database.types'
 
 export type CalendarEventRow = Database['public']['Tables']['calendar_events']['Row']
 export type EventKind = CalendarEventRow['kind']
-export type MonthlyTemplateRow = Database['public']['Tables']['monthly_task_templates']['Row']
-export type MonthlyInstanceRow = Database['public']['Tables']['monthly_task_instances']['Row']
 
 export const EVENT_KINDS: EventKind[] = [
   'general',
@@ -14,11 +12,6 @@ export const EVENT_KINDS: EventKind[] = [
   'maintenance',
   'delivery',
   'other',
-]
-
-export const MONTHS = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ]
 
 export function useCalendarEvents() {
@@ -61,84 +54,6 @@ export function useEventMutations() {
   const remove = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('calendar_events').delete().eq('id', id)
-      if (error) throw error
-    },
-    onSuccess: invalidate,
-  })
-  return { create, update, remove }
-}
-
-export function useMonthlyTemplates() {
-  return useQuery({
-    queryKey: ['monthly_templates'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('monthly_task_templates')
-        .select('*')
-        .order('sort_order')
-        .order('title')
-      if (error) throw error
-      return data
-    },
-  })
-}
-
-/** Ensures the year's instances exist (current/future) and returns them. */
-export function useMonthlyInstances(cropYear: number) {
-  return useQuery({
-    queryKey: ['monthly_instances', cropYear],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc('ensure_monthly_instances', { p_year: cropYear })
-      if (error) throw error
-      return data as MonthlyInstanceRow[]
-    },
-  })
-}
-
-export function useToggleMonthlyInstance(cropYear: number) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: async ({ id, completed }: { id: string; completed: boolean }) => {
-      const { error } = await supabase
-        .from('monthly_task_instances')
-        .update({ completed })
-        .eq('id', id)
-      if (error) throw error
-    },
-    onSuccess: () =>
-      void queryClient.invalidateQueries({ queryKey: ['monthly_instances', cropYear] }),
-  })
-}
-
-export function useMonthlyTemplateMutations() {
-  const queryClient = useQueryClient()
-  const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: ['monthly_templates'] })
-    void queryClient.invalidateQueries({ queryKey: ['monthly_instances'] })
-  }
-  const create = useMutation({
-    mutationFn: async (tpl: Database['public']['Tables']['monthly_task_templates']['Insert']) => {
-      const { error } = await supabase.from('monthly_task_templates').insert(tpl)
-      if (error) throw error
-    },
-    onSuccess: invalidate,
-  })
-  const update = useMutation({
-    mutationFn: async ({
-      id,
-      patch,
-    }: {
-      id: string
-      patch: Database['public']['Tables']['monthly_task_templates']['Update']
-    }) => {
-      const { error } = await supabase.from('monthly_task_templates').update(patch).eq('id', id)
-      if (error) throw error
-    },
-    onSuccess: invalidate,
-  })
-  const remove = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('monthly_task_templates').delete().eq('id', id)
       if (error) throw error
     },
     onSuccess: invalidate,

@@ -3,7 +3,7 @@ import { BrandSettings } from '@/pages/cattle/BrandSettings'
 import { CostSettings } from '@/pages/cattle/CostSettings'
 import { PastureMapSync } from '@/pages/cattle/PastureMapSync'
 import { MoveAlertSettings } from '@/pages/cattle/MoveAlertSettings'
-import { CalfSaleSettings } from '@/pages/cattle/CalfSaleSettings'
+import { CalfSaleSettings, FarmCalfSaleDefault } from '@/pages/cattle/CalfSaleSettings'
 import { CattleSuppliers } from '@/pages/cattle/CattleSuppliers'
 import { useRanches } from '@/lib/ranches'
 import { ManageRanches } from '@/pages/cattle/ManageRanches'
@@ -15,6 +15,8 @@ import {
   GRAZEABLE_AREAS_MAP_URL,
   PASTURE_RATING_GUIDE,
 } from '@/lib/grazing'
+import { HelpNote } from '@/components/HelpNote'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 export function GrazingSettings({
   ranches,
@@ -33,6 +35,8 @@ export function GrazingSettings({
       <ManageRanches isManager={isManager} />
 
       <CostSettings ranches={ranches} isManager={isManager} />
+
+      <FarmCalfSaleDefault />
 
       {(fullRanches ?? []).map((r) => (
         <CalfSaleSettings key={`sale-${r.id}`} ranch={r} isManager={isManager} />
@@ -95,8 +99,8 @@ export function GrazingSettings({
         </p>
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
           <table className="w-full min-w-[640px] text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-left text-[11px] uppercase tracking-wide text-gray-500">
+            <thead className={TABLE_HEAD}>
+              <tr>
                 <th className="px-3 py-2 font-medium">Category</th>
                 {GRASS_QUALITIES.map((q) => (
                   <th key={q} className="px-3 py-2 font-medium">
@@ -124,15 +128,15 @@ export function GrazingSettings({
       {/* Forage Yield Estimator */}
       <section>
         <h2 className="mb-1 text-sm font-semibold text-gray-900">Forage Yield Estimator</h2>
-        <p className="mb-2 text-xs text-gray-500">
+        <HelpNote className="mb-2 text-xs" summary="Expected forage (lbs/acre) by precipitation and grass quality.">
           Expected forage (lbs/acre) by growing-season precipitation and grass quality. The
           calculator picks the row matching the precip you set, then the column matching each
           pasture's quality.
-        </p>
+        </HelpNote>
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
           <table className="w-full min-w-[560px] text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-left text-[11px] uppercase tracking-wide text-gray-500">
+            <thead className={TABLE_HEAD}>
+              <tr>
                 <th className="px-3 py-2 font-medium">Precipitation</th>
                 {GRASS_QUALITIES.map((q) => (
                   <th key={q} className="px-3 py-2 text-right font-medium">

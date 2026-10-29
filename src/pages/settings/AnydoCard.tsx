@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ListChecks } from 'lucide-react'
 import { anydoSignInUrl, useAnydoDisconnect, useAnydoFinish, useAnydoSyncNow, useMyAnydo } from '@/lib/anydo'
+import { askConfirm } from '@/components/askConfirm'
 
 /**
  * The signed-in person's own Any.do: connect, see that it is linked,
@@ -110,7 +111,7 @@ export function AnydoCard() {
           <button
             type="button"
             disabled={disconnect.isPending}
-            onClick={() => window.confirm('Disconnect your Any.do? Tasks already copied stay where they are.') && disconnect.mutate()}
+            onClick={async () => await askConfirm('Disconnect your Any.do? Tasks already copied stay where they are.', { confirmLabel: 'Disconnect' }) && disconnect.mutate()}
             className="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             Disconnect

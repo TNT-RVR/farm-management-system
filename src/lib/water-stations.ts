@@ -1,14 +1,14 @@
 /**
- * The reservoirs and snowpacks that decide this farm's water, in the two
- * systems it draws from (Sam, 30 Sep 2026):
+ * The reservoirs and snowpacks that decide the farm's water, in the two
+ * systems a farm can draw from: its river (the licences on the river) and
+ * its irrigation district's canals.
  *
- *   Oldman River (the licences on the river): the Oldman Reservoir, and the
- *   Gardiner Creek and South Racehorse Creek snow pillows above it.
- *
- *   Canals (SMRID): St. Mary, Milk River Ridge and Chin reservoirs, and the
- *   two snowpacks SMRID reports on — Many Glacier (the early water, melting
- *   from about April 1) and Flat Top Mountain (the late water, not melting
- *   until about May 1). Waterton Reservoir is left out: it doesn't matter here.
+ * Each farm keeps its own list in water_supply_stations, edited on the Season
+ * ahead panel (Sam, 27 Oct 2026; until then this farm's eight were built in
+ * here). This farm's (30 Sep 2026): the Oldman Reservoir with the Gardiner
+ * Creek and South Racehorse Creek snow pillows above it for the river; St.
+ * Mary, Milk River Ridge and Chin reservoirs and SMRID's two snowpacks, Many
+ * Glacier (early water) and Flat Top Mountain (late water), for the canals.
  *
  * Used by the daily history job (netlify/functions/water-daily-*) and by the
  * rotation's Season ahead panel, so both read one list.
@@ -17,7 +17,7 @@ export type WaterStation = {
   key: string
   name: string
   kind: 'reservoir' | 'snow'
-  section: 'oldman' | 'canals'
+  section: 'river' | 'canals'
   source: 'wiski' | 'snotel'
   /** Alberta Rivers time-series id (reservoir % full, or snow water equivalent). */
   tsId?: string
@@ -32,23 +32,42 @@ export type WaterStation = {
   dataUrl: string
 }
 
+/** A water_supply_stations row, as stored. */
+export type WaterStationRow = {
+  id: string
+  key: string
+  name: string
+  kind: 'reservoir' | 'snow'
+  section: 'river' | 'canals'
+  source: 'wiski' | 'snotel'
+  ts_id: string | null
+  triplet: string | null
+  note: string | null
+  sort: number
+}
+
+export const STATION_COLUMNS = 'id, key, name, kind, section, source, ts_id, triplet, note, sort'
+
 const ab = (station: string) => `https://rivers.alberta.ca/ — search station ${station}`
 const wiskiData = (tsId: string) => `https://rivers.alberta.ca/WiskiLiveDataService/Download?tsId=${tsId}&filename=data&zip=false&json=true`
 const snotelPage = (id: string) => `https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=${id}`
 const snotelData = (triplet: string) => `https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/data?stationTriplets=${triplet}&elements=WTEQ&duration=DAILY&centralTendencyType=MEDIAN`
 
-export const WATER_STATIONS: WaterStation[] = [
-  { key: '05AA032', name: 'Oldman River Reservoir', kind: 'reservoir', section: 'oldman', source: 'wiski', tsId: '248017042', unit: '%', pageUrl: ab('05AA032'), dataUrl: wiskiData('248017042') },
-  { key: '05AA809', name: 'Gardiner Creek snowpack', kind: 'snow', section: 'oldman', source: 'wiski', tsId: '235384042', unit: 'mm', pageUrl: ab('05AA809'), dataUrl: wiskiData('235384042') },
-  { key: '05AA817', name: 'South Racehorse Creek snowpack', kind: 'snow', section: 'oldman', source: 'wiski', tsId: '235433042', unit: 'mm', pageUrl: ab('05AA817'), dataUrl: wiskiData('235433042') },
-  { key: '05AE025', name: 'St. Mary Reservoir', kind: 'reservoir', section: 'canals', source: 'wiski', tsId: '248122042', unit: '%', pageUrl: ab('05AE025'), dataUrl: wiskiData('248122042') },
-  { key: '05AF030', name: 'Milk River Ridge Reservoir', kind: 'reservoir', section: 'canals', source: 'wiski', tsId: '248150042', unit: '%', pageUrl: ab('05AF030'), dataUrl: wiskiData('248150042') },
-  { key: '05AG901', name: 'Chin Reservoir', kind: 'reservoir', section: 'canals', source: 'wiski', tsId: '296888042', unit: '%', pageUrl: ab('05AG901'), dataUrl: wiskiData('296888042') },
-  { key: '613:MT:SNTL', name: 'Many Glacier snowpack', kind: 'snow', section: 'canals', source: 'snotel', triplet: '613:MT:SNTL', unit: 'mm', note: 'early water — melting from about April 1', pageUrl: snotelPage('613'), dataUrl: snotelData('613:MT:SNTL') },
-  { key: '482:MT:SNTL', name: 'Flat Top Mountain snowpack', kind: 'snow', section: 'canals', source: 'snotel', triplet: '482:MT:SNTL', unit: 'mm', note: 'late water — melting from about May 1', pageUrl: snotelPage('482'), dataUrl: snotelData('482:MT:SNTL') },
-]
+/** A stored row as the station the panel and the daily pull work with. */
+export function stationOf(r: WaterStationRow): WaterStation {
+  const unit = r.kind === 'reservoir' ? '%' : 'mm'
+  const base = { key: r.key, name: r.name, kind: r.kind, section: r.section, unit, note: r.note ?? undefined } as const
+  if (r.source === 'snotel') {
+    const triplet = r.triplet ?? r.key
+    return { ...base, source: 'snotel', triplet, pageUrl: snotelPage(triplet.split(':')[0]), dataUrl: snotelData(triplet) }
+  }
+  const tsId = r.ts_id ?? ''
+  return { ...base, source: 'wiski', tsId, pageUrl: ab(r.key), dataUrl: wiskiData(tsId) }
+}
 
-export const SECTION_LABEL = { oldman: 'Oldman River — the river licences', canals: 'Canals — SMRID' } as const
+/** The heading over each system: the farm's river and district by name. */
+export const sectionLabel = (section: WaterStation['section'], names: { river: string; district: string }) =>
+  section === 'river' ? `${names.river} — the river licences` : `Canals — ${names.district}`
 
 /** Pretty page link: the Alberta map has no per-station address, so it opens the map. */
 export const pageHref = (s: WaterStation) => (s.source === 'wiski' ? 'https://rivers.alberta.ca/' : s.pageUrl)

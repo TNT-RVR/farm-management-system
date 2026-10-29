@@ -10,9 +10,11 @@ import { useFertSettings } from '@/lib/fert-savings/data'
 import { cn } from '@/lib/utils'
 import { useFarmSettings } from '@/lib/farm-setup'
 import { ImportHint } from '@/components/ImportHint'
+import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
+import { n0 } from '@/lib/format'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 const $0 = (v: number) => `$${Math.round(v).toLocaleString('en-CA')}`
-const n0 = (v: number | null | undefined) => (v == null ? '—' : Math.round(v).toLocaleString('en-CA'))
 
 /** Claude's text with **bold** and "- " bullets. */
 function Review({ text }: { text: string }) {
@@ -41,8 +43,8 @@ function NutrientCompare({ f }: { f: FieldIci }) {
   }
   return (
     <table className="text-[11px] tabular-nums">
-      <thead>
-        <tr className="text-gray-400">
+      <thead className={TABLE_HEAD}>
+        <tr>
           <td className="pr-2" />
           {keys.map((k) => (
             <td key={k} className="px-1 text-right">
@@ -257,19 +259,66 @@ export function IciTab({ isManager }: { isManager: boolean }) {
       </section>
 
       {/* Field by field */}
-      <section className="rounded-lg border border-gray-200 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-3 py-2">
-          <h2 className="text-sm font-semibold text-gray-900">What {retailerName} put on each field</h2>
-          <span className="text-[11px] text-gray-500">
-            lb/ac · <span className="text-red-700">red</span> 15+ over the soil test (or the prescription where there&apos;s no test) · <span className="text-amber-700">amber</span> 15+ under
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div className={cn('flex flex-wrap items-center justify-between gap-2', CARD_HEAD)}>
+          <h2 className="font-medium">What {retailerName} put on each field</h2>
+          <span className="text-[11px] text-brand-100">
+            lb/ac · <span className="text-amber-200">red</span> 15+ over the soil test (or the prescription where there&apos;s no test) · <span className="text-amber-200">amber</span> 15+ under
           </span>
         </div>
-        <div className="overflow-x-auto">
+        {/* On a phone the seven columns become one card a field: the total is
+            the number you want first, so it sits beside the name. */}
+        <ul className="divide-y divide-gray-100 sm:hidden">
+          {rows.map(({ f, perAc, blendPerAc, straightsPerAc }) => (
+            <li key={f.fieldId} className="px-3 py-2.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="font-medium text-gray-900">{f.name}</p>
+                <p className="shrink-0 font-semibold tabular-nums text-gray-900">{$0(f.cost.total)}</p>
+              </div>
+              <div className="flex items-baseline justify-between gap-2 text-[11px] text-gray-500">
+                <span>{f.crop ?? '—'}</span>
+                {(f.cost.edge > 0 || f.cost.floating > 0) && (
+                  <span className="shrink-0">
+                    incl. Edge {f.cost.edge ? $0(f.cost.edge) : '—'} · float {f.cost.floating ? $0(f.cost.floating) : '—'}
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 text-xs text-gray-700">
+                {f.blends.map((b) => (
+                  <p key={b.description}>
+                    {b.description.replace(/^Tonne\s+/, '').replace(/\s+[YN]$/, '')}{' '}
+                    <span className="text-gray-500">@ {n0(b.rate)} lb/ac on {n0(b.acres)} ac</span>
+                  </p>
+                ))}
+                {f.edgeKg > 0 && <p className="text-gray-500">Edge {n0(f.edgeKg)} kg</p>}
+              </div>
+              <div className="mt-1.5">
+                <NutrientCompare f={f} />
+              </div>
+              <p className="mt-1.5 flex flex-wrap gap-x-3 text-[11px] text-gray-500">
+                <span>
+                  Product <span className="tabular-nums text-gray-700">{$0(f.cost.blend)}</span>
+                  {blendPerAc ? <span className="tabular-nums text-gray-400"> · ${Math.round(blendPerAc)}/ac</span> : null}
+                </span>
+                <span>
+                  $/ac <span className="tabular-nums text-gray-700">{perAc ? `$${Math.round(perAc)}` : '—'}</span>
+                </span>
+                <span>
+                  Straights{' '}
+                  <span className={cn('tabular-nums', straightsPerAc && blendPerAc && blendPerAc > straightsPerAc * 1.25 ? 'font-semibold text-red-700' : 'text-gray-700')}>
+                    {straightsPerAc ? `$${Math.round(straightsPerAc)}` : '—'}
+                  </span>
+                </span>
+              </p>
+            </li>
+          ))}
+        </ul>
+        <div className="hidden overflow-x-auto sm:block">
           {/* Edge and floating sit in the Total's tooltip rather than in two
               columns of their own: they are the same few dollars an acre on
               every field, and two more columns pushed the table to 980px. */}
           <table className="w-full min-w-[760px] text-sm">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="px-3 py-1.5 font-medium">Field</th>
                 <th className="px-2 py-1.5 font-medium">{retailerName} blend and rate</th>
@@ -382,9 +431,35 @@ export function IciTab({ isManager }: { isManager: boolean }) {
             Nothing on the bills looks worth asking {retailerName} about.
           </p>
         ) : (
-        <div className="overflow-x-auto">
+        <>
+        {/* On a phone each field is a card: what was asked against what was
+            billed, as three pairs, with the reason to ask underneath. */}
+        <ul className="divide-y divide-gray-100 sm:hidden">
+          {ticketShown.map(({ f, farmed, edgeAgreed, flags }) => (
+            <li key={f.fieldId} className="px-3 py-2">
+              <p className="font-medium text-gray-900">{f.name}</p>
+              <p className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-gray-500">
+                <span>
+                  Acres farmed <span className="tabular-nums text-gray-700">{n0(farmed)}</span> · ticket{' '}
+                  <span className={cn('tabular-nums', farmed && f.ticketAcres > farmed * 1.05 ? 'font-semibold text-red-700' : 'text-gray-700')}>{n0(f.ticketAcres)}</span> · floated{' '}
+                  <span className={cn('tabular-nums', farmed && f.floatedAcres > farmed * 1.05 ? 'font-semibold text-red-700' : 'text-gray-700')}>{f.floatedAcres ? n0(f.floatedAcres) : '—'}</span>
+                </span>
+                <span>
+                  Product <span className="tabular-nums text-gray-700">{n0(f.ticketLb)}</span> lb billed{' '}
+                  <span className={cn('tabular-nums', f.ticketLb > 0 && f.billedLb > f.ticketLb * 1.05 ? 'font-semibold text-red-700' : 'text-gray-700')}>{n0(f.billedLb)}</span>
+                </span>
+                <span>
+                  Edge <span className="tabular-nums text-gray-700">{edgeAgreed ? n0(edgeAgreed) : '—'}</span> kg billed{' '}
+                  <span className={cn('tabular-nums', edgeAgreed && f.edgeKg > edgeAgreed * 1.1 ? 'font-semibold text-red-700' : 'text-gray-700')}>{f.edgeKg ? n0(f.edgeKg) : '—'}</span>
+                </span>
+              </p>
+              {flags.length > 0 && <p className="mt-1 text-xs text-gray-700">{flags.join('; ')}</p>}
+            </li>
+          ))}
+        </ul>
+        <div className="hidden overflow-x-auto sm:block">
           <table className="w-full min-w-[860px] text-sm">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="px-3 py-1.5 font-medium">Field</th>
                 <th className="px-2 py-1.5 text-right font-medium">Acres farmed</th>
@@ -416,6 +491,7 @@ export function IciTab({ isManager }: { isManager: boolean }) {
             </tbody>
           </table>
         </div>
+        </>
         )}
       </section>
 
@@ -432,6 +508,8 @@ export function IciTab({ isManager }: { isManager: boolean }) {
           </ul>
         </section>
       )}
+      {/* Savings tool, kept with this tab since 26 Oct 2026 (lib/fert-savings/homes.ts). */}
+      <SavingsHere ids={[3]} className="space-y-2" />
     </div>
   )
 }

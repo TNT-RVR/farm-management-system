@@ -3,6 +3,7 @@ import { GrazingCalculator, type GrazingTotals } from '@/pages/cattle/GrazingCal
 import { FeedCalculator, type FeedTotals } from '@/pages/cattle/FeedCalculator'
 import type { Ranch } from '@/lib/ranches'
 import { FeedInfo } from '@/pages/cattle/feed/FeedInfo'
+import { n0 } from '@/lib/format'
 
 // The whole operation, across every ranch.
 //
@@ -17,7 +18,6 @@ import { FeedInfo } from '@/pages/cattle/feed/FeedInfo'
 // because the combined figure is a planning number and the per-ranch ones are
 // what anybody acts on.
 
-const n0 = (v: number) => Math.round(v).toLocaleString('en-CA')
 const t1 = (lb: number) => (lb / 2204.62).toFixed(1)
 
 export function AllRanchesGrazing({

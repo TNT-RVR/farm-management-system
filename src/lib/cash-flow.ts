@@ -4,10 +4,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import { useAllCropInputs } from './forecast-data'
 import { usePlanRows } from './reports/plan'
-import { fiscalYear, parseReport, useQbReport, type BooksAccount, type CategoryOverride } from './qb-books'
+import { parseReport, useQbReport, type BooksAccount, type CategoryOverride } from './qb-books'
+import { useFiscalEndMonth } from './farm-setup'
+import { lastClosedFiscalYears, planningYear } from './fiscal-year'
 import {
   cashKindOf,
-  fiscalEndYear,
   monthsByKind,
   openItems,
   planCosts,
@@ -184,22 +185,24 @@ export function useCashFacts(realm: string | null | undefined, today: string, ov
   })
 }
 
-/** The Profit and Loss parameters for the last three full fiscal years (Sep-Aug), cash basis, by month; newest first. */
-export function booksYears(today: string) {
-  const last = fiscalEndYear(today) - 1
-  return [last, last - 1, last - 2].map((y) => {
-    const fy = fiscalYear(y)
-    return { label: fy.label, params: { start_date: fy.start, end_date: fy.end, accounting_method: 'Cash', summarize_column_by: 'Month' } }
-  })
+/** The Profit and Loss parameters for the last three full fiscal years (Farm setup's year-end), cash basis, by month; newest first. */
+export function booksYears(today: string, endMonth: number) {
+  return lastClosedFiscalYears(today, 3, endMonth).map((fy) => ({
+    label: fy.label,
+    params: { start_date: fy.start, end_date: fy.end, accounting_method: 'Cash', summarize_column_by: 'Month' },
+  }))
 }
 
 /** The last three full fiscal years of the books by month and kind, newest first. */
 export function useBooksByMonth(enabled: boolean, today: string, overrides: Map<string, CategoryOverride> | undefined) {
-  const [y0, y1, y2] = useMemo(() => booksYears(today), [today])
+  // Nothing is asked until Farm setup's year-end is known, so no wrong months are fetched.
+  const endMonth = useFiscalEndMonth()
+  const ask = enabled && endMonth != null
+  const [y0, y1, y2] = useMemo(() => booksYears(today, endMonth ?? 12), [today, endMonth])
   // One hook per year, always in the same order.
-  const r0 = useQbReport('ProfitAndLoss', enabled ? y0.params : null)
-  const r1 = useQbReport('ProfitAndLoss', enabled ? y1.params : null)
-  const r2 = useQbReport('ProfitAndLoss', enabled ? y2.params : null)
+  const r0 = useQbReport('ProfitAndLoss', ask ? y0.params : null)
+  const r1 = useQbReport('ProfitAndLoss', ask ? y1.params : null)
+  const r2 = useQbReport('ProfitAndLoss', ask ? y2.params : null)
   const years = useMemo(() => {
     if (!overrides) return []
     const out: YearMonths[] = []
@@ -227,12 +230,12 @@ const lite = (r: PlanRowView): PlanRowLite => ({
 })
 
 /**
- * The plan's figures for the fiscal year: its crop budgets × planned acres
- * (2027's inputs are paid Sep 2026 – Aug 2027), and the crop just harvested
- * at the plan's yield and price, since that is what sells in it.
+ * The plan's figures for the year ahead: the crop year being planned (from
+ * 1 August, next year's), its budgets × planned acres, and the crop just
+ * harvested at the plan's yield and price, since that is what sells in it.
  */
 export function usePlanFigures(today: string): PlanForCash | null {
-  const planYear = fiscalEndYear(today)
+  const planYear = planningYear(today)
   const plan = usePlanRows(planYear)
   const sold = usePlanRows(planYear - 1)
   const { data: inputs } = useAllCropInputs()

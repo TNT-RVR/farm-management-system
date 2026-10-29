@@ -31,6 +31,8 @@ import {
   type PlanterDefaults,
 } from '@/lib/planter'
 import { cn } from '@/lib/utils'
+import { HelpNote } from '@/components/HelpNote'
+import { CARD_HEAD } from '@/lib/table-style'
 
 /**
  * The planter.
@@ -252,10 +254,11 @@ export function PlanterCalculator() {
   const widthFt = setup.rows > 0 && rowSpacingIn > 0 ? (setup.rows * rowSpacingIn) / 12 : null
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
-        <Sprout className="h-4 w-4 text-brand-700" /> Planter
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <Sprout className="h-4 w-4 text-white" /> Planter
       </h2>
+      <div className="p-4">
       <p className="mt-0.5 text-xs text-gray-500">
         Spacing and population from each other, the distance to pace out for a plate check, and what
         a field will take.
@@ -426,10 +429,10 @@ export function PlanterCalculator() {
       </div>
 
       {isManager && livePlates.length === 0 && !addingPlate && (
-        <p className="mt-1.5 text-[11px] text-gray-500">
+        <HelpNote className="mt-1.5" summary="No plates on the list yet." title="Why plates are needed">
           No plates on the list yet. The hole count is what turns a target population into
           &ldquo;drive this far and count the seeds&rdquo;, so the calculator needs at least one.
-        </p>
+        </HelpNote>
       )}
 
       {addingPlate && <AddPlate onDone={() => setAddingPlate(false)} add={add} />}
@@ -609,11 +612,13 @@ export function PlanterCalculator() {
             )}
           </p>
         )}
-        <p className="mt-1 text-[11px] text-gray-400">
+        <HelpNote className="mt-1" summary="Machine rate only.">
           Machine rate only — no allowance for turning, filling or moving between fields. Acres come
           from the crop plan where there is one, otherwise the drawn boundary, which can include
           headland the planter never covers.
-        </p>
+        </HelpNote>
+      </div>
+
       </div>
     </div>
   )

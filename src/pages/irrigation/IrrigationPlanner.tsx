@@ -27,6 +27,7 @@ import {
 } from '@/lib/irrigation-planner'
 import { conv, useUnitSystem, type UnitSystem } from '@/lib/units'
 import { cn } from '@/lib/utils'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const DAY = 86_400_000
 const PAGE = 1000
@@ -424,7 +425,7 @@ export function IrrigationPlanner({ year, onPickField }: { year: number; onPickF
           ) : (
             <>
               <table className="w-full text-xs">
-                <thead className="hidden text-left text-[10px] uppercase tracking-wide text-gray-400 sm:table-header-group">
+                <thead className={cn(TABLE_HEAD, 'hidden sm:table-header-group')}>
                   <tr>
                     <th className="py-0.5 pr-2 font-medium">Field</th>
                     <PlanTh help="status">Status</PlanTh>

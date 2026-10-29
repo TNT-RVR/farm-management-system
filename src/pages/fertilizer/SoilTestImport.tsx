@@ -22,6 +22,7 @@ import {
   type Target,
 } from '@/lib/soil-import'
 import { SOIL_QUERY_ROOTS } from '@/lib/soilTests'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const SKIP = '__skip'
 
@@ -293,8 +294,8 @@ export function SoilTestImport({ onClose }: { onClose: () => void }) {
                   ran. Numbers below detection (&quot;&lt;0.1&quot;) are left empty.
                 </HelpNote>
               </div>
-              <div className="max-h-72 overflow-y-auto rounded-md border border-gray-200">
-                <table className="w-full text-xs">
+              <div className="max-h-72 overflow-auto rounded-md border border-gray-200">
+                <table className="w-full min-w-[460px] text-xs">
                   <tbody>
                     {header.map((h, i) => {
                       const example = rows.find((r) => (r[i] ?? '').trim())?.[i] ?? ''
@@ -355,8 +356,8 @@ export function SoilTestImport({ onClose }: { onClose: () => void }) {
                   </HelpNote>
                 </div>
                 <div className="overflow-x-auto rounded-md border border-gray-200">
-                  <table className="w-full text-xs">
-                    <thead className="bg-gray-50 text-left text-gray-500">
+                  <table className="w-full min-w-[480px] text-xs">
+                    <thead className={TABLE_HEAD}>
                       <tr>
                         <th className="px-2 py-1.5 font-medium">Label</th>
                         <th className="px-2 py-1.5 font-medium">Date</th>

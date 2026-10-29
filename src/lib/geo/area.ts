@@ -30,23 +30,31 @@ export function multiPolygonAcres(mp: MultiPolygon): number {
 }
 
 
+export type Bbox = { west: number; south: number; east: number; north: number }
+
+/** The box round every point of some rings, or null when there are none. */
+export function bboxOfRings(rings: readonly (readonly Position[])[]): Bbox | null {
+  let west = Infinity,
+    south = Infinity,
+    east = -Infinity,
+    north = -Infinity
+  for (const ring of rings)
+    for (const [x, y] of ring) {
+      if (x < west) west = x
+      if (y < south) south = y
+      if (x > east) east = x
+      if (y > north) north = y
+    }
+  return Number.isFinite(west) ? { west, south, east, north } : null
+}
+
+/** The same box as MapLibre's [[west, south], [east, north]]. */
 export function boundsOf(mp: MultiPolygon): [[number, number], [number, number]] | null {
-  let minX = Infinity,
-    minY = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity
-  for (const poly of mp.coordinates)
-    for (const ring of poly)
-      for (const [x, y] of ring) {
-        if (x < minX) minX = x
-        if (y < minY) minY = y
-        if (x > maxX) maxX = x
-        if (y > maxY) maxY = y
-      }
-  if (!Number.isFinite(minX)) return null
+  const b = bboxOfRings(mp.coordinates.flat())
+  if (!b) return null
   return [
-    [minX, minY],
-    [maxX, maxY],
+    [b.west, b.south],
+    [b.east, b.north],
   ]
 }
 

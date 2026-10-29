@@ -30,6 +30,7 @@ import { supabase } from '@/lib/supabase'
 import { useUsers } from '@/lib/queries'
 import { localDateKey } from '@/lib/ranchWeather'
 import { cn } from '@/lib/utils'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 // bale_checks is newer than the generated types.
 const db = supabase as unknown as SupabaseClient
@@ -277,7 +278,7 @@ function CheckRow({ check }: { check: BaleCheck }) {
       {open && (
         <div className="border-t border-gray-100 px-3 py-2 text-xs">
           <table className="w-full">
-            <thead className="text-left text-gray-500">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="py-1 font-medium">Feed</th>
                 <th className="py-1 font-medium">Stack</th>

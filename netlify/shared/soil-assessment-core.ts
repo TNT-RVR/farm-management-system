@@ -15,6 +15,7 @@ import {
   seedRowPCap,
   zincCritical,
   WATER_S_BY_SOURCE,
+  waterSourceLabel,
   type SoilZone,
   type WaterSource,
 } from '../../src/lib/fert-savings/alberta.ts'
@@ -266,7 +267,7 @@ function albertaBaseline(a: {
       out.push(
         `  S: ${sr.rate} lb/ac (soil about ${r(soilS)} lb/ac in 0-12 in` +
           (a.irrigated
-            ? `; less ${sr.waterCredit} lb from ${a.irrigationInches} in of ${WATER_S_BY_SOURCE[a.water].label} water` +
+            ? `; less ${sr.waterCredit} lb from ${a.irrigationInches} in of ${waterSourceLabel(a.water)} water` +
               (a.waterSPerInch != null
                 ? ` at ${a.waterSPerInch} lb S/in, the May–Sep median of ${a.waterSamples} provincial samples`
                 : ` at ${WATER_S_BY_SOURCE[a.water].lbPerInch} lb S/in`)

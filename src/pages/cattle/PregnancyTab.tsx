@@ -8,6 +8,7 @@ import { CALL_LABEL, GESTATION, REPRO_STATES, mobRanch, readAnimal, stateInfo, t
 import { useRanches } from '@/lib/ranches'
 import { cn } from '@/lib/utils'
 import { useFarmSettings } from '@/lib/farm-setup'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 type Animal = {
   animal_id: string
@@ -334,7 +335,7 @@ export function PregnancyTab({ ranchId, ranches, isManager }: { ranchId: string;
               ) : (
                 <div className="max-h-[70vh] overflow-auto">
                   <table className="w-full min-w-[640px] text-sm">
-                    <thead className="sticky top-0 bg-white text-left text-[10px] tracking-wide text-gray-400 shadow-[0_1px_0_#e5e7eb]">
+                    <thead className={cn(TABLE_HEAD, 'sticky top-0 shadow-[0_1px_0_#e5e7eb]')}>
                       <tr>
                         {header('tag', 'Tag')}
                         {header('mob', 'Mob')}

@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { farmRetailer } from '@/lib/farm-context'
 import { useSavings } from './context'
 import { money } from './ui'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const signed = (v: number) => `${v < 0 ? '−' : '+'}${money(Math.abs(v))}`
 
@@ -36,8 +37,8 @@ export function AdderMonths({ straightKey }: { straightKey: string }) {
   return (
     <>
       <table className="w-full text-[11px]">
-        <thead>
-          <tr className="text-left text-gray-500">
+        <thead className={TABLE_HEAD}>
+          <tr>
             <th className="py-0.5 font-medium">Month</th>
             <th className="py-0.5 text-right font-medium">Here</th>
             <th className="py-0.5 text-right font-medium">DTN, CA$/t</th>

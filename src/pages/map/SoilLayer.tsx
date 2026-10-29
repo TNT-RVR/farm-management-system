@@ -16,13 +16,11 @@ import {
   useSoilPolygons,
   type SoilPolygon,
 } from '@/lib/soil-landscape'
+import { n1 } from '@/lib/format'
 
 const SRC = 'soil-survey'
 const FILL = 'soil-survey-fill'
 const LINE = 'soil-survey-line'
-
-const n1 = (v: number | null | undefined) =>
-  v == null ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 1 })
 
 function toFeatures(polys: SoilPolygon[]): FeatureCollection {
   return {

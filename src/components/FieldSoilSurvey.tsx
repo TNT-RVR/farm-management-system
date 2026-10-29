@@ -13,9 +13,8 @@ import { SoilLegend } from '@/components/SoilLegend'
 import { InfoPopover } from '@/components/InfoPopover'
 import { HorizonTable, SoilTermInfo } from '@/components/SoilTerms'
 import { cn } from '@/lib/utils'
-
-const n1 = (v: number | null | undefined) =>
-  v == null ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 1 })
+import { n1 } from '@/lib/format'
+import { CARD_HEAD } from '@/lib/table-style'
 
 /**
  * What the provincial survey says about one field.
@@ -56,11 +55,11 @@ export function FieldSoilSurvey({
 
   return (
     <div className={cn('space-y-3', className)}>
-      <div className="rounded-lg border border-gray-200 bg-white">
-        <div className="flex items-center gap-2 border-b border-gray-200 px-3 py-2">
-          <Layers className="h-4 w-4 text-brand-700" />
-          <h3 className="text-sm font-semibold text-gray-900">Soil survey</h3>
-          <span className="text-xs text-gray-500">
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div className={cn('flex items-center gap-2', CARD_HEAD)}>
+          <Layers className="h-4 w-4 text-white" />
+          <h3 className="font-medium">Soil survey</h3>
+          <span className="text-xs text-brand-100">
             {units.length === 1 ? 'one soil' : `${units.length} soils across this field`}
           </span>
           {/* The legend lives behind the button rather than under the table:

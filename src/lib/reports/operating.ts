@@ -4,6 +4,7 @@ import {
   abDefaultsQuery,
   allFuelOpsQuery,
   basicsFrom,
+  farmYardsQuery,
   fieldEntriesQuery,
   fieldPointsQuery,
   fuelSettingsFrom,
@@ -25,13 +26,14 @@ import { fetchAll } from './framework'
  * report's litres and dollars are the page's.
  */
 export async function loadOperating() {
-  const [settings, ab, fuel, routes, points, sites, entries, boundaries, logged] = await Promise.all([
+  const [settings, ab, fuel, routes, points, sites, yards, entries, boundaries, logged] = await Promise.all([
     operatingSettingsQuery().queryFn(),
     abDefaultsQuery().queryFn(),
     fuelCostingInputsQuery().queryFn(),
     roadRoutesQuery().queryFn(),
     fieldPointsQuery().queryFn(),
     sitesQuery().queryFn(),
+    farmYardsQuery().queryFn(),
     fieldEntriesQuery().queryFn(),
     fetchAll<{ field_id: string; valid_to: string | null; acres: number | string | null }>((a, b) =>
       supabase.from('field_boundaries_geojson').select('field_id, valid_to, acres').order('field_id').order('valid_from').range(a, b),
@@ -40,9 +42,9 @@ export async function loadOperating() {
   ])
   const basics = basicsFrom(settings, ab, fuel)
   const { shop, bins, pit } = placesFrom(settings)
-  const trip = tripsFrom({ routes, points, sites, entries, shop, bins, pit })
+  const trip = tripsFrom({ routes, points, sites, yards, entries, shop, bins, pit })
   const model = fuelModelFrom({ settings: fuelSettingsFrom(settings, basics.dieselPerL), boundaries, logged, trip, ready: true })
-  return { basics, model, trip, sites, truck: truckSettingsFrom(settings), places: { shop, bins } }
+  return { basics, model, trip, sites, yards, truck: truckSettingsFrom(settings), places: { shop, bins } }
 }
 
 export type Operating = Awaited<ReturnType<typeof loadOperating>>

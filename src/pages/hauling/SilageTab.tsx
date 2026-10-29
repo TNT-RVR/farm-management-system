@@ -9,6 +9,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { cn } from '@/lib/utils'
 import { Card, SettingsGroup, input, type NumberField } from './ui'
 import { FieldLink, Sources, money, n0, n1 } from '../fertilizer/savings/ui'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const FIELDS: NumberField<keyof SilageHaulInputs>[] = [
   { key: 'payloadT', label: 'Silage truck carries', unit: 't as fed' },
@@ -108,7 +109,7 @@ export function SilageTab({ year, isManager }: { year: number; isManager: boolea
           <p className="-mt-2 mb-3 text-xs text-gray-500">
             {pit ? `${pit.label}${pit.note ? ` — ${pit.note}` : ''}. ` : 'The pit has no pin yet. '}
             Move it by dragging the P pin on the{' '}
-            <Link to="/hauling?tab=distances" className="text-brand-700 underline">
+            <Link to="/fuel?tab=distances" className="text-brand-700 underline">
               Distances map
             </Link>
             ; distances from a new spot follow on the next route check.
@@ -195,17 +196,17 @@ export function SilageTab({ year, isManager }: { year: number; isManager: boolea
 
       <Card
         title={onlySilage ? `Silage fields, ${year}` : `Every field — no silage on the ${year} plan`}
-        right={<span className="text-xs text-gray-500">from {PIT_LABEL[s.pit]} by road</span>}
+        right={<span className="text-xs text-brand-100">from {PIT_LABEL[s.pit]} by road</span>}
       >
         <Sources
           sources={[
             { label: 'Silage fields: the crop plan', to: '/plan' },
-            { label: 'Distances: the Distances tab', to: '/hauling?tab=distances' },
+            { label: 'Distances: the Distances tab', to: '/fuel?tab=distances' },
           ]}
         />
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+          <table className="w-full min-w-[700px] text-xs">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="px-2 py-1 font-medium">Field</th>
                 {onlySilage && <th className="px-2 py-1 text-right font-medium">Tonnes</th>}
@@ -256,7 +257,7 @@ export function SilageTab({ year, isManager }: { year: number; isManager: boolea
 function Row({ k, v, strong }: { k: string; v: React.ReactNode; strong?: boolean }) {
   return (
     <div className="flex gap-2">
-      <dt className="w-40 shrink-0 text-xs text-gray-500">{k}</dt>
+      <dt className="w-28 shrink-0 text-xs text-gray-500 sm:w-40">{k}</dt>
       <dd className={cn('min-w-0 flex-1 text-gray-900', strong && 'font-semibold')}>{v}</dd>
     </div>
   )

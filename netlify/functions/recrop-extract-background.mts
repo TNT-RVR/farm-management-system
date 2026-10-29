@@ -1,7 +1,8 @@
-import { createClient } from '@supabase/supabase-js'
 import { extractRecrop, recropPassages } from '../shared/recrop-core.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
+import { SONNET_5 } from '../shared/anthropic.ts'
 
 /**
  * Read every label's following-crop restrictions into chemical_recrop_rules.
@@ -14,7 +15,7 @@ import { getUserMfa } from '../shared/auth-mfa.ts'
 const url = process.env.SUPABASE_URL
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 let apiKey = process.env.ANTHROPIC_API_KEY
-let model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5'
+let model = process.env.ANTHROPIC_MODEL ?? SONNET_5
 let workerKey = process.env.JOB_WORKER_KEY ?? process.env.FACT_WORKER_KEY ?? process.env.LABEL_WORKER_KEY
 
 const BUDGET_MS = 13 * 60_000
@@ -23,10 +24,10 @@ export default async (req: Request) => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
   apiKey = process.env.ANTHROPIC_API_KEY
-  model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5'
+  model = process.env.ANTHROPIC_MODEL ?? SONNET_5
   workerKey = process.env.JOB_WORKER_KEY ?? process.env.FACT_WORKER_KEY ?? process.env.LABEL_WORKER_KEY
   if (!url || !serviceKey || !apiKey) return new Response('Not configured', { status: 500 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
 
   const byWorker = Boolean(workerKey) && req.headers.get('x-worker-key') === workerKey
   let allowed = byWorker

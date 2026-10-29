@@ -1,17 +1,19 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { CartesianGrid, LabelList, Legend, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowDown, ArrowUp, Download, Lightbulb, Scale } from 'lucide-react'
-import { Select } from '@/components/Select'
+import { ArrowDown, ArrowUp, Lightbulb, Scale } from 'lucide-react'
 import { HelpNote } from '@/components/HelpNote'
-import { supabase } from '@/lib/supabase'
-import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { cropColour } from '@/lib/crop-colour'
-import { downloadBlob, tableReportToCsv } from '@/lib/table-report'
+import { downloadBlob, tableReportToCsv, tableReportToPdf } from '@/lib/table-report'
+import { ExportButton } from '@/components/ExportButton'
 import { conv, depthValue, useUnitSystem, type UnitSystem } from '@/lib/units'
 import { cn } from '@/lib/utils'
 import { buildWaterReview, reviewTotals, RULES, type WaterReviewRow, type WaterReviewTotals } from '@/lib/water-review'
 import { fetchFarmPowerCost, fetchWaterReviewData, perDepth, perUnit, powerPrices, waterReviewReport, type PowerPrices } from '@/lib/reports/water-review'
+import { money as fmtMoney, n0, n1 } from '@/lib/format'
+import { YearSelect } from '@/components/YearSelect'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 /** Everything the review reads for one year. The arithmetic is in lib/water-review. */
 function useReviewData(year: number) {
@@ -31,11 +33,8 @@ function useFarmPowerCost() {
   })
 }
 
-const n0 = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : Math.round(v).toLocaleString('en-CA'))
-const n1 = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 1 }))
 const yieldFmt = (v: number | null | undefined) => (v == null ? '—' : v < 1 ? v.toFixed(2) : v < 20 ? n1(v) : n0(v))
-const money = (v: number | null | undefined, dp = 0) =>
-  v == null || !Number.isFinite(v) ? '—' : `$${v.toLocaleString('en-CA', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`
+const money = (v: number | null | undefined, dp = 0) => fmtMoney(v, dp, { neg: 'inside' })
 
 /**
  * Twenty columns did not fit a screen, so they come in three sets — the
@@ -300,63 +299,20 @@ function YieldWaterChart({ rows, u }: { rows: WaterReviewRow[]; u: UnitSystem })
 }
 
 /**
- * The two power prices and which one prices the pumping. With solar the farm
- * mostly sells more than it buys, so the power a pump uses is mostly power
- * not sold — worth the sell price, not the grid price.
+ * The two power prices and which one prices the pumping, as read. With solar
+ * the farm mostly sells more than it buys, so the power a pump uses is mostly
+ * power not sold — worth the sell price, not the grid price. They are set in
+ * one place, Utilities › Power (26 Oct 2026); this only shows them.
  */
-function PowerCost({ power, farmId }: { power: PowerPrices; farmId: string | null }) {
-  const { profile } = useAuth()
-  const isMgr = hasManagerAccess(profile?.role)
-  const qc = useQueryClient()
-  const save = useMutation({
-    mutationFn: async (patch: { power_buy_kwh?: number; power_sell_kwh?: number; power_value_basis?: 'sell' | 'buy' }) => {
-      const { error } = await supabase.from('farms').update(patch).eq('id', farmId!)
-      if (error) throw error
-    },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['farm-power-cost'] }),
-  })
-  const price = (key: 'power_sell_kwh' | 'power_buy_kwh', label: string, value: number, title: string) =>
-    isMgr && farmId ? (
-      <label className="flex items-center gap-1" title={title}>
-        {label} $
-        <input
-          type="number"
-          step="0.005"
-          min="0"
-          inputMode="decimal"
-          key={value}
-          defaultValue={value}
-          onBlur={(e) => {
-            const v = Number(e.target.value)
-            if (e.target.value !== '' && Number.isFinite(v) && v >= 0 && v !== value) save.mutate({ [key]: v })
-          }}
-          className="w-16 rounded-md border border-gray-300 px-1.5 py-1 text-xs"
-        />
-      </label>
-    ) : (
-      <span title={title}>
-        {label} ${value.toFixed(2)}
-      </span>
-    )
+function PowerCost({ power }: { power: PowerPrices }) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-      {price('power_sell_kwh', 'Sell', power.sell, 'What solar power sells for, $/kWh — the income a pump forgoes when it uses it')}
-      {price('power_buy_kwh', 'Buy', power.buy, 'What grid power costs, $/kWh all-in')}
-      <label className="flex items-center gap-1">
-        Price pumping at
-        <select
-          value={power.basis}
-          disabled={!isMgr || !farmId || save.isPending}
-          onChange={(e) => save.mutate({ power_value_basis: e.target.value as 'sell' | 'buy' })}
-          className="rounded-md border border-gray-300 px-1.5 py-1 text-xs"
-          aria-label="Price pumping at"
-        >
-          <option value="sell">sell price (income forgone)</option>
-          <option value="buy">buy price (grid)</option>
-        </select>
-      </label>
-      {save.isPending && <span className="text-gray-400">saving…</span>}
-      {save.error && <span className="text-red-700">{(save.error as Error).message}</span>}
+      <span title="What solar power sells for, $/kWh — the income a pump forgoes when it uses it">Sell ${power.sell.toFixed(3)}</span>
+      <span title="What grid power costs, $/kWh all-in">Buy ${power.buy.toFixed(3)}</span>
+      <span>· pumping priced at the {power.basis === 'sell' ? 'sell price (income forgone)' : 'buy price (grid)'}</span>
+      <Link to="/utilities?tab=power" className="font-medium text-brand-700 hover:underline">
+        Change in Utilities › Power
+      </Link>
     </div>
   )
 }
@@ -403,9 +359,16 @@ export function WaterSeasonReview({ year }: { year: number }) {
   const missingPump = rows.filter((r) => r.pumpCost == null && r.irrigationIn > 0 && r.pumpNote)
   const cautions = rows.filter((r) => r.pumpCost != null && r.pumpNote)
 
-  const exportCsv = () => {
-    const blob = new Blob([tableReportToCsv(waterReviewReport(sorted, totals, shownYear, power, u, today))], { type: 'text/csv;charset=utf-8' })
-    downloadBlob(blob, `water-review-${shownYear}.csv`)
+  // CSV and PDF come off the same report, so the two cannot disagree about
+  // what the season's water did.
+  const exportReview = async (format: 'CSV' | 'PDF') => {
+    const report = waterReviewReport(sorted, totals, shownYear, power, u, today)
+    if (format === 'CSV') {
+      const blob = new Blob([tableReportToCsv(report)], { type: 'text/csv;charset=utf-8' })
+      downloadBlob(blob, `water-review-${shownYear}.csv`)
+      return
+    }
+    downloadBlob(await tableReportToPdf(report), `water-review-${shownYear}.pdf`)
   }
 
   return (
@@ -414,17 +377,10 @@ export function WaterSeasonReview({ year }: { year: number }) {
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
           <Scale className="h-4 w-4 text-sky-700" /> Water against yield
         </h2>
-        <Select value={String(shownYear)} onChange={(v) => setShownYear(Number(v))} options={years.map((y) => ({ value: String(y), label: String(y) }))} ariaLabel="Year" size="sm" className="w-24" />
+        <YearSelect value={shownYear} years={years} onChange={setShownYear} size="sm" className="w-24" />
         <div className="ml-auto flex flex-wrap items-center gap-3">
-          <PowerCost power={power} farmId={farm.data?.id ?? null} />
-          <button
-            type="button"
-            onClick={exportCsv}
-            disabled={!rows.length}
-            className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            <Download className="h-3.5 w-3.5" /> CSV
-          </button>
+          <PowerCost power={power} />
+          {rows.length > 0 && <ExportButton label="Export water against yield" onExport={exportReview} />}
         </div>
       </div>
 
@@ -469,8 +425,8 @@ export function WaterSeasonReview({ year }: { year: number }) {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[560px] text-xs">
-                <thead className="text-[10px] uppercase tracking-wide text-gray-500">
-                  <tr className="border-b border-gray-200">
+                <thead className={TABLE_HEAD}>
+                  <tr>
                     {shownCols.map((c) => {
                       const on = sort.key === c.key
                       return (
@@ -478,7 +434,7 @@ export function WaterSeasonReview({ year }: { year: number }) {
                           <button
                             type="button"
                             onClick={() => setSort((s) => (s.key === c.key ? { key: c.key, dir: s.dir === 1 ? -1 : 1 } : { key: c.key, dir: c.left ? 1 : -1 }))}
-                            className={cn('inline-flex items-center gap-0.5 uppercase hover:text-gray-800', on && 'text-gray-900')}
+                            className={cn('inline-flex items-center gap-0.5 uppercase hover:text-brand-100', on && 'underline')}
                           >
                             {c.label}
                             {on && (sort.dir === 1 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
@@ -546,10 +502,11 @@ export function WaterSeasonReview({ year }: { year: number }) {
             </div>
           </section>
 
-          <section className="rounded-lg border border-gray-200 bg-white p-3">
-            <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-gray-800">
-              <Lightbulb className="h-4 w-4 text-amber-500" /> What this says
+          <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+            <h3 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+              <Lightbulb className="h-4 w-4 text-amber-200" /> What this says
             </h3>
+            <div className="p-3">
             <ul className="space-y-1 text-xs">
               {sorted.map((r) => (
                 <li key={r.fieldId} className="flex flex-wrap gap-x-1.5">
@@ -559,6 +516,8 @@ export function WaterSeasonReview({ year }: { year: number }) {
                 </li>
               ))}
             </ul>
+
+            </div>
           </section>
         </>
       )}

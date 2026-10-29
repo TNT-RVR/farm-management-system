@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { SOIL_TEXTURES } from '@/lib/et'
 import { TEXTURES, type Texture } from '@/lib/soil-textures'
+import { HelpNote } from '@/components/HelpNote'
 
 /**
  * Field guide to the nine soil textures the balance knows about.
@@ -155,10 +156,10 @@ export function SoilTextureGuide() {
         </li>
         <li>Wet a pinch and rub it: gritty means sand, floury-smooth means silt.</li>
       </ol>
-      <p className="mt-1.5 text-xs font-normal leading-relaxed text-gray-500">
+      <HelpNote className="mt-1.5 text-xs" summary="Longer ribbon means more clay." title="Reading the ribbon">
         Longer ribbon means more clay, which means more water held and taken in more slowly. Sample
         a few spots — a pivot corner and a hilltop are often not the same class as the middle.
-      </p>
+      </HelpNote>
 
       <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         {TEXTURES.map((t, i) => {
@@ -196,10 +197,10 @@ export function SoilTextureGuide() {
         })}
       </div>
 
-      <p className="mt-2.5 text-[11px] font-normal leading-relaxed text-gray-400">
+      <HelpNote className="mt-2.5" summary="Go by the ribbon, not the swatch colour." title="About the swatches">
         Swatches show grain size, which is what defines the class. Real soil colour comes from
         organic matter and moisture, so it is no guide to texture — go by the ribbon, not the photo.
-      </p>
+      </HelpNote>
     </div>
   )
 }

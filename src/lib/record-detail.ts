@@ -10,6 +10,13 @@ export function detailRowsOf(fields: EditField[], row: Record<string, unknown>):
   const out: [string, string][] = []
   for (const f of fields) {
     const raw = row[f.key]
+    if (f.kind === 'latlng') {
+      const lng = row[f.lngKey!]
+      if (raw == null || raw === '' || lng == null || lng === '') continue
+      const deg = (x: unknown) => Number(x).toLocaleString('en-CA', { maximumFractionDigits: 4 })
+      out.push([f.label, `${deg(raw)}, ${deg(lng)}`])
+      continue
+    }
     if (raw == null || raw === '') continue
     let v: string
     if (f.kind === 'bool') v = raw === true || raw === 'true' ? 'Yes' : 'No'

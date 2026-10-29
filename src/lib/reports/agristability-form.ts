@@ -3,7 +3,7 @@ import { cattleSaleCode, cropCode, isFallow, schedule3Line, SCHEDULE3_CATTLE, ty
 import { longDate, num, type Cell, type SectionedReport } from './framework'
 import type { BookRow, CropBooks } from './crop-books'
 import { inCropUnit } from './marketing-position'
-import { onHandAt, type YearEnd } from './agristability'
+import { onHandAt, periodOf, type YearEnd } from './agristability'
 import { accountsNote, partTotal, type BooksLine, type QbInput } from './books-statement-a'
 
 /**
@@ -156,7 +156,8 @@ function fillFromBooks(qb: Books, list: [string, string, string][], from: BooksL
 function identification(inp: FormInput): FormLine[] {
   const { books, farmName } = inp
   const qb = booksOf(inp)
-  const year = books.year
+  const period = periodOf(inp.ye, books.year)
+  const year = period.year
   const deals = ourRows(books).filter((r) => r.landDeal && r.landDeal.direction !== 'out' && r.landDeal.arrangement !== 'cash_rent')
   const tenants = [...new Set(deals.map((r) => r.landDeal!.landlord))]
   const growers = [...new Set(books.rows.filter((r) => isGrowers(r) && r.landDeal?.arrangement === 'profit_share').map((r) => r.landDeal!.landlord))]
@@ -177,7 +178,7 @@ function identification(inp: FormInput): FormLine[] {
     blank('', 'Sole proprietorship or partnership', 'Tick one. A partnership also fills the partnership part on page 5.'),
     qb?.sa.start && qb.sa.end
       ? ['', 'Fiscal period', `${qb.sa.start} to ${qb.sa.end}`, STATUS.filled, `${qb.from}: the Profit and Loss read for this form.`]
-      : ['', 'Fiscal period', `${year}-01-01 to ${year}-12-31`, STATUS.estimate, 'Assumes a calendar year, as the app’s inventory date does. Change it if the farm’s year ends another day.'],
+      : ['', 'Fiscal period', `${period.start} to ${period.end}`, STATUS.estimate, 'The fiscal year from Farm setup’s year-end; the books were not read.'],
     qb && /accrual/i.test(qb.sa.basis ?? '')
       ? ['', 'Method of accounting', 'Code 1 accrual', STATUS.filled, `${qb.from}: the books are kept on the accrual basis.`]
       : blank('', 'Method of accounting', 'Code 1 accrual, code 2 cash: the accountant’s.'),
@@ -211,7 +212,7 @@ function commodityIncome(inp: FormInput): FormLine[] {
 /** The app's crops and cattle sold, by commodity code: the form's income without the books, an estimate beside them. */
 function appSales(inp: FormInput): FormLine[] {
   const { books, ye } = inp
-  const closed = ye.asAt >= `${books.year}-12-31`
+  const closed = ye.asAt >= periodOf(ye, books.year).end
   const out: FormLine[] = []
   for (const g of salesByCode(books)) {
     const knownRows = g.rows.filter((r) => ourSales(r) != null)
@@ -249,7 +250,7 @@ function appSales(inp: FormInput): FormLine[] {
   }
   for (const [code, v] of cattle) {
     const note = [
-      `Markets, Cattle sales: ${v.head.toLocaleString('en-CA')} head (${[...v.classes].join(', ')}) delivered in ${books.year}.`,
+      `Markets, Cattle sales: ${v.head.toLocaleString('en-CA')} head (${[...v.classes].join(', ')}) delivered in ${periodOf(ye, books.year).label}.`,
       closed ? null : 'Sales to date: the year is still running.',
       v.unpriced ? `${plural(v.unpriced, 'sale')} with no price left out.` : null,
       v.confirm ?? null,
@@ -258,7 +259,7 @@ function appSales(inp: FormInput): FormLine[] {
       .join(' ')
     out.push(known(code, v.commodity, dollars(v.amount), closed && !v.unpriced ? STATUS.filled : STATUS.estimate, note, `${note} Enter the cheques.`))
   }
-  if (!cattle.size) out.push(blank('706 / 719', 'Cattle sales', `No cattle sale is recorded as delivered in ${books.year}.`))
+  if (!cattle.size) out.push(blank('706 / 719', 'Cattle sales', `No cattle sale is recorded as delivered in ${periodOf(ye, books.year).label}.`))
   return out
 }
 
@@ -352,7 +353,7 @@ function allowableExpenses(inp: FormInput): FormLine[] {
     blank('9714', 'Minerals and salts', 'Mineral and salt invoices.'),
     known('9764', 'Machinery (gasoline, diesel fuel, oil)', dollars(sum((r) => r.costs.fuel)), STATUS.estimate, 'Field and road fuel as the Fuel page models it, not fuel bills.', 'No fuel in the books: enter the fuel bills.'),
     blank('9799', 'Electricity', 'The farm share of power bills. The Pumping energy report has the pivots’ kWh.'),
-    known('9801', 'Freight and shipping', dollars(sum((r) => r.costs.trucking)), STATUS.estimate, 'Trucking the crop as the Travel & trucking page books it.', 'No trucking booked yet: enter the freight bills.'),
+    known('9801', 'Freight and shipping', dollars(sum((r) => r.costs.trucking)), STATUS.estimate, 'Trucking the crop as the Fuel & trucking page books it.', 'No trucking booked yet: enter the freight bills.'),
     blank('9802', 'Heating fuel', 'The farm share.'),
     blank('9815', 'Arm’s length salaries', 'Payroll.'),
     blank('9822', 'Storage/drying', 'Drying, storage and preservatives.'),
@@ -450,7 +451,7 @@ function afscPage1(inp: FormInput): FormLine[] {
     known('', 'Business name', farmName, STATUS.filled, 'Farm setup.', 'Set the farm name under Settings, Farm setup.'),
     blank('', 'Business address', 'Mailing address.'),
     blank('', 'Contact person (a client or shareholder)', ''),
-    end ? ['', 'Fiscal period (year end)', end, STATUS.filled, `${booksOf(inp)!.from}.`] : ['', 'Fiscal period (year end)', `${books.year}-12-31`, STATUS.estimate, 'Assumes a calendar year.'],
+    end ? ['', 'Fiscal period (year end)', end, STATUS.filled, `${booksOf(inp)!.from}.`] : ['', 'Fiscal period (year end)', periodOf(inp.ye, books.year).end, STATUS.estimate, 'Farm setup’s year-end.'],
     blank('', 'Home quarter (part, section, township, range, meridian), county/MD', 'Only if changed. The Fields page has each field’s legal land.'),
     blank('', 'SIN, business number, trust number', never),
     blank('', 'Form preparer and phone', 'Whoever fills the form in.'),
@@ -488,7 +489,7 @@ const KIND_ORDER = ['grain', 'hay', 'straw', 'greenfeed', 'silage', 'other']
 
 export function schedule2Rows(inp: FormInput): { rows: Cell[][]; acres: { code: string; commodity: string; irrigated: number; dryland: number }[]; fallowAcres: number; shareAcres: number; cropAcres: number } {
   const { books, ye } = inp
-  const closed = ye.asAt >= `${books.year}-12-31`
+  const closed = ye.asAt >= periodOf(ye, books.year).end
   const lines = new Map<string, CropLine>()
   let fallowAcres = 0
   let shareAcres = 0
@@ -521,7 +522,7 @@ export function schedule2Rows(inp: FormInput): { rows: Cell[][]; acres: { code: 
     }
     return m
   }
-  const start = stock(`${books.year - 1}-12-31`)
+  const start = stock(periodOf(ye, books.year).openOn)
   const end = stock(ye.asAt)
   // A crop in the bins with nothing grown this year still has a line.
   for (const id of new Set([...start.keys(), ...end.keys()])) {
@@ -606,7 +607,7 @@ export function schedule2Rows(inp: FormInput): { rows: Cell[][]; acres: { code: 
 
 export function schedule3Rows(inp: FormInput): { rows: Cell[][]; head: { line: string; code: string; head: number }[] } {
   const { books, ye } = inp
-  const closed = ye.asAt >= `${books.year}-12-31`
+  const closed = ye.asAt >= periodOf(ye, books.year).end
   const by = new Map<Schedule3Key, { head: number; lbHead: number; lb: number; counted: string | null; classes: Set<string>; confirm: Set<string> }>()
   for (const h of ye.herd) {
     if (h.head_count <= 0) continue
@@ -782,7 +783,8 @@ export function statusCounts(sections: ReportSection[]): Record<Status, number> 
 
 export function agriStabilityForm(inp: FormInput): SectionedReport {
   const { books, ye, today } = inp
-  const year = books.year
+  const period = periodOf(ye, books.year)
+  const year = period.year
   if (!books.rows.length && !ye.salesInYear.length && !ye.moves.length) throw new Error(`Nothing is planned, applied, stored or sold for ${year} yet.`)
 
   const qb = booksOf(inp)
@@ -800,7 +802,7 @@ export function agriStabilityForm(inp: FormInput): SectionedReport {
   const add = (...t: FormLine[]) => (t.some((x) => typeof x[2] === 'number') ? t.reduce((s, x) => s + (typeof x[2] === 'number' ? x[2] : 0), 0) : null)
   const s2 = schedule2Rows(inp)
   const s3 = schedule3Rows(inp)
-  const closed = ye.asAt >= `${year}-12-31`
+  const closed = ye.asAt >= period.end
 
   const accrual = (title: string, cols: [string, string], items: [string, string][], note: string): ReportSection => ({
     title,
@@ -811,7 +813,7 @@ export function agriStabilityForm(inp: FormInput): SectionedReport {
 
   const capacity: Cell[][] = [
     ...s2.acres.map((a) => [a.code, a.commodity, round1(a.irrigated) || null, round1(a.dryland) || null, round1(a.irrigated + a.dryland), null, STATUS.filled, 'Acres in the Financials plan (map or typed), our fields and share deals, renters’ crops left out.']),
-    ...s3.head.map((h) => [h.code, h.line, null, null, null, h.head, STATUS.estimate, 'Herd counts as last entered, not a count on 31 December.']),
+    ...s3.head.map((h) => [h.code, h.line, null, null, null, h.head, STATUS.estimate, `Herd counts as last entered, not a count on ${longDate(period.end)}.`]),
   ]
   if (s2.fallowAcres > 0.05) capacity.push(['', 'Summerfallow', null, null, round1(s2.fallowAcres), null, STATUS.filled, 'Fallow in the Financials plan.'])
 
@@ -884,7 +886,7 @@ export function agriStabilityForm(inp: FormInput): SectionedReport {
       ['Purchased in prior year for current year', 'Purchased in current year for next year'],
       [
         ['Prepared feed / supplements', ''],
-        ['Fertilizer and lime', `Fall-applied for the ${year + 1} crop: the ${year + 1} fields’ P&L.`],
+        ['Fertilizer and lime', `Fall-applied for the ${books.year + 1} crop: the ${books.year + 1} fields’ P&L.`],
         ['Herbicides / pesticides', 'Bought this year for next year.'],
       ],
       'Only if cash basis.',
@@ -893,7 +895,7 @@ export function agriStabilityForm(inp: FormInput): SectionedReport {
       title: `Schedule 2: crop inventory worksheet, ${year}`,
       note: [
         'Irrigated (a pivot on the field) and dryland on separate lines, as AFSC asks.',
-        `Inventory is the bins’ ledger on ${longDate(`${year - 1}-12-31`)} and ${longDate(ye.asAt)}${closed ? '' : ' (today: the year is still running)'}; hay, silage and anything else not in bins is not counted.`,
+        `Inventory is the bins’ ledger on ${longDate(period.openOn)} and ${longDate(ye.asAt)}${closed ? '' : ' (today: the year is still running)'}; hay, silage and anything else not in bins is not counted.`,
         'Feed: “Yes” for crops kept for feed, blank where it could be either. Fill in purchases, sales (from starting inventory and from this year’s crop), fed and seed; tick Contract with the fair market value for grain priced at year end.',
       ].join(' '),
       head: SCHEDULE2_HEAD,
@@ -902,7 +904,7 @@ export function agriStabilityForm(inp: FormInput): SectionedReport {
     },
     {
       title: `Schedule 3: livestock inventory worksheet, ${year}`,
-      note: `End head is the herd counts as last entered (Cattle settings), not a count on ${longDate(`${year}-12-31`)}; sales are Markets, Cattle sales delivered in ${year}. Fill in starting head and weight, births, purchases, deaths and transfers. Codes are Statement A’s; weights are average pounds.`,
+      note: `End head is the herd counts as last entered (Cattle settings), not a count on ${longDate(period.end)}; sales are Markets, Cattle sales delivered in ${period.label}. Fill in starting head and weight, births, purchases, deaths and transfers. Codes are Statement A’s; weights are average pounds.`,
       head: SCHEDULE3_HEAD,
       rows: s3.rows,
       pageBreakBefore: true,
@@ -936,7 +938,7 @@ export function agriStabilityForm(inp: FormInput): SectionedReport {
       'The form line by line with what the app knows. Each line is filled from the app, an estimate, or blank for you to fill in. A blank is never a zero.',
       'SIN, business number, PIN and AFSC ID are never filled in. Line numbers are T1163 E (25); check them against the 2026 form.',
       ...(qb
-        ? [`Income and expenses are QuickBooks’ P&L for ${qb.fyLabel}, account by account. Schedules 2 and 3 are still the app’s, counted to 31 December.`]
+        ? [`Income and expenses are QuickBooks’ P&L for ${qb.fyLabel}, account by account. Schedules 2 and 3 are still the app’s, counted to ${longDate(period.end)}.`]
         : inp.qb && !inp.qb.ok
           ? [inp.qb.note]
           : []),

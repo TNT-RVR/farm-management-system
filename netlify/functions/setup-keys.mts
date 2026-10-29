@@ -1,7 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
 import { randomBytes } from 'node:crypto'
 import { SETUP_KEYS, SETUP_KEY_NAMES, type KeyStatus } from '../../src/lib/setup-keys.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 /**
  * Farm setup's keys: which are set, and saving or clearing one. Admins only.
@@ -28,7 +28,7 @@ export default async (req: Request) => {
   const url = process.env.SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !serviceKey) return json({ error: 'Server is missing its database settings' }, 500)
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
 
   // The caller, from their sign-in, must be an active admin.
   const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')

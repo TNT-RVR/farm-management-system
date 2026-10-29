@@ -82,7 +82,8 @@ export type BuiltId =
   | 'nutrient-balance'
   | 'manure'
   | 'bin-records'
-  | 'basf'
+  | 'driver-log'
+  | 'bin-temperature-record'
   | 'grain-inventory'
   | 'deliveries'
   | 'moisture-log'
@@ -93,6 +94,7 @@ export type BuiltId =
   | 'quickbooks'
   | 'purchases'
   | 'tasks'
+  | 'monthly-jobs-year'
   | 'contacts'
   | 'grants'
   | 'audit'
@@ -104,6 +106,10 @@ export type BuiltId =
   | 'water-quality'
   | 'herd-inventory'
   | 'bale-checks'
+  | 'afsc-mdi-election'
+  | 'afsc-mdi-contract'
+  | 'afsc-mdi-land'
+  | 'afsc-mdi-identification'
   | 'grazing-record'
   | 'stock-return'
   | 'feed-budget'
@@ -317,7 +323,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'spraying',
     name: 'Pre-harvest interval and grazing clearance',
     what: 'Per field: the last product applied, its PHI, the first safe harvest date and when stock may graze or be fed.',
-    from: { label: 'Spray restrictions', to: '/grazing-restrictions' },
+    from: { label: 'Spray restrictions', to: '/cattle?tab=restrictions' },
     formats: PDF_CSV,
     params: [year],
   },
@@ -351,7 +357,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'fertility',
     name: '4R / NERP record pack',
     what: 'Per field: soil test, recommendation, what was applied, manure, tissue tests and yield, plus the fertilizer invoices.',
-    from: { label: 'Fertilizer', to: '/fertilizer' },
+    from: { label: 'Fertility plan', to: '/fertilizer/plan' },
     formats: PDF_CSV,
     params: [year, { key: 'field', kind: 'field', allLabel: 'All planned fields' }],
   },
@@ -361,7 +367,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'fertility',
     name: 'N-rate trial prescription',
     what: 'One trial’s strips and rates: ZIP is the shapefile for Operations Center, CSV and PDF the strip list.',
-    from: { label: 'Fertilizer savings', to: '/fertilizer?tab=Savings' },
+    from: { label: 'Fertilizer savings', to: '/fertilizer/savings' },
     formats: ['ZIP', 'PDF', 'CSV'],
     params: [{ key: 'trial', kind: 'lookup', label: 'Trial', lookup: 'nTrials' }],
   },
@@ -371,7 +377,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'fertility',
     name: 'Nutrient balance by field',
     what: 'Per field: soil test, N-P-K-S applied from every source, removed by the crop at its yield, and the balance.',
-    from: { label: 'Fertilizer', to: '/fertilizer' },
+    from: { label: 'Fertility plan', to: '/fertilizer/plan' },
     formats: PDF_CSV,
     params: [year],
   },
@@ -381,7 +387,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'fertility',
     name: 'Manure applications and credit',
     what: 'Each spread: field, date, tonnes, t/ac, analysis, the nutrient credit and its worth, and the haul cost.',
-    from: { label: 'Manure', to: '/fertilizer?tab=Manure' },
+    from: { label: 'Manure', to: '/fertilizer/manure' },
     formats: PDF_CSV,
     params: [year],
   },
@@ -392,9 +398,9 @@ export const REPORTS: ReportEntry[] = [
     id: 'bin-records',
     section: 'harvest',
     name: 'Bin records',
-    what: 'One bin over a date range: loads in, movements, moisture tests, cable readings and needs-air alerts.',
+    what: 'One bin over a date range: loads in, movements, moisture tests, cable readings and any needs-air alerts.',
     from: { label: 'Harvest', to: '/harvest' },
-    formats: PDF_CSV,
+    formats: ['PDF', 'XLSX', 'CSV'],
     params: [
       { key: 'bin', kind: 'bin' },
       { key: 'from', kind: 'date', label: 'From', daysAgo: 365 },
@@ -403,13 +409,27 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     mode: 'build',
-    id: 'basf',
+    id: 'driver-log',
     section: 'harvest',
-    name: 'BASF canola bin monitoring',
-    what: 'Every canola bin’s cable readings for the crop year — XLSX is BASF’s own template.',
-    from: { label: 'Harvest', to: '/harvest' },
-    formats: ['XLSX', 'PDF', 'CSV'],
-    params: [year],
+    name: 'Drivers’ log',
+    what: 'Km, driving and on-duty hours by driver and day, worked out from the loads weighed in.',
+    from: { label: 'Weigh scale', to: '/weigh-scale' },
+    formats: PDF_CSV,
+    params: [
+      { key: 'driver', kind: 'lookup', label: 'Driver', lookup: 'drivers', allLabel: 'All drivers (a page each)' },
+      { key: 'from', kind: 'date', label: 'From', daysAgo: 30 },
+      { key: 'to', kind: 'date', label: 'To' },
+    ],
+  },
+  {
+    mode: 'build',
+    id: 'bin-temperature-record',
+    section: 'harvest',
+    name: 'Bin temperature monitoring record',
+    what: 'Each bin’s cable readings for the crop year: date, who read it, every sensor top to bottom, aeration and notes.',
+    from: { label: 'Harvest', to: '/harvest?tab=bins' },
+    formats: PDF_CSV,
+    params: [year, { key: 'bin', kind: 'bin', allLabel: 'Every bin with readings' }],
   },
   {
     mode: 'build',
@@ -533,13 +553,59 @@ export const REPORTS: ReportEntry[] = [
   },
 
   // ── Cattle & grazing ────────────────────────────────────────────────────
+  // AFSC's pasture insurance: four PDFs AFSC issues, filled in rather than
+  // redrawn. Due 28 February; docs/afsc-mdi-forms.md.
+  {
+    mode: 'build',
+    id: 'afsc-mdi-election',
+    section: 'cattle',
+    name: 'AFSC MDI Election form',
+    what: 'Which pasture types are insured, the weather stations, the coverage option and the price — on AFSC’s own form.',
+    from: { label: 'Pasture insurance', to: '/cattle-markets?tab=insurance' },
+    formats: ['PDF', 'CSV'],
+    managerOnly: true,
+    params: [year],
+  },
+  {
+    mode: 'build',
+    id: 'afsc-mdi-contract',
+    section: 'cattle',
+    name: 'AFSC Application for Contract of Insurance',
+    what: 'Who is applying and the five eligibility questions, on AFSC’s own form.',
+    from: { label: 'Pasture insurance', to: '/cattle-markets?tab=insurance' },
+    formats: ['PDF', 'CSV'],
+    managerOnly: true,
+    params: [year],
+  },
+  {
+    mode: 'build',
+    id: 'afsc-mdi-land',
+    section: 'cattle',
+    name: 'AFSC Land Information Appendix',
+    what: 'Every pasture parcel: legal land, acres, pasture type and whether it is owned or rented.',
+    from: { label: 'Pasture insurance', to: '/cattle-markets?tab=insurance' },
+    formats: ['PDF', 'CSV'],
+    managerOnly: true,
+    params: [year],
+  },
+  {
+    mode: 'build',
+    id: 'afsc-mdi-identification',
+    section: 'cattle',
+    name: 'AFSC Application for Identification Number',
+    what: 'The business, its address and its home quarter. AFSC wants it again every two years.',
+    from: { label: 'Pasture insurance', to: '/cattle-markets?tab=insurance' },
+    formats: ['PDF', 'CSV'],
+    managerOnly: true,
+    params: [year],
+  },
   {
     mode: 'build',
     id: 'manifest',
     section: 'cattle',
     name: 'Livestock manifest',
     what: 'A load a page: owner and premises, destination, head by class with brands and tags, trucker and signatures.',
-    from: { label: 'Manifests', to: '/manifests' },
+    from: { label: 'Manifests', to: '/cattle-markets?tab=manifests' },
     formats: PDF_CSV,
     params: [
       { key: 'manifest', kind: 'lookup', label: 'Manifest', lookup: 'manifests', allLabel: 'All in the dates' },
@@ -553,7 +619,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'cattle',
     name: 'Bale temperature & moisture log',
     what: 'Each bale check: who, where, core temperature and moisture against hay-fire limits — the insurance record.',
-    from: { label: 'Bale checks', to: '/bale-checks' },
+    from: { label: 'Bale checks', to: '/feed?tab=bale-checks' },
     formats: PDF_CSV,
     params: [
       { key: 'ranch', kind: 'ranch', allLabel: 'All ranches' },
@@ -567,7 +633,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'cattle',
     name: 'Year-end herd inventory',
     what: 'Head, weight and animal units by ranch and class on a date, the collar counts beside, and calves valued.',
-    from: { label: 'Herd', to: '/herd' },
+    from: { label: 'Herd', to: '/herd?tab=herd' },
     formats: PDF_CSV,
     params: [{ key: 'ranch', kind: 'ranch', allLabel: 'All ranches' }, { key: 'asOf', kind: 'date', label: 'As of' }],
   },
@@ -577,7 +643,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'cattle',
     name: 'Grazing record by pasture',
     what: 'Each pasture’s stays: mob, in and out, days, head, animal units, AUMs taken and the rest between.',
-    from: { label: 'Grazing', to: '/grazing' },
+    from: { label: 'Grazing', to: '/cattle?tab=grazing' },
     formats: PDF_CSV,
     params: [year, { key: 'ranch', kind: 'ranch', allLabel: 'All ranches' }],
   },
@@ -587,7 +653,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'cattle',
     name: 'Grazing lease stock return',
     what: 'Alberta’s Stewardship Stock Return for one grazing lease and year: livestock, dates, brands, fenced land, declaration.',
-    from: { label: 'Grazing leases', to: '/grazing-leases' },
+    from: { label: 'Grazing leases', to: '/cattle-markets?tab=leases' },
     formats: PDF_CSV,
     managerOnly: true,
     params: [{ key: 'disposition', kind: 'lookup', label: 'Lease', lookup: 'grazingDispositions' }, { key: 'year', kind: 'year', label: 'Grazing year' }],
@@ -598,7 +664,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'cattle',
     name: 'Winter feed budget against inventory',
     what: 'The Feed tab’s winter: each feed needed to turnout, with the reserve, against what is counted in the yard.',
-    from: { label: 'Feed', to: '/feed' },
+    from: { label: 'Feed', to: '/feed?tab=plan' },
     formats: PDF_CSV,
     params: [
       { key: 'ranch', kind: 'ranch', allLabel: 'All ranches' },
@@ -611,7 +677,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'cattle',
     name: 'Pregnancy and breeding summary',
     what: 'By ranch and mob from the collars: pregnant, unsure, not pregnant, heats since the bulls, and due dates.',
-    from: { label: 'Pregnancy', to: '/pregnancy' },
+    from: { label: 'Pregnancy', to: '/herd?tab=pregnancy' },
     formats: PDF_CSV,
     params: [
       { key: 'ranch', kind: 'ranch', allLabel: 'All ranches' },
@@ -667,7 +733,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'money',
     name: 'Input purchases by supplier',
     what: 'Every invoice line by supplier and product, with the Alberta survey price beside where there is one.',
-    from: { label: 'Fertilizer pricing', to: '/fertilizer?tab=Pricing' },
+    from: { label: 'Fertilizer pricing', to: '/fertilizer/prices?tab=pricing' },
     formats: PDF_CSV,
     params: [year, { key: 'supplier', kind: 'lookup', label: 'Supplier', lookup: 'suppliers', allLabel: 'All suppliers' }],
   },
@@ -677,7 +743,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'money',
     name: 'Supplier invoice copies',
     what: 'The original invoice PDFs over a date range as one ZIP, with an index; CSV and PDF are the index alone.',
-    from: { label: 'Fertilizer pricing', to: '/fertilizer?tab=Pricing' },
+    from: { label: 'Fertilizer pricing', to: '/fertilizer/prices?tab=pricing' },
     formats: ['ZIP', 'PDF', 'CSV'],
     params: [
       { key: 'supplier', kind: 'lookup', label: 'Supplier', lookup: 'suppliers', allLabel: 'All suppliers' },
@@ -878,7 +944,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'equipment',
     name: 'Trucking cost by field and buyer',
     what: 'Each field’s haul plan, tonnes, loads, km, diesel and driver cost, grouped by elevator or buyer.',
-    from: { label: 'Travel & trucking', to: '/hauling?tab=trucking' },
+    from: { label: 'Fuel & trucking', to: '/fuel?tab=trucking' },
     formats: PDF_CSV,
     params: [year],
   },
@@ -890,7 +956,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'records',
     name: 'Missing information',
     what: 'Everything the app still needs someone to fill in, and where to fill it in.',
-    from: { label: 'Farm setup', to: '/settings?tab=Farm%20setup' },
+    from: { label: 'Farm setup', to: '/settings/farm' },
     formats: PDF_CSV,
     managerOnly: true,
     params: [year],
@@ -907,6 +973,16 @@ export const REPORTS: ReportEntry[] = [
       { key: 'who', kind: 'choice', label: 'Whose', options: [{ value: 'all', label: 'Everyone' }, { value: 'mine', label: 'Mine' }], default: 'all' },
       { key: 'status', kind: 'choice', label: 'Status', options: [{ value: 'open', label: 'Open' }, { value: 'done', label: 'Done' }, { value: 'all', label: 'All' }], default: 'open' },
     ],
+  },
+  {
+    mode: 'build',
+    id: 'monthly-jobs-year',
+    section: 'records',
+    name: 'Monthly jobs for the year',
+    what: 'Each monthly job that came due: done (who, when), skipped or missed, and how many each person did.',
+    from: { label: 'Monthly jobs', to: '/monthly' },
+    formats: PDF_CSV,
+    params: [year],
   },
   {
     mode: 'build',
@@ -946,7 +1022,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'records',
     name: 'Audit log of edits',
     what: 'Every change made in the app over a date range: when, who, what and the fields changed.',
-    from: { label: 'Users', to: '/settings?tab=Users' },
+    from: { label: 'Users', to: '/settings/people?tab=users' },
     formats: PDF_CSV,
     adminOnly: true,
     params: [
@@ -997,7 +1073,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'crops',
     name: 'Canola isolation, quarter by quarter',
     what: 'The mile around a seed canola field on a map, and each quarter in it: what is planted now and the 4 years before.',
-    from: { label: 'Canola reports', to: '/canola-reports' },
+    from: { label: 'Isolation', to: '/canola-reports' },
     formats: PDF_CSV,
     to: '/canola-reports?tab=isolation',
     why: 'Each neighbour’s quarter is labelled on the map before the report is made.',
@@ -1008,10 +1084,21 @@ export const REPORTS: ReportEntry[] = [
     section: 'crops',
     name: 'Field crop history for a canola company',
     what: 'The crops on the fields you pick, year by year with variety and yield, and each field’s last canola.',
-    from: { label: 'Canola reports', to: '/canola-reports' },
+    from: { label: 'Isolation', to: '/canola-reports' },
     formats: PDF_CSV,
     to: '/canola-reports?tab=history',
     why: 'The fields are ticked from the list there.',
+  },
+  {
+    mode: 'open',
+    id: 'seed-production-report',
+    section: 'harvest',
+    name: 'Seed production report',
+    what: 'A seed field’s production and storage report for the company it is grown for: kilograms, bins, harvest, signed.',
+    from: { label: 'Harvest reports', to: '/harvest-reports' },
+    formats: ['PDF'],
+    to: '/harvest-reports?tab=seed-report',
+    why: 'The company’s field number and bin labels are typed there, and the report is signed there.',
   },
 ]
 

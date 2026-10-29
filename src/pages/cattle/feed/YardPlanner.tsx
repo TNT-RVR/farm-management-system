@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils'
 import { Fold } from '@/components/Fold'
 import { FeedInfo } from './FeedInfo'
 import { n0, tonnes } from './bits'
+import { HelpNote } from '@/components/HelpNote'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * "What should each group get, from what we actually have?" — the yard's
@@ -81,9 +83,9 @@ export function YardPlanner({
         summary="count the yard first"
         actions={<FeedInfo k="yard" />}
       >
-        <p className="text-xs text-gray-500">
+        <HelpNote className="text-xs" summary="Count the yard first, then this shares it out to turnout.">
           Count the yard first (Feed records → Feed put up → “Counted on hand”). Then this shares out what you have between the groups so it lasts to turnout.
-        </p>
+        </HelpNote>
       </Fold>
     )
 
@@ -145,7 +147,7 @@ export function YardPlanner({
             ))}
           </div>
           <table className="w-full text-xs">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="py-1 font-medium">Feed</th>
                 <th className="py-1 text-right font-medium">Used to turnout</th>

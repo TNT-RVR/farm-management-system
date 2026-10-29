@@ -2,6 +2,12 @@
   command = "npm run build"
   publish = "dist"
 
+# The type check (tsc -b) outgrew Node's default 2 GB heap on Netlify's
+# builder: on 20 Oct 2026 a deploy died "JavaScript heap out of memory" 95 s
+# into it, at 2,033 MB, with nothing wrong in the code. 4 GB gives it room.
+[build.environment]
+  NODE_OPTIONS = "--max-old-space-size=4096"
+
 [functions]
   node_bundler = "esbuild"
   # unpdf carries a pdf.js build with dynamic requires that esbuild mangles when

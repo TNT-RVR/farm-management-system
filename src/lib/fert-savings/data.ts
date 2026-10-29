@@ -538,6 +538,7 @@ export function useYardDistances() {
   return useQuery({
     queryKey: ['field_yard_distance'],
     queryFn: async () => {
+      // From the home yard's bins (Bins page → Bin yards).
       const { data, error } = await supabase.from('field_yard_distance').select('field_id, km')
       if (error) throw error
       return new Map((data ?? []).map((r) => [r.field_id, r.km == null ? null : Number(r.km)]))

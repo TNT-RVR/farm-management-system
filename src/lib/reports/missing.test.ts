@@ -109,7 +109,7 @@ describe('missing information', () => {
     const d = complete()
     d.entries = []
     d.routes = [{ from_key: 'shop', to_key: 'field:f1', method: 'road+straight' }]
-    expect(ids(d)).toEqual(['Travel & trucking: Field 3', 'Travel & trucking: Field 3'])
+    expect(ids(d)).toEqual(['Fuel & trucking: Field 3', 'Fuel & trucking: Field 3'])
   })
 
   it('wants a yield for a harvested field, but not for land rented out', () => {
@@ -285,7 +285,7 @@ describe('the checklist rules', () => {
   it('wants a haul plan for a crop we sell, not one fed at home', () => {
     const d = complete()
     d.haulPlans = []
-    expect(line(d, 'haul-plan')).toMatchObject({ count: 1, path: '/hauling?tab=trucking' })
+    expect(line(d, 'haul-plan')).toMatchObject({ count: 1, path: '/fuel?tab=trucking' })
     d.crops[0].own_use = true
     expect(line(d, 'haul-plan')).toBeUndefined()
   })
@@ -304,7 +304,7 @@ describe('the checklist rules', () => {
     d.pumps[0].lon = null
     d.gasSites[0].place = null
     expect(lines(d, { isOwner: true, viewOff: (p) => p === '/utilities' }).map((l) => l.id)).toEqual(['pump-location', 'haul-plan'])
-    expect(checklistByArea(lines(d)).map((g) => g.area)).toEqual(['Irrigation', 'Travel & trucking', 'Utilities'])
+    expect(checklistByArea(lines(d)).map((g) => g.area)).toEqual(['Irrigation', 'Fuel & trucking', 'Utilities'])
   })
 })
 
@@ -315,7 +315,7 @@ describe('machines whose hours stopped', () => {
     const d = complete()
     expect(line(d)).toBeUndefined()
     d.equipment[1].engine_hours_at = '2026-05-01T10:00:00Z'
-    expect(line(d)).toMatchObject({ area: 'Equipment', count: 1, path: '/equipment/m2', title: 'Machines whose hours stopped updating', why: 'needed for service reminders' })
+    expect(line(d)).toMatchObject({ area: 'Equipment', count: 1, path: '/equipment/m2?tab=service', title: 'Machines whose hours stopped updating', why: 'needed for service reminders' })
     expect(line(d)!.items[0].missing).toMatch(/^Hours not updating since May 1, 2026/)
   })
 

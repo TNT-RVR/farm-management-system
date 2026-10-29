@@ -1,5 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 // Sets the label backlog going. Does not work through it.
 //
@@ -33,7 +33,7 @@ export default async () => {
 
   // Nothing queued, nothing to wake. Checked here so the common case costs one
   // cheap query rather than a function invocation.
-  const sb = createClient(url, serviceKey)
+  const sb = admin()
   const { count } = await sb
     .from('chemical_labels')
     .select('registration_number', { count: 'exact', head: true })

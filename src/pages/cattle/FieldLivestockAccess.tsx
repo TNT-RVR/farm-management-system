@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 type Row = { id: string; name: string; grazed_after_harvest: boolean; open_to_pasture: boolean; grazing_note: string | null }
 
@@ -34,15 +36,16 @@ export function FieldLivestockAccess({ isManager }: { isManager: boolean }) {
     },
   })
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-3">
-      <h2 className="text-sm font-semibold text-gray-900">Cattle on crop fields</h2>
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h2 className={cn('font-medium', CARD_HEAD)}>Cattle on crop fields</h2>
+      <div className="p-3">
       <p className="mt-0.5 text-xs text-gray-600">
         Tick where cattle get onto a field. A spray whose label restricts grazing or feeding then raises an alert there whatever the crop, and cattle in a pasture
         count as on a field only when the field is open to that pasture.
       </p>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full text-xs">
-          <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th className="py-1 pr-2 font-medium">Field</th>
               <th className="py-1 pr-2 text-center font-medium">Grazed after harvest</th>
@@ -55,13 +58,14 @@ export function FieldLivestockAccess({ isManager }: { isManager: boolean }) {
               <tr key={f.id}>
                 <td className="py-1 pr-2 text-gray-800">{f.name}</td>
                 {(['grazed_after_harvest', 'open_to_pasture'] as const).map((k) => (
-                  <td key={k} className="py-1 pr-2 text-center">
+                  <td key={k} className="py-2.5 pr-2 text-center sm:py-1">
                     <input
                       type="checkbox"
                       checked={f[k]}
                       disabled={!isManager || set.isPending}
                       onChange={(e) => set.mutate({ id: f.id, patch: { [k]: e.target.checked } })}
                       aria-label={`${f.name}: ${k === 'grazed_after_harvest' ? 'grazed after harvest' : 'open to the pasture'}`}
+                      className="h-4 w-4"
                     />
                   </td>
                 ))}
@@ -72,6 +76,8 @@ export function FieldLivestockAccess({ isManager }: { isManager: boolean }) {
         </table>
       </div>
       {set.isError && <p className="mt-1 text-xs text-red-700">{(set.error as Error).message}</p>}
+
+      </div>
     </section>
   )
 }

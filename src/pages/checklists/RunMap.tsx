@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils'
 import { AddJob } from './AddJob'
 import { JobText } from './JobActions'
 import { PhotoStrip } from './PhotoStrip'
+import { CARD_HEAD } from '@/lib/table-style'
 
 const StatusIcon = ({ s }: { s: PlaceStatus }) =>
   s === 'done' ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : s === 'partial' ? <CircleDot className="h-4 w-4 text-amber-500" /> : <Circle className="h-4 w-4 text-red-500" />
@@ -259,8 +260,9 @@ function PlacePanel({ run, place, items, userName, onClose }: { run: RunRow; pla
 function GeneralItems({ run, items }: { run: RunRow; items: RunItemRow[] }) {
   const check = useCheckRunItem(run.id)
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-3">
-      <h2 className="text-sm font-semibold text-gray-800">General</h2>
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h2 className={cn('font-medium', CARD_HEAD)}>General</h2>
+      <div className="p-3">
       <ul className="mt-1 divide-y divide-gray-100">
         {items.map((i) => (
           <li key={i.id} className="flex items-start gap-2 py-2 text-sm">
@@ -271,6 +273,8 @@ function GeneralItems({ run, items }: { run: RunRow; items: RunItemRow[] }) {
           </li>
         ))}
       </ul>
+
+      </div>
     </section>
   )
 }

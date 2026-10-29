@@ -1,7 +1,9 @@
-import { createClient } from '@supabase/supabase-js'
 import { replyProblem, replyText, type MessagesReply } from '../shared/anthropic-reply.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
+import { callClaude, SONNET_5 } from '../shared/anthropic.ts'
+import { isStaff } from '../shared/staff.ts'
 
 /**
  * Read a bin's sensor cable off a screenshot of the Bin-Sense app.
@@ -20,7 +22,7 @@ import { getUserMfa } from '../shared/auth-mfa.ts'
 const url = process.env.SUPABASE_URL
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 let apiKey = process.env.ANTHROPIC_API_KEY
-let model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5'
+let model = process.env.ANTHROPIC_MODEL ?? SONNET_5
 
 const json = (b: unknown, status = 200) =>
   new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } })
@@ -30,6 +32,9 @@ const MEDIA = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 const PROMPT = `This is a screenshot of a grain bin monitoring app (usually Bin-Sense) showing one bin and its sensor cable(s).
 
 Read every sensor on the cable from the TOP of the bin to the BOTTOM. Each sensor shows a temperature (°C) and usually a percentage; a sensor may show "No Data" for the percentage.
+
+Say for each sensor whether it is ABOVE THE GRAIN (in the headspace) rather than buried in it. Bin-Sense shows this: the grain is drawn in colour (usually green) with a line across the top of it, and the empty headspace above that line is grey. In its table view the headspace rows are grey and the in-grain rows are coloured. A headspace sensor is reading the air, not the grain, so its moisture figure means nothing.
+If the picture gives you no way to tell, set "above_grain" false and say so in "note".
 If there is more than one cable, read the first (left-most) cable only and say so in "note".
 
 Also read, if shown: the bin name, the commodity/crop, the ambient or headspace temperature shown apart from the cable, and the bushels.
@@ -42,7 +47,7 @@ Decide what the percentage is:
 Return ONLY JSON, no prose:
 {"bin_name": string|null, "crop": string|null, "ambient_temp_c": number|null, "bushels": number|null,
  "percent_kind": "rh"|"moisture"|"unknown",
- "levels": [{"temp_c": number|null, "pct": number|null, "no_data": boolean}],
+ "levels": [{"temp_c": number|null, "pct": number|null, "no_data": boolean, "above_grain": boolean}],
  "confidence": "high"|"medium"|"low", "note": string}
 List levels top first. Use null for anything you cannot read; never guess a digit.`
 
@@ -50,18 +55,18 @@ export default async (req: Request) => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
   apiKey = process.env.ANTHROPIC_API_KEY
-  model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5'
+  model = process.env.ANTHROPIC_MODEL ?? SONNET_5
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405)
   if (!url || !serviceKey) return json({ error: 'Not configured' }, 500)
   if (!apiKey) return json({ error: 'ANTHROPIC_API_KEY is not set' }, 501)
 
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
   const bearer = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
   const { data: au } = bearer ? await getUserMfa(sb, bearer) : { data: { user: null } }
   const { data: prof } = au.user
-    ? await sb.from('users').select('active').eq('id', au.user.id).single()
+    ? await sb.from('users').select('active, role').eq('id', au.user.id).single()
     : { data: null }
-  if (!prof?.active) return json({ error: 'Not authorised' }, 401)
+  if (!isStaff(prof)) return json({ error: 'Not authorised' }, 401)
 
   const mediaType = (req.headers.get('x-media-type') ?? req.headers.get('content-type') ?? '').split(';')[0].trim()
   if (!MEDIA.has(mediaType)) return json({ error: `Send a screenshot image (got ${mediaType || 'nothing'})` }, 415)
@@ -69,26 +74,22 @@ export default async (req: Request) => {
   if (!buf.length) return json({ error: 'No image' }, 400)
   if (buf.length > 8 * 1024 * 1024) return json({ error: 'Image is over 8 MB' }, 413)
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      max_tokens: 1500,
-      // No extended thinking: it can spend the whole budget before the answer
-      // starts, and it adds time the person spends waiting on this screen.
-      thinking: { type: 'disabled' },
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: Buffer.from(buf).toString('base64') } },
-            { type: 'text', text: PROMPT },
-          ],
-        },
-      ],
-    }),
-  })
+  const res = await callClaude({
+    model,
+    maxTokens: 1500,
+    // No extended thinking: it can spend the whole budget before the answer
+    // starts, and it adds time the person spends waiting on this screen.
+    thinking: { type: 'disabled' },
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: Buffer.from(buf).toString('base64') } },
+          { type: 'text', text: PROMPT },
+        ],
+      },
+    ],
+  }, { apiKey })
   if (!res.ok) return json({ error: `Anthropic ${res.status}: ${(await res.text()).slice(0, 200)}` }, 502)
   const reply = (await res.json()) as MessagesReply
   const text = replyText(reply)
@@ -103,7 +104,12 @@ export default async (req: Request) => {
       .slice(0, 16)
       .map((l) => {
         const o = (l ?? {}) as Record<string, unknown>
-        return { temp_c: num(o.temp_c), pct: o.no_data === true ? null : num(o.pct), no_data: o.no_data === true }
+        return {
+          temp_c: num(o.temp_c),
+          pct: o.no_data === true ? null : num(o.pct),
+          no_data: o.no_data === true,
+          above_grain: o.above_grain === true,
+        }
       })
     const kind = p.percent_kind === 'rh' || p.percent_kind === 'moisture' ? p.percent_kind : 'unknown'
     return json({

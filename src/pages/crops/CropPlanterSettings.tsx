@@ -112,7 +112,7 @@ export function CropPlanterSettings({
           <Sprout className="h-4 w-4 text-brand-700" /> Planter settings
         </h3>
         <div className="flex items-center gap-3">
-          <Link to="/calculator?tab=planter" className="text-xs text-brand-700 hover:underline">
+          <Link to="/planter?tab=planter" className="text-xs text-brand-700 hover:underline">
             Open the planter calculator →
           </Link>
           {!readonly && !editing && (

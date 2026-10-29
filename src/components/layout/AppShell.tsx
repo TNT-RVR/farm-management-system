@@ -2,20 +2,25 @@ import { Suspense, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { OfflineBanner } from '@/components/OfflineBanner'
+import { UpdateReadyBanner } from '@/components/UpdateReadyBanner'
 import { InstallBanner } from '@/components/InstallBanner'
 import { useAutoOfflineSave } from '@/lib/offline-auto'
 import { useAppBadge } from '@/lib/useAppBadge'
 import { LogOut, MoreHorizontal, Search } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { usePushSync } from '@/lib/push'
-import { MOBILE_BAR_COUNT, useNavLayout } from '@/lib/nav'
+import { MOBILE_BAR_COUNT, isViewDenied, useNavLayout } from '@/lib/nav'
+import { useMenuEnabled } from '@/lib/menu-prefs'
 import { SidebarNav } from './SidebarNav'
+import { SeasonSidebar } from './SeasonSidebar'
+import { SeasonPhoneNav } from './SeasonPhoneNav'
+import { MenuTrail, useHasTrail } from './MenuTrail'
 import { CropYearSwitcher } from './CropYearSwitcher'
 import { NotificationBell } from './NotificationBell'
 import { AvatarStack, UserAvatar } from '@/components/UserAvatar'
 import { useOnlineUsers } from '@/lib/presence'
 import { cn } from '@/lib/utils'
-import { useApplyFarmSetup, useBrand, useFirstRunRedirect } from '@/lib/farm-setup'
+import { isPathOff, useApplyFarmSetup, useBrand, useDisabledPaths, useFirstRunRedirect } from '@/lib/farm-setup'
 import { DriveBackupScheduler } from '@/components/DriveBackupScheduler'
 
 /** Ctrl+K (⌘K), or / when not typing in a box, opens the search from anywhere. */
@@ -36,6 +41,10 @@ function useSearchShortcut() {
 }
 
 export function AppShell() {
+  return <StaffShell />
+}
+
+function StaffShell() {
   useSearchShortcut()
   // Tops up the offline records in the background; see lib/offline-auto.ts.
   useAutoOfflineSave()
@@ -58,13 +67,27 @@ export function AppShell() {
   // Bottom bar shows the first few visible items in the user's order; the rest
   // (and any hidden views) live under More, which is also where you customize.
   const mobileBar = visible.slice(0, MOBILE_BAR_COUNT)
+  // The children of the open group, less any an admin closed off or the farm
+  // switched off, as the sidebar already does. This list used to show them
+  // all, so a crew member's phone offered pages that then refused to open.
+  const off = useDisabledPaths()
+  const groupKids = (visible.find((i) => i.to === groupOpen)?.children ?? []).filter(
+    (c) => !isViewDenied(profile, c.to.split('?')[0]) && !isPathOff(off, c.to),
+  )
+  // The season menu, everyone's menu since 26 Oct 2026 (Sam). Someone who
+  // picked "Use the old menu" (Settings → My account → Menu) gets everything
+  // below exactly as it was, until the old menu is retired.
+  const seasonMenu = useMenuEnabled()
+  const trail = useHasTrail() && seasonMenu
 
   return (
     <div className="flex h-full flex-col bg-gray-50">
       {/* The Google Drive backup of every report, for the owners and the accountant; renders nothing. */}
       <DriveBackupScheduler />
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 print:hidden">
-        <img src={BRAND.logo} alt={BRAND.farmName} className="h-9 w-auto" />
+        {/* On a phone the trail's back arrow takes the logo's place. */}
+        <img src={BRAND.logo} alt={BRAND.farmName} className={cn('h-9 w-auto', trail && 'hidden md:block')} />
+        {seasonMenu && <MenuTrail />}
         <div className="ml-auto flex items-center gap-3">
           <NavLink
             to="/search"
@@ -82,7 +105,7 @@ export function AppShell() {
             </span>
           )}
           {profile && (
-            <NavLink to="/settings?section=profile" className="flex items-center gap-2 rounded-full" title="Your account and picture">
+            <NavLink to="/settings/account?tab=profile" className="flex items-center gap-2 rounded-full" title="Your account and picture">
               <UserAvatar person={profile} size="sm" />
               <span className="hidden text-sm text-gray-600 md:inline">{profile.full_name}</span>
             </NavLink>
@@ -99,19 +122,21 @@ export function AppShell() {
 
       <div className="flex min-h-0 flex-1">
         {/* Desktop sidebar — drag to reorder, drag to More (or the eye) to hide. */}
-        <nav className="hidden w-52 shrink-0 overflow-y-auto border-r border-gray-200 bg-white p-3 md:block print:hidden">
+        {/* A little wider for the season menu: "Harvest season" and "Tasks & calendar" were cut off at the old width. */}
+        <nav className={cn('hidden shrink-0 overflow-y-auto border-r border-gray-200 bg-white p-3 md:block print:hidden', seasonMenu ? 'w-60' : 'w-52')}>
           {/* Boundaried like the page is. The navigation sits outside the
               routed content, so a bug in it used to take the whole screen
               white rather than one panel — which is both worse to look at and
               worse to diagnose, since the address bar still says you are on a
               page that renders fine. */}
           <ErrorBoundary>
-            <SidebarNav />
+            {seasonMenu ? <SeasonSidebar /> : <SidebarNav />}
           </ErrorBoundary>
         </nav>
 
         <main className="min-w-0 flex-1 overflow-auto pb-16 md:pb-0">
           <OfflineBanner />
+          <UpdateReadyBanner />
           <InstallBanner />
           <ErrorBoundary key={pathname}>
             {/* Pages load on first open (App.tsx); the shell stays put meanwhile. */}
@@ -122,8 +147,10 @@ export function AppShell() {
         </main>
       </div>
 
+      {seasonMenu && <SeasonPhoneNav />}
+
       {/* Mobile "More" sheet — the full, customizable menu */}
-      {moreOpen && (
+      {!seasonMenu && moreOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/20 md:hidden print:hidden"
           onClick={() => setMoreOpen(false)}
@@ -132,9 +159,6 @@ export function AppShell() {
             className="absolute inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] max-h-[70vh] overflow-y-auto border-t border-gray-200 bg-white p-2"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="px-2 pb-1 pt-1 text-[11px] text-gray-400">
-              Drag to reorder · tap the eye to hide
-            </p>
             <ErrorBoundary>
               <SidebarNav variant="sheet" onNavigate={() => setMoreOpen(false)} />
             </ErrorBoundary>
@@ -145,10 +169,10 @@ export function AppShell() {
       {/* A group's children, above the bar. Deliberately not a full-screen
           sheet: the page underneath is the thing being kept, and covering it
           would undo the reason the parent does not navigate. */}
-      {groupOpen && (
+      {!seasonMenu && groupOpen && (
         <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-40 md:hidden print:hidden">
           <div className="mx-2 mb-2 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
-            {(visible.find((i) => i.to === groupOpen)?.children ?? []).map((c) => {
+            {groupKids.map((c) => {
               const CIcon = c.icon
               return (
                 <NavLink
@@ -172,62 +196,64 @@ export function AppShell() {
       )}
 
       {/* Mobile bottom bar */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 flex h-14 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden print:hidden">
-        {mobileBar.map((item) => {
-          const { to, label, icon: Icon, children } = item
-          // A parent with children opens the two above the bar rather than
-          // navigating, same as the sidebar: whatever you were reading stays
-          // on screen.
-          if (children?.length) {
-            const active = children.some((c) => pathname.startsWith(c.to))
+      {!seasonMenu && (
+        <nav className="fixed inset-x-0 bottom-0 z-40 flex h-14 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden print:hidden">
+          {mobileBar.map((item) => {
+            const { to, label, icon: Icon, children } = item
+            // A parent with children opens the two above the bar rather than
+            // navigating, same as the sidebar: whatever you were reading stays
+            // on screen.
+            if (children?.length) {
+              const active = children.some((c) => pathname.startsWith(c.to))
+              return (
+                <button
+                  key={to}
+                  onClick={() => {
+                    setMoreOpen(false)
+                    setGroupOpen((g) => (g === to ? null : to))
+                  }}
+                  className={cn(
+                    'flex flex-1 flex-col items-center justify-center gap-1 text-xs',
+                    active || groupOpen === to ? 'text-brand-700' : 'text-gray-500',
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                  {label}
+                </button>
+              )
+            }
             return (
-              <button
+              <NavLink
                 key={to}
+                to={to}
                 onClick={() => {
                   setMoreOpen(false)
-                  setGroupOpen((g) => (g === to ? null : to))
+                  setGroupOpen(null)
                 }}
-                className={cn(
-                  'flex flex-1 flex-col items-center justify-center gap-1 text-xs',
-                  active || groupOpen === to ? 'text-brand-700' : 'text-gray-500',
-                )}
+                className={({ isActive }) =>
+                  cn(
+                    'flex flex-1 flex-col items-center justify-center gap-1 text-xs',
+                    isActive ? 'text-brand-700' : 'text-gray-500',
+                  )
+                }
               >
                 <Icon className="h-5 w-5" />
                 {label}
-              </button>
+              </NavLink>
             )
-          }
-          return (
-            <NavLink
-              key={to}
-              to={to}
-              onClick={() => {
-                setMoreOpen(false)
-                setGroupOpen(null)
-              }}
-              className={({ isActive }) =>
-                cn(
-                  'flex flex-1 flex-col items-center justify-center gap-1 text-xs',
-                  isActive ? 'text-brand-700' : 'text-gray-500',
-                )
-              }
-            >
-              <Icon className="h-5 w-5" />
-              {label}
-            </NavLink>
-          )
-        })}
-        <button
-          onClick={() => setMoreOpen((o) => !o)}
-          className={cn(
-            'flex flex-1 flex-col items-center justify-center gap-1 text-xs',
-            moreOpen ? 'text-brand-700' : 'text-gray-500',
-          )}
-        >
-          <MoreHorizontal className="h-5 w-5" />
-          More
-        </button>
-      </nav>
+          })}
+          <button
+            onClick={() => setMoreOpen((o) => !o)}
+            className={cn(
+              'flex flex-1 flex-col items-center justify-center gap-1 text-xs',
+              moreOpen ? 'text-brand-700' : 'text-gray-500',
+            )}
+          >
+            <MoreHorizontal className="h-5 w-5" />
+            More
+          </button>
+        </nav>
+      )}
     </div>
   )
 }

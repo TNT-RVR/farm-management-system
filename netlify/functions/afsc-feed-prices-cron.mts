@@ -1,7 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
 import { syncAfscFeedPrices } from '../shared/afsc-feed-prices.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { farmFeatureOn } from '../../src/lib/farm-context.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 // Every Monday: read AFSC's newest Forage and Feed Grain price lists (South
 // region, Lethbridge) and price every feed that follows them. AFSC re-uploads
@@ -18,7 +18,7 @@ export default async () => {
   // Switched off in Farm setup (or a fresh install that has not turned it on).
   if (!farmFeatureOn('cattle')) return new Response('Cattle is switched off in Farm setup', { status: 200 })
   if (!url || !serviceKey) return new Response('Not configured', { status: 500 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
   const now = new Date().toISOString()
   try {
     const r = await syncAfscFeedPrices(sb)

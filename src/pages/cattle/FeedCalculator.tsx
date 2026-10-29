@@ -38,6 +38,7 @@ import { CornStubble } from './feed/CornStubble'
 import { Num, n0, n1, tonnes, yardAmount } from './feed/bits'
 import { YardPlanner } from './feed/YardPlanner'
 import type { YardFeed, YardGroup } from '@/lib/yard-rations'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -355,12 +356,12 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
 
       {/* Season */}
       {season && (
-        <section className="rounded-lg border border-gray-200 bg-white">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-3 py-2">
-            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-              <Wheat className="h-4 w-4 text-gray-400" /> Will the feed last? {fmtDate(window.from)} to turnout {fmtDate(window.to)} ({season.days} of {feedDaysTotal} days) <FeedInfo k="daysOfFeed" />
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div className={cn('flex flex-wrap items-center justify-between gap-2', CARD_HEAD)}>
+            <h2 className="flex items-center gap-1.5 font-medium">
+              <Wheat className="h-4 w-4 text-brand-100" /> Will the feed last? {fmtDate(window.from)} to turnout {fmtDate(window.to)} ({season.days} of {feedDaysTotal} days) <FeedInfo k="daysOfFeed" />
             </h2>
-            <span className="flex items-center gap-1 text-xs text-gray-400">
+            <span className="flex items-center gap-1 text-xs text-brand-100">
               Cold from {history?.winters ? `the ${history.winters} winters` : 'the last five winters'} <FeedInfo k="seasonCold" />
             </span>
           </div>
@@ -380,8 +381,8 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
           )}
           <div className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-sm">
-              <thead>
-                <tr className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+              <thead className={TABLE_HEAD}>
+                <tr>
                   <th className="px-3 py-1.5 font-medium">Feed</th>
                   <th className="px-2 py-1.5 text-right font-medium">Needed to turnout</th>
                   <th className="px-2 py-1.5 text-right font-medium">+ reserve</th>

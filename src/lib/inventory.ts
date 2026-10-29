@@ -13,8 +13,10 @@ export type InputOnhandRow = Database['public']['Views']['input_onhand']['Row']
 export const GRAIN_MOVEMENT_TYPES: { value: GrainMovementType; label: string; inflow: boolean }[] = [
   { value: 'harvest_in', label: 'Harvest in', inflow: true },
   { value: 'transfer_in', label: 'Transfer in', inflow: true },
+  { value: 'purchase_in', label: 'Bought in', inflow: true },
+  { value: 'carryover_in', label: 'Left from an earlier year', inflow: true },
   { value: 'transfer_out', label: 'Transfer out', inflow: false },
-  { value: 'delivery_out', label: 'Delivery out', inflow: false },
+  { value: 'delivery_out', label: 'Shipped out', inflow: false },
   { value: 'shrink', label: 'Shrink', inflow: false },
   { value: 'adjustment', label: 'Adjustment (±)', inflow: true },
 ]
@@ -52,7 +54,8 @@ export function useBinOnhand() {
 }
 
 /** Every screen that reads a bin's movements or what they add up to. */
-function refreshMovements(queryClient: ReturnType<typeof useQueryClient>) {
+/** Everything that shows a bin's grain, after a movement is written. */
+export function refreshMovements(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ['grain_movements'] })
   void queryClient.invalidateQueries({ queryKey: ['bin_grain_onhand'] })
   void queryClient.invalidateQueries({ queryKey: ['bins', 'onhand'] })

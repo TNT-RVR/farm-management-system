@@ -26,31 +26,29 @@ type CropRow = Database['public']['Tables']['crops']['Row']
  * name is not here simply has no reset offered — a made-up default would be
  * worse than none, since these numbers decide whether a bin gets a fan on it.
  */
-const CGC_DEFAULTS: Record<string, [number, number, number | null, number | null]> = {
-  Wheat: [14.5, 17.0, null, null],
-  'Durum Wheat': [14.5, 17.0, null, null],
-  Barley: [14.8, 17.0, null, null],
-  Oats: [13.5, 17.0, null, null],
-  Triticale: [14.0, 17.0, null, null],
-  Canola: [10.0, 12.5, null, null],
-  'Seed Canola': [10.0, 12.5, null, null],
-  Peas: [16.0, 18.0, null, null],
-  Soybeans: [14.0, 16.0, 18.0, 20.0],
-  Corn: [15.5, 17.5, 21.0, 25.0],
-  'Grain Corn': [15.5, 17.5, 21.0, 25.0],
-  'High-Moisture Corn': [15.5, 17.5, 21.0, 25.0],
-  'Beans-Black': [18.0, 18.0, null, null],
-  'Beans-Great Northern': [18.0, 18.0, null, null],
-  'Beans-Pinto': [18.0, 18.0, null, null],
-  'Beans-Yellow': [18.0, 18.0, null, null],
-  'Dry Beans': [18.0, 18.0, null, null],
+const CGC_DEFAULTS: Record<string, [number, number]> = {
+  Wheat: [14.5, 17.0],
+  'Durum Wheat': [14.5, 17.0],
+  Barley: [14.8, 17.0],
+  Oats: [13.5, 17.0],
+  Triticale: [14.0, 17.0],
+  Canola: [10.0, 12.5],
+  'Seed Canola': [10.0, 12.5],
+  Peas: [16.0, 18.0],
+  Soybeans: [14.0, 16.0],
+  Corn: [15.5, 17.5],
+  'Grain Corn': [15.5, 17.5],
+  'High-Moisture Corn': [15.5, 17.5],
+  'Beans-Black': [18.0, 18.0],
+  'Beans-Great Northern': [18.0, 18.0],
+  'Beans-Pinto': [18.0, 18.0],
+  'Beans-Yellow': [18.0, 18.0],
+  'Dry Beans': [18.0, 18.0],
 }
 
 const FIELDS = [
   { key: 'dry', label: 'Dry up to', hint: 'Straight grade. Safe to bin.' },
-  { key: 'tough', label: 'Tough up to', hint: 'Bin it with air on. Same as dry where the crop has no tough range — beans do not.' },
-  { key: 'damp', label: 'Damp up to', hint: 'Leave blank where the CGC stops at damp, as it does for wheat.' },
-  { key: 'moist', label: 'Moist up to', hint: 'Only corn, soybeans and the oilseed specials go this far.' },
+  { key: 'tough', label: 'Tough up to', hint: 'Bin it with air on; over this it is wet. Same as dry where the crop has no tough range — beans do not.' },
 ] as const
 
 const str = (n: number | null | undefined) => (n == null ? '' : String(n))
@@ -83,8 +81,6 @@ export function CropMoisture({ crop, readonly }: { crop: CropRow; readonly: bool
     chart: crop.moisture_chart_key ?? '',
     dry: str(crop.moisture_dry_max),
     tough: str(crop.moisture_tough_max),
-    damp: str(crop.moisture_damp_max),
-    moist: str(crop.moisture_moist_max),
     dryMin: str(crop.moisture_dry_min),
     toughAdvice: crop.moisture_tough_advice ?? '',
     note: crop.moisture_note ?? '',
@@ -104,8 +100,9 @@ export function CropMoisture({ crop, readonly }: { crop: CropRow; readonly: bool
           moisture_chart_key: form.chart || null,
           moisture_dry_max: numOrNull(form.dry),
           moisture_tough_max: numOrNull(form.tough),
-          moisture_damp_max: numOrNull(form.damp),
-          moisture_moist_max: numOrNull(form.moist),
+          // Retired 19 Oct 2026: dry, tough, and wet over that.
+          moisture_damp_max: null,
+          moisture_moist_max: null,
           moisture_dry_min: numOrNull(form.dryMin),
           moisture_tough_advice: form.toughAdvice.trim() || null,
           moisture_note: form.note.trim() || null,
@@ -123,17 +120,12 @@ export function CropMoisture({ crop, readonly }: { crop: CropRow; readonly: bool
     dry_min: numOrNull(form.dryMin),
     dry_max: numOrNull(form.dry),
     tough_max: numOrNull(form.tough),
-    damp_max: numOrNull(form.damp),
-    moist_max: numOrNull(form.moist),
   })
   const summary = chartSummary(form.chart)
   const cgc = CGC_DEFAULTS[crop.name]
   const changedFromCgc =
     cgc != null &&
-    (numOrNull(form.dry) !== cgc[0] ||
-      numOrNull(form.tough) !== cgc[1] ||
-      numOrNull(form.damp) !== cgc[2] ||
-      numOrNull(form.moist) !== cgc[3])
+    (numOrNull(form.dry) !== cgc[0] || numOrNull(form.tough) !== cgc[1])
 
   const resetToCgc = () => {
     if (!cgc) return
@@ -141,8 +133,6 @@ export function CropMoisture({ crop, readonly }: { crop: CropRow; readonly: bool
       ...f,
       dry: str(cgc[0]),
       tough: str(cgc[1]),
-      damp: str(cgc[2]),
-      moist: str(cgc[3]),
     }))
     setDirty(true)
   }

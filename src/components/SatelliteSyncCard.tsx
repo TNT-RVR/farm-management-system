@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Satellite } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { HelpNote } from '@/components/HelpNote'
 
 /**
  * A background function answers 202 with no body — the work has not started
@@ -76,11 +77,11 @@ export function SatelliteSyncCard() {
         field, skipping any scene already computed. The overnight run does the same thing; this is
         here so a change can be checked without waiting a day for it.
       </p>
-      <p className="mt-1 text-xs text-gray-500">
+      <HelpNote className="mt-1 text-xs" summary="Reprocess recomputes scenes already on file." title="When to reprocess">
         <span className="font-medium">Reprocess</span> recomputes scenes already on file. Use it
         after the cloud mask changes — the numbers on file were produced by the old one. It spends
         processing units the ordinary run would have saved.
-      </p>
+      </HelpNote>
 
       {run.isError && (
         <p className="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-700">

@@ -1,14 +1,19 @@
 import { useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
 import { HelpNote } from '@/components/HelpNote'
 import { InfoPopover } from '@/components/InfoPopover'
-import { useQuery } from '@tanstack/react-query'
 import { Sprout, Tractor, TriangleAlert } from 'lucide-react'
 import { Select } from '@/components/Select'
-import { supabase } from '@/lib/supabase'
 import { useCropYear } from '@/lib/crop-year'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { CropProgressExemptions } from '@/components/CropProgressExemptions'
+import { useCropPlans } from '@/lib/queries'
+import { useSaveFieldWork } from '@/lib/field-work-data'
+import { FIELD_FINISHED } from '@/lib/field-work'
+import { usePartnerAccess } from '@/lib/partner-view'
+import { useSeasonProgress } from '@/lib/field-progress-data'
+import { shortDay } from '@/lib/field-state'
 import {
   describeProgress,
   progressFor,
@@ -30,45 +35,6 @@ import {
  * farm that is fully seeded, so they are shown separately — the gap is visible
  * as a gap rather than buried inside a wrong percentage.
  */
-
-type Row = {
-  field_id: string
-  field_name: string
-  crop_year: number
-  acres: number
-  crop_name: string | null
-  counts_for_seeding: boolean
-  counts_for_harvest: boolean
-  progress_note: string | null
-  has_seeding: boolean
-  has_harvest: boolean
-  has_any_operation: boolean
-}
-
-function useSeasonProgress(year: number) {
-  return useQuery({
-    queryKey: ['field_season_progress', year],
-    queryFn: async (): Promise<ProgressField[]> => {
-      const { data, error } = await supabase
-        .from('field_season_progress')
-        .select('*')
-        .eq('crop_year', year)
-      if (error) throw error
-      return ((data ?? []) as unknown as Row[]).map((r) => ({
-        fieldId: r.field_id,
-        name: r.field_name,
-        acres: Number(r.acres),
-        cropName: r.crop_name,
-        countsForSeeding: r.counts_for_seeding,
-        countsForHarvest: r.counts_for_harvest,
-        progressNote: r.progress_note,
-        hasSeeding: r.has_seeding,
-        hasHarvest: r.has_harvest,
-        hasAnyOperation: r.has_any_operation,
-      }))
-    },
-  })
-}
 
 const ac = (n: number) => Math.round(n).toLocaleString('en-CA')
 
@@ -101,7 +67,15 @@ function Bar({ p }: { p: Progress }) {
   )
 }
 
-function ProgressPanel({ p, title, icon: Icon }: { p: Progress; title: string; icon: typeof Sprout }) {
+function ProgressPanel({
+  p,
+  title,
+  icon: Icon,
+}: {
+  p: Progress
+  title: string
+  icon: typeof Sprout
+}) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4">
       <div className="flex items-baseline justify-between gap-2">
@@ -142,6 +116,18 @@ function ProgressPanel({ p, title, icon: Icon }: { p: Progress; title: string; i
             {p.remaining.fields === 1 ? '' : 's'}
           </dd>
         </div>
+        {/* Of the acres still to do, the ones a combine is already on. Counted
+            inside "still to do", not beside it: a field being combined is not
+            finished, and reading it as finished is what this fixes. */}
+        {p.going.acres > 0 && (
+          <div className="flex justify-between">
+            <dt className="text-amber-700">…of which being combined</dt>
+            <dd className="tabular-nums text-amber-700">
+              {ac(p.going.acres)} ac · {p.going.fields} field
+              {p.going.fields === 1 ? '' : 's'}
+            </dd>
+          </div>
+        )}
         {p.excluded.acres > 0 && (
           <div className="flex justify-between border-t border-gray-100 pt-1">
             <dt className="text-gray-400">
@@ -171,6 +157,32 @@ function ProgressPanel({ p, title, icon: Icon }: { p: Progress; title: string; i
   )
 }
 
+/** "Harvested", "Grazed", "Seeded" on a row of the outstanding list. */
+function MarkButton({
+  children,
+  busy,
+  disabled,
+  onClick,
+}: {
+  children: React.ReactNode
+  busy: boolean
+  disabled: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      // Thumb-sized on a phone: these are tapped in a truck at the end of a
+      // day, and at 22 px tall they were a mouse target sitting on a phone.
+      className="min-h-10 rounded-md border border-gray-300 px-3 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 sm:min-h-0 sm:px-2 sm:py-0.5"
+    >
+      {busy ? 'Saving\u2026' : children}
+    </button>
+  )
+}
+
 export function FieldProgressPage() {
   const { cropYear } = useCropYear()
   const { profile } = useAuth()
@@ -187,18 +199,88 @@ export function FieldProgressPage() {
     return [now + 1, now, now - 1, now - 2].map((y) => ({ value: String(y), label: String(y) }))
   }, [])
 
+  // Saying a field is done, from the list of what is not (Sam, 27 Oct
+  // 2026). It writes the same work record the finish form writes —
+  // "Field finished", or "Grazed" for a crop that was grazed off
+  // instead of combined — so the progress view, the field's own work
+  // list and the yield all read one record.
+  const { data: plans } = useCropPlans(year)
+  const saveWork = useSaveFieldWork()
+  const access = usePartnerAccess()
+  const qc = useQueryClient()
+  const [marking, setMarking] = useState<string | null>(null)
+  const [markFailed, setMarkFailed] = useState<string | null>(null)
+
+  /**
+   * `on` dates the finish. The day the last load came off is the day the
+   * field was done, not the evening somebody got round to the list — and
+   * that date is the one the irrigation balance, the yield and the AFSC
+   * production report all read (lib/harvest-date.ts).
+   */
+  const markDone = async (
+    f: ProgressField,
+    how: 'harvested' | 'grazed' | 'seeded',
+    on?: string | null,
+  ) => {
+    if (!profile || marking) return
+    setMarking(`${f.fieldId}:${how}`)
+    setMarkFailed(null)
+    const now = new Date().toISOString()
+    // Noon on the farm day, so a timezone cannot shift it either side of midnight.
+    const finishedAt = on ? new Date(`${on.slice(0, 10)}T12:00:00`).toISOString() : now
+    try {
+      await saveWork.mutateAsync({
+        photos: [],
+        row: {
+          id: crypto.randomUUID(),
+          field_id: f.fieldId,
+          crop_year: year,
+          crop_id: plans?.find((p) => p.field_id === f.fieldId)?.crop_id ?? null,
+          work_type: how === 'seeded' ? 'seeding' : how === 'grazed' ? 'grazing' : FIELD_FINISHED,
+          counts_as: how === 'seeded' ? 'seeding' : 'harvest',
+          field_finished: how !== 'seeded',
+          finished_at: finishedAt,
+          notes: on ? 'The last of it was off on the day of the last load.' : null,
+          created_by: profile.id,
+          entered_at: now,
+        },
+      })
+      await qc.invalidateQueries({ queryKey: ['field_season_progress'] })
+    } catch (e) {
+      setMarkFailed(e instanceof Error ? e.message : String(e))
+    } finally {
+      setMarking(null)
+    }
+  }
+
   const outstanding = useMemo(
     () =>
       (fields ?? [])
         .filter((f) => f.acres > 0)
         .filter((f) =>
           kind === 'harvest'
-            ? f.countsForHarvest && !f.hasHarvest
+            ? f.countsForHarvest && !(f.harvestFinished ?? f.hasHarvest)
             : f.countsForSeeding && !f.hasSeeding,
         )
         .sort((a, b) => b.acres - a.acres),
     [fields, kind],
   )
+
+  /**
+   * Harvest, in two groups: the fields a combine is already on, and the ones
+   * nothing has touched. Going first — those are the ones somebody can
+   * answer from memory at the end of the day, and the ones that have a last
+   * load to date the finish from.
+   */
+  const groups = useMemo(() => {
+    if (kind !== 'harvest') return [{ title: '', fields: outstanding }]
+    const going = outstanding.filter((f) => f.harvestStarted)
+    const notStarted = outstanding.filter((f) => !f.harvestStarted)
+    return [
+      { title: 'Being combined', fields: going },
+      { title: 'Nothing started', fields: notStarted },
+    ].filter((g) => g.fields.length)
+  }, [kind, outstanding])
 
   return (
     <div className="space-y-4 p-4 md:p-6">
@@ -207,8 +289,8 @@ export function FieldProgressPage() {
           <h1 className="text-lg font-semibold text-gray-900">Seeding &amp; harvest progress</h1>
           <HelpNote summary="Acres across the whole farm." title="What is counted">
             Acres across the whole farm. Ground that is not ours to do is left out of the side it
-            does not belong to — summer fallow from both, established perennials from seeding
-            only, and the crop-shared potatoes from both.
+            does not belong to — summer fallow from both, established perennials from seeding only,
+            and the crop-shared potatoes from both.
           </HelpNote>
         </div>
         <Select
@@ -227,7 +309,9 @@ export function FieldProgressPage() {
       ) : !fields?.length ? (
         <p className="rounded-md bg-gray-50 px-3 py-6 text-center text-sm text-gray-500">
           No crop plan for {year}, so there is nothing to measure against.{' '}
-          <SetupLink managerOnly to={SETUP_LINKS.cropPlan()}>Plan the crops</SetupLink>
+          <SetupLink managerOnly to={SETUP_LINKS.cropPlan()}>
+            Plan the crops
+          </SetupLink>
         </p>
       ) : (
         <>
@@ -252,36 +336,100 @@ export function FieldProgressPage() {
                 size="sm"
               />
             </div>
+            {markFailed && <p className="mt-2 text-xs text-red-600">{markFailed}</p>}
             {!outstanding.length ? (
               <p className="mt-3 text-sm text-gray-500">
                 Nothing outstanding — every acre that needs it is recorded.
               </p>
             ) : (
-              <ul className="mt-2 divide-y divide-gray-100 text-sm">
-                {outstanding.map((f) => (
-                  <li key={f.fieldId} className="flex items-baseline justify-between gap-2 py-1.5">
-                    <span className="min-w-0">
-                      <span className="truncate text-gray-900">{f.name}</span>
-                      <span className="ml-1.5 text-xs text-gray-400">{f.cropName ?? 'no crop'}</span>
-                      {f.hasAnyOperation && (
-                        <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800">
-                          in crop, not recorded
+              groups.map((g) => (
+                <div key={g.title} className="mt-2">
+                  {g.title && (
+                    <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                      {g.title} · {ac(g.fields.reduce((s, f) => s + f.acres, 0))} ac
+                    </h3>
+                  )}
+                  <ul className="divide-y divide-gray-100 text-sm">
+                    {g.fields.map((f) => (
+                      <li key={f.fieldId} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 py-2">
+                        <span className="min-w-0 flex-auto basis-48">
+                          <span className="text-gray-900">{f.name}</span>
+                          <span className="ml-1.5 text-xs text-gray-400">
+                            {f.cropName ?? 'no crop'}
+                          </span>
+                          {f.hasAnyOperation && kind === 'seeding' && (
+                            <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800">
+                              in crop, not recorded
+                            </span>
+                          )}
+                          {/* What the scale knows, so the question can be
+                              answered without opening the field. */}
+                          {kind === 'harvest' && (f.loads ?? 0) > 0 && (
+                            <span className="block text-xs text-gray-500">
+                              {f.loads} load{f.loads === 1 ? '' : 's'}
+                              {f.lastLoadOn && `, last ${shortDay(f.lastLoadOn)}`}
+                            </span>
+                          )}
+                          {kind === 'harvest' && !(f.loads ?? 0) && f.progressNote && (
+                            <span className="block text-xs text-gray-500">{f.progressNote}</span>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    <span className="shrink-0 tabular-nums text-gray-600">{ac(f.acres)} ac</span>
-                  </li>
-                ))}
-              </ul>
+                        <span className="shrink-0 tabular-nums text-gray-600">{ac(f.acres)} ac</span>
+                        {access.canWrite(f.fieldId, year) && (
+                          <span className="flex shrink-0 flex-wrap gap-1">
+                            {/* The suggestion, with the date already in it: one
+                                tap, and the finish lands on the day the last
+                                load came off rather than tonight. */}
+                            {kind === 'harvest' && f.lastLoadOn && (
+                              <MarkButton
+                                busy={marking === `${f.fieldId}:harvested`}
+                                disabled={!!marking}
+                                onClick={() => void markDone(f, 'harvested', f.lastLoadOn)}
+                              >
+                                Off {shortDay(f.lastLoadOn)}
+                              </MarkButton>
+                            )}
+                            <MarkButton
+                              busy={
+                                marking ===
+                                `${f.fieldId}:${kind === 'harvest' ? 'harvested' : 'seeded'}`
+                              }
+                              disabled={!!marking}
+                              onClick={() =>
+                                void markDone(f, kind === 'harvest' ? 'harvested' : 'seeded')
+                              }
+                            >
+                              {kind === 'harvest' ? (f.lastLoadOn ? 'Off today' : 'Harvested') : 'Seeded'}
+                            </MarkButton>
+                            {/* Grazed off instead of combined: still done. */}
+                            {kind === 'harvest' && (
+                              <MarkButton
+                                busy={marking === `${f.fieldId}:grazed`}
+                                disabled={!!marking}
+                                onClick={() => void markDone(f, 'grazed')}
+                              >
+                                Grazed
+                              </MarkButton>
+                            )}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))
             )}
           </div>
 
-          <p className="text-[11px] text-gray-400">
+          <HelpNote summary="Mapped acres; harvest counts when somebody says the field is off.">
             Acres are the mapped boundary, not the planned acreage — the {year} plan totals more
-            acres than the farm has. A field counts as done once John Deere records the operation;
-            Deere does not report a treated area for seeding or harvest, so a part-finished field
-            counts whole.
-          </p>
+            acres than the farm has. Seeding counts once John Deere records it or somebody records
+            it here. Harvest needs more than a pass: Deere merges every visit to a field into one
+            operation, so the operation exists from the hour the combine arrives. It counts when
+            the last load off the field is weighed and marked, or when somebody says here that the
+            field is off. Deere reports no treated area either way, so a part-finished field counts
+            whole.
+          </HelpNote>
         </>
       )}
     </div>

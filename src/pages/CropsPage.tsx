@@ -18,6 +18,7 @@ import { cropListColumns, cropListRows, type CropListRow } from '@/lib/reports/l
 import { useElevatorBids } from '@/components/BreakevenCard'
 import { useSetCropNeedsBins } from '@/lib/bins'
 import { useSetCropOnCombines } from '@/lib/combine-monitor-data'
+import { useSetCropWeighed } from '@/lib/bin-loads'
 import { ColourPicker } from '@/components/ColourPicker'
 import { cropColour } from '@/lib/crop-colour'
 import { useSetCropColour } from '@/lib/crop-colour-mutation'
@@ -53,6 +54,7 @@ export function CropsPage() {
   const { setArchived, remove, create } = useCropMutations()
   const setNeedsBins = useSetCropNeedsBins()
   const setOnCombines = useSetCropOnCombines()
+  const setWeighed = useSetCropWeighed()
   const setColour = useSetCropColour()
   const isManager = hasManagerAccess(profile?.role)
   const { data: varietyList } = useCropVarieties()
@@ -189,13 +191,14 @@ export function CropsPage() {
     binned: {
       render: (r) =>
         isManager ? (
-          <label className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <label className="flex min-h-10 items-center gap-1.5 sm:min-h-0" onClick={(e) => e.stopPropagation()}>
             <input
               type="checkbox"
               checked={r.needs_bins !== false}
               disabled={setNeedsBins.isPending}
               onChange={(e) => setNeedsBins.mutate({ id: r.id, needs_bins: e.target.checked })}
               aria-label={`${r.name} is stored in bins`}
+              className="h-4 w-4"
             />
           </label>
         ) : (
@@ -208,17 +211,37 @@ export function CropsPage() {
     combines: {
       render: (r) =>
         isManager ? (
-          <label className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <label className="flex min-h-10 items-center gap-1.5 sm:min-h-0" onClick={(e) => e.stopPropagation()}>
             <input
               type="checkbox"
               checked={r.on_combines !== false}
               disabled={setOnCombines.isPending}
               onChange={(e) => setOnCombines.mutate({ id: r.id, on: e.target.checked })}
               aria-label={`${r.name} is harvested with the combines`}
+              className="h-4 w-4"
             />
           </label>
         ) : (
           <span className="text-xs text-gray-600">{r.on_combines !== false ? 'yes' : 'no'}</span>
+        ),
+    },
+    // Weighed at the scale (Sam, 22 Oct 2026): off, the weigh-in does not
+    // offer the crop, nor fields growing only crops like it (potatoes, hay).
+    weighed: {
+      render: (r) =>
+        isManager ? (
+          <label className="flex min-h-10 items-center gap-1.5 sm:min-h-0" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={r.weighed !== false}
+              disabled={setWeighed.isPending}
+              onChange={(e) => setWeighed.mutate({ id: r.id, weighed: e.target.checked })}
+              aria-label={`${r.name} is weighed at the scale`}
+              className="h-4 w-4"
+            />
+          </label>
+        ) : (
+          <span className="text-xs text-gray-600">{r.weighed !== false ? 'yes' : 'no'}</span>
         ),
     },
     cost: {
@@ -307,6 +330,7 @@ export function CropsPage() {
         <DataTable
           rows={rows}
           columns={columns}
+          tableOnPhone
           rowKey={(r) => r.id}
           exportFilename={`crops-${tab}-${cropYear}`}
           onRowClick={(r) => navigate(`/crops/${r.id}`)}

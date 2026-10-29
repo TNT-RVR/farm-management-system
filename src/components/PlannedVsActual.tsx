@@ -10,6 +10,7 @@ import { useSeasonOperations } from '@/lib/fieldOps'
 import { useProductResolver } from '@/lib/products'
 import { useAllBoundaries, useCropInputs, useCropPlans, useCrops, useFields } from '@/lib/queries'
 import { cn } from '@/lib/utils'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const VERDICT: Record<CropVerdict, { icon: typeof Check; className: string; label: string }> = {
   match: { icon: Check, className: 'text-green-600', label: 'Matches the plan' },
@@ -160,8 +161,8 @@ export function PlannedVsActual({ cropYear }: { cropYear: number }) {
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500">
+        <table className="w-max min-w-full text-sm">
+          <thead className={TABLE_HEAD}>
             <tr>
               <Th help="field">Field</Th>
               <Th help="planned">Planned</Th>

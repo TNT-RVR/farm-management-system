@@ -14,6 +14,7 @@ import {
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
 import { ImportHint } from '@/components/ImportHint'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * Productivity zones, per field, as a table rather than a map.
@@ -158,7 +159,7 @@ export function YieldZones() {
 
                 {isOpen && (
                   <table className="w-full border-t border-gray-100 bg-gray-50/60 text-xs">
-                    <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+                    <thead className={TABLE_HEAD}>
                       <tr>
                         <th className="px-3 py-1 font-medium">Zone</th>
                         <th className="px-3 py-1 font-medium">Index</th>

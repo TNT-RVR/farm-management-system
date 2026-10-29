@@ -4,6 +4,8 @@ import { Select } from '@/components/Select'
 import { HelpNote } from '@/components/HelpNote'
 import { useAuth } from '@/lib/auth'
 import { TILE_GROUPS, useSaveTilePrefs, useTiles, type Tile } from '@/lib/tiles'
+import { CARD_HEAD } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 /**
  * Choosing what sits on the home screen.
@@ -60,10 +62,11 @@ export function TilesPanel() {
   }
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-        <LayoutGrid className="h-4 w-4 text-gray-400" /> Home screen shortcuts
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h3 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <LayoutGrid className="h-4 w-4 text-brand-100" /> Home screen shortcuts
       </h3>
+      <div className="p-4">
       <HelpNote
         className="mt-1 text-xs"
         title="Home screen shortcuts"
@@ -176,6 +179,8 @@ export function TilesPanel() {
           Sections an administrator has turned off for you are not listed here.
         </p>
       ) : null}
+
+      </div>
     </section>
   )
 }

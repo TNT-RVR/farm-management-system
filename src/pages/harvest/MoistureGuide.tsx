@@ -1,6 +1,7 @@
 import { FileText } from 'lucide-react'
 import { InfoPopover } from '@/components/InfoPopover'
 import { CHARTS, chartPdfUrl } from '@/lib/moisture'
+import { HelpNote } from '@/components/HelpNote'
 
 /**
  * How to take a reading on the Model 919, in the order it is done.
@@ -89,11 +90,11 @@ export const stepBrief = (key: Step['key']) => MOISTURE_STEPS.find((s) => s.key 
 export function MoistureGuide({ compact = false }: { compact?: boolean }) {
   return (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
-      <p className="text-xs text-gray-500">
+      <HelpNote className="text-xs" summary="The Canadian Grain Commission's procedure for the 919 cell.">
         The Canadian Grain Commission&rsquo;s procedure for the 919/3.5&Prime; cell. The meter
         reads out a dial number, not a percentage — the temperature is half the answer, which is
         why it is written down at the same moment.
-      </p>
+      </HelpNote>
 
       <ol className="space-y-2">
         {MOISTURE_STEPS.map((s, i) => (
@@ -132,11 +133,11 @@ export function MoistureGuide({ compact = false }: { compact?: boolean }) {
 
       <div className={compact ? '' : 'rounded-lg border border-gray-200 bg-white p-4'}>
         <h2 className="text-sm font-semibold text-gray-700">The charts</h2>
-        <p className="mt-1 text-xs text-gray-500">
+        <HelpNote className="mt-1 text-xs" summary="Canadian Grain Commission charts, via 919.ca." title="Where the charts come from">
           Published by the Canadian Grain Commission and supplied free by Dimo&rsquo;s Labtronics at
           919.ca. These are the ones for what we grow; the calculator reads the numbers straight out
           of them.
-        </p>
+        </HelpNote>
         <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
           {CHARTS.map((c) => (
             <li key={c.key}>

@@ -85,7 +85,7 @@ export async function runNRatioWatch(sb: SupabaseClient): Promise<{ moved: strin
       p_kind: 'n_ratio_moved',
       p_title: `N price ratio moved: ${moved.map((m) => m.split(' ')[0]).join(', ')}`,
       p_body: `The economic N rate moves with the N-to-crop price ratio. Since the last check: ${moved.join('; ')}. The rates are re-solved at today's prices under Economic nitrogen rate.`,
-      p_link: '/fertilizer?tab=Savings',
+      p_link: '/fertilizer/savings',
     })
     if (error) console.warn('[n-ratio] notify failed: ' + error.message)
   }

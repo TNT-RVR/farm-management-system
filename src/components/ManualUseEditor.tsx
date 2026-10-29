@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { DateField } from '@/components/DateField'
 import { useCrops } from '@/lib/queries'
 import { useSaveProduct, type JdProduct } from '@/lib/products'
+import { HelpNote } from '@/components/HelpNote'
 
 /**
  * When a product was last sprayed and on what, typed by a person.
@@ -34,10 +35,10 @@ export function ManualUseEditor({ product, onClose }: { product: JdProduct; onCl
         <div className="flex items-start gap-2 border-b border-gray-200 px-4 py-3">
           <div className="min-w-0">
             <h3 className="text-sm font-semibold text-gray-900">Last sprayed: {product.name}</h3>
-            <p className="mt-0.5 text-xs text-gray-500">
+            <HelpNote className="mt-0.5 text-xs" summary="Shown alongside what Deere recorded.">
               What you type here is shown alongside what Deere recorded — the newer date, and the
               crops added together. Leave the date blank to only add crops.
-            </p>
+            </HelpNote>
           </div>
           <button onClick={onClose} className="ml-auto rounded p-1 text-gray-400 hover:bg-gray-100">
             <X className="h-4 w-4" />

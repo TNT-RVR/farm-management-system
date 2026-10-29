@@ -200,7 +200,7 @@ const G: Record<string, AlertGuide> = {
   },
   bin_needs_air: {
     name: 'Bin needs air',
-    meaning: 'A bin went in tough or damp, or its cable temperatures are rising. It needs aeration.',
+    meaning: 'A bin went in tough or wet, or its cable temperatures are rising. It needs aeration.',
     steps: ['Open Harvest → Bins for the bin\'s moisture and temperatures.', 'Turn the fan on.'],
     checks: ['Cable readings over the next days.', 'Outside humidity before running fans.'],
     raisedBy: ['database trigger on bin loads'],

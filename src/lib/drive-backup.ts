@@ -202,6 +202,20 @@ export function backupDue(runs: Pick<BackupRun, 'status' | 'started_at' | 'finis
   return !good || now - new Date(good.finished_at!).getTime() > BACKUP_EVERY_HOURS * 3_600_000
 }
 
+/**
+ * Call `fn` once the browser has nothing better to do, so a backup step never
+ * lands in the middle of somebody typing. Safari has no requestIdleCallback;
+ * there a short timeout stands in. Returns a cancel.
+ */
+export function whenIdle(fn: () => void, timeout = 10_000): () => void {
+  if (typeof window.requestIdleCallback === 'function') {
+    const id = window.requestIdleCallback(() => fn(), { timeout })
+    return () => window.cancelIdleCallback(id)
+  }
+  const id = window.setTimeout(fn, 250)
+  return () => window.clearTimeout(id)
+}
+
 export async function startRun(userId: string): Promise<string> {
   const { data, error } = await db.from('drive_backup_runs').insert({ run_by: userId }).select('id').single()
   if (error) throw error

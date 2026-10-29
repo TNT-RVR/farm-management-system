@@ -2,6 +2,7 @@ import { cattleSaleCode, cropCode } from '@/lib/agristability-codes'
 import { categoryOf, total, type BooksAccount, type BooksCategory, type BooksReport, type CategoryOverride } from '@/lib/qb-books-core'
 import { longDate } from './framework'
 import type { ReportBooks } from './books'
+import { farmTz } from '../farm-context'
 
 /**
  * The program year's Profit and Loss from QuickBooks, account by account, put
@@ -226,8 +227,9 @@ export function fetchedLabel(iso: string | null | undefined): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  const day = d.toLocaleDateString('en-CA', { timeZone: 'America/Edmonton' })
-  return `${longDate(day)}, ${d.toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Edmonton' })}`
+  const tz = farmTz()
+  const day = d.toLocaleDateString('en-CA', { timeZone: tz })
+  return `${longDate(day)}, ${d.toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz })}`
 }
 
 /** What the AgriStability reports take from the books: the P&L by line, or why there is none. */

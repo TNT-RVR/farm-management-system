@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { farmToday } from './dates.ts'
 
 // Cattle-side alerts (spec §9.5).
 //
@@ -131,7 +132,7 @@ export async function runCattleAlerts(sb: SupabaseClient): Promise<CattleAlertRe
         .in('status', ['pending', 'confirmed'])
         .maybeSingle()
 
-      const today = new Date().toISOString().slice(0, 10)
+      const today = farmToday()
 
       if (type === candidate) {
         if (!open) {

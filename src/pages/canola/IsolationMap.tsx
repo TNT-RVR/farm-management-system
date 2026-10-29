@@ -1,8 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
-import maplibregl, { type GeoJSONSource } from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
+import type { GeoJSONSource } from 'maplibre-gl'
 import type { Feature, FeatureCollection, Geometry } from 'geojson'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { bboxOf } from '@/lib/canola-isolation-core'
 
 export type MapQuarter = {
@@ -36,37 +35,17 @@ export const IsolationMap = forwardRef<IsolationMapHandle, {
   className?: string
 }>(function IsolationMap({ field, area, quarters, selected, onSelect, className }, ref) {
   const el = useRef<HTMLDivElement>(null)
-  const map = useRef<maplibregl.Map | null>(null)
-  const ready = useRef(false)
   const pick = useRef(onSelect)
   useEffect(() => {
     pick.current = onSelect
   }, [onSelect])
 
-  useImperativeHandle(ref, () => ({
-    capture: () =>
-      new Promise((resolve) => {
-        const m = map.current
-        if (!m) return resolve(null)
-        // Read the canvas inside a render, while the frame is still in it.
-        m.once('render', () => {
-          try {
-            const c = m.getCanvas()
-            resolve({ dataUrl: c.toDataURL('image/png'), width: c.width, height: c.height })
-          } catch {
-            resolve(null)
-          }
-        })
-        m.triggerRepaint()
-      }),
-  }))
-
-  useEffect(() => {
-    if (!el.current) return
-    const m = new maplibregl.Map({ container: el.current, style: SATELLITE_STYLE, center: [-113.55, 52.4], zoom: 11, attributionControl: { compact: true }, canvasContextAttributes: { preserveDrawingBuffer: true } })
-    map.current = m
-    m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-    m.on('load', () => {
+  const { mapRef: map, ready } = useFarmMap(el, {
+    center: [-113.55, 52.4],
+    zoom: 11,
+    attribution: 'compact',
+    preserveDrawingBuffer: true,
+    onReady: (m) => {
       const empty: FeatureCollection = { type: 'FeatureCollection', features: [] }
       m.addSource('quarters', { type: 'geojson', data: empty })
       m.addSource('area', { type: 'geojson', data: empty })
@@ -89,47 +68,52 @@ export const IsolationMap = forwardRef<IsolationMapHandle, {
       })
       m.on('mouseenter', 'q-fill', () => (m.getCanvas().style.cursor = 'pointer'))
       m.on('mouseleave', 'q-fill', () => (m.getCanvas().style.cursor = ''))
-      ready.current = true
-      m.fire('isolation:data')
-    })
-    return () => {
-      ready.current = false
-      m.remove()
-      map.current = null
-    }
-  }, [])
+    },
+  })
+
+  useImperativeHandle(ref, () => ({
+    capture: () =>
+      new Promise((resolve) => {
+        const m = map.current
+        if (!m) return resolve(null)
+        // Read the canvas inside a render, while the frame is still in it.
+        m.once('render', () => {
+          try {
+            const c = m.getCanvas()
+            resolve({ dataUrl: c.toDataURL('image/png'), width: c.width, height: c.height })
+          } catch {
+            resolve(null)
+          }
+        })
+        m.triggerRepaint()
+      }),
+  }))
 
   // The data, whenever it changes (and once the style has loaded).
   useEffect(() => {
     const m = map.current
-    if (!m) return
-    const draw = () => {
-      const fc = (features: Feature[]): FeatureCollection => ({ type: 'FeatureCollection', features })
-      ;(m.getSource('quarters') as GeoJSONSource | undefined)?.setData(
-        fc(
-          quarters.map((q) => ({
-            type: 'Feature',
-            geometry: { type: 'Polygon', coordinates: [q.ring] },
-            properties: { parcel: q.parcel, label: q.label, kind: q.kind, fill: FILL[q.kind], selected: q.parcel === selected },
-          })),
-        ),
-      )
-      ;(m.getSource('area') as GeoJSONSource | undefined)?.setData(fc(area ? [{ type: 'Feature', geometry: area, properties: {} }] : []))
-      ;(m.getSource('field') as GeoJSONSource | undefined)?.setData(fc(field ? [{ type: 'Feature', geometry: field, properties: {} }] : []))
-    }
-    if (ready.current) draw()
-    else m.once('isolation:data', draw)
-  }, [quarters, area, field, selected])
+    if (!m || !ready) return
+    const fc = (features: Feature[]): FeatureCollection => ({ type: 'FeatureCollection', features })
+    ;(m.getSource('quarters') as GeoJSONSource | undefined)?.setData(
+      fc(
+        quarters.map((q) => ({
+          type: 'Feature',
+          geometry: { type: 'Polygon', coordinates: [q.ring] },
+          properties: { parcel: q.parcel, label: q.label, kind: q.kind, fill: FILL[q.kind], selected: q.parcel === selected },
+        })),
+      ),
+    )
+    ;(m.getSource('area') as GeoJSONSource | undefined)?.setData(fc(area ? [{ type: 'Feature', geometry: area, properties: {} }] : []))
+    ;(m.getSource('field') as GeoJSONSource | undefined)?.setData(fc(field ? [{ type: 'Feature', geometry: field, properties: {} }] : []))
+  }, [map, ready, quarters, area, field, selected])
 
   // Fit the mile when a new field is chosen.
   useEffect(() => {
     const m = map.current
     const b = area ? bboxOf(area) : null
-    if (!m || !b) return
-    const fit = () => m.fitBounds([[b.west, b.south], [b.east, b.north]], { padding: 24, duration: 0 })
-    if (ready.current) fit()
-    else m.once('isolation:data', fit)
-  }, [area])
+    if (!m || !ready || !b) return
+    m.fitBounds([[b.west, b.south], [b.east, b.north]], { padding: 24, duration: 0 })
+  }, [map, ready, area])
 
   return <div ref={el} className={className} />
 })

@@ -29,6 +29,7 @@ import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { fmtMoney } from '@/lib/applied'
 import { cn } from '@/lib/utils'
 import { rowClick } from '@/components/RecordEditor'
+import { askConfirm } from '@/components/askConfirm'
 
 const STATUSES: { key: EventStatus; label: string }[] = [
   { key: 'watching', label: 'Watching' },
@@ -215,8 +216,8 @@ function EventCard({
               options={STATUSES.map((s) => ({ value: s.key, label: s.label }))}
             />
             <button
-              onClick={() => {
-                if (confirm(`Remove ${e.name}?`)) onDelete()
+              onClick={async () => {
+                if (await askConfirm(`Remove ${e.name}?`, { confirmLabel: 'Remove' })) onDelete()
               }}
               title="Remove this event"
               className="ml-auto text-gray-300 hover:text-red-600"
@@ -618,8 +619,8 @@ function AddEventDialog({
             <button
               type="button"
               disabled={busy}
-              onClick={() => {
-                if (confirm(`Remove ${name || 'this event'}?`)) onDelete()
+              onClick={async () => {
+                if (await askConfirm(`Remove ${name || 'this event'}?`, { confirmLabel: 'Remove' })) onDelete()
               }}
               className="mr-auto flex items-center gap-1 rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
             >

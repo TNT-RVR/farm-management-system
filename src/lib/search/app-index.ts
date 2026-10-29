@@ -24,10 +24,9 @@ export type AppHit = {
   terms: string
 }
 
-const bare = (to: string) => to.split('?')[0]
-
 function hit(kind: AppHitKind, label: string, sub: string, to: string, gate: string, extra = ''): AppHit {
-  return { kind, label, sub, to, gate: bare(gate), terms: `${label} ${sub} ${extra}`.toLowerCase() }
+  // The gate keeps its `?tab=`: a feature switched off can be a single tab.
+  return { kind, label, sub, to, gate, terms: `${label} ${sub} ${extra}`.toLowerCase() }
 }
 
 export function buildAppIndex(tabs: TabEntry[], reports: ReportEntry[], role: { isAdmin: boolean; isManager: boolean } = { isAdmin: true, isManager: true }): AppHit[] {

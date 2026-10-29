@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { ranchesQuery } from '@/lib/ranches'
 import type { Database } from '@/lib/database.types'
 
 type RanchRow = Database['public']['Tables']['ranches']['Row']
@@ -15,15 +16,9 @@ const FIELDS: { key: keyof RanchRow; label: string; hint?: string; wide?: boolea
   { key: 'address', label: 'Address', wide: true },
 ]
 
+// The app's one ranches query: a second definition under the same key fought it for the cache.
 function useRanchDetails() {
-  return useQuery({
-    queryKey: ['ranches'],
-    queryFn: async (): Promise<RanchRow[]> => {
-      const { data, error } = await supabase.from('ranches').select('*').order('sort_order')
-      if (error) throw error
-      return data ?? []
-    },
-  })
+  return useQuery(ranchesQuery())
 }
 
 /**

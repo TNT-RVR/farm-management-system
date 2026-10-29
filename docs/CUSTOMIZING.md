@@ -1,7 +1,8 @@
 # Fitting the last few pieces to your farm
 
 Most of the app is set up from **Settings → Farm setup**: your name, logo,
-location, units, suppliers, which parts of the app you use, and your keys.
+location, units, suppliers and which parts of the app you use, with your
+keys in **Settings → Connections**.
 A few pieces were built around the original farm's own surroundings and still
 need a small code change to fit yours:
 
@@ -10,8 +11,8 @@ need a small code change to fit yours:
 3. [The grain moisture meter](#3-your-grain-moisture-meter)
 4. [Your irrigation district (or none)](#4-your-irrigation-district-or-none)
 
-The same instructions, with a **Copy prompt** button, are at the bottom of
-Settings → Farm setup in the app.
+The same instructions, with a **Copy prompt** button, are on the *Fitting it
+to your farm* tab of Settings → Farm setup in the app.
 
 Each section says what to gather, then gives a prompt to paste into your AI
 assistant (Claude, ChatGPT or similar) with this repository open. The prompts
@@ -22,8 +23,9 @@ are written so the assistant does the work and you only supply the facts.
 > meter's chart — before relying on it.
 
 **Don't need one of these?** Switch it off instead: Settings → Farm setup →
-*Parts of the app this farm uses* (River levels, Irrigation district
-allotment, and so on). Nothing is lost; it is only hidden.
+*Parts of the app* (River levels, Irrigation district
+allotment, and so on). Nothing is lost; it is only hidden, and it leaves the menu for
+everyone.
 
 ---
 
@@ -87,7 +89,7 @@ wateroffice.ec.gc.ca.
 
 ## 2. Weather stations for irrigation scheduling
 
-**What it is.** The soil-moisture model (Irrigation → Soil moisture) needs a
+**What it is.** The soil-moisture model (Growing season → Soil moisture) needs a
 daily weather record near each field: temperature, humidity, wind, sun and
 rain, to work out how much water the crop used. Each field is assigned the
 nearest station in the `weather_stations` table, and a daily job fetches its
@@ -95,7 +97,7 @@ data. The original farm uses Alberta's agriculture network (ACIS) with
 Environment Canada as a fallback.
 
 *(The forecast places on the Weather page are separate and need no code: set
-them in Farm setup → Forecast places.)*
+them in Farm setup → Your farm → Forecast places.)*
 
 **What to gather.**
 
@@ -141,7 +143,7 @@ field's daily weather filled in.
 
 ## 3. Your grain moisture meter
 
-**What it is.** Harvest → Moisture turns a moisture-meter reading into grain
+**What it is.** The Moisture tab (Harvest season → Bins → Moisture) turns a moisture-meter reading into grain
 moisture. It is built for the **Model 919** meter, which reads a dial number
 rather than a percentage; the conversion comes from the Canadian Grain
 Commission's published chart for each crop and temperature (stored in
@@ -163,7 +165,7 @@ already editable per crop.
 **Prompt to copy:**
 
 ```text
-Harvest → Moisture in this app converts Model 919 meter readings using
+Harvest season → Bins → Moisture in this app converts Model 919 meter readings using
 Canadian Grain Commission charts (src/lib/moisture.ts, data in
 src/data/919-charts, UI in src/pages/harvest/MoistureTester.tsx,
 MoistureSteps.tsx and MoistureGuide.tsx). My meter is a <make and model>.
@@ -189,7 +191,7 @@ check by hand against my chart: <crop>, reading <..> at <..> °C should be <..> 
 
 **What it is.** Many irrigated farms get water from an irrigation district that
 sets an allotment each season (inches per acre). The app tracks how much of it
-you have used. Set your district's name in Farm setup → Names and defaults, or
+you have used. Set your district's name in Farm setup → Your farm → Names and defaults, or
 switch *Irrigation district allotment* off if you pump under your own licence
 only.
 

@@ -20,6 +20,8 @@ import {
   type PerlichReport,
 } from './cattle-auctions-parse.ts'
 import { MARKET_KEYS, marketByKey, type MarketKey } from '../../src/lib/auction-markets.ts'
+import { callClaude } from './anthropic.ts'
+import { farmToday } from './dates.ts'
 
 // The four auction markets' weekly prices into market_series / market_prices:
 // Medicine Hat, Lethbridge, Calgary Stockyards and Team online. Run by
@@ -64,7 +66,7 @@ export type RunOptions = {
   today?: string
 }
 
-const todayIso = () => new Date().toISOString().slice(0, 10)
+const todayIso = () => farmToday()
 const daysAgo = (today: string, n: number) => new Date(Date.parse(`${today}T12:00:00Z`) - n * DAY).toISOString().slice(0, 10)
 
 async function get(url: string, accept: string, ms = 30_000): Promise<Response> {
@@ -197,18 +199,13 @@ async function readScan(
   // A model that always thinks refuses `thinking: disabled`; it gets effort and
   // room for the thinking instead (see anthropic-reply.ts).
   const thinks = alwaysThinks(model)
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content }],
-      ...(thinks
-        ? { max_tokens: 16000, output_config: { effort: 'high' } }
-        : { max_tokens: 8000, thinking: { type: 'disabled' } }),
-    }),
-    signal: AbortSignal.timeout(300_000),
-  })
+  const res = await callClaude({
+    model,
+    messages: [{ role: 'user', content }],
+    ...(thinks
+      ? { max_tokens: 16000, output_config: { effort: 'high' } }
+      : { max_tokens: 8000, thinking: { type: 'disabled' } }),
+  }, { apiKey, signal: AbortSignal.timeout(300_000) })
   if (!res.ok) return { problem: `Anthropic ${res.status}: ${(await res.text()).slice(0, 200)}` }
   const reply = (await res.json()) as MessagesReply
   const text = replyText(reply)

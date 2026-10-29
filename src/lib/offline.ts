@@ -140,18 +140,48 @@ const LIVE_ONLY = new Set([
   'mfa-factors',
   // Ticket photos are a few hundred KB each: fetched when opened, never kept on the device.
   'scale-ticket-photo',
+  // Weigh-in scale photos: a link made on the page, gone after a reload.
+  'scale-photo-url',
   // Pump nameplate photos, the same: fetched when opened, never kept on the device.
   'pump-photo',
   // Pivot nameplate photos, likewise.
   'pivot-photo',
+  // Signed links to pump, pivot and ticket photos in Storage (stored-photos.ts): gone within the hour.
+  'photo-urls',
   // The Combines conditions card's NDVI picture: a signed link, gone within the hour.
   'combine-ndvi-picture',
+  // Checklist place photos, an invoice's PDF and the newest satellite picture: signed links, gone within the hour.
+  'checklist_photo_urls',
+  'invoice_url',
+  'sat-latest-image',
 ])
+
+/**
+ * A search somebody typed: the app-wide search, or the chemical list with a
+ * term in it. Each one was written to the phone and kept for a week, so a
+ * search for "liberty" left an entry per keystroke in IndexedDB, rewritten on
+ * every save. The unsearched chemical list (term '') is the one the warm-up
+ * fills for offline use, and is kept.
+ */
+export function isTypedSearch(key: readonly unknown[]): boolean {
+  if (key[0] === 'search') return true
+  return key[0] === 'chemicals' && typeof key[1] === 'string' && key[1] !== ''
+}
+
+/**
+ * How long a query the phone does not keep stays in memory once no screen
+ * shows it. The week-long default (main.tsx) is there so a query survives to
+ * be saved; one that is never saved has no reason to outlive a few minutes.
+ */
+export const UNKEPT_GC_MS = 5 * 60_000
+/** Key heads whose queries are never kept, for main.tsx to give the short gcTime. */
+export const UNKEPT_HEADS: readonly string[] = [...LIVE_ONLY, 'search']
 
 export function shouldPersistQuery(query: Query): boolean {
   const head = query.queryKey?.[0]
   if (typeof head !== 'string') return false
   if (LIVE_ONLY.has(head)) return false
+  if (isTypedSearch(query.queryKey)) return false
   // A failed query has no data worth keeping, and persisting the error state
   // would replay the failure on the next cold start.
   return query.state.status === 'success'

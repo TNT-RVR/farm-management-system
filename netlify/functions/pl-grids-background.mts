@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { JD_ACCEPT, jdAccessToken } from './_jd.mts'
 import { zipEntryChunks } from '../shared/dbf-stream.ts'
 import { dbfRecords, shpPoints } from '../../src/lib/shp-stream.ts'
@@ -6,6 +6,7 @@ import { gridExport, type DeereMetadata } from '../../src/lib/pl-export.ts'
 import { listZip, readZipMember } from '../../src/lib/zipListing.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 /**
  * Grid a field's Deere passes for the Profit/Loss Map.
@@ -115,7 +116,7 @@ export default async (req: Request) => {
   await hydrateSecrets()
   workerKey = process.env.JOB_WORKER_KEY ?? process.env.FACT_WORKER_KEY ?? process.env.LABEL_WORKER_KEY
   if (!url || !serviceKey) return new Response('Not configured', { status: 500 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
 
   // Managers only: this spends Deere requests and rewrites the map's data.
   const bearer = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')

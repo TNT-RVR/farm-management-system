@@ -1,6 +1,7 @@
-import { Link, NavLink } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { ArrowUpRight } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { PillNavTabs } from '@/components/PillTabs'
+import { usePartnerView } from '@/lib/partner-view'
 
 /**
  * One field, in sections rather than one long scroll.
@@ -63,7 +64,7 @@ export const FIELD_TABS: { key: FieldSection; label: string; path: string; links
       label: 'Inputs',
       path: '/inputs',
       links: [
-        { to: '/fertilizer', label: 'Fertilizer' },
+        { to: '/fertilizer/plan', label: 'Fertility plan' },
         { to: '/chemicals', label: 'Chemical' },
       ],
     },
@@ -73,7 +74,6 @@ export const FIELD_TABS: { key: FieldSection; label: string; path: string; links
       path: '/irrigation',
       links: [
         { to: '/irrigation', label: 'Soil moisture' },
-        { to: '/turbines', label: 'Turbines' },
         { to: '/irrigation-info', label: 'General info' },
       ],
     },
@@ -82,7 +82,7 @@ export const FIELD_TABS: { key: FieldSection; label: string; path: string; links
       label: 'Soil',
       path: '/soil',
       links: [
-        { to: '/fertilizer', label: 'Fertilizer' },
+        { to: '/fertilizer/soil', label: 'Soil tests' },
       ],
     },
     {
@@ -117,37 +117,30 @@ export const tabFor = (section: FieldSection): FieldSection => (section === 'not
 /**
  * The bar itself.
  *
- * Scrolls sideways rather than wrapping: eight tabs wrap to three rows on a
- * phone, and a field page opened in a truck is mostly opened on a phone.
+ * The shared one-row bar (Sam, 24 Oct 2026: "one row, no scrolling"): eight
+ * tabs on a phone are the first few and a ▾ holding the rest, where it used to
+ * scroll sideways. The section in the URL picks the tab rather than a route
+ * match, because /notes opens on Overview.
  */
 export function FieldTabBar({ fieldId, active }: { fieldId: string; active: FieldSection }) {
+  const base = `/fields/${fieldId}`
+  // A crop-share partner records on the field but does not set it up.
+  const partner = usePartnerView()
+  const tabs = FIELD_TABS.filter((t) => !(partner && t.key === 'settings')).map((t) => ({ to: base + t.path, label: t.label, end: t.path === '' }))
+  const on = FIELD_TABS.find((t) => t.key === tabFor(active))
   return (
-    <div className="-mx-4 mt-3 overflow-x-auto px-4 md:mx-0 md:px-0 print:hidden">
-      <nav className="flex w-max min-w-full gap-1 border-b border-gray-200">
-        {FIELD_TABS.map((t) => (
-          <NavLink
-            key={t.key}
-            to={`/fields/${fieldId}${t.path}`}
-            end={t.path === ''}
-            className={cn(
-              'whitespace-nowrap border-b-2 px-3 py-2 text-sm',
-              t.key === tabFor(active)
-                ? 'border-brand-700 font-semibold text-brand-800'
-                : 'border-transparent text-gray-500 hover:text-gray-800',
-            )}
-          >
-            {t.label}
-          </NavLink>
-        ))}
-      </nav>
-    </div>
+    <nav className="mt-3 print:hidden">
+      <PillNavTabs tabs={tabs} activeTo={on ? base + on.path : undefined} />
+    </nav>
   )
 }
 
 /** "Fertilizer ↗ Chemical ↗" — the same subject for every field. */
 export function FarmWideLinks({ section }: { section: FieldSection }) {
   const links = FIELD_TABS.find((t) => t.key === tabFor(section))?.links ?? []
-  if (!links.length) return null
+  // The whole farm is not a crop-share partner's to open.
+  const partner = usePartnerView()
+  if (!links.length || partner) return null
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5 print:hidden">
       <span className="text-xs text-gray-400">Whole farm:</span>

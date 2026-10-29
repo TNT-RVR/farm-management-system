@@ -1,4 +1,4 @@
-import type { MultiPolygon, Polygon, Position } from 'geojson'
+import type { Geometry, MultiPolygon, Position } from 'geojson'
 import { haversineM } from './measure'
 
 /**
@@ -10,12 +10,17 @@ import { haversineM } from './measure'
  * with a wet thumb.
  */
 
-/** Ray-cast point-in-ring. The ring may or may not repeat its first point. */
-export function pointInRing(p: Position, ring: Position[]): boolean {
+/**
+ * Ray-cast point-in-ring, counting crossings to the east. The ring may or may
+ * not repeat its first point. Longitude/latitude are plain x/y: over a field
+ * that costs nothing. Every point-in-shape test in the app comes through here.
+ */
+export function pointInRing(p: Position, ring: readonly Position[]): boolean {
   let inside = false
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const [xi, yi] = ring[i]
     const [xj, yj] = ring[j]
+    // Strictly one side of the edge, so a vertex is not counted twice.
     const crosses = yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi
     if (crosses) inside = !inside
   }
@@ -23,13 +28,20 @@ export function pointInRing(p: Position, ring: Position[]): boolean {
 }
 
 /** Inside the outer ring and outside every hole. */
-export function pointInPolygon(p: Position, poly: Polygon['coordinates']): boolean {
+export function pointInPolygon(p: Position, poly: readonly (readonly Position[])[]): boolean {
   if (!poly.length || !pointInRing(p, poly[0])) return false
   return !poly.slice(1).some((hole) => pointInRing(p, hole))
 }
 
 export function pointInMultiPolygon(p: Position, mp: MultiPolygon): boolean {
   return mp.coordinates.some((poly) => pointInPolygon(p, poly))
+}
+
+/** In a Polygon or MultiPolygon, holes respected. Any other geometry, or none, is never hit. */
+export function pointInGeometry(p: Position, g: Geometry | null | undefined): boolean {
+  if (g?.type === 'Polygon') return pointInPolygon(p, g.coordinates)
+  if (g?.type === 'MultiPolygon') return pointInMultiPolygon(p, g)
+  return false
 }
 
 export type Located<T> = { item: T; inside: boolean; distanceM: number }

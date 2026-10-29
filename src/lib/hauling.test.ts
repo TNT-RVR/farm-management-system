@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { insertVia, metresBetween, parseLatLng, roadLineUrl, parseSnapTable, planSnapRequests, snapTableUrl, startFor, tripFor, type Place } from './road-routes'
+import { insertVia, locationProblem, metresBetween, parseLatLng, roadLineUrl, parseSnapTable, planSnapRequests, snapTableUrl, startFor, tripFor, type Place } from './road-routes'
 import { FUEL_DEFAULTS, farmAverages, opFuel, tripsFor, type FuelOp } from './fuel'
 import { haulCost, tonnesOf, TRUCK_DEFAULTS } from './trucking'
 import { customCost, fitCustomModel, ownCost, spreadAcresPerHour, tractorFuel, OWN_MANURE_DEFAULTS } from './manure-haul'
@@ -73,6 +73,19 @@ describe('road routes', () => {
     expect(parseLatLng('https://www.google.com/maps/@52.3697,-113.1794,15z')).toEqual({ lat: 52.3697, lng: -113.1794 })
     expect(parseLatLng('52.29, -113.95')).toEqual({ lat: 52.29, lng: -113.95 })
     expect(parseLatLng('somewhere')).toBeNull()
+    // Anywhere on the globe: an Ontario farm, a Kansas one.
+    expect(parseLatLng('43.5448, -80.2482')).toEqual({ lat: 43.5448, lng: -80.2482 })
+    expect(parseLatLng('38.5, -98.0')).toEqual({ lat: 38.5, lng: -98 })
+    expect(parseLatLng('95.1, -80.2')).toBeNull()
+  })
+
+  it('turns away a place too far from the farm to be a slip-free entry', () => {
+    const farm = { lat: 43.55, lng: -80.25 }
+    expect(locationProblem('', farm)).toBeNull()
+    expect(locationProblem('43.70, -79.40', farm)).toBeNull()
+    expect(locationProblem('somewhere', farm)).toMatch(/Not a location/)
+    // The minus sign dropped: the other side of the world.
+    expect(locationProblem('43.70, 79.40', farm)).toMatch(/km from the farm.*minus sign/)
   })
 })
 
@@ -169,9 +182,25 @@ describe('trucking', () => {
 
   it('stops at the yard when the buyer collects, and goes on when it is bin yard then elevator', () => {
     const args = { tonnes: 84, trips: { fieldYard: t(5), fieldSite: t(40), yardSite: t(37) }, siteName: 'Viterra Taber', truck: TRUCK_DEFAULTS, dieselPerL: 1.4, wage: 25 }
-    expect(haulCost({ ...args, mode: 'buyer_pickup' }).legs.map((l) => l.label)).toEqual(['Field → bin yard'])
-    expect(haulCost({ ...args, mode: 'bin_yard_then_elevator' }).legs.map((l) => l.label)).toEqual(['Field → bin yard', 'Bin yard → Viterra Taber'])
+    expect(haulCost({ ...args, mode: 'buyer_pickup' }).legs.map((l) => l.label)).toEqual(['Field → Main yard'])
+    expect(haulCost({ ...args, mode: 'bin_yard_then_elevator' }).legs.map((l) => l.label)).toEqual(['Field → Main yard', 'Main yard → Viterra Taber'])
     expect(haulCost({ ...args, mode: 'direct', siteName: null }).missing).toMatch(/which elevator/)
+  })
+
+  it('unloads at the farm yard the plan picks, and asks for its pin when it has no distance', () => {
+    const args = { tonnes: 84, mode: 'bin_yard' as const, siteName: null, yardName: 'East Ranch Ranch', truck: TRUCK_DEFAULTS, dieselPerL: 1.4, wage: 25 }
+    const c = haulCost({ ...args, trips: { fieldYard: t(12), fieldSite: null, yardSite: null } })
+    expect(c.legs.map((l) => [l.label, l.oneWayKm])).toEqual([['Field → East Ranch Ranch', 12]])
+    const none = haulCost({ ...args, trips: { fieldYard: null, fieldSite: null, yardSite: null } })
+    expect(none.legs).toEqual([])
+    expect(none.missing).toBe('Needs a pin for East Ranch Ranch (Distances)')
+  })
+
+  it('costs nothing when the buyer hauls it off the field', () => {
+    const c = haulCost({ tonnes: 84, mode: 'buyer_from_field', trips: { fieldYard: t(5), fieldSite: t(40), yardSite: t(37) }, siteName: null, truck: TRUCK_DEFAULTS, dieselPerL: 1.4, wage: 25 })
+    expect(c.legs).toEqual([])
+    expect(c.total).toBe(0)
+    expect(c.missing).toBeNull()
   })
 })
 

@@ -6,6 +6,7 @@ import { hasAdminAccess, useAuth, type AppRole } from '@/lib/auth'
 import { NAV_ITEMS, type NavItem } from '@/lib/nav'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * Who can open which section (Settings → Access). Stored as
@@ -217,9 +218,9 @@ export function AccessMatrix() {
 
           <div className="inline-block max-w-full overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm" onMouseLeave={() => setHover({ row: null, col: null })}>
             <table className="text-sm">
-              <thead className="sticky top-0 z-20">
-                <tr className="border-b border-gray-200 bg-white">
-                  <th className="sticky left-0 z-30 min-w-56 border-r border-gray-100 bg-white px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Section</th>
+              <thead className={cn(TABLE_HEAD, 'sticky top-0 z-20')}>
+                <tr>
+                  <th className="sticky left-0 z-30 min-w-56 border-r border-brand-800 bg-brand-700 px-3 py-3 text-left font-semibold">Section</th>
                   {people.map((u, i) => {
                     const c = colour(i)
                     const hidden = ALL_PATHS.filter((p) => denied(u).has(p)).length
@@ -232,12 +233,12 @@ export function AccessMatrix() {
                       >
                         <div className="flex flex-col items-center gap-1">
                           <span className={cn('flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm', c.badge)}>{initials(u.full_name)}</span>
-                          <span className="whitespace-nowrap text-xs font-semibold text-gray-900">{u.full_name}</span>
+                          <span className="whitespace-nowrap text-xs font-semibold text-white">{u.full_name}</span>
                           <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-medium capitalize', c.soft, c.text)}>{u.role}</span>
-                          <span className="h-1 w-16 overflow-hidden rounded-full bg-gray-200" title={`${open} of ${ALL_PATHS.length} sections open`}>
+                          <span className="h-1 w-16 overflow-hidden rounded-full bg-brand-900" title={`${open} of ${ALL_PATHS.length} sections open`}>
                             <span className={cn('block h-full', c.bar)} style={{ width: `${(open / ALL_PATHS.length) * 100}%` }} />
                           </span>
-                          <span className="text-[10px] tabular-nums text-gray-500">
+                          <span className="text-[10px] tabular-nums text-brand-200">
                             {open} of {ALL_PATHS.length}
                           </span>
                           {isAdmin && hidden > 0 && (

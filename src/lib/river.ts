@@ -10,6 +10,15 @@ export type RiverRanch = (typeof RIVER_RANCHES)[number]
 export const RIVER_TABS = [...RIVER_RANCHES, 'Map'] as const
 export type RiverTab = (typeof RIVER_TABS)[number]
 
+/** A River tab as it is written in the address: `/river?tab=home-ranch|east-ranch|map`. */
+export const riverTabKey = (t: RiverTab) => t.toLowerCase().replace(/ /g, '-')
+
+/** The River tab a `?tab=` names (the slug, or the ranch's name in any case), or null. */
+export function riverTabFromKey(asked: string | null | undefined): RiverTab | null {
+  const a = (asked ?? '').trim().toLowerCase().replace(/[\s_]+/g, '-')
+  return RIVER_TABS.find((t) => riverTabKey(t) === a) ?? null
+}
+
 export type StationDef = {
   key: 'dam' | 'leth' | 'mouth'
   station: string

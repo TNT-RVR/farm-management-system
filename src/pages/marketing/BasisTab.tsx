@@ -16,6 +16,8 @@ import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { fmtMoney } from '@/lib/applied'
 import { HelpNote } from '@/components/HelpNote'
 import { cn } from '@/lib/utils'
+import { askConfirm } from '@/components/askConfirm'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * The gap between what a buyer offers and what the board says.
@@ -91,7 +93,7 @@ export function BasisTab() {
       ) : (
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
           <table className="w-full text-sm">
-            <thead className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="px-3 py-2 font-medium">Date</th>
                 <th className="px-3 py-2 font-medium">Crop</th>
@@ -161,8 +163,8 @@ export function BasisTab() {
                     {isManager && (
                       <td className="px-3 py-2 text-right">
                         <button
-                          onClick={() => {
-                            if (confirm(`Delete the ${b.bid_on} bid from ${b.buyer}?`)) del.mutate(b.id)
+                          onClick={async () => {
+                            if (await askConfirm(`Delete the ${b.bid_on} bid from ${b.buyer}?`)) del.mutate(b.id)
                           }}
                           title="Delete this bid"
                           className="text-gray-300 hover:text-red-600"
@@ -370,8 +372,8 @@ function AddBidDialog({
             <button
               type="button"
               disabled={busy}
-              onClick={() => {
-                if (confirm('Delete this bid?')) onDelete()
+              onClick={async () => {
+                if (await askConfirm('Delete this bid?')) onDelete()
               }}
               className="mr-auto flex items-center gap-1 rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
             >

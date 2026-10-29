@@ -145,11 +145,11 @@ describe('averageReading', () => {
 })
 
 describe('gradeFor', () => {
-  const wheat: MoistureBands = { dry_max: 14.5, tough_max: 17.0, damp_max: null, moist_max: null }
-  const corn: MoistureBands = { dry_max: 15.5, tough_max: 17.5, damp_max: 21.0, moist_max: 25.0 }
+  const wheat: MoistureBands = { dry_max: 14.5, tough_max: 17.0}
+  const corn: MoistureBands = { dry_max: 15.5, tough_max: 17.5}
   // The CGC gives beans no tough range at all: dry to 18.0, damp over 18.0.
-  const beans: MoistureBands = { dry_max: 18.0, tough_max: 18.0, damp_max: null, moist_max: null }
-  const none: MoistureBands = { dry_max: null, tough_max: null, damp_max: null, moist_max: null }
+  const beans: MoistureBands = { dry_max: 18.0, tough_max: 18.0}
+  const none: MoistureBands = { dry_max: null, tough_max: null}
 
   it('grades against the recorded bands', () => {
     expect(gradeFor(wheat, 14.5)).toBe('dry')
@@ -158,16 +158,16 @@ describe('gradeFor', () => {
   })
 
   it('folds everything above the last band into the one after it', () => {
-    // Wheat has no moist or wet: over 17.0 is damp and that is the end of it.
-    expect(gradeFor(wheat, 17.1)).toBe('damp')
-    expect(gradeFor(wheat, 30)).toBe('damp')
+    // Dry, tough, and wet over that: there is no damp or moist any more.
+    expect(gradeFor(wheat, 17.1)).toBe('wet')
+    expect(gradeFor(wheat, 30)).toBe('wet')
     expect(gradeFor(corn, 25.1)).toBe('wet')
   })
 
   it('skips a band the crop does not have', () => {
     expect(gradeFor(beans, 18.0)).toBe('dry')
-    expect(gradeFor(beans, 18.1)).toBe('damp')
-    expect(GRADES.indexOf('damp')).toBe(2)
+    expect(gradeFor(beans, 18.1)).toBe('wet')
+    expect(GRADES).toEqual(['dry', 'tough', 'wet'])
   })
 
   it('has no opinion about a crop with no bands', () => {
@@ -184,22 +184,22 @@ describe('gradeFor', () => {
 
 describe('bandRanges', () => {
   it('writes the bands the way the CGC writes them', () => {
-    expect(bandRanges({ dry_max: 14.5, tough_max: 17.0, damp_max: null, moist_max: null })).toEqual([
+    expect(bandRanges({ dry_max: 14.5, tough_max: 17.0 })).toEqual([
       { grade: 'dry', range: 'up to 14.5' },
       { grade: 'tough', range: '14.6 to 17.0' },
-      { grade: 'damp', range: 'over 17.0' },
+      { grade: 'wet', range: 'over 17.0' },
     ])
   })
 
   it('does not print a band that does not exist', () => {
-    expect(bandRanges({ dry_max: 18.0, tough_max: 18.0, damp_max: null, moist_max: null })).toEqual([
+    expect(bandRanges({ dry_max: 18.0, tough_max: 18.0 })).toEqual([
       { grade: 'dry', range: 'up to 18.0' },
-      { grade: 'damp', range: 'over 18.0' },
+      { grade: 'wet', range: 'over 18.0' },
     ])
   })
 
   it('says nothing about a crop with no bands', () => {
-    expect(bandRanges({ dry_max: null, tough_max: null, damp_max: null, moist_max: null })).toEqual(
+    expect(bandRanges({ dry_max: null, tough_max: null })).toEqual(
       [],
     )
   })
@@ -212,8 +212,6 @@ describe('a floor under dry: beans', () => {
     dry_min: 14.0,
     dry_max: 15.5,
     tough_max: 16.0,
-    damp_max: null,
-    moist_max: null,
     tough_advice: 'Not for our bins — fine if it goes straight to the bean plant.',
   }
 
@@ -223,7 +221,7 @@ describe('a floor under dry: beans', () => {
     expect(gradeFor(beans, 15.5)).toBe('dry')
     expect(gradeFor(beans, 15.6)).toBe('tough')
     expect(gradeFor(beans, 16.0)).toBe('tough')
-    expect(gradeFor(beans, 16.1)).toBe('damp')
+    expect(gradeFor(beans, 16.1)).toBe('wet')
     expect(needsAir('too_dry')).toBe(false)
   })
 
@@ -238,7 +236,7 @@ describe('a floor under dry: beans', () => {
       { grade: 'too_dry', range: 'below 14.0' },
       { grade: 'dry', range: '14.0 to 15.5' },
       { grade: 'tough', range: '15.6 to 16.0' },
-      { grade: 'damp', range: 'over 16.0' },
+      { grade: 'wet', range: 'over 16.0' },
     ])
   })
 })

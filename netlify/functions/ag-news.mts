@@ -1,7 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
 import { runAgNewsPull } from '../shared/ag-news-core.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 // The same pull, on demand — for the Refresh button and for testing, because a
 // weekly schedule is a slow way to find out whether a feed has started
@@ -18,7 +18,7 @@ export default async (req: Request) => {
   const auth = req.headers.get('authorization') ?? ''
   if (!auth.startsWith('Bearer ')) return new Response('Unauthorized', { status: 401 })
 
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
   // The caller's own token decides whether they may do this at all.
   const { data: who } = await getUserMfa(sb, auth.slice('Bearer '.length))
   if (!who?.user) return new Response('Unauthorized', { status: 401 })

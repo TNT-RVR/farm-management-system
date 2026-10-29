@@ -7,6 +7,8 @@ import { byCrop, COST_KINDS, useCropBooks, type CropBooks } from './crop-books'
 import { inCropUnit, type CropLite } from './marketing-position'
 import { useReportBooks } from './books'
 import { partTotal, qbInput, type BooksLine, type QbInput } from './books-statement-a'
+import { useFiscalEndMonth } from '@/lib/farm-setup'
+import { cropYearOfFiscal, fiscalYearEnding } from '@/lib/fiscal-year'
 
 /**
  * The AgriStability year-end package: what the farm's accountant needs from
@@ -23,7 +25,7 @@ import { partTotal, qbInput, type BooksLine, type QbInput } from './books-statem
  * them; the accountant splits them from the books.
  *
  * Grain on hand is the bins' ledger (grain_movements, counted the way the
- * bin_grain_onhand view counts it) up to 31 December, or today while the year
+ * bin_grain_onhand view counts it) up to the fiscal year-end, or today while the year
  * is still running.
  *
  * With QuickBooks connected (owners and the accountant), income and expenses
@@ -45,7 +47,7 @@ export const AGRI_COLUMNS: ReportColumn[] = [
 
 export type Movement = { bin_id: string | null; crop_id: string | null; movement_type: string; bushels: unknown; moved_at: string }
 
-const INTO_BIN = new Set(['harvest_in', 'transfer_in', 'adjustment'])
+const INTO_BIN = new Set(['harvest_in', 'transfer_in', 'purchase_in', 'carryover_in', 'adjustment'])
 
 /** Bushels in each bin of each crop at the end of a day: the bin_grain_onhand view's sum, cut off at the date. */
 export function onHandAt(moves: Movement[], asAt: string): { binId: string; cropId: string; bushels: number }[] {
@@ -61,6 +63,14 @@ export function onHandAt(moves: Movement[], asAt: string): { binId: string; crop
 
 export type YearEnd = {
   asAt: string
+  /**
+   * The program year: the fiscal year ending in it (Farm setup's year-end).
+   * With a March year-end, program year 2026 is April 2025 to March 2026,
+   * the 2025 crop. Absent, the calendar year (as before 26 Oct 2026).
+   */
+  programYear?: number
+  /** Its first and last day, and the day before it starts (the opening inventory). */
+  period?: ProgramPeriod
   moves: Movement[]
   bins: { id: string; name: string; site: string | null }[]
   /** Bins marked full with no bushels recorded (bin_contents_current). */
@@ -85,6 +95,20 @@ export type YearEnd = {
 
 export type Sale = { animal_class: string | null; head: unknown; total_price: unknown; avg_weight_lb?: unknown; sale_date?: string | null; delivery_date?: string | null; crop_year?: number | null }
 
+export type ProgramPeriod = { start: string; end: string; label: string; openOn: string }
+
+/** The program year and its dates; the calendar year when the read carries none. */
+export function periodOf(ye: Pick<YearEnd, 'programYear' | 'period'>, fallbackYear: number): ProgramPeriod & { year: number } {
+  const year = ye.programYear ?? fallbackYear
+  return ye.period ? { year, ...ye.period } : { year, start: `${year}-01-01`, end: `${year}-12-31`, label: String(year), openOn: `${year - 1}-12-31` }
+}
+
+/** The program year's period from the year-end month: its dates and the day before it begins. */
+export function programPeriod(programYear: number, endMonth: number): ProgramPeriod {
+  const fy = fiscalYearEnding(programYear, endMonth)
+  return { start: fy.start, end: fy.end, label: fy.label, openOn: fiscalYearEnding(programYear - 1, endMonth).end }
+}
+
 /** The day a sale counts on for the tax year: delivered, else sold. */
 export const saleDay = (s: Sale) => s.delivery_date ?? s.sale_date ?? null
 
@@ -93,6 +117,14 @@ export function salesInCalendarYear(sales: Sale[], year: number): Sale[] {
   return sales.filter((s) => {
     const d = saleDay(s)
     return d ? d.slice(0, 4) === String(year) : s.crop_year === year
+  })
+}
+
+/** The sales that fall in a period: by their day, or by their crop year when they have none. */
+export function salesInPeriod(sales: Sale[], p: { start: string; end: string }, cropYear: number): Sale[] {
+  return sales.filter((s) => {
+    const d = saleDay(s)
+    return d ? d.slice(0, 10) >= p.start && d.slice(0, 10) <= p.end : s.crop_year === cropYear
   })
 }
 
@@ -222,7 +254,7 @@ export function agriGroups(books: CropBooks, ye: YearEnd, currentYear: number, q
   const herd = ye.herd.filter((h) => h.head_count > 0)
   groups.push({
     title: 'Cattle on hand',
-    note: 'The herd counts as last entered — not a count taken on 31 December.',
+    note: 'The herd counts as last entered — not a count taken at the year-end.',
     rows: herd.map((h) => [h.class_name, h.ranch, h.head_count, 'head', null, null, `Average ${Math.round(num(h.avg_weight_lb) ?? 0)} lb${h.updated_at ? `, counted ${longDate(h.updated_at)}` : ''}. Value at the program’s price.`]),
     totals: herd.length ? ['Cattle', null, herd.reduce((s, h) => s + h.head_count, 0), 'head', null, null, null] : undefined,
   })
@@ -245,14 +277,15 @@ export const NOT_IN_THE_APP = [
   'Grain and cattle sale cheques and settlements (the income above is the crop at its yield and price, not money received).',
   'Input invoices paid or unpaid (the app prices what was applied, not what was billed or owed).',
   'Fertilizer, chemical, seed and feed on hand at year end.',
-  'Cattle values, and a herd count taken on 31 December.',
+  'Cattle values, and a herd count taken at the year-end.',
   'Deferred grain tickets, cash advances, and receivables and payables other than rent.',
   'AgriStability’s own inventory prices.',
 ]
 
 export function agriStabilityReport(books: CropBooks, ye: YearEnd, today: string, qb?: QbInput): ReportData {
   const fromBooks = qb?.ok ? qb : null
-  if (!books.rows.length && !ye.sales.length && !fromBooks) throw new Error(`Nothing is planned, applied or sold for ${books.year} yet.`)
+  const program = periodOf(ye, books.year).year
+  if (!books.rows.length && !ye.sales.length && !fromBooks) throw new Error(`Nothing is planned, applied or sold for ${program} yet.`)
   const groups = agriGroups(books, ye, Number(today.slice(0, 4)), qb)
   const amount = (title: string) => Number(groups.find((g) => g.title.startsWith(title))?.totals?.[5] ?? 0)
   const dollars = (v: number) => `$${Math.round(v).toLocaleString('en-CA')}`
@@ -269,7 +302,7 @@ export function agriStabilityReport(books: CropBooks, ye: YearEnd, today: string
       ]
   return {
     title: 'AgriStability year-end package',
-    subtitle: `Program year ${books.year}${fromBooks ? ` (fiscal ${fromBooks.fyLabel})` : ''} · made ${longDate(today)}`,
+    subtitle: `Program year ${program}${fromBooks ? ` (fiscal ${fromBooks.fyLabel})` : ''} · made ${longDate(today)}`,
     meta: [...money, ['Grain on hand', dollars(amount('Grain on hand'))], ['Inventory date', longDate(ye.asAt)]],
     summary: [
       fromBooks
@@ -281,14 +314,15 @@ export function agriStabilityReport(books: CropBooks, ye: YearEnd, today: string
     columns: AGRI_COLUMNS,
     groups,
     groupLabel: 'Section',
-    filename: `AgriStability ${books.year}`,
+    filename: `AgriStability ${program}`,
   }
 }
 
 /* ── Reading it ─────────────────────────────────────────────────────────── */
 
-async function fetchYearEnd(year: number, asAt: string): Promise<YearEnd> {
-  const inYear = (col: string) => `and(${col}.gte.${year}-01-01,${col}.lte.${year}-12-31)`
+async function fetchYearEnd(programYear: number, cropYear: number, period: ProgramPeriod, asAt: string): Promise<YearEnd> {
+  const year = cropYear
+  const inYear = (col: string) => `and(${col}.gte.${period.start},${col}.lte.${period.end})`
   const [moves, bins, contents, crops, prices, board, herd, ranches, sales, payments, leases, pivots] = await Promise.all([
     fetchAll<Movement>((a, b) => supabase.from('grain_movements').select('bin_id, crop_id, movement_type, bushels, moved_at').lte('moved_at', asAt).order('id').range(a, b)),
     supabase.from('bins').select('id, name, site'),
@@ -298,12 +332,12 @@ async function fetchYearEnd(year: number, asAt: string): Promise<YearEnd> {
     fetchLatestCropPrices(),
     supabase.from('herd_counts').select('ranch_id, class_name, feed_class, head_count, avg_weight_lb, updated_at, sort_order').order('sort_order'),
     supabase.from('ranches').select('id, name'),
-    // The crop year's sales (the worksheet) and the calendar year's (the form) in one read.
+    // The crop year's sales (the worksheet) and the program year's (the form) in one read.
     supabase
       .from('cattle_sales')
       .select('animal_class, head, total_price, avg_weight_lb, sale_date, delivery_date, crop_year')
       .or(`crop_year.eq.${year},${inYear('delivery_date')},${inYear('sale_date')}`),
-    supabase.from('land_lease_payments').select('lease_id, due_on, amount, paid_on').gte('due_on', `${year}-01-01`).lte('due_on', `${year}-12-31`),
+    supabase.from('land_lease_payments').select('lease_id, due_on, amount, paid_on').gte('due_on', period.start).lte('due_on', period.end),
     supabase.from('land_leases').select('id, landlord, direction'),
     fetchAll<{ field_id: string }>((a, b) => supabase.from('field_pivots').select('field_id').eq('not_used', false).order('id').range(a, b)),
   ])
@@ -313,6 +347,8 @@ async function fetchYearEnd(year: number, asAt: string): Promise<YearEnd> {
   const lease = new Map((leases.data ?? []).map((l) => [l.id, l]))
   return {
     asAt,
+    programYear,
+    period,
     moves,
     bins: (bins.data ?? []) as YearEnd['bins'],
     unmeasured: (contents.data ?? []).filter((c) => c.bushels == null && (!c.filled_on || c.filled_on <= asAt)) as YearEnd['unmeasured'],
@@ -321,7 +357,7 @@ async function fetchYearEnd(year: number, asAt: string): Promise<YearEnd> {
     board: board.byCrop,
     herd: (herd.data ?? []).map((h) => ({ ...h, ranch: (h.ranch_id && ranchName.get(h.ranch_id)) || '' })),
     sales: allSales.filter((x) => x.crop_year === year),
-    salesInYear: salesInCalendarYear(allSales, year),
+    salesInYear: salesInPeriod(allSales, period, year),
     irrigated: new Set(pivots.map((p) => p.field_id)),
     unpaid: (payments.data ?? [])
       .filter((p) => !p.paid_on || p.paid_on > asAt)
@@ -335,14 +371,22 @@ async function fetchYearEnd(year: number, asAt: string): Promise<YearEnd> {
  * form (agristability-form.ts) both build from this one read.
  */
 export function useAgriStabilityData(year: number, today: string) {
-  const books = useCropBooks(year)
-  // The program year is the fiscal year ending in it: crop year `year`.
-  const qb = useReportBooks(year)
-  const asAt = `${year}-12-31` < today ? `${year}-12-31` : today
-  // v2: the read carries calendar-year sales, feed classes and pivots.
-  const yearEnd = useQuery({ queryKey: ['report', 'agristability', 'v2', year, asAt], queryFn: () => fetchYearEnd(year, asAt) })
+  // The program year is the fiscal year ending in it (AgriStability's own
+  // rule), on Farm setup's year-end; its crop is the one grown inside it.
+  const endMonth = useFiscalEndMonth()
+  const period = endMonth == null ? null : programPeriod(year, endMonth)
+  const cropYear = endMonth == null ? year : cropYearOfFiscal(year, endMonth)
+  const books = useCropBooks(cropYear)
+  const qb = useReportBooks(period ?? undefined)
+  const asAt = period ? (period.end < today ? period.end : today) : null
+  // v3: the read follows the farm's fiscal year, not the calendar.
+  const yearEnd = useQuery({
+    queryKey: ['report', 'agristability', 'v3', year, cropYear, period?.start, asAt],
+    enabled: period != null && asAt != null,
+    queryFn: () => fetchYearEnd(year, cropYear, period!, asAt!),
+  })
   return {
-    ready: books.ready && !!yearEnd.data && qb.ready,
+    ready: endMonth != null && books.ready && !!yearEnd.data && qb.ready,
     error: books.error ?? ((yearEnd.error as Error | null) ?? null),
     books: books.build,
     yearEnd: yearEnd.data,

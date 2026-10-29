@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import { farmDistrict, farmTz } from '@/lib/farm-context'
+import { farmDistrict, farmRiver, farmTz } from '@/lib/farm-context'
 import { GUIDELINES, IRRIGATION_MONTHS, SEASON_MM, USE_LABEL, bandsFor, concernsFrom, fmtWq, testedClear, type Concern, type SummaryRow } from '@/lib/water-concerns'
 import { soToLbSPerInch } from '@/lib/water-quality'
 import { fetchAll, num, type Cell, type GatherContext, type ParamValues, type ReportData, type ReportGroup } from './framework'
@@ -139,12 +139,14 @@ export function waterQualityGroups(o: {
   samples: WqSampleRow[]
   stations: WqStationRow[]
   district: string
+  /** The river pumped from; generic when not given. */
+  river?: string
   tz: string
 }): { groups: ReportGroup[]; over: number; found: number } {
   const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('en-CA', { timeZone: o.tz }) : null)
   const summary = summariseSamples(o.samples, o.tz)
   const name = new Map(o.stations.map((s) => [s.station_id, s.name]))
-  const label = (src: string) => ({ smrid: `${o.district} canal`, oldman: 'Oldman River' })[src] ?? src
+  const label = (src: string) => ({ smrid: `${o.district} canal`, oldman: o.river ?? 'River' })[src] ?? src
   const sources = [...new Set(o.stations.filter((s) => s.water_source).map((s) => s.water_source as string))].sort()
   let over = 0
   let found = 0
@@ -194,7 +196,7 @@ export async function gatherWaterQuality(p: ParamValues, ctx: GatherContext): Pr
   const onSource = new Set(stations.filter((s) => s.water_source).map((s) => s.station_id))
   const ours = samples.filter((s) => onSource.has(s.station_id))
   if (!ours.length) throw new Error(`No water samples since ${since} at a station linked to a water source.`)
-  const r = waterQualityGroups({ samples: ours, stations, district: farmDistrict(), tz: farmTz() })
+  const r = waterQualityGroups({ samples: ours, stations, district: farmDistrict(), river: farmRiver(), tz: farmTz() })
   const first = ours.reduce((m, s) => (s.sampled_at < m ? s.sampled_at : m), ours[0].sampled_at).slice(0, 10)
   const last = ours.reduce((m, s) => (s.sampled_at > m ? s.sampled_at : m), ours[0].sampled_at).slice(0, 10)
   const off = stations.filter((s) => !s.water_source).map((s) => s.name)

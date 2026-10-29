@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Usb } from 'lucide-react'
 import { CopyPrompt } from '@/pages/settings/CustomizingGuide'
 import { DISPLAY_BRANDS, monitorExporterPrompt } from '@/lib/combine-monitor-guide'
+import { CARD_HEAD } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 /**
  * Combines → Monitor files in the public copy (PUBLIC_COPY): the exporter was
@@ -18,10 +20,11 @@ export function MonitorSetupGuide() {
 
   const input = 'mt-1 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm font-normal focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
   return (
-    <section className="max-w-2xl rounded-lg border border-gray-200 bg-white p-4">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-        <Usb className="h-4 w-4 text-brand-700" /> Field boundaries for your combine’s display
+    <section className="overflow-hidden max-w-2xl rounded-lg border border-gray-200 bg-white">
+      <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <Usb className="h-4 w-4 text-white" /> Field boundaries for your combine’s display
       </h2>
+      <div className="p-4">
       <p className="mt-1 text-sm text-gray-600">
         Each make of combine display takes its own files, so this is set up for your combine first. Fill in what you know and give the prompt to your AI assistant.
       </p>
@@ -53,6 +56,8 @@ export function MonitorSetupGuide() {
       </div>
 
       <CopyPrompt text={monitorExporterPrompt({ brand, model, display, version })} />
+
+      </div>
     </section>
   )
 }

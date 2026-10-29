@@ -62,7 +62,7 @@ export default defineConfig({
         // The spreadsheet and PDF writers load only when somebody exports, and an
         // export needs the network for its data anyway — 1.3 MB not worth
         // putting on every phone up front.
-        globIgnores: ['**/exceljs*.js', '**/jspdf*.js', '**/html2canvas*.js', '**/purify*.js'],
+        globIgnores: ['**/exceljs*.js', '**/jspdf*.js', '**/html2canvas*.js', '**/purify*.js', '**/pdf-lib*.js'],
         // The app ships as one chunk and crossed Workbox's 2 MiB default in Aug
         // 2026. Precaching it whole is the point — the phone needs the app to
         // open in a field with no signal — so the cap moves rather than the
@@ -109,5 +109,27 @@ export default defineConfig({
   },
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
+  },
+  build: {
+    rolldownOptions: {
+      output: {
+        // The libraries every screen runs on, in chunks of their own: they change
+        // a few times a year, the app most days, so a deploy no longer makes
+        // every phone download React again with the app code it was bundled
+        // into. (Vite 8's rolldown calls manualChunks codeSplitting.groups. The
+        // service worker is built separately by vite-plugin-pwa with
+        // configFile: false, so this does not reach it.)
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/ },
+            { name: 'tanstack', test: /[\\/]node_modules[\\/]@tanstack[\\/]/ },
+            // Named so the service worker can leave it out of the precache: it
+            // loads only when somebody fills an AFSC form, and unnamed its chunk
+            // is called after pdf-lib's ESM entry ('es') and cannot be matched.
+            { name: 'pdf-lib', test: /[\\/]node_modules[\\/]pdf-lib[\\/]/ },
+          ],
+        },
+      },
+    },
   },
 })

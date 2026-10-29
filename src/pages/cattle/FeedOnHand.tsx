@@ -27,6 +27,7 @@ import { useFeedTests } from '@/lib/winter-feeding'
 import { BALE_TYPES, isWeightEstimate, lotLbPerBale, ordinal } from '@/lib/baling'
 import { Num } from '@/pages/cattle/feed/bits'
 import { cn } from '@/lib/utils'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 const KINDS: FeedInventoryKind[] = [
   'harvested',
@@ -179,16 +180,16 @@ export function FeedOnHandPanel({
   if (isLoading) return <p className="text-sm text-gray-400">Loading feed…</p>
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 px-3 py-2">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
-          <Wheat className="h-4 w-4 text-gray-400" /> Feed left
-          {ranchName && <span className="font-normal text-gray-400">· {ranchName}</span>}
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div className={cn('flex flex-wrap items-center justify-between gap-2', CARD_HEAD)}>
+        <h3 className="flex items-center gap-1.5 font-medium">
+          <Wheat className="h-4 w-4 text-brand-100" /> Feed left
+          {ranchName && <span className="font-normal text-brand-100">· {ranchName}</span>}
         </h3>
         {canEdit && ranchId && !adding && (
           <button
             onClick={() => setAdding(true)}
-            className="flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            className="flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-50"
           >
             <Plus className="h-3.5 w-3.5" /> Feed put up
           </button>
@@ -313,7 +314,7 @@ export function FeedOnHandPanel({
         </p>
       ) : (
         <table className="w-full text-sm">
-          <thead className="border-b border-gray-200 text-left text-[10px] uppercase tracking-wide text-gray-400">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th className="px-3 py-1.5 font-medium">Feed</th>
               <th className="px-3 py-1.5 text-right font-medium" title="Put up, minus what the feed sheets say was fed.">
@@ -487,7 +488,7 @@ export function FeedOnHandPanel({
         summary={
           <>
             Will it last to turnout?{' '}
-            <Link to="/feed" className="font-medium text-brand-700 hover:underline">
+            <Link to="/feed?tab=plan" className="font-medium text-brand-700 hover:underline">
               See the Feed tab
             </Link>
           </>

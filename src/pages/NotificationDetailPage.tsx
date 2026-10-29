@@ -14,6 +14,7 @@ import { BUILD_SHA, BUILD_TIME } from '@/lib/buildInfo'
 import { cn } from '@/lib/utils'
 import { hasAdminAccess, useAuth } from '@/lib/auth'
 import { TechnicalDetails } from '@/components/TechnicalDetails'
+import { CARD_HEAD } from '@/lib/table-style'
 
 /** The integration_health row a feed alert is about, matched by label in the title. */
 function useFeedState(kind: string | undefined, title: string | undefined) {
@@ -145,8 +146,9 @@ export function NotificationDetailPage() {
       </div>
 
       {digestItems ? (
-        <section className="rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="text-sm font-semibold text-gray-800">In this digest</h2>
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <h2 className={cn('font-medium', CARD_HEAD)}>In this digest</h2>
+          <div className="p-4">
           <ul className="mt-2 divide-y divide-gray-100">
             {digestItems.map((it) => (
               <li key={it.id}>
@@ -158,17 +160,23 @@ export function NotificationDetailPage() {
               </li>
             ))}
           </ul>
+
+          </div>
         </section>
       ) : (
-        <section className="rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="text-sm font-semibold text-gray-800">What this means</h2>
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <h2 className={cn('font-medium', CARD_HEAD)}>What this means</h2>
+          <div className="p-4">
           <p className="mt-1 text-sm text-gray-700">{guide.meaning}</p>
+
+          </div>
         </section>
       )}
 
       {findings.length > 0 && (
-        <section className="rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="text-sm font-semibold text-gray-800">What changed</h2>
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <h2 className={cn('font-medium', CARD_HEAD)}>What changed</h2>
+          <div className="p-4">
           <div className="mt-2 space-y-3">
             {findings.map((f, i) => (
               <div key={i} className="text-sm">
@@ -207,12 +215,15 @@ export function NotificationDetailPage() {
               </div>
             ))}
           </div>
+
+          </div>
         </section>
       )}
 
       {feed && (
-        <section className="rounded-lg border border-gray-200 bg-white p-4 text-sm">
-          <h2 className="text-sm font-semibold text-gray-800">The feed right now</h2>
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white text-sm">
+          <h2 className={cn('font-medium', CARD_HEAD)}>The feed right now</h2>
+          <div className="p-4">
           <p className="mt-1 text-gray-700">
             <b>{feed.label}</b>: {feed.status}
             {feed.detail ? ` — ${feed.detail}` : ''}
@@ -221,32 +232,40 @@ export function NotificationDetailPage() {
             Last worked {feed.last_success_at ? new Date(feed.last_success_at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }) : 'never'} ·
             checked {feed.last_checked_at ? new Date(feed.last_checked_at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
           </p>
+
+          </div>
         </section>
       )}
 
       {!digestItems && guide.steps.length > 0 && (
-        <section className="rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
-            <ListChecks className="h-4 w-4 text-brand-700" /> What to do
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+            <ListChecks className="h-4 w-4 text-white" /> What to do
           </h2>
+          <div className="p-4">
           <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-gray-700">
             {guide.steps.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
           </ol>
+
+          </div>
         </section>
       )}
 
       {!digestItems && guide.checks.length > 0 && (
-        <section className="rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
-            <Search className="h-4 w-4 text-gray-500" /> Things to check
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+            <Search className="h-4 w-4 text-brand-100" /> Things to check
           </h2>
+          <div className="p-4">
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700">
             {guide.checks.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
           </ul>
+
+          </div>
         </section>
       )}
 

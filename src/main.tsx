@@ -7,8 +7,7 @@ import App from './App'
 import { AuthProvider } from '@/lib/auth'
 import { CropYearProvider } from '@/lib/crop-year'
 import { installAppUpdateHandling } from '@/lib/appUpdate'
-import { installFieldWorkOutbox } from '@/lib/field-work-data'
-import { OFFLINE_MAX_AGE, idbPersister, shouldPersistQuery } from '@/lib/offline'
+import { OFFLINE_MAX_AGE, UNKEPT_GC_MS, UNKEPT_HEADS, idbPersister, shouldPersistQuery } from '@/lib/offline'
 import './index.css'
 import { installIssueReporting } from './lib/app-issues'
 
@@ -50,6 +49,10 @@ const queryClient = new QueryClient({
   },
 })
 
+// Live readings and typed searches are never saved to the phone, so they need
+// not sit in memory for the week the saved ones do (lib/offline.ts).
+for (const head of UNKEPT_HEADS) queryClient.setQueryDefaults([head], { gcTime: UNKEPT_GC_MS })
+
 if (import.meta.env.DEV) {
   // Debug handle for driving/inspecting queries from the console
   ;(window as unknown as Record<string, unknown>).__qc = queryClient
@@ -61,7 +64,8 @@ installAppUpdateHandling()
 // Errors nothing caught go to app_issues, for Claude to fix (lib/app-issues.ts).
 installIssueReporting()
 // Field work saved with no signal goes when the signal comes back (lib/field-work-data.ts).
-installFieldWorkOutbox(queryClient)
+// Loaded on its own rather than in the entry chunk: the screens that queue a save import it too.
+void import('@/lib/field-work-data').then((m) => m.installFieldWorkOutbox(queryClient))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -76,6 +80,10 @@ createRoot(document.getElementById('root')!).render(
         buster: 'v1',
         dehydrateOptions: { shouldDehydrateQuery: shouldPersistQuery },
       }}
+      // ['fields'] is read off ['fields', 'all'] now; an older build's copy
+      // would sit in the saved cache for good with nothing reading it. Nothing
+      // else changed shape, so the buster stays and phones keep their cache.
+      onSuccess={() => queryClient.removeQueries({ queryKey: ['fields'], exact: true })}
     >
       <AuthProvider>
         <CropYearProvider>

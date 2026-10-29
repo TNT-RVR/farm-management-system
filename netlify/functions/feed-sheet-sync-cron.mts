@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js'
 import {
   ensureTabs,
   feedRecordsToRows,
@@ -8,6 +7,7 @@ import {
   type SheetRecord,
 } from '../shared/feed-sheet.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 // Mirrors the cattle feed records into a Google Sheet.
 //
@@ -36,7 +36,7 @@ export default async () => {
   // Named individually. "Not configured" tells whoever reads the failure
   // nothing, and this job is meant to be set up by somebody who has not seen
   // this file.
-  const sbEarly = createClient(url, serviceKey)
+  const sbEarly = admin()
 
   // The private key is NOT an environment variable. With it set, Netlify's
   // builders fail `npm run build` with exit 2 on a commit that builds green
@@ -70,7 +70,7 @@ export default async () => {
     return new Response(detail, { status: 200 })
   }
 
-  const sb = createClient(url, serviceKey)
+  const sb = admin()
   const { data, error } = await sb
     .from('feed_records')
     .select(

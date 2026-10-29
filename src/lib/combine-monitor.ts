@@ -2,7 +2,6 @@
 import { writePolygonShapefile, writePolylineShapefile, zipStore, type DbfField } from './geo/shp-write'
 import { LINE_TYPE_LABELS, MAY_NOT_IMPORT, exportParts, lineDisplayName, type LineType } from './guidance-lines'
 import { MONITOR_NAME_MAX } from './monitor-limits'
-import { taskDataXml } from './combine-isoxml'
 
 /**
  * Files for the combine display (a CNH IntelliView IV; Sam's photos, 16 Oct
@@ -34,14 +33,10 @@ export { MONITOR_NAME_MAX }
 /** The folder the display's Import2 looks for at the root of the stick. */
 export const SHAPEFILE_FOLDER = 'Shapefile'
 
-/** The ISOXML folder: the standard place a display looks for TASKDATA.XML, at the top of the stick. */
-export const TASKDATA_FOLDER = 'TASKDATA'
-
 export const LOAD_STEPS: string[] = [
   'Back up the stick to a computer first. It holds the season’s yield data.',
   'Copy the Shapefile folder to the stick’s root, next to the .CN1 folder. Don’t rename or touch the .CN1 folder.',
-  'Insert the stick, then power up.',
-  'Try the TASKDATA folder first: it holds the grower, every farm and field, their boundaries and lines in one ISOXML file. Look in Data Management → Import and Import2 for a Source or Data Type called ISO XML or TASKDATA, and import it if it is there. Then check Data Management → Field. If the display has no such option, carry on with the steps below.',
+  'Key off and wait until the display is completely dark, then put the stick in and power up. A stick pushed in while the display is on is not read, and Import2 then says the file is corrupt or unusable.',
   'Make sure the Grower on the field-name list exists on the display (Data Management → Grower). Create it if it’s missing.',
   'For each farm on the field-name list: create the Farm under that Grower if it’s missing, then the fields under it, with the names from the list exactly. Rename any field already on the display to match (Data Management → Field → Edit Name).',
   'Go to Data Management → Import2. Set Source to Shapefile and Data Type to Boundary, pick the Grower, Farm and Field, pick the matching Boundary file, then press Import. A file name starts with the farm when it fits in 18 characters, and has - where a name has / or another character a file can’t hold.',
@@ -613,13 +608,10 @@ export function boundaryFiles(items: BoundaryItem[], opts: { cropYear: number; m
       )
     }
   }
-  // The same fields as ISOXML, so the display can make the grower, farms and fields itself (lib/combine-isoxml.ts).
-  const iso = kept.map((item) => ({
-    ...item,
-    lines: (item.lines ?? []).map((l) => ({ name: l.name, parts: lineParts(l, item.geometry), curve: l.lineType === 'curve' })),
-  }))
-  files.push({ name: `${TASKDATA_FOLDER}/`, data: new Uint8Array(0) })
-  files.push({ name: `${TASKDATA_FOLDER}/TASKDATA.XML`, data: new TextEncoder().encode(taskDataXml(iso, { appName: opts.appName })) })
+  // No TASKDATA (ISOXML) beside them: the IntelliView IV (V30.26) has no ISO
+  // XML import, only Import (crop and layout data) and Import2 (Shapefile and
+  // two other makes' files), seen on the display 19 Oct 2026. The writer stays
+  // in lib/combine-isoxml.ts for displays that do take it.
   files.push({ name: 'README.txt', data: new TextEncoder().encode(readmeText({ ...opts, items: kept })) })
   return files
 }

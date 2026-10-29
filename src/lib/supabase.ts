@@ -39,5 +39,7 @@ const authStorage =
 export const supabase: SupabaseClient<Database> = createClient<Database>(
   url ?? 'http://not-configured.invalid',
   anonKey ?? 'not-configured',
-  { auth: { storage: authStorage, persistSession: true, autoRefreshToken: true } },
+  {
+    auth: { storage: authStorage, persistSession: true, autoRefreshToken: true },
+  },
 )

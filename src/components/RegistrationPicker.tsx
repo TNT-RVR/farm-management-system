@@ -4,6 +4,8 @@ import { Search } from 'lucide-react'
 import { Modal } from '@/components/Modal'
 import { supabase } from '@/lib/supabase'
 import { useChemicalSearch } from '@/lib/chemicals'
+import { useDebouncedValue } from '@/lib/useDebouncedValue'
+import { HelpNote } from '@/components/HelpNote'
 
 /**
  * Choosing which registered product this one actually is.
@@ -30,7 +32,7 @@ export function RegistrationPicker({
   // Seeded with the product's own name, because that is nearly always the
   // search somebody was about to type.
   const [term, setTerm] = useState(productName)
-  const { data: matches, isLoading } = useChemicalSearch(term, '', 'name')
+  const { data: matches, isLoading } = useChemicalSearch(useDebouncedValue(term, 250), '', 'name')
   const queryClient = useQueryClient()
 
   const save = useMutation({
@@ -51,11 +53,11 @@ export function RegistrationPicker({
   return (
     <Modal title={`Which product is “${productName}”?`} onClose={onClose}>
       <div className="space-y-2.5 text-sm">
-        <p className="text-xs text-gray-500">
+        <HelpNote className="text-xs" summary="Lets the app read the label. Leave it unset rather than guess." title="Why link the registration">
           Linking this to its Health Canada registration is what lets the app read the label and
           learn the re-entry interval. Pick the wrong one and the wrong safety interval follows it
           onto every field this was sprayed on, so leave it unset rather than guess.
-        </p>
+        </HelpNote>
 
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -71,10 +73,10 @@ export function RegistrationPicker({
         {isLoading ? (
           <p className="text-xs text-gray-500">Searching…</p>
         ) : !matches?.length ? (
-          <p className="rounded-md bg-gray-50 px-3 py-4 text-xs text-gray-500">
+          <HelpNote className="rounded-md bg-gray-50 px-3 py-4 text-xs" summary="Nothing in the registry matches that." title="Not in the registry?">
             Nothing in the registry matches that. Adjuvants and surfactants — MSO, Interlock and the
             like — are often not registered pesticides at all, and have no label to read.
-          </p>
+          </HelpNote>
         ) : (
           <ul className="max-h-64 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200">
             {matches.slice(0, 40).map((c) => (

@@ -1,6 +1,7 @@
 import { Scale } from 'lucide-react'
 import { basisVerdict, type BasisPoint } from '@/lib/basis'
 import { cn } from '@/lib/utils'
+import { CARD_HEAD } from '@/lib/table-style'
 
 /**
  * Cash against the board, with the arithmetic shown.
@@ -28,14 +29,17 @@ export function BasisPanel({
 }) {
   if (!point) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
-          <Scale className="h-4 w-4 text-gray-400" /> {title}
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <h3 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+          <Scale className="h-4 w-4 text-brand-100" /> {title}
         </h3>
+        <div className="p-4">
         <p className="mt-1 text-xs text-gray-500">
           Not enough quoted this week to work it out. Basis needs a cash bid and a board price in
           the same week, and one of them is missing.
         </p>
+
+        </div>
       </div>
     )
   }
@@ -45,10 +49,11 @@ export function BasisPanel({
     `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString('en-CA', { maximumFractionDigits: 2 })}`
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
-        <Scale className="h-4 w-4 text-gray-400" /> {title}
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h3 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <Scale className="h-4 w-4 text-brand-100" /> {title}
       </h3>
+      <div className="p-4">
 
       <div className="mt-2 flex flex-wrap items-end gap-x-6 gap-y-2">
         <div>
@@ -90,6 +95,8 @@ export function BasisPanel({
         </p>
       )}
       {note && <p className="mt-1.5 text-[11px] text-gray-500">{note}</p>}
+
+      </div>
     </div>
   )
 }

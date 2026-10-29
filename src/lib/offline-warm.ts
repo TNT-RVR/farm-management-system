@@ -16,7 +16,6 @@ import {
   cropPricesQuery,
   cropVarietiesQuery,
   cropsQuery,
-  fieldsQuery,
   hailEventsQuery,
   usersQuery,
 } from './queries'
@@ -55,8 +54,8 @@ const entry = (
 
 export function warmSet(cropYear: number): Warm[] {
   return [
-    entry('Fields', fieldsQuery()),
-    entry('Fields, including archived', allFieldsQuery()),
+    // Active and archived in one: the active list (fieldsQuery) is read off this entry.
+    entry('Fields', allFieldsQuery()),
     entry('Field boundaries', allBoundariesQuery()),
     entry('Crops', cropsQuery()),
     entry('Crop varieties', cropVarietiesQuery()),

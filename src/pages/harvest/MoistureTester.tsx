@@ -17,6 +17,8 @@ import { Modal } from '@/components/Modal'
 import { MoistureTestDetail } from './MoistureTestDetail'
 import { rowClick } from '@/components/RecordEditor'
 import { useMoistureEntry } from './useMoistureEntry'
+import { askConfirm } from '@/components/askConfirm'
+import { CARD_HEAD } from '@/lib/table-style'
 
 /**
  * Convert a meter reading, and write it down against the field it came off.
@@ -94,10 +96,11 @@ export function MoistureTester({
     <div className="space-y-4">
       {aside && <div className="flex items-center justify-end gap-3">{aside}</div>}
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
-          <Thermometer className="h-4 w-4 text-brand-700" /> Take a reading
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+          <Thermometer className="h-4 w-4 text-white" /> Take a reading
         </h2>
+        <div className="p-4">
 
         <div className="mt-3 grid grid-cols-2 gap-3">
           <label className="text-xs text-gray-500">
@@ -331,6 +334,8 @@ export function MoistureTester({
             <span className="text-sm text-red-600">{(record.error as Error).message}</span>
           )}
         </div>
+
+        </div>
       </div>
     </div>
   )
@@ -466,10 +471,10 @@ export function MoistureTester({
                   <MoistureTestNote test={t} />
                   {isManager && (
                     <button
-                      onClick={() => {
-                        if (confirm('Delete this moisture test?')) remove.mutate(t.id)
+                      onClick={async () => {
+                        if (await askConfirm('Delete this moisture test?')) remove.mutate(t.id)
                       }}
-                      className="ml-auto rounded p-1 text-gray-300 hover:bg-gray-100 hover:text-red-600"
+                      className="-my-1.5 ml-auto rounded p-2.5 text-gray-300 hover:bg-gray-100 hover:text-red-600 sm:my-0 sm:p-1"
                       aria-label="Delete this test"
                     >
                       <Trash2 className="h-3.5 w-3.5" />

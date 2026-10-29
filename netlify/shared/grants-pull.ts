@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { farmProvince, farmProvinceName } from '../../src/lib/farm-context.ts'
+import { callClaude } from './anthropic.ts'
 
 // Shared by the scheduled pull (grants-pull.mts) and the on-demand background
 // pull (grants-pull-background.mts). Asks Claude (with web search) for currently
@@ -29,16 +30,12 @@ export async function runGrantsPull(
   apiKey: string,
   model: string,
 ): Promise<{ found: number; inserted: number }> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      max_tokens: 4096,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }],
-      messages: [{ role: 'user', content: grantsPrompt() }],
-    }),
-  })
+  const res = await callClaude({
+    model,
+    maxTokens: 4096,
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }],
+    messages: [{ role: 'user', content: grantsPrompt() }],
+  }, { apiKey })
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`)
   const body = (await res.json()) as { content?: { type: string; text?: string }[] }
   const text = (body.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('\n')

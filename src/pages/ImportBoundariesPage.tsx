@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { HelpNote } from '@/components/HelpNote'
 import { Link } from 'react-router-dom'
 import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import { ArrowLeft, FileUp } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Select } from '@/components/Select'
@@ -10,10 +9,10 @@ import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { ensureFarmId, useFields, type FieldRow } from '@/lib/queries'
 import { parseBoundaryFile, type ParsedBoundary } from '@/lib/geo/parse-boundary-file'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { boundsOf } from '@/lib/geo/area'
-import { farmMapCenter } from '@/lib/farm-setup'
 import { cleanFieldName } from '@/lib/field-name'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * The "Create a new field" choice in a row's field picker. Not a uuid, so it
@@ -75,8 +74,6 @@ export function ImportBoundariesPage() {
   const [mapContainer, setMapContainer] = useState<HTMLDivElement | null>(null)
   // The farm id for new fields, looked up once per page rather than per shape.
   const farmIdRef = useRef<string | null>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
-  const [mapReady, setMapReady] = useState(false)
   const [fileName, setFileName] = useState('')
   const [rows, setRows] = useState<RowState[]>([])
   const [errors, setErrors] = useState<string[]>([])
@@ -188,23 +185,7 @@ export function ImportBoundariesPage() {
   }
 
   // Preview map — created when its container mounts (see mapContainer above).
-  useEffect(() => {
-    if (!mapContainer || mapRef.current) return
-    const map = new maplibregl.Map({
-      container: mapContainer,
-      style: SATELLITE_STYLE,
-      center: farmMapCenter(),
-      zoom: 9,
-      attributionControl: { compact: true },
-    })
-    map.on('load', () => setMapReady(true))
-    mapRef.current = map
-    return () => {
-      map.remove()
-      mapRef.current = null
-      setMapReady(false)
-    }
-  }, [mapContainer])
+  const { mapRef, ready: mapReady } = useFarmMap(mapContainer, { zoom: 9, attribution: 'compact', controls: { nav: false } })
 
   useEffect(() => {
     const map = mapRef.current
@@ -244,7 +225,7 @@ export function ImportBoundariesPage() {
       }
     })
     if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 40, animate: false })
-  }, [rows, mapReady])
+  }, [mapRef, rows, mapReady])
 
   if (!isManager) {
     return (
@@ -326,8 +307,8 @@ export function ImportBoundariesPage() {
 
           <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200 bg-white">
             <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
+              <thead className={TABLE_HEAD}>
+                <tr>
                   <th className="px-3 py-2 font-medium">Feature</th>
                   <th className="px-3 py-2 text-right font-medium">Est. acres</th>
                   <th className="px-3 py-2 font-medium">Import into field</th>

@@ -47,6 +47,8 @@ export async function runFullIngest(
     reprocess?: boolean
     budgetMs?: number
     imageryBudgetMs?: number
+    /** Pastures too. The pasture cron owns them on its own schedule; a run asked for by hand does everything. */
+    pastures?: boolean
   } = {},
 ): Promise<FullRunResult> {
   // A wall-clock budget shared across every sensor. Netlify kills a function
@@ -104,8 +106,8 @@ export async function runFullIngest(
   // Landsat matters more here than on the crop side: §9.1 says its 30 m pixel
   // is fine for a paddock and to "use the full Landsat stack for pasture, which
   // meaningfully raises observation count".
-  let pasture: { observations: number; detail: string }
-  try {
+  let pasture: { observations: number; detail: string } = { observations: 0, detail: 'pastures on their own run' }
+  if (opts.pastures) try {
     const pastureOpts = { ...staged, subjectType: 'pasture' as const }
     const po = await runSatelliteIngest(sb, pastureOpts)
     const pl = await runLandsatIngest(sb, pastureOpts)
@@ -135,7 +137,10 @@ export async function runFullIngest(
   let pastureDaily = { subjects: 0, days: 0 }
   let harmony = { pairs: 0, updated: false, rowsTouched: 0, detail: 'harmonization not run' }
   let dailyProblem = ''
-  try {
+  // Nothing new read: the grades, the harmonization and the daily series are
+  // what the last run left (the regrade alone was 2.3 s, twelve times a day).
+  const added = optical.observations + strips.observations + radar.observations + landsat.observations + pasture.observations
+  if (added > 0 || opts.reprocess) try {
     const { data: changed, error: scoreErr } = await sb.rpc('sat_rescore_observations', {
       p_full: FULL_QUALITY,
       p_partial: PARTIAL_QUALITY,
@@ -147,7 +152,7 @@ export async function runFullIngest(
     // this and its points are null and silently drop out of the series.
     harmony = await runHarmonization(sb)
     daily = await rebuildDaily(sb, 'field')
-    pastureDaily = await rebuildDaily(sb, 'pasture')
+    if (opts.pastures) pastureDaily = await rebuildDaily(sb, 'pasture')
   } catch (e) {
     dailyProblem = ` · daily rebuild: ${(e as Error).message.slice(0, 120)}`
     await logApiCall(sb, 'daily', false, (e as Error).message.slice(0, 200))
@@ -169,11 +174,9 @@ export async function runFullIngest(
     // Pastures get the same treatment. A paddock is exactly where a field mean
     // hides the most: cattle graze selectively, so the whole point is to see
     // which PART of it is bare (§9.1, §9.4).
-    const pastureImages = await runImageryCapture(sb, {
-      ...staged,
-      deadline: imageryDeadline,
-      subjectType: 'pasture',
-    })
+    const pastureImages = opts.pastures
+      ? await runImageryCapture(sb, { ...staged, deadline: imageryDeadline, subjectType: 'pasture' })
+      : { captured: 0, skipped: 0 }
     imagery = {
       captured: fieldImages.captured + pastureImages.captured,
       skipped: fieldImages.skipped + pastureImages.skipped,
@@ -196,8 +199,8 @@ export async function runFullIngest(
   }
 
   // Cattle alerts, after the pasture series is rebuilt and graded.
-  let cattle: { raised: number; cleared: number; detail: string }
-  try {
+  let cattle: { raised: number; cleared: number; detail: string } = { raised: 0, cleared: 0, detail: 'cattle alerts on the pasture run' }
+  if (opts.pastures) try {
     cattle = await runCattleAlerts(sb)
   } catch (e) {
     cattle = { raised: 0, cleared: 0, detail: `cattle alerts failed: ${(e as Error).message.slice(0, 100)}` }
@@ -266,7 +269,7 @@ export async function runPastureIngest(
 
   let daily = { subjects: 0, days: 0 }
   let problem = ''
-  try {
+  if (optical.observations + landsat.observations + zone.observations > 0) try {
     const { error: scoreErr } = await sb.rpc('sat_rescore_observations', {
       p_full: FULL_QUALITY,
       p_partial: PARTIAL_QUALITY,

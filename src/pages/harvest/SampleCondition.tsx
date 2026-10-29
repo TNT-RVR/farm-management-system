@@ -118,7 +118,7 @@ export function MoistureTestNote({ test }: { test: Pick<MoistureTest, 'id' | 'no
               setDraft(test.note ?? '')
               setEditing(true)
             }}
-            className="rounded p-0.5 text-gray-300 hover:bg-gray-100 hover:text-gray-600"
+            className="-m-1.5 rounded p-2 text-gray-300 hover:bg-gray-100 hover:text-gray-600 sm:m-0 sm:p-0.5"
             aria-label={test.note ? 'Edit the note' : 'Add a note'}
             title={test.note ? 'Edit the note' : 'Add a note or mark it screened / dirty'}
           >

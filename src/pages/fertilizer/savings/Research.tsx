@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
-import { Download, Loader2, Plus, Trash2 } from 'lucide-react'
+import { Download, Plus, Trash2 } from 'lucide-react'
 import type { Geometry } from 'geojson'
 import { DetailList, rowClick, type EditField } from '@/components/RecordEditor'
 import { Select } from '@/components/Select'
@@ -39,12 +39,12 @@ import { downloadBlob } from '@/lib/table-report'
 import type { FieldOperation } from '@/lib/fieldOps'
 import type { Json } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
-import { useBrand } from '@/lib/farm-setup'
 import { useReportSaving, useSavings } from './context'
 import { S } from './sources'
 import { ThreeSeasonBalance } from './Proving'
 import { Empty, FieldLink, Table, ToolCard, ghost, input, money, n0, n1, td, tdNum } from './ui'
 import { RowEditor } from './RowEditor'
+import { askConfirm } from '@/components/askConfirm'
 import { fertYieldGoal } from '@/lib/yield-goal'
 
 const UNITS = new Set(['bu', 'lbs', 'cwt', 'ton', 'MT'])
@@ -408,7 +408,7 @@ export function NRichStripCard() {
               </td>
               <td className="px-1 text-right">
                 {isManager && (
-                  <button type="button" aria-label="Delete strip" onClick={() => confirm('Delete this strip?') && m.remove.mutate(r.s.id)} className="rounded p-1 text-gray-300 hover:text-red-600">
+                  <button type="button" aria-label="Delete strip" onClick={async () => { if (await askConfirm('Delete this strip?')) m.remove.mutate(r.s.id) }} className="rounded p-1 text-gray-300 hover:text-red-600">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 )}
@@ -549,7 +549,7 @@ function TrialRow({ trial }: { trial: ReturnType<typeof useNTrials>['data'] exte
                     {s}
                   </button>
                 ))}
-                <button type="button" className={ghost} onClick={() => confirm('Delete this trial?') && m.remove.mutate(trial.id)}>
+                <button type="button" className={ghost} onClick={async () => { if (await askConfirm('Delete this trial?')) m.remove.mutate(trial.id) }}>
                   <Trash2 className="h-3 w-3" /> Delete
                 </button>
               </>
@@ -998,78 +998,6 @@ export function PkBalanceCard() {
         </>
       )}
       <ThreeSeasonBalance />
-    </ToolCard>
-  )
-}
-
-/* ------------------------------------------------------------------ 36 */
-
-export function NerpPackCard() {
-  const { inputs } = useSavings()
-  const { farmName } = useBrand()
-  const [fieldId, setFieldId] = useState('all')
-  const [format, setFormat] = useState<'pdf' | 'csv'>('pdf')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const planned = usePlannedCrops()
-
-  const run = async () => {
-    setBusy(true)
-    setError(null)
-    try {
-      const { buildNerpPack } = await import('@/lib/fert-savings/nerp-pack')
-      const { tableReportToCsv, tableReportToPdf } = await import('@/lib/table-report')
-      const ids = fieldId === 'all' ? planned.map((p) => p.plan.field_id!) : [fieldId]
-      const report = await buildNerpPack(ids, inputs.cropYear, inputs, farmName)
-      const name = `4R NERP record ${fieldId === 'all' ? 'all fields' : inputs.fieldName(fieldId)} ${inputs.cropYear}`
-      if (format === 'csv') downloadBlob(new Blob([tableReportToCsv(report)], { type: 'text/csv;charset=utf-8' }), `${name}.csv`)
-      else downloadBlob(await tableReportToPdf(report), `${name}.pdf`)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  useReportSaving(36, null)
-  return (
-    <ToolCard
-      n={36}
-      method={
-        <>
-          Per field: crop and acres, the soil test, the written recommendation (rate, product, timing), what the machines actually put on
-          (Deere passes), manure, tissue tests and the yield — plus the season&apos;s fertilizer invoices. NERP credit value is small; the
-          records are what OFCAF and buyers&apos; sustainability programs pay for.
-        </>
-      }
-      sources={[S.nerp, S.fert4r, S.soil, S.requirements]}
-      title="4R / NERP record pack"
-      why="Source, rate, time and place for every field-year in one file — what a 4R audit, a NERP project or an OFCAF claim asks to see."
-      saving={null}
-      note="export"
-    >
-      <div className="flex flex-wrap items-end gap-2 text-xs text-gray-600">
-        <label>
-          Field
-          <Select
-            value={fieldId}
-            onChange={setFieldId}
-            size="sm"
-            className="mt-1 w-56"
-            ariaLabel="Field"
-            options={[{ value: 'all', label: `All ${planned.length} planned fields` }, ...planned.map((p) => ({ value: p.plan.field_id!, label: p.field!.name }))]}
-          />
-        </label>
-        <label className="flex items-center gap-1 pb-1.5">
-          <input type="radio" checked={format === 'pdf'} onChange={() => setFormat('pdf')} /> PDF
-        </label>
-        <label className="flex items-center gap-1 pb-1.5">
-          <input type="radio" checked={format === 'csv'} onChange={() => setFormat('csv')} /> CSV
-        </label>
-        <button type="button" className={ghost} disabled={busy || !planned.length} onClick={run}>
-          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />} Export {inputs.cropYear}
-        </button>
-        {error && <span className="text-red-700">{error}</span>}
-      </div>
     </ToolCard>
   )
 }

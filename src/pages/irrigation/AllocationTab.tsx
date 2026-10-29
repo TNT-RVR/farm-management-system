@@ -7,6 +7,7 @@ import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
 import { useFarmSettings, useFeature } from '@/lib/farm-setup'
+import { n1 } from '@/lib/format'
 
 /** Pivots with their allotments, and every irrigation event this season. */
 export function useAllocation(year: number) {
@@ -149,8 +150,6 @@ export function SmridAllotment({ year, smrid, allotments }: { year: number; smri
     </div>
   )
 }
-
-const n1 = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 1 }))
 
 /**
  * Water used this season on one field against its allotment, and where the

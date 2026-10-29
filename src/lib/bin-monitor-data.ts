@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
+import { shrinkForReading } from './shrink-image'
 import type { Database, Json } from './database.types'
-import { emcKind, type Level } from './bin-monitor'
-import type { ReportBin } from './bin-monitor-export'
+import type { Level } from './bin-monitor'
 
 export type MonitorRow = Omit<Database['public']['Tables']['bin_monitor_readings']['Row'], 'levels'> & { levels: Level[] }
 
@@ -41,34 +41,6 @@ export async function fetchMonitorYear(cropYear: number): Promise<MonitorRow[]> 
   return (data ?? []).map(asRow)
 }
 
-/**
- * Every canola bin with readings in a crop year, as BASF's report wants them:
- * bin, lot and LLD (the latest one written down), and the readings in order.
- * The bin page's "All canola bins" button and the Reports page both use it.
- */
-export async function fetchCanolaReportBins(cropYear: number): Promise<ReportBin[]> {
-  const [rows, binRows, cropRows] = await Promise.all([
-    fetchMonitorYear(cropYear),
-    supabase.from('bins').select('id, name'),
-    supabase.from('crops').select('id, name'),
-  ])
-  const nameOf = new Map((binRows.data ?? []).map((b) => [b.id, b.name as string]))
-  const cropOf = new Map((cropRows.data ?? []).map((c) => [c.id, c.name as string]))
-  const byBin = new Map<string, MonitorRow[]>()
-  for (const r of rows) {
-    if (emcKind(cropOf.get(r.crop_id ?? '')) !== 'canola') continue
-    byBin.set(r.bin_id, [...(byBin.get(r.bin_id) ?? []), r])
-  }
-  return [...byBin.entries()]
-    .map(([id, rs]) => ({
-      name: nameOf.get(id) ?? 'Bin',
-      lot: [...rs].reverse().find((r) => r.lot_number)?.lot_number ?? null,
-      lld: [...rs].reverse().find((r) => r.lld)?.lld ?? null,
-      crop: cropOf.get(rs[0].crop_id ?? '') ?? 'Canola',
-      readings: rs,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
-}
 
 export type MonitorInput = {
   id?: string
@@ -82,6 +54,8 @@ export type MonitorInput = {
   levels: Level[]
   source: 'manual' | 'screenshot'
   notes: string | null
+  /** The seed company's record: aeration turned on since the last reading. */
+  aeration_on?: boolean | null
 }
 
 export function useSaveBinMonitor() {
@@ -116,33 +90,15 @@ export type CableRead = {
   ambient_temp_c: number | null
   bushels: number | null
   percent_kind: 'rh' | 'moisture' | 'unknown'
-  levels: { temp_c: number | null; pct: number | null; no_data: boolean }[]
+  /** `above_grain`: in the headspace, not buried — its moisture means nothing. */
+  levels: { temp_c: number | null; pct: number | null; no_data: boolean; above_grain?: boolean }[]
   confidence: 'high' | 'medium' | 'low'
   note: string
 }
 
-/**
- * A phone screenshot is 1–3 MB of PNG; the function takes 6 MB and the model
- * reads a 1600-pixel image as well as a full-size one. Shrunk to a JPEG first.
- */
-async function shrink(file: Blob): Promise<Blob> {
-  try {
-    const bmp = await createImageBitmap(file)
-    const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height))
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.round(bmp.width * scale)
-    canvas.height = Math.round(bmp.height * scale)
-    canvas.getContext('2d')!.drawImage(bmp, 0, 0, canvas.width, canvas.height)
-    const out = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.9))
-    return out ?? file
-  } catch {
-    return file
-  }
-}
-
 /** Send a screenshot of the Bin-Sense cable to be read. Nothing is saved. */
 export async function readCableScreenshot(file: Blob): Promise<CableRead> {
-  const img = await shrink(file)
+  const img = await shrinkForReading(file)
   const type = img.type || 'image/jpeg'
   const {
     data: { session },

@@ -44,6 +44,8 @@ export type ReportSection = {
    * only; the CSV leaves blanks blank.
    */
   answerColumns?: number[]
+  /** Pictures drawn in body cells, above the cell's text: a signature on its line. PDF only. */
+  cellImages?: { row: number; col: number; image: { dataUrl: string; width: number; height: number } }[]
 }
 
 export type TableReport = {
@@ -570,6 +572,12 @@ export async function tableReportPdfDoc(r: TableReport, opts: PdfOptions = {}): 
           doc.setDrawColor(...C.gray400)
           doc.setLineWidth(0.5)
           doc.line(data.cell.x + 4, yLine, data.cell.x + data.cell.width - 4, yLine)
+        }
+        // A signature over its line, fitted to the space above the printed name.
+        const pic = data.section === 'body' ? s.cellImages?.find((c) => c.row === data.row.index && c.col === data.column.index) : undefined
+        if (pic) {
+          const k = Math.min((data.cell.height - 14) / pic.image.height, (data.cell.width - 8) / pic.image.width)
+          if (k > 0) doc.addImage(pic.image.dataUrl, imageKind(pic.image.dataUrl), data.cell.x + 4, data.cell.y + 2, pic.image.width * k, pic.image.height * k)
         }
         if (data.section !== 'body' || data.column.index !== s.linkColumn || !linkBase) return
         const path = String(data.cell.raw ?? '')

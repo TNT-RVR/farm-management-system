@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js'
 import { syncWaterDaily } from '../shared/water-daily.ts'
 import {
   chuShift,
@@ -13,6 +12,9 @@ import {
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { farmFeatureOn } from '../../src/lib/farm-context.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
+import { planningYear } from '../../src/lib/fiscal-year.ts'
+import { farmToday } from '../shared/dates.ts'
 
 /**
  * Refresh the season outlook the rotation advisor reads: heat units and
@@ -36,7 +38,7 @@ export default async (req: Request) => {
   await hydrateSecrets()
   workerKey = process.env.JOB_WORKER_KEY ?? process.env.FACT_WORKER_KEY ?? process.env.LABEL_WORKER_KEY
   if (!url || !serviceKey) return new Response('Not configured', { status: 500 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
 
   let allowed = Boolean(workerKey) && req.headers.get('x-worker-key') === workerKey
   if (!allowed) {
@@ -52,9 +54,9 @@ export default async (req: Request) => {
   if (!allowed) return new Response('Not authorised', { status: 401 })
 
   const now = new Date()
-  const today = now.toISOString().slice(0, 10)
+  const today = farmToday(now)
   // From August on, the plan being made is next year's.
-  const planYear = now.getUTCMonth() >= 7 ? now.getUTCFullYear() + 1 : now.getUTCFullYear()
+  const planYear = planningYear(today)
   const failed: string[] = []
   const done: string[] = []
 

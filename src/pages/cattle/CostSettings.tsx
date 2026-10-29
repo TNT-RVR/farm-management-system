@@ -23,9 +23,9 @@ import { cullCowValue, useCowQuotes } from '@/lib/cull-cow'
 import { useHerdCounts } from '@/lib/cattle'
 import { CattleInfo } from './CattleInfo'
 import { CostOfGainWorksheet } from './CostOfGain'
+import { money as fmtMoney } from '@/lib/format'
 
-const money = (v: number, dp = 0) =>
-  `$${v.toLocaleString('en-CA', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`
+const money = (v: number, dp = 0) => fmtMoney(v, dp, { neg: 'inside' })
 const field = 'w-32 rounded-md border border-gray-200 px-2 py-1 text-sm text-right tabular-nums'
 const numOrNull = (s: string) => {
   const t = s.trim()
@@ -243,7 +243,7 @@ function CostForm({
           const line = live?.lines.find((l) => l.key === r.key)
           return (
             <label key={r.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-              <span className="w-44 shrink-0 text-gray-700">
+              <span className="w-full shrink-0 text-gray-700 sm:w-44">
                 {r.label}
                 {r.hint && <span className="block text-[11px] text-gray-400">{r.hint}</span>}
               </span>

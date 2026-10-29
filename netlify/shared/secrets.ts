@@ -34,10 +34,10 @@ export async function hydrateSecrets(): Promise<void> {
     // The farm's own context from Farm setup rides along: time zone, province
     // and description, read by src/lib/farm-context.ts. Same rule as the keys —
     // an environment variable set in Netlify wins.
-    const farm = await fetch(`${url}/rest/v1/farm_setup?select=farm_name,time_zone,province,farm_description,retailer_name,irrigation_district_name,main_ranch_id,features,support_email&limit=1`, {
+    const farm = await fetch(`${url}/rest/v1/farm_setup?select=farm_name,time_zone,province,farm_description,retailer_name,irrigation_district_name,river_name,main_ranch_id,features,support_email,fiscal_year_end_month&limit=1`, {
       headers: { apikey: key, Authorization: `Bearer ${key}` },
     })
-      .then((r) => (r.ok ? (r.json() as Promise<{ farm_name: string | null; time_zone: string | null; province: string | null; farm_description: string | null; retailer_name: string | null; irrigation_district_name: string | null; main_ranch_id: string | null; features: unknown; support_email: string | null }[]>) : []))
+      .then((r) => (r.ok ? (r.json() as Promise<{ farm_name: string | null; time_zone: string | null; province: string | null; farm_description: string | null; retailer_name: string | null; irrigation_district_name: string | null; river_name: string | null; main_ranch_id: string | null; features: unknown; support_email: string | null; fiscal_year_end_month: number | null }[]>) : []))
       .catch(() => [])
     const f = farm[0]
     if (f) {
@@ -47,8 +47,10 @@ export async function hydrateSecrets(): Promise<void> {
       rows.push({ key: 'FARM_DESCRIPTION', value: f.farm_description?.trim() ?? '' })
       rows.push({ key: 'FARM_RETAILER', value: f.retailer_name?.trim() ?? '' })
       rows.push({ key: 'FARM_DISTRICT', value: f.irrigation_district_name?.trim() ?? '' })
+      rows.push({ key: 'FARM_RIVER', value: f.river_name?.trim() ?? '' })
       rows.push({ key: 'FARM_MAIN_RANCH_ID', value: f.main_ranch_id ?? '' })
       rows.push({ key: 'FARM_SUPPORT_EMAIL', value: f.support_email?.trim() ?? '' })
+      rows.push({ key: 'FARM_FISCAL_END_MONTH', value: f.fiscal_year_end_month ? String(f.fiscal_year_end_month) : '' })
       // The feature switches, for farmFeatureOn(). Present (even as {}) only
       // when a setup row exists; absent means a fresh install.
       rows.push({ key: 'FARM_FEATURES', value: JSON.stringify(f.features ?? {}) })

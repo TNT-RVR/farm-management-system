@@ -34,7 +34,7 @@ describe('warmSet', () => {
     // screen in a field. Comparing against the real query definitions is the
     // only check that catches it.
     const expected = [
-      fieldsQuery(),
+      // fieldsQuery() is a select over this one, under the same key.
       allFieldsQuery(),
       allBoundariesQuery(),
       cropsQuery(),

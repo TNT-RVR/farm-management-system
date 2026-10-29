@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { CheckCheck, Settings } from 'lucide-react'
+import { CheckCheck, Settings2 } from 'lucide-react'
 import { NotificationItem } from '@/components/NotificationItem'
 import { PillTabs } from '@/components/PillTabs'
 import { Select } from '@/components/Select'
@@ -81,7 +81,7 @@ export function NotificationsPage() {
           aria-label="Notification settings"
           title="Notification settings"
         >
-          <Settings className="h-4 w-4" />
+          <Settings2 className="h-4 w-4" />
         </Link>
       </div>
 

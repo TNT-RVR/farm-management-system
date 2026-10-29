@@ -1,14 +1,19 @@
 import { admin } from './_jd.mts'
 import { runPastureMoveWatch } from '../shared/pasture-move-watch.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { farmTimeIs, farmTimeLabel, type FarmTime } from '../../src/lib/farm-clock.ts'
 
-// Should the herd come off its paddock? Every morning at 7:15 (13:15 UTC),
+// Should the herd come off its paddock? Every morning at 7:15 on the farm's clock,
 // after the pasture satellite run has had the night to read any new scene.
 // One alert per paddock per three days (kind 'pasture_move'); the reasoning is
 // in src/lib/pasture-move.ts.
+const WHEN: FarmTime = { hours: [7] }
+
 export default async () => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
+  // Every hour; acts only at its time on the farm's clock (Farm setup's time zone).
+  if (!farmTimeIs(WHEN)) return new Response(`Not yet: runs ${farmTimeLabel(WHEN)}`)
   try {
     const r = await runPastureMoveWatch(admin())
     console.log('Pasture move:', r.detail)
@@ -19,4 +24,4 @@ export default async () => {
   }
 }
 
-export const config = { schedule: '15 13 * * *' }
+export const config = { schedule: '15 * * * *' }

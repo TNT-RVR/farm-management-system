@@ -2,6 +2,8 @@ import { useState, type MouseEvent, type ReactNode } from 'react'
 import { Pencil, Plus, Trash2, X } from 'lucide-react'
 import { Select } from '@/components/Select'
 import { ConfirmDialog } from '@/components/Modal'
+import { LatLngInput } from '@/components/LatLngInput'
+import { latLngText, readLatLng } from '@/lib/latlng-text'
 import { cn } from '@/lib/utils'
 
 /**
@@ -28,8 +30,11 @@ export type EditField = {
   /**
    * bool: a yes / no / not known dropdown, saved as true / false / null.
    * textarea: a long note across the whole form.
+   * latlng: one "lat, lng or a Google Maps link" box across the form, saved
+   * as two numbers: latitude under `key`, longitude under `lngKey`.
    */
-  kind: 'text' | 'number' | 'select' | 'bool' | 'textarea' | 'date'
+  kind: 'text' | 'number' | 'select' | 'bool' | 'textarea' | 'date' | 'latlng'
+  lngKey?: string
   step?: string
   /** display = stored × scale (e.g. an efficiency kept as 0.85, shown as 85). */
   scale?: number
@@ -75,12 +80,17 @@ export function RecordEditModal({
     const m: Record<string, string> = {}
     for (const f of fields) {
       const raw = row[f.key]
+      if (f.kind === 'latlng') {
+        m[f.key] = latLngText(raw, row[f.lngKey!])
+        continue
+      }
       // A scaled number (litres shown as gallons) is rounded for the box, not left at 26.417205235…
       m[f.key] = raw == null ? '' : f.scale ? String(Number((Number(raw) * f.scale).toFixed(4))) : String(raw)
     }
     return m
   })
   const missing = fields.filter((f) => f.required && !vals[f.key]?.trim()).map((f) => f.label)
+  const notPlaces = fields.filter((f) => f.kind === 'latlng' && readLatLng(vals[f.key]) === 'bad').map((f) => f.label)
   const [confirming, setConfirming] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
   const [working, setWorking] = useState(false)
@@ -105,7 +115,11 @@ export function RecordEditModal({
     const patch: Record<string, unknown> = {}
     for (const f of fields) {
       const s = vals[f.key]
-      if (f.kind === 'number') {
+      if (f.kind === 'latlng') {
+        const p = readLatLng(s)
+        patch[f.key] = p && p !== 'bad' ? p.lat : null
+        patch[f.lngKey!] = p && p !== 'bad' ? p.lng : null
+      } else if (f.kind === 'number') {
         let v: number | null = s.trim() === '' ? null : Number(s)
         if (v != null && !Number.isFinite(v)) v = null
         if (v != null && f.scale) v = v / f.scale
@@ -132,7 +146,7 @@ export function RecordEditModal({
         {before}
         <div className="mt-4 grid grid-cols-2 gap-3">
           {fields.map((f) => (
-            <label key={f.key} className={cn('block text-sm', f.kind === 'textarea' && 'col-span-2')}>
+            <label key={f.key} className={cn('block text-sm', (f.kind === 'textarea' || f.kind === 'latlng') && 'col-span-2')}>
               <span className="mb-0.5 block text-xs text-gray-500" title={f.hint}>
                 {f.label}
                 {f.required && <span className="text-red-600"> *</span>}
@@ -154,6 +168,8 @@ export function RecordEditModal({
                       : (f.options ?? [])
                   }
                 />
+              ) : f.kind === 'latlng' ? (
+                <LatLngInput value={vals[f.key]} placeholder={f.placeholder} onChange={(t) => setVals((m) => ({ ...m, [f.key]: t }))} />
               ) : f.kind === 'textarea' ? (
                 <textarea
                   rows={3}
@@ -192,12 +208,13 @@ export function RecordEditModal({
           )}
           <div className="flex items-center gap-2">
             {missing.length > 0 && <span className="text-[11px] text-gray-400">Needs {missing.join(', ')}</span>}
+            {notPlaces.length > 0 && <span className="text-[11px] text-gray-400">{notPlaces.join(', ')} is not a location</span>}
             <button type="button" onClick={onClose} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
               Cancel
             </button>
             <button
               type="button"
-              disabled={saving || working || missing.length > 0}
+              disabled={saving || working || missing.length > 0 || notPlaces.length > 0}
               onClick={() => void save()}
               className="rounded-md bg-brand-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
             >
@@ -227,7 +244,7 @@ export function DetailList({ rows, className }: { rows: [string, ReactNode][]; c
   const shown = rows.filter(([, v]) => v != null && v !== '' && v !== false)
   if (!shown.length) return <p className={cn('text-xs text-gray-400', className)}>Nothing else recorded.</p>
   return (
-    <dl className={cn('grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm', className)}>
+    <dl className={cn('grid grid-cols-[minmax(0,7rem)_1fr] gap-x-4 gap-y-1 text-sm sm:grid-cols-[auto_1fr]', className)}>
       {shown.map(([k, v]) => (
         <div key={k} className="contents">
           <dt className="text-gray-500">{k}</dt>
@@ -295,7 +312,14 @@ export function DeleteButton({ onDelete, confirm = 'Delete this record?', label 
 /** A row's onClick that leaves the row's own controls alone. */
 export function rowClick(open: () => void) {
   return (e: MouseEvent<HTMLElement>) => {
-    if ((e.target as HTMLElement).closest('button, a, input, select, textarea, label, [role="button"], [role="combobox"], [role="checkbox"], [role="option"], [role="listbox"], [role="dialog"]')) return
+    const target = e.target as HTMLElement
+    if (target.closest('button, a, input, select, textarea, label, [role="button"], [role="combobox"], [role="checkbox"], [role="option"], [role="listbox"]')) return
+    // A click in a dialog the row opened (it sits inside the row) is not a
+    // click on the row. A row that is itself in a dialog — a load in the bin
+    // pop-up — still opens: until 20 Oct 2026 every such row ignored its
+    // clicks, so past loads could not be opened to correct them.
+    const dialog = target.closest('[role="dialog"]')
+    if (dialog && !dialog.contains(e.currentTarget)) return
     open()
   }
 }

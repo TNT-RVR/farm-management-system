@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './supabase'
+import { TICKET_PHOTO_BUCKET } from './stored-photos'
 import type { Json } from './database.types'
 
 /**
@@ -106,6 +107,21 @@ export function scaleTicketsQuery(cropYear: number) {
   }
 }
 
+/**
+ * The loads one list shows: a contract's own, or the ones on no contract.
+ *
+ * There is no list of every load (Sam, 27 Oct 2026) — a load is read inside
+ * the contract it is on, and the ones on none sit under the contract list
+ * waiting to be put on one. Scoping it wrong would quietly show a buyer's
+ * loads under another's, so it is a function of its own and tested.
+ */
+export function loadsFor<T extends { contract_id: string | null }>(
+  rows: T[],
+  contractId?: string,
+): T[] {
+  return rows.filter((r) => (contractId ? r.contract_id === contractId : r.contract_id == null))
+}
+
 export function useScaleTickets(cropYear: number) {
   return useQuery(scaleTicketsQuery(cropYear))
 }
@@ -164,18 +180,37 @@ export function useScaleTicketMutations() {
    * that was a one-off subtraction from the bin's contents when it was saved.
    */
   const update = useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: Partial<Omit<ScaleTicket, 'id' | 'created_at' | 'clean_net_lb'>> }) => {
+    mutationFn: async ({
+      id,
+      patch,
+    }: {
+      id: string
+      patch: Partial<Omit<ScaleTicket, 'id' | 'created_at' | 'clean_net_lb'>>
+    }) => {
       // Untyped: the generated Update type lists only the columns the app
       // used to change, and a correction can touch any of them.
-      const { error } = await (supabase as unknown as SupabaseClient).from('scale_tickets').update(patch).eq('id', id)
+      const { error } = await (supabase as unknown as SupabaseClient)
+        .from('scale_tickets')
+        .update(patch)
+        .eq('id', id)
       if (error) throw error
     },
     onSuccess: invalidate,
   })
   const remove = useMutation({
     mutationFn: async (id: string) => {
+      // The photo rows go with the ticket (cascade), but their files in
+      // Storage don't: read the paths first, then remove the files once the
+      // ticket is gone. A file left behind is only wasted space, so a failure
+      // there doesn't undo the delete.
+      const { data: photos } = await supabase
+        .from('scale_ticket_photos')
+        .select('storage_path')
+        .eq('scale_ticket_id', id)
       const { error } = await supabase.from('scale_tickets').delete().eq('id', id)
       if (error) throw error
+      const paths = (photos ?? []).map((p) => p.storage_path).filter(Boolean)
+      if (paths.length) await supabase.storage.from(TICKET_PHOTO_BUCKET).remove(paths)
     },
     onSuccess: invalidate,
   })

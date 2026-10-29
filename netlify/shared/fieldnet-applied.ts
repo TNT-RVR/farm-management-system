@@ -17,7 +17,7 @@ import { farmTz } from '../../src/lib/farm-context.ts'
 //    put 13 mm on 168 degrees, which is 6.1 mm on the field, not 13.
 //
 // FieldNET accepts full timestamps, so each local day is asked for exactly
-// (midnight to midnight America/Edmonton). The wedges that come back are laid
+// (midnight to midnight on the farm's clock). The wedges that come back are laid
 // onto 360 one-degree bins, and the field figure is the bins summed over the
 // pivot's arc divided by the arc. The bins are kept, so the sector map can show
 // where the water went and a stopped pass is visible as the dry arc it left.

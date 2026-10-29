@@ -61,7 +61,7 @@ self.addEventListener('fetch', (event) => {
         } catch {
           // Nothing parked: the page finds no file and says so.
         }
-        return Response.redirect('/cattle?shared=collars', 303)
+        return Response.redirect('/cattle?tab=map&shared=collars', 303)
       })(),
     )
     return

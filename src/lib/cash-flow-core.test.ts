@@ -274,7 +274,11 @@ describe('kindLines', () => {
 describe('dates', () => {
   it('adds months across a year end and finds the fiscal year', () => {
     expect(addMonths('2026-11', 3)).toBe('2027-02')
-    expect(fiscalEndYear('2026-10-07')).toBe(2027)
-    expect(fiscalEndYear('2027-08-31')).toBe(2027)
+    // A year ending in August, and one ending in March (this farm's).
+    expect(fiscalEndYear('2026-10-07', 8)).toBe(2027)
+    expect(fiscalEndYear('2027-08-31', 8)).toBe(2027)
+    expect(fiscalEndYear('2026-10-07', 3)).toBe(2027)
+    expect(fiscalEndYear('2027-03-31', 3)).toBe(2027)
+    expect(fiscalEndYear('2027-04-01', 3)).toBe(2028)
   })
 })

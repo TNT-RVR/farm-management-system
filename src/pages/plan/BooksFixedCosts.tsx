@@ -1,3 +1,4 @@
+import { useFiscalEndMonth } from '@/lib/farm-setup'
 import { useMemo, useState } from 'react'
 import { BookOpen, RefreshCw } from 'lucide-react'
 import { Fold } from '@/components/Fold'
@@ -24,6 +25,7 @@ import {
 import { cn } from '@/lib/utils'
 import { powerByUse } from '@/lib/irrigation-power-core'
 import { usePowerBillSites } from '@/lib/power-bills'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const money0 = (v: number) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
 const when = (iso: string) => new Date(iso).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -46,9 +48,11 @@ const CATEGORY_OPTIONS = BOOKS_CATEGORIES.filter((c) => c.key !== 'income').map(
 export function BooksFixedCosts({ year, locked, setting }: { year: number; locked: boolean; setting: FixedSetting | null }) {
   const { data: company } = useQbCompany()
   const connected = company?.status === 'connected'
-  const fy = fiscalYear(year)
+  // The fiscal year that paid for this crop, on Farm setup's year-end; nothing is read until that is known.
+  const endMonth = useFiscalEndMonth()
+  const fy = fiscalYear(year, endMonth ?? 12)
   const params = useMemo(() => ({ start_date: fy.start, end_date: fy.end, accounting_method: 'Accrual' }), [fy.start, fy.end])
-  const report = useQbReport('ProfitAndLoss', connected ? params : null)
+  const report = useQbReport('ProfitAndLoss', connected && endMonth != null ? params : null)
   const refresh = useRefreshQbReport()
   const { data: overrides } = useAccountCategories(company?.realm_id)
   const setCategory = useSetAccountCategory(company?.realm_id)
@@ -165,7 +169,7 @@ export function BooksFixedCosts({ year, locked, setting }: { year: number; locke
 
           <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[520px] text-sm">
-              <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+              <thead className={TABLE_HEAD}>
                 <tr>
                   <th className="py-1 font-medium">Part</th>
                   <th className="py-1 text-right font-medium">Books</th>

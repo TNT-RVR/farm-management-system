@@ -1,6 +1,11 @@
 import type { Geometry, MultiPolygon, Polygon, Position } from 'geojson'
 import { quartersInView, type GridParcel } from './geo/atsGrid'
 import type { TownshipTable } from './geo/ats'
+import { bboxOfRings } from './geo/area'
+import { pointInGeometry, pointInRing } from './geo/point-in'
+
+// Point-in-shape lives in lib/geo; kept exported here for the callers that import it from this module.
+export { pointInGeometry, pointInRing }
 
 /**
  * Canola isolation (Sam, 8 Oct 2026): a seed canola field, a mile around it
@@ -21,28 +26,6 @@ export function outerRings(g: Geometry | null | undefined): Ring[] {
   if (g.type === 'Polygon') return (g as Polygon).coordinates.slice(0, 1)
   if (g.type === 'MultiPolygon') return (g as MultiPolygon).coordinates.map((p) => p[0])
   return []
-}
-
-/** Every ring with its holes, for "is this point on the field" (a hole is not the field). */
-function polygons(g: Geometry | null | undefined): Ring[][] {
-  if (!g) return []
-  if (g.type === 'Polygon') return [(g as Polygon).coordinates]
-  if (g.type === 'MultiPolygon') return (g as MultiPolygon).coordinates
-  return []
-}
-
-export function pointInRing(p: Position, ring: Ring): boolean {
-  let inside = false
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i]
-    const [xj, yj] = ring[j]
-    if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) inside = !inside
-  }
-  return inside
-}
-
-export function pointInGeometry(p: Position, g: Geometry | null | undefined): boolean {
-  return polygons(g).some(([outer, ...holes]) => pointInRing(p, outer) && !holes.some((h) => pointInRing(p, h)))
 }
 
 const cross = (a: Position, b: Position, c: Position) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
@@ -68,14 +51,7 @@ export function ringTouches(ring: Ring, area: Geometry): boolean {
 }
 
 export function bboxOf(g: Geometry): { south: number; west: number; north: number; east: number } | null {
-  const pts = outerRings(g).flat()
-  if (!pts.length) return null
-  return {
-    west: Math.min(...pts.map((p) => p[0])),
-    east: Math.max(...pts.map((p) => p[0])),
-    south: Math.min(...pts.map((p) => p[1])),
-    north: Math.max(...pts.map((p) => p[1])),
-  }
+  return bboxOfRings(outerRings(g))
 }
 
 const quarterRing = (q: GridParcel): Ring => q.box.ring.map((c) => [c.lng, c.lat])

@@ -12,6 +12,7 @@ import { DeleteButton, EditButton, RecordEditModal } from '@/components/RecordEd
 import { conv, depthToMm, type UnitSystem } from '@/lib/units'
 import { cn } from '@/lib/utils'
 import { FEEL_GUIDE, SOIL_METHODS } from '@/lib/soil-moisture'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const md = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
 
@@ -155,9 +156,9 @@ export function SoilReadingForm({ fieldId, u, fc, onSaved }: { fieldId: string; 
           </dl>
         </div>
       )}
-      <p className="text-[11px] text-gray-400">
+      <HelpNote summary="The model line is set to each reading from the next run.">
         On a reading&apos;s day the model line is set to it (AIMM&apos;s &ldquo;corrected to measured&rdquo;), from the next model run — tomorrow morning, or press Sync.
-      </p>
+      </HelpNote>
     </div>
   )
 }
@@ -180,7 +181,7 @@ export function SoilReadingsBlock({ fieldId, year, u }: { fieldId: string; year:
     <div className="space-y-2 text-xs">
       {readings && readings.length > 0 ? (
         <table className="w-full">
-          <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th className="py-0.5 font-medium">Date</th>
               <th className="py-0.5 text-right font-medium">Available</th>

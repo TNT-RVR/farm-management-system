@@ -39,7 +39,7 @@ export function BinAirAlerts({ compact = false }: { compact?: boolean }) {
           >
             <div className="flex flex-wrap items-start gap-2">
               <Fan className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 basis-48">
                 <p className="font-semibold">
                   {bin ? `${bin} needs air` : 'A bin needs air'}
                   {field && <span className="font-normal"> — {field}</span>}
@@ -66,7 +66,7 @@ export function BinAirAlerts({ compact = false }: { compact?: boolean }) {
                 )}
               </div>
               {confirming === a.id ? (
-                <div className="flex items-center gap-1.5">
+                <div className="flex w-full items-center gap-1.5 sm:w-auto">
                   <button
                     onClick={() => dismiss.mutate({ id: a.id, note: 'Air put on' })}
                     disabled={dismiss.isPending}

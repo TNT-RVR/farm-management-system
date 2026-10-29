@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { lastWeekStart, writeWeek } from '../shared/app-changes.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 // Writes the "what changed in the app" summary for one week (a Monday), for
 // the What's new page and the Monday meeting. Background: the model reads a
@@ -18,7 +18,7 @@ export default async (req: Request) => {
 
   const { weekStart } = (await req.json().catch(() => ({}))) as { weekStart?: string }
   const week = weekStart && /^\d{4}-\d{2}-\d{2}$/.test(weekStart) ? weekStart : lastWeekStart()
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
   try {
     const r = await writeWeek(sb, week, apiKey)
     return new Response(`${week}: ${r.items} changes from ${r.commits} commits`, { status: 200 })

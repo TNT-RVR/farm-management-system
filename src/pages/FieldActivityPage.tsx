@@ -185,7 +185,7 @@ export function FieldActivityPage() {
                           minute: '2-digit',
                         })}
                       </span>
-                      <span className="min-w-0 flex-1">
+                      <span className="min-w-0 flex-1 basis-48">
                         <span className="font-medium text-gray-900">
                           {TABLE_LABELS[a.table_name] ?? a.table_name}
                         </span>{' '}

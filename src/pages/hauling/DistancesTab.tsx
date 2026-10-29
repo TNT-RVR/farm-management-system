@@ -11,12 +11,14 @@ import {
   fieldKey,
   fieldRoute,
   shopKey,
+  useFarmYards,
   siteKey,
   useFieldEntries,
   useFieldPoints,
   usePlaces,
   useRecomputeRoutes,
   useRoadRoutes,
+  useSaveFarmYard,
   useSaveFieldEntry,
   useSaveOperatingSetting,
   useSaveSite,
@@ -26,15 +28,25 @@ import {
   useTrailKmh,
   useTrips,
   type FarmPlace,
+  type FarmYard,
   type Site,
 } from '@/lib/hauling-data'
-import { parseLatLng, type LatLng, type StartKey, type Trip } from '@/lib/road-routes'
+import { locationProblem, parseLatLng, type LatLng, type StartKey, type Trip } from '@/lib/road-routes'
+import { farmBrand } from '@/lib/farm-setup'
 import { TRAIL_KMH_DEFAULT } from '@/lib/trail-router'
+import { MAIN_YARD } from '@/lib/trucking'
 import { HelpNote } from '@/components/HelpNote'
 import { cn } from '@/lib/utils'
 import { Card, SettingsGroup, input } from './ui'
 import { RouteMap } from './RouteMap'
 import { FieldLink, Sources, n1 } from '../fertilizer/savings/ui'
+import { TABLE_HEAD } from '@/lib/table-style'
+
+/** The farm's own map centre (Farm setup), which a typed place is checked against. */
+const farmCentre = (): LatLng => {
+  const [lng, lat] = farmBrand().mapCenter
+  return { lat, lng }
+}
 
 const BASIS: Record<Trip['basis'], { label: string; cls: string }> = {
   road: { label: 'road', cls: 'bg-gray-100 text-gray-600' },
@@ -104,7 +116,7 @@ export function DistancesTab({ isManager }: { isManager: boolean }) {
               type="button"
               onClick={() => recompute.mutate(false)}
               disabled={recompute.isPending}
-              className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-md border border-brand-200 px-2 py-0.5 text-xs text-white hover:bg-brand-800 disabled:opacity-50"
               title="Works every route out again. Only points the router has not seen before (a moved pin, a new trail) cost a request; it also runs by itself every morning."
             >
               <RefreshCw className={cn('h-3 w-3', recompute.isPending && 'animate-spin')} />
@@ -151,7 +163,7 @@ export function DistancesTab({ isManager }: { isManager: boolean }) {
       <Card title="Distances to each field">
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="px-2 py-1 font-medium">Field</th>
                 <th className="px-2 py-1 text-right font-medium" title="Field work, spraying, every pass: from the shop to the field's entry">
@@ -211,10 +223,10 @@ export function DistancesTab({ isManager }: { isManager: boolean }) {
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-[11px] text-gray-400">
+        <HelpNote className="mt-2" summary="One way." title="Which distance is used where">
           One way. From the shop is what every pass’s road fuel uses (Fuel, Spreading, the Work list, the books); to the bins is what trucking the crop
           uses. Elevators are from the field’s entry, coming out the same way the field is reached.
-        </p>
+        </HelpNote>
       </Card>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -224,6 +236,7 @@ export function DistancesTab({ isManager }: { isManager: boolean }) {
       </div>
       <TrailSpeedCard isManager={isManager} />
       <ElevatorsCard sites={sites ?? []} isManager={isManager} />
+      <FarmYardsCard bins={bins} isManager={isManager} />
     </div>
   )
 }
@@ -342,7 +355,7 @@ function ManualKm({ from, to, fromPt, toPt, trip }: { from: string; to: string; 
   const [min, setMin] = useState('')
   if (!open)
     return (
-      <button type="button" onClick={() => setOpen(true)} className="ml-1.5 text-[11px] text-brand-700 underline decoration-dotted">
+      <button type="button" onClick={() => setOpen(true)} className="relative ml-1.5 text-[11px] text-brand-700 underline decoration-dotted after:absolute after:-inset-2 after:content-[''] sm:after:content-none">
         {trip?.basis === 'manual' ? 'change' : 'type'}
       </button>
     )
@@ -386,7 +399,8 @@ function PlaceCard({
   const save = useSaveOperatingSetting()
   const recompute = useRecomputeRoutes()
   const [text, setText] = useState('')
-  const parsed = parseLatLng(text)
+  const problem = locationProblem(text, farmCentre())
+  const parsed = problem ? null : parseLatLng(text)
   return (
     <Card title={title}>
       <p className="text-sm text-gray-700">
@@ -424,7 +438,7 @@ function PlaceCard({
           >
             Move it
           </button>
-          {text && !parsed && <span className="text-xs text-amber-700">Not a location in southern Alberta.</span>}
+          {problem && <span className="text-xs text-amber-700">{problem}</span>}
         </div>
       )}
     </Card>
@@ -454,7 +468,7 @@ function ElevatorsCard({ sites, isManager }: { sites: Site[]; isManager: boolean
       title="Elevators and plants"
       right={
         isManager && (
-          <button type="button" onClick={() => setAdding(true)} className="text-xs text-brand-700 underline">
+          <button type="button" onClick={() => setAdding(true)} className="text-xs text-white underline">
             Add one
           </button>
         )
@@ -466,11 +480,186 @@ function ElevatorsCard({ sites, isManager }: { sites: Site[]; isManager: boolean
         ))}
         {adding && <SiteRow site={null} isManager={isManager} onDone={() => setAdding(false)} />}
       </ul>
-      <p className="mt-2 text-[11px] text-gray-400">
+      <HelpNote className="mt-2" summary="Put the E pin on the elevator itself.">
         The same list the scale uses for loads that go straight from the field. Drag its E pin on the map above onto the elevator itself, or
         paste a Google Maps link: a pin in the middle of town is a few km out.
-      </p>
+      </HelpNote>
     </Card>
+  )
+}
+
+/**
+ * The farm's own unloading yards besides the main one (Sam, 24 Oct 2026):
+ * feed goes to the main yard, the hay yard below the hill or the East Ranch
+ * Ranch. The Trucking tab picks one per field; each pin is measured to.
+ */
+function FarmYardsCard({ bins, isManager }: { bins: FarmPlace | null; isManager: boolean }) {
+  const { data: yards } = useFarmYards()
+  const [adding, setAdding] = useState(false)
+  return (
+    <Card
+      title="Farm yards"
+      right={
+        isManager && (
+          <button type="button" onClick={() => setAdding(true)} className="text-xs text-white underline">
+            Add one
+          </button>
+        )
+      }
+    >
+      <ul className="divide-y divide-gray-100 text-sm">
+        <li className="flex flex-wrap items-baseline gap-x-3 py-1.5">
+          <span className="font-medium text-gray-900">{MAIN_YARD}</span>
+          <span className="text-xs text-gray-500">the bins above</span>
+        </li>
+        {(yards ?? []).map((y) => (
+          <FarmYardRow key={y.id} yard={y} bins={bins} isManager={isManager} />
+        ))}
+        {adding && <FarmYardRow yard={null} bins={bins} isManager={isManager} onDone={() => setAdding(false)} />}
+      </ul>
+      <p className="mt-2 text-[11px] text-gray-400">Where feed is unloaded and stays. Drag its Y pin on the map above onto the yard, or paste a Google Maps link.</p>
+    </Card>
+  )
+}
+
+/** Fields planned to unload at a yard; a yard they use can only be retired. */
+function useYardUses(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['farm_yard_uses', id],
+    enabled,
+    queryFn: async () => {
+      const { count, error } = await supabase.from('field_haul_plans').select('id', { count: 'exact', head: true }).eq('yard_id', id)
+      if (error) throw error
+      return count ?? 0
+    },
+  })
+}
+
+function FarmYardRow({ yard, bins, isManager, onDone }: { yard: FarmYard | null; bins: FarmPlace | null; isManager: boolean; onDone?: () => void }) {
+  const qc = useQueryClient()
+  const save = useSaveFarmYard()
+  const [editing, setEditing] = useState(yard == null)
+  const [confirming, setConfirming] = useState(false)
+  const [name, setName] = useState(yard?.name ?? '')
+  const [where, setWhere] = useState(yard?.lat != null ? `${yard.lat}, ${yard.lng}` : '')
+  const parsed = parseLatLng(where)
+  const { data: uses } = useYardUses(yard?.id ?? '', !!yard && editing)
+  const del = useMutation({
+    mutationFn: async () => {
+      // Its cached routes first, then the yard.
+      for (const col of ['from_key', 'to_key']) {
+        const { error } = await supabase.from('road_routes').delete().like(col, `%${yard!.id}%`)
+        if (error) throw error
+      }
+      const { error } = await supabase.from('farm_yards').delete().eq('id', yard!.id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['farm_yards'] })
+      void qc.invalidateQueries({ queryKey: ['road_routes'] })
+      setConfirming(false)
+    },
+  })
+  if (!editing && yard)
+    return (
+      <li className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5">
+        <span className={cn('font-medium', yard.active ? 'text-gray-900' : 'text-gray-400 line-through')}>{yard.name}</span>
+        {yard.lat != null ? (
+          <a href={`https://www.google.com/maps?q=${yard.lat},${yard.lng}`} target="_blank" rel="noreferrer" className="text-xs tabular-nums text-brand-700 underline">
+            {yard.lat.toFixed(4)}, {yard.lng?.toFixed(4)}
+          </a>
+        ) : (
+          <span className="text-xs text-amber-700">no pin — no distances</span>
+        )}
+        {yard.note && <span className="text-xs text-gray-500">{yard.note}</span>}
+        {isManager && yard.lat == null && bins && (
+          <button
+            type="button"
+            disabled={save.isPending}
+            onClick={() => save.mutate({ id: yard.id, name: yard.name, lat: bins.lat, lng: bins.lng, note: 'Put down at the bins — drag it to the yard' })}
+            className="text-xs text-brand-700 underline"
+          >
+            put a pin on the map to drag
+          </button>
+        )}
+        {isManager && (
+          <button type="button" onClick={() => setEditing(true)} className="ml-auto text-xs text-brand-700 underline">
+            edit
+          </button>
+        )}
+      </li>
+    )
+  if (confirming && yard)
+    return (
+      <ConfirmDialog
+        title="Delete farm yard"
+        message={`Delete ${yard.name}? Its distances go with it.`}
+        busy={del.isPending}
+        error={del.error ? (del.error as Error).message : null}
+        onClose={() => setConfirming(false)}
+        onConfirm={() => del.mutate()}
+      />
+    )
+  return (
+    <li className="flex flex-wrap items-center gap-2 py-1.5">
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name, e.g. the hay yard" className={cn(input, 'w-48 text-xs')} />
+      <input value={where} onChange={(e) => setWhere(e.target.value)} placeholder="lat, lng or a Google Maps link" className={cn(input, 'min-w-0 flex-1 basis-56 text-xs')} />
+      <button
+        type="button"
+        disabled={!name.trim() || (where.trim() !== '' && !parsed) || save.isPending}
+        onClick={() =>
+          save.mutate(
+            {
+              id: yard?.id,
+              name,
+              lat: parsed?.lat ?? null,
+              lng: parsed?.lng ?? null,
+              // A pin somebody typed is no longer the one put down at the bins.
+              note: parsed && yard?.lat != null && parsed.lat === yard.lat && parsed.lng === yard.lng ? yard.note : null,
+            },
+            {
+              onSuccess: () => {
+                setEditing(false)
+                onDone?.()
+              },
+            },
+          )
+        }
+        className="rounded-md bg-brand-700 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+      >
+        Save
+      </button>
+      {yard && (
+        <button type="button" onClick={() => save.mutate({ id: yard.id, name: yard.name, lat: yard.lat, lng: yard.lng, note: yard.note, active: !yard.active })} className="text-xs text-gray-500 underline">
+          {yard.active ? 'retire' : 'bring back'}
+        </button>
+      )}
+      {yard && (
+        <button
+          type="button"
+          disabled={uses == null || uses > 0}
+          title={uses ? `${uses} haul plan${uses === 1 ? '' : 's'} unload here; retire it instead` : undefined}
+          onClick={() => {
+            del.reset()
+            setConfirming(true)
+          }}
+          className="flex items-center gap-1 text-xs text-red-700 underline disabled:text-gray-300 disabled:no-underline"
+        >
+          <Trash2 className="h-3 w-3" /> delete
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          setEditing(false)
+          onDone?.()
+        }}
+        className="text-xs text-gray-500 underline"
+      >
+        cancel
+      </button>
+      {save.isError && <span className="text-xs text-red-700">{(save.error as Error).message}</span>}
+    </li>
   )
 }
 
@@ -587,7 +776,8 @@ function SiteRow({ site, isManager, onDone }: { site: Site | null; isManager: bo
   const [editing, setEditing] = useState(site == null)
   const [name, setName] = useState(site?.name ?? '')
   const [where, setWhere] = useState(site?.lat != null ? `${site.lat}, ${site.lng}` : '')
-  const parsed = parseLatLng(where)
+  const problem = locationProblem(where, farmCentre())
+  const parsed = problem ? null : parseLatLng(where)
   if (!editing && site)
     return (
       <li onClick={rowClick(() => setOpen(true))} className="flex cursor-pointer flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5 hover:bg-gray-50">
@@ -663,6 +853,7 @@ function SiteRow({ site, isManager, onDone }: { site: Site | null; isManager: bo
       >
         cancel
       </button>
+      {problem && <span className="text-xs text-amber-700">{problem}</span>}
       {save.isError && <span className="text-xs text-red-700">{(save.error as Error).message}</span>}
     </li>
   )

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { TriangleAlert, CircleAlert, Info, CheckCircle2 } from 'lucide-react'
 import type { Warning } from '@/lib/cattle-nutrition'
 import { cn } from '@/lib/utils'
+import { n0, n1Fixed as n1 } from '@/lib/format'
 
 /**
  * "Head counts come from the Herd tab", as a small link rather than a
@@ -11,7 +12,7 @@ import { cn } from '@/lib/utils'
 export function FromHerdChip({ className }: { className?: string }) {
   return (
     <Link
-      to="/herd"
+      to="/herd?tab=herd"
       title="Head counts come from the Herd tab — add or remove classes there."
       className={cn(
         'inline-flex items-center rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-500 hover:border-brand-300 hover:text-brand-700',
@@ -23,8 +24,7 @@ export function FromHerdChip({ className }: { className?: string }) {
   )
 }
 
-export const n0 = (v: number) => Math.round(v).toLocaleString('en-CA')
-export const n1 = (v: number) => v.toLocaleString('en-CA', { maximumFractionDigits: 1, minimumFractionDigits: 1 })
+export { n0, n1Fixed as n1 } from '@/lib/format'
 export const tonnes = (lb: number) => (lb / 2204.62).toLocaleString('en-CA', { maximumFractionDigits: 1 })
 
 /** Number field that saves on blur. */

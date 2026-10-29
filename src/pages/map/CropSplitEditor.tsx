@@ -2,19 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { cropColour } from '@/lib/crop-colour'
 import maplibregl, { type GeoJSONSource } from 'maplibre-gl'
 import type { MultiPolygon } from 'geojson'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import { Pencil, Scissors, Trash2, X } from 'lucide-react'
 import { Select } from '@/components/Select'
 import { useCrops } from '@/lib/queries'
 import { useCropZoneMutations, useFieldCropZones } from '@/lib/cropZones'
 import { boundsOf, multiPolygonAcres } from '@/lib/geo/area'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { PolygonDraw, type DrawState } from '@/lib/geo/polygon-draw'
 
 const EMPTY_DRAW: DrawState = { count: 0, acres: 0, mode: 'draw', selected: null, closed: false }
 import { type Cut, cutEndpoints, cutFromPoints, splitByLine } from '@/lib/geo/split-line'
 import { cn } from '@/lib/utils'
-import { farmMapCenter } from '@/lib/farm-setup'
+import { HelpNote } from '@/components/HelpNote'
 
 const a2 = (v: number) => v.toLocaleString('en-CA', { maximumFractionDigits: 1 })
 
@@ -30,9 +29,9 @@ export function CropSplitEditor({
   onClose: () => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
   const drawRef = useRef<PolygonDraw | null>(null)
-  const [ready, setReady] = useState(false)
+  // Declared before the map, so the draw tool is let go of before the map it drew on.
+  useEffect(() => () => drawRef.current?.destroy(), [boundary])
   const [drawing, setDrawing] = useState(false)
   const [draw, setDraw] = useState<DrawState>(EMPTY_DRAW)
   const [cropId, setCropId] = useState('')
@@ -63,72 +62,60 @@ export function CropSplitEditor({
   const assigned = (zones ?? []).reduce((s, z) => s + Number(z.acres ?? 0), 0)
   const remaining = fieldAcres - assigned
 
-  // Init the map once.
-  useEffect(() => {
-    if (!containerRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: SATELLITE_STYLE,
-      center: farmMapCenter(),
-      zoom: 12,
-      attributionControl: false,
-    })
-    map.addControl(new maplibregl.NavigationControl(), 'top-right')
-    mapRef.current = map
-    map.on('load', () => {
-      map.addSource('field-boundary', {
-        type: 'geojson',
-        data: { type: 'Feature', geometry: boundary, properties: {} },
-      })
-      map.addLayer({
-        id: 'field-line',
-        type: 'line',
-        source: 'field-boundary',
-        paint: { 'line-color': '#ffffff', 'line-width': 2.5 },
-      })
-      map.addSource('zones', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
-      map.addLayer({
-        id: 'zones-fill',
-        type: 'fill',
-        source: 'zones',
-        paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.45 },
-      })
-      map.addLayer({
-        id: 'zones-line',
-        type: 'line',
-        source: 'zones',
-        paint: { 'line-color': ['get', 'color'], 'line-width': 1.5 },
-      })
-      map.addSource('cut-preview', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-      })
-      map.addLayer({
-        id: 'cut-fill',
-        type: 'fill',
-        source: 'cut-preview',
-        paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.35 },
-      })
-      map.addSource('cut-line', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-      })
-      map.addLayer({
-        id: 'cut-line-layer',
-        type: 'line',
-        source: 'cut-line',
-        paint: { 'line-color': '#fbbf24', 'line-width': 2.5, 'line-dasharray': [2, 1.5] },
-      })
-      const b = boundsOf(boundary)
-      if (b) map.fitBounds(b, { padding: 40, duration: 0 })
-      setReady(true)
-    })
-    return () => {
-      drawRef.current?.destroy()
-      map.remove()
-      mapRef.current = null
-    }
-  }, [boundary])
+  const { mapRef, ready } = useFarmMap(
+    containerRef,
+    {
+      controls: { nav: {} },
+      onReady: (map) => {
+        map.addSource('field-boundary', {
+          type: 'geojson',
+          data: { type: 'Feature', geometry: boundary, properties: {} },
+        })
+        map.addLayer({
+          id: 'field-line',
+          type: 'line',
+          source: 'field-boundary',
+          paint: { 'line-color': '#ffffff', 'line-width': 2.5 },
+        })
+        map.addSource('zones', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+        map.addLayer({
+          id: 'zones-fill',
+          type: 'fill',
+          source: 'zones',
+          paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.45 },
+        })
+        map.addLayer({
+          id: 'zones-line',
+          type: 'line',
+          source: 'zones',
+          paint: { 'line-color': ['get', 'color'], 'line-width': 1.5 },
+        })
+        map.addSource('cut-preview', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        })
+        map.addLayer({
+          id: 'cut-fill',
+          type: 'fill',
+          source: 'cut-preview',
+          paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.35 },
+        })
+        map.addSource('cut-line', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        })
+        map.addLayer({
+          id: 'cut-line-layer',
+          type: 'line',
+          source: 'cut-line',
+          paint: { 'line-color': '#fbbf24', 'line-width': 2.5, 'line-dasharray': [2, 1.5] },
+        })
+        const b = boundsOf(boundary)
+        if (b) map.fitBounds(b, { padding: 40, duration: 0 })
+      },
+    },
+    [boundary],
+  )
 
   // Repaint zone overlays when zones change.
   useEffect(() => {
@@ -145,7 +132,7 @@ export function CropSplitEditor({
     }
     const src = mapRef.current.getSource('zones') as GeoJSONSource | undefined
     src?.setData(fc)
-  }, [zones, ready, cropMap])
+  }, [mapRef, zones, ready, cropMap])
 
   // Repaint the two halves and the cut line whenever the cut changes.
   useEffect(() => {
@@ -183,7 +170,7 @@ export function CropSplitEditor({
           ]
         : [],
     })
-  }, [ready, mode, cut, split, boundary, cropMap, cutCropRight, cutCropLeft])
+  }, [mapRef, ready, mode, cut, split, boundary, cropMap, cutCropRight, cutCropLeft])
 
   // Two clicks set the line: the bearing and offset are read back off it, so
   // dragging and typing are two handles on one value rather than two features.
@@ -204,7 +191,7 @@ export function CropSplitEditor({
       map.off('click', onClick)
       map.getCanvas().style.cursor = ''
     }
-  }, [ready, mode, boundary])
+  }, [mapRef, ready, mode, boundary])
 
   const saveCut = () => {
     if (!cutDivides || !split.right || !split.left) return
@@ -529,12 +516,12 @@ export function CropSplitEditor({
               </button>
             </div>
           )}
-          <p className="mt-2 text-[11px] text-gray-400">
+          <HelpNote className="mt-2" summary="Draw traces an area; Cut slices the field with a line." title="Draw and Cut">
             <b>Draw</b> traces one crop&rsquo;s area freehand. <b>Cut</b> slices the whole field
             with a straight line at the planting angle, which is how most splits here are actually
             made. Acres are measured from the shape; edit the number to fine-tune. Zones feed the
             rotation&rsquo;s acres-by-crop totals and give each side its own water balance.
-          </p>
+          </HelpNote>
         </div>
       </div>
     </div>

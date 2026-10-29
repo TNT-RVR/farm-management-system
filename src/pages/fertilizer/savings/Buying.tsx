@@ -26,6 +26,7 @@ import { BuyWindowDetail } from './BuyWindowDetail'
 import { AdderNote, adderText } from './AdderNote'
 import { Empty, Table, ToolCard, button, ghost, input, money, n0, n1, perLbFmt, td, tdNum } from './ui'
 import { RowDelete, RowEditor } from './RowEditor'
+import { askConfirm } from '@/components/askConfirm'
 
 const NUTRIENT_LABEL: Record<NutrientKey, string> = { n: 'N', p2o5: 'P₂O₅', k2o: 'K₂O', s: 'S' }
 const productOptions = STRAIGHTS.map((s) => ({ value: s.key, label: s.label }))
@@ -694,8 +695,8 @@ export function QuoteSheetCard() {
               {isMgr && (
                 <button
                   type="button"
-                  onClick={() => {
-                    if (window.confirm(`Delete ${q.supplier}'s ${labelOf(q.product)} quote?`)) m.remove.mutate(q.id)
+                  onClick={async () => {
+                    if (await askConfirm(`Delete ${q.supplier}'s ${labelOf(q.product)} quote?`)) m.remove.mutate(q.id)
                   }}
                   className="pr-1.5 text-gray-400 hover:text-red-600"
                   aria-label="Delete quote"

@@ -5,9 +5,11 @@ import { useDeleteServiceLog, useSaveServiceLog, useServiceLog, useServicePlans,
 import { useUsers } from '@/lib/queries'
 import { keepOpenOnError } from '@/lib/record-actions'
 import { cn } from '@/lib/utils'
+import { money as fmtMoney } from '@/lib/format'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const day = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })
-const money = (v: number | null) => (v == null ? null : `$${Number(v).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+const money = (v: number | null) => (v == null ? null : fmtMoney(Number(v), 2, { neg: 'inside' }))
 
 /**
  * The service done on a machine — written by "Done" on the schedule, never
@@ -75,7 +77,7 @@ export function EquipmentServiceLog({ equipment, canEdit, canAdd }: { equipment:
       ) : (
         <div className="mt-2 overflow-x-auto">
           <table className="w-full min-w-[480px] text-sm">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="w-5" />
                 <th className="py-1 font-medium">Date</th>

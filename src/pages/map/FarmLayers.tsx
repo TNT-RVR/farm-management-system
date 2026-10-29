@@ -10,6 +10,7 @@ import { LinkedPumps, PinPumpPicker } from '@/pages/irrigation/LinkedPumps'
 import { useMyMapGeo, useMyMapUrl } from '@/lib/mymaps'
 import { cn } from '@/lib/utils'
 import { FARM_CLICK_LAYERS, setFarmLayersBusy } from '@/lib/farm-layers-map'
+import { askConfirm } from '@/components/askConfirm'
 
 /**
  * The farm's own layers on the main map, editable by managers: tap an item to
@@ -347,8 +348,8 @@ export function FarmLayersOverlay({
             setVertex(null)
             setMode('none')
           }}
-          onDelete={() => {
-            if (!window.confirm(`Delete “${sel.label || 'this item'}” from the map? Any winterizing place made from it keeps its instructions but stops following it.`)) return
+          onDelete={async () => {
+            if (!(await askConfirm(`Delete “${sel.label || 'this item'}” from the map? Any winterizing place made from it keeps its instructions but stops following it.`))) return
             del.mutate(sel.id)
             setSelected(null)
           }}
@@ -499,23 +500,30 @@ export function FarmLayersLegend({
   isManager: boolean
 }) {
   const [importing, setImporting] = useState(false)
+  // Rows in the Google My Map's own list: a folder copied into the app is
+  // still one of the My Map's layers, just kept here (Sam, 29 Oct 2026).
   return (
-    <div className="mt-2 border-t border-gray-100 pt-2">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Farm layers</p>
+    <>
       {layers.map((l) => (
-        <label key={l.id} className="flex items-center gap-2 py-0.5">
-          <input type="checkbox" checked={active.has(l.id)} onChange={(e) => onToggle(l.id, e.target.checked)} />
-          {l.name}
-        </label>
+        <li key={l.id}>
+          <label className="flex min-w-0 items-center gap-2 py-0.5 text-[13px]" title="Kept in the app — edit it here">
+            <input type="checkbox" checked={active.has(l.id)} onChange={(e) => onToggle(l.id, e.target.checked)} />
+            <span className="truncate">{l.name}</span>
+          </label>
+        </li>
       ))}
-      {!layers.length && <p className="text-[11px] text-gray-400">None yet.</p>}
-      {isManager && !importing && (
-        <button onClick={() => setImporting(true)} className="mt-1 text-[11px] font-medium text-brand-700 underline">
-          Copy a My Map folder into the app…
-        </button>
+      {isManager && (
+        <li>
+          {!importing ? (
+            <button onClick={() => setImporting(true)} className="mt-0.5 text-[11px] font-medium text-brand-700 underline">
+              Copy a My Map folder into the app…
+            </button>
+          ) : (
+            <ImportFolder taken={layers.map(myMapFolderOf).filter((x): x is string => !!x)} onDone={() => setImporting(false)} />
+          )}
+        </li>
       )}
-      {isManager && importing && <ImportFolder taken={layers.map(myMapFolderOf).filter((x): x is string => !!x)} onDone={() => setImporting(false)} />}
-    </div>
+    </>
   )
 }
 

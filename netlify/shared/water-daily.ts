@@ -1,8 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { WATER_STATIONS, type WaterStation } from '../../src/lib/water-stations.ts'
+import { farmDistrict, farmRiver } from '../../src/lib/farm-context.ts'
+import { STATION_COLUMNS, stationOf, type WaterStation, type WaterStationRow } from '../../src/lib/water-stations.ts'
 
 /**
- * Daily means for each reservoir and snowpack in WATER_STATIONS, into
+ * Daily means for each reservoir and snowpack in water_supply_stations, into
  * water_supply_daily (for the graphs) and the latest into water_supply (for
  * the Season ahead panel). Alberta's feeds are 5-minute readings; SNOTEL is
  * daily already and comes with its median for the date.
@@ -48,7 +49,10 @@ export async function syncWaterDaily(sb: SupabaseClient, days: number, chunkDays
   const failed: string[] = []
   let rows = 0
   const end = new Date()
-  for (const s of WATER_STATIONS) {
+  const { data: listed, error: listError } = await sb.from('water_supply_stations').select(STATION_COLUMNS).order('sort')
+  if (listError) throw listError
+  const stations = ((listed ?? []) as WaterStationRow[]).map(stationOf)
+  for (const s of stations) {
     try {
       const out: { station: string; day: string; value: number | null; median: number | null; unit: string }[] = []
       for (let back = days; back > 0; back -= chunkDays) {
@@ -71,7 +75,7 @@ export async function syncWaterDaily(sb: SupabaseClient, days: number, chunkDays
           kind: s.kind,
           station: s.key,
           name: s.name,
-          feeds: s.section === 'oldman' ? 'Oldman licences' : 'SMRID',
+          feeds: s.section === 'river' ? `${farmRiver()} licences` : farmDistrict(),
           observed_on: last.day,
           value: last.value,
           unit: s.kind === 'reservoir' ? '% full' : 'mm SWE',
@@ -89,7 +93,7 @@ export async function syncWaterDaily(sb: SupabaseClient, days: number, chunkDays
     }
   }
   const now = new Date().toISOString()
-  if (failed.length === WATER_STATIONS.length) {
+  if (stations.length && failed.length === stations.length) {
     await sb.from('integration_health').update({ status: 'error', detail: failed.join('; ').slice(0, 300), last_checked_at: now, updated_at: now }).eq('source_key', 'water_daily')
   } else {
     await sb.rpc('record_integration_heartbeat', { p_key: 'water_daily', p_detail: failed.length ? `${rows} days; failed: ${failed.join('; ')}`.slice(0, 300) : `${rows} station-days`, p_data_at: now })

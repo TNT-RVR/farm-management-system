@@ -32,6 +32,7 @@ import { localDate } from '@/lib/date-range'
 import { cn } from '@/lib/utils'
 import { cropGrazingSummary, type GrazingRule } from '@/lib/grazing-restrictions'
 import { useLabelGrazingRules } from '@/lib/grazing-restrictions-hooks'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const METHOD_LABEL: Record<string, string> = {
   ground: 'Ground rig only',
@@ -293,8 +294,8 @@ function CropTable({
   return (
     <div className="mt-1 overflow-x-auto">
       <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-gray-200 text-left text-[11px] text-gray-500">
+        <thead className={TABLE_HEAD}>
+          <tr>
             <th className="px-2 pb-1 font-medium">Crop</th>
             <th className="px-2 pb-1 font-medium">Rate</th>
             <th className="px-2 pb-1 font-medium">Pests</th>

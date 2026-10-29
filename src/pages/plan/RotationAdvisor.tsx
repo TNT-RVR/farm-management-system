@@ -6,13 +6,15 @@ import { supabase } from '@/lib/supabase'
 import { useBulkSetRotation, type SuccessionMap, type SuccessionNotes } from '@/lib/rotation'
 import { useRotationContext, useSetAcreLimit, useSetCropMargin, useSetCropWaterNeed, useSetGroupLimit, useSetOwnUse, useSetRenterOnly, useSetSisterValue } from '@/lib/rotation-context'
 import { SeasonAhead } from '@/pages/plan/SeasonAhead'
+import { reasoningLines, useRotationFeedback } from '@/lib/rotation-feedback'
 import { buildPlan, LIMIT_GROUPS, OBJECTIVE_LABEL, SOIL_SCORE, type Objective, type Preference } from '@/lib/rotation-engine'
 import { cn } from '@/lib/utils'
 import { Fold } from '@/components/Fold'
 import { AdminOnly } from '@/components/TechnicalDetails'
-
-const n0 = (v: number) => Math.round(v).toLocaleString('en-CA')
-const money = (v: number) => `${v < 0 ? '−' : ''}$${n0(Math.abs(v))}`
+import { money, n0 } from '@/lib/format'
+import { askConfirm } from '@/components/askConfirm'
+import { HelpNote } from '@/components/HelpNote'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /** Hex SHA-256 of the request text, matching the one the function stores. */
 async function sha256(text: string) {
@@ -26,6 +28,16 @@ const isWriting = (r: { status: string; created_at: string }) =>
 
 const writtenAt = (iso: string) =>
   new Date(iso).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
+/** The acre-limit column notes, so the table header and the phone cards say the same thing. */
+const LIMIT_TIP = {
+  water:
+    "Gross irrigation in an average year, inches at the pivot: Alberta Agriculture's figure for southern Alberta (crop water use less Taber's normal rain, at an 84% pivot on a loam). Each field's water budget moves it for that field's soil, pivot efficiency and AIMM seasons. Typing a figure makes it the farm's own.",
+  renter: 'Grown here only by a renter: never recommended, still plannable by hand',
+  ownUse: 'Grown for our own feed, not sold: its price is what the same feed would cost to buy',
+  sister:
+    "Value the crop earns for a sister company (Seed Canola's leafcutter pollination goes to a pollination business — not commodity Canola's). Shown beside the margin, never added to it.",
+}
 
 /** Claude's bullets with **bold** shown as bold. */
 function Advice({ text }: { text: string }) {
@@ -137,6 +149,10 @@ export function RotationAdvisor({
     return { out, ...st }
   }, [ctx, fields, fieldAcres, cropSetsByField, year, succession, notes, whatIf, coolSummer]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Why we chose what we chose before: the farm's own reasoning, sent with
+  // the plans (Sam, 28 Oct 2026).
+  const { data: feedback } = useRotationFeedback()
+
   /**
    * The request exactly as it is sent. Built from the plans on screen, so its
    * hash says whether saved advice was written from these plans or older ones.
@@ -174,6 +190,9 @@ export function RotationAdvisor({
     }
     return JSON.stringify({
       year,
+      // Why we chose what we chose before, in Sam's own words (28 Oct
+      // 2026): the farm's reasoning, for advice that sounds like the farm.
+      our_reasons: reasoningLines(feedback ?? [], name),
       acre_limits: {
         ...Object.fromEntries([...plans.max].map(([id, m]) => [name(id), m])),
         ...Object.fromEntries([...plans.groupMax].map(([g, m]) => [LIMIT_GROUPS.find((x) => x.group === g)?.label ?? g, m])),
@@ -194,7 +213,7 @@ export function RotationAdvisor({
         })),
       },
     })
-  }, [plans, ctx, year, whatIf, coolSummer])
+  }, [plans, ctx, year, whatIf, coolSummer, feedback])
   // Component state, not a query: the offline cache keeps query keys, and this
   // one would be the whole request.
   const [hashed, setHashed] = useState<{ text: string; hash: string } | null>(null)
@@ -309,7 +328,7 @@ export function RotationAdvisor({
   const plan = plans.out[objective]
   const cropName = (id: string | null | undefined) => ctx.cropInfo.find((c) => c.id === id)?.name ?? '—'
 
-  const apply = (mode: 'empty' | 'all') => {
+  const apply = async (mode: 'empty' | 'all') => {
     // Filling the gaps: the fields already planned keep their crop and count
     // toward the acre limits, so the new crops fit around them.
     const fixed = new Map<string, string>()
@@ -322,7 +341,7 @@ export function RotationAdvisor({
       .filter((a) => a.cropId && (mode === 'all' || !plannedFor(a.fieldId, year)))
       .map((a) => ({ field_id: a.fieldId, crop_year: year, crop_id: a.cropId!, planned_acres: fieldAcres.get(a.fieldId) ?? null }))
     if (!rows.length) return
-    if (mode === 'all' && !confirm(`Replace the ${year} plan on ${rows.length} fields with the "${OBJECTIVE_LABEL[objective]}" plan?`)) return
+    if (mode === 'all' && !(await askConfirm(`Replace the ${year} plan on ${rows.length} fields with the "${OBJECTIVE_LABEL[objective]}" plan?`, { confirmLabel: 'Replace' }))) return
     bulk.mutate(rows)
   }
 
@@ -396,9 +415,89 @@ export function RotationAdvisor({
       />
       </Fold>
 
-      <div className="overflow-x-auto rounded-md border border-gray-200 bg-white">
-        <table className="w-full text-xs">
-          <thead className="bg-gray-50 text-left text-[10px] uppercase tracking-wide text-gray-400">
+      <div className="rounded-md border border-gray-200 bg-white">
+        {/*
+          Phone: one card a field. Five columns on a 375 px screen squeezed
+          every cell to about a word wide, and the Why column — a note, two
+          reasons, two cautions and a label button — stood half a screen tall
+          on its own (Sam, 28 Oct 2026).
+        */}
+        <ul className="divide-y divide-gray-100 sm:hidden">
+          {plan.assignments.map((a) => {
+            const f = plans.fctx.find((x) => x.id === a.fieldId)!
+            const planned = plannedFor(a.fieldId, year)
+            const e = a.evaluation
+            const lastYear = (f.crops.get(year - 1) ?? []).map(cropName).join(', ')
+            const why = Boolean(a.note || e?.plus?.length || e?.cautions?.length || e?.labels?.length)
+            return (
+              <li key={a.fieldId} className="px-3 py-2.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{f.name}</span>
+                  <span
+                    className={cn(
+                      'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold',
+                      a.cropId ? 'bg-violet-100 text-violet-900' : 'bg-red-100 text-red-800',
+                    )}
+                  >
+                    {a.cropId ? cropName(a.cropId) : 'none'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-400">
+                  {n0(f.acres)} ac · {f.irrigated ? 'irrigated' : 'dryland'}
+                  {f.sandy && ' · sandy'}
+                  {f.ec != null && f.ec >= 1 && ` · EC ${f.ec.toFixed(1)}`}
+                </p>
+                <dl className="mt-1 space-y-0.5 text-xs text-gray-600">
+                  {lastYear && (
+                    <div className="flex gap-1.5">
+                      <dt className="shrink-0 text-gray-400">{year - 1}</dt>
+                      <dd className="min-w-0 flex-1">{lastYear}</dd>
+                    </div>
+                  )}
+                  {planned && (
+                    <div className="flex gap-1.5">
+                      <dt className="shrink-0 text-gray-400">Planned now</dt>
+                      <dd className={cn('min-w-0 flex-1', planned !== a.cropId && 'text-amber-700')}>{cropName(planned)}</dd>
+                    </div>
+                  )}
+                  {e?.profit != null && (
+                    <div className="flex gap-1.5">
+                      <dt className="shrink-0 text-gray-400">Margin</dt>
+                      <dd className="tabular-nums">{money(e.profit)}/ac</dd>
+                    </div>
+                  )}
+                </dl>
+                {why && (
+                  <div className="mt-1 text-[11px] leading-snug text-gray-600">
+                    {a.note && <span className="block">{a.note}</span>}
+                    {(e?.plus ?? []).slice(0, 2).map((p, i) => (
+                      <span key={i} className="block text-green-800">
+                        + {p}
+                      </span>
+                    ))}
+                    {(e?.cautions ?? []).slice(0, 2).map((c, i) => (
+                      <span key={i} className="block text-amber-700">
+                        ! {c}
+                      </span>
+                    ))}
+                    {(e?.labels ?? []).map((l) => (
+                      <button
+                        key={l.registration}
+                        type="button"
+                        onClick={() => openChemicalLabel(l.registration)}
+                        className="mr-2 inline-flex items-center gap-0.5 text-brand-700 underline hover:text-brand-800"
+                      >
+                        <FileText className="h-3 w-3" /> {l.product} label
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+        <table className="hidden w-full text-xs sm:table">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th className="px-2 py-1.5 font-medium">Field</th>
               <th className="px-2 py-1.5 font-medium">{year - 1}</th>
@@ -525,23 +624,183 @@ export function RotationAdvisor({
 
       <details className="rounded-md border border-gray-200 bg-white p-2">
         <summary className="cursor-pointer text-xs font-semibold text-gray-800">Acre limits and margins per crop</summary>
-        <p className="mt-1 text-[11px] text-gray-500">
+        <HelpNote className="mt-1" summary="Every plan stays inside these limits.">
           The most of each crop you want or can grow in a year — every plan stays inside it. With no limit set, a plan keeps any one
           crop to 35% of the farm (50% in the profit plan) so it stays a rotation. Margins drive the &ldquo;most profitable&rdquo; plan;
           the seeded ones are Alberta&apos;s 2024 irrigated budget before land and capital, and crops it does not cover are blank until you set them.
           A renter&apos;s crop is never recommended; plan it by hand once a renter has the ground.
-        </p>
-        <table className="mt-2 w-full text-xs">
-          <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+        </HelpNote>
+        {/*
+          Phone: one card a crop. Eight columns, four of them typed-in boxes,
+          ran straight off a 375 px screen — the table has no scroll box, so it
+          widened the whole page (Sam, 28 Oct 2026).
+        */}
+        <ul className="mt-2 divide-y divide-gray-100 sm:hidden">
+          {LIMIT_GROUPS.map((g) => {
+            const lim = ctx.limits.find((l) => l.crop_group === g.group && l.crop_year == null)
+            return (
+              <li key={g.group} className="bg-gray-50/60 px-1 py-2">
+                <p className="text-xs font-medium text-gray-800">{g.label}</p>
+                <dl className="mt-1 text-xs text-gray-600">
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="text-gray-400">Max acres / year</dt>
+                    <dd>
+                      <input
+                        key={`${g.group}-card-${lim?.max_acres ?? ''}`}
+                        defaultValue={lim?.max_acres ?? ''}
+                        disabled={!isManager}
+                        inputMode="decimal"
+                        placeholder="no limit"
+                        aria-label={`${g.label} max acres per year`}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim() === '' ? null : Number(e.target.value)
+                          if (v !== (lim ? Number(lim.max_acres) : null)) setGroupLimit.mutate({ group: g.group, maxAcres: v })
+                        }}
+                        className="w-24 rounded border border-gray-300 px-1.5 py-0.5 text-right tabular-nums"
+                      />
+                    </dd>
+                  </div>
+                </dl>
+                <p className="mt-0.5 text-[10px] text-gray-400">one limit across every crop in the group</p>
+              </li>
+            )
+          })}
+          {cropsForLimits.map((c) => {
+            const lim = ctx.limits.find((l) => l.crop_id === c.id && l.crop_year == null)
+            const soil = SOIL_SCORE[c.key]
+            const sv = ctx.sisterValue.get(c.id)
+            return (
+              <li key={c.id} className="px-1 py-2">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800">{c.name}</span>
+                  <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-gray-700">
+                    Soil {soil.score}
+                    {!soil.measured && <span className="font-normal text-gray-400">*</span>}
+                  </span>
+                </div>
+                <dl className="mt-1 space-y-1 text-xs text-gray-600">
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="text-gray-400">Max acres / year</dt>
+                    <dd>
+                      <input
+                        key={`${c.id}-card-${lim?.max_acres ?? ''}`}
+                        defaultValue={lim?.max_acres ?? ''}
+                        disabled={!isManager}
+                        inputMode="decimal"
+                        placeholder="no limit"
+                        aria-label={`${c.name} max acres per year`}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim() === '' ? null : Number(e.target.value)
+                          if (v !== (lim ? Number(lim.max_acres) : null)) setLimit.mutate({ cropId: c.id, maxAcres: v })
+                        }}
+                        className="w-24 rounded border border-gray-300 px-1.5 py-0.5 text-right tabular-nums"
+                      />
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="text-gray-400">Margin $/ac</dt>
+                    <dd>
+                      <input
+                        key={`${c.id}-card-m-${c.margin ?? ''}`}
+                        defaultValue={c.margin ?? ''}
+                        disabled={!isManager}
+                        inputMode="decimal"
+                        placeholder="set"
+                        title={ctx.marginSource.get(c.id) ?? undefined}
+                        aria-label={`${c.name} margin per acre`}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim() === '' ? null : Number(e.target.value)
+                          if (v !== c.margin) setMargin.mutate({ cropId: c.id, margin: v })
+                        }}
+                        className="w-24 rounded border border-gray-300 px-1.5 py-0.5 text-right tabular-nums"
+                      />
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="text-gray-400" title={LIMIT_TIP.water}>
+                      Water in/yr
+                    </dt>
+                    <dd>
+                      <input
+                        key={`${c.id}-card-w-${c.waterNeedIn ?? ''}`}
+                        defaultValue={c.waterNeedIn ?? ''}
+                        disabled={!isManager}
+                        inputMode="decimal"
+                        placeholder="set"
+                        aria-label={`${c.name} water inches per year`}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim() === '' ? null : Number(e.target.value)
+                          if (v !== (c.waterNeedIn ?? null)) setWaterNeed.mutate({ cropId: c.id, inches: v })
+                        }}
+                        className="w-16 rounded border border-gray-300 px-1.5 py-0.5 text-right tabular-nums"
+                      />
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="text-gray-400" title={LIMIT_TIP.renter}>
+                      Renter&apos;s crop
+                    </dt>
+                    <dd>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(c.renterOnly)}
+                        disabled={!isManager || setRenterOnly.isPending}
+                        onChange={(e) => setRenterOnly.mutate({ cropId: c.id, renterOnly: e.target.checked })}
+                        aria-label={`${c.name} is grown here only by a renter`}
+                      />
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="text-gray-400" title={LIMIT_TIP.ownUse}>
+                      Own feed
+                    </dt>
+                    <dd>
+                      <input
+                        type="checkbox"
+                        checked={ctx.marginBasis(c.id, year).ownUse}
+                        disabled={!isManager || setOwnUse.isPending}
+                        onChange={(e) => setOwnUse.mutate({ cropId: c.id, ownUse: e.target.checked })}
+                        aria-label={`${c.name} is grown for our own feed`}
+                      />
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="text-gray-400" title={LIMIT_TIP.sister}>
+                      Sister co. $/ac
+                    </dt>
+                    <dd>
+                      <input
+                        key={`${c.id}-card-s-${sv?.perAcre ?? ''}`}
+                        defaultValue={sv?.perAcre ?? ''}
+                        disabled={!isManager}
+                        inputMode="decimal"
+                        placeholder={sv?.note ? 'set' : '—'}
+                        title={sv?.note ?? 'Value to a sister company, not counted in RVR\'s margin'}
+                        aria-label={`${c.name} value per acre to a sister company`}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim() === '' ? null : Number(e.target.value)
+                          if (v !== (sv?.perAcre ?? null)) setSister.mutate({ cropId: c.id, perAcre: v })
+                        }}
+                        className="w-16 rounded border border-gray-300 px-1.5 py-0.5 text-right tabular-nums"
+                      />
+                    </dd>
+                  </div>
+                </dl>
+              </li>
+            )
+          })}
+        </ul>
+        <table className="mt-2 hidden w-full text-xs sm:table">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th className="py-1 font-medium">Crop</th>
               <th className="py-1 text-right font-medium">Max acres / year</th>
               <th className="py-1 text-right font-medium">Margin $/ac</th>
-              <th className="py-1 text-right font-medium" title="Gross irrigation in an average year, inches at the pivot: Alberta Agriculture's figure for southern Alberta (crop water use less Taber's normal rain, at an 84% pivot on a loam). Each field's water budget moves it for that field's soil, pivot efficiency and AIMM seasons. Typing a figure makes it the farm's own.">Water in/yr</th>
+              <th className="py-1 text-right font-medium" title={LIMIT_TIP.water}>Water in/yr</th>
               <th className="py-1 text-right font-medium">Soil score</th>
-              <th className="py-1 text-right font-medium" title="Grown here only by a renter: never recommended, still plannable by hand">Renter&apos;s crop</th>
-              <th className="py-1 text-right font-medium" title="Grown for our own feed, not sold: its price is what the same feed would cost to buy">Own feed</th>
-              <th className="py-1 text-right font-medium" title="Value the crop earns for a sister company (Seed Canola's leafcutter pollination goes to a pollination business — not commodity Canola's). Shown beside the margin, never added to it.">Sister co. $/ac</th>
+              <th className="py-1 text-right font-medium" title={LIMIT_TIP.renter}>Renter&apos;s crop</th>
+              <th className="py-1 text-right font-medium" title={LIMIT_TIP.ownUse}>Own feed</th>
+              <th className="py-1 text-right font-medium" title={LIMIT_TIP.sister}>Sister co. $/ac</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -664,10 +923,10 @@ export function RotationAdvisor({
             })}
           </tbody>
         </table>
-        <p className="mt-1 text-[10px] text-gray-400">
+        <HelpNote className="mt-1" summary="Some soil scores are estimates." title="Soil scores">
           * Soil scores are estimates where the Vauxhall study did not measure the crop (carbon returned and residue left). Full sources in the
           rotation report.
-        </p>
+        </HelpNote>
       </details>
     </section>
   )

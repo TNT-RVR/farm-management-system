@@ -102,7 +102,7 @@ export function VarietySubRows({
             <td colSpan={colSpan} className="py-1.5 pl-10 pr-3">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="text-sm font-medium text-gray-800">{name}</span>
-                <VarietyFigures crop={crop} planter={planter} row={v} className="min-w-0 flex-1" />
+                <VarietyFigures crop={crop} planter={planter} row={v} className="min-w-0 flex-1 basis-full sm:basis-0" />
                 {isManager && (
                   <span className="flex items-center gap-1">
                     <EditButton onClick={() => onOpen(name)} />

@@ -2,12 +2,20 @@ import type { Config } from '@netlify/functions'
 import { admin } from './_jd.mts'
 import { runJdOperationsSync } from '../shared/jd-operations-core.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { farmClock } from '../shared/dates.ts'
 
 // Nightly pull of completed field work. Deere's notifications endpoint returns
 // 403 for this app, so there's no event to sync on — polling is the only option.
 export default async () => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
+  // Outside 1 April to 15 November nothing is being seeded, sprayed or
+  // harvested, so the hourly pull (and the workers it wakes) runs once a day.
+  const { hour, month, day } = farmClock()
+  const inSeason = (month > 3 && month < 11) || (month === 11 && day <= 15)
+  if (!inSeason && hour !== 6) {
+    return new Response(JSON.stringify({ skipped: 'off-season: once a day at 6 am' }), { headers: { 'Content-Type': 'application/json' } })
+  }
   const sb = admin()
   const result = await runJdOperationsSync(sb)
   console.log('JD operations sync:', JSON.stringify(result))
@@ -41,7 +49,7 @@ export default async () => {
   // A new spray on ground livestock eat from is told within the hour, not at
   // the next morning's run. The watch's own key, as the daily cron uses.
   const jobKey = process.env.JOB_WORKER_KEY
-  if (jobKey && site && result.operations > 0) {
+  if (jobKey && site && result.written > 0) {
     try {
       const woke = await fetch(`${site}/.netlify/functions/grazing-watch-background`, {
         method: 'POST',

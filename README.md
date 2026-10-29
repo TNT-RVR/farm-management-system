@@ -44,11 +44,47 @@ The demo keeps an anonymous visit count: no cookies, names or addresses.
 | **Irrigation** | Pivots, pumps, soil moisture with an irrigation scheduling graph, river levels, water licences and allocations |
 | **Cattle** | Herd records, grazing and pasture maps, water points and reach, a winter feed budget, daily feeding, pregnancy, cattle prices |
 | **Harvest & storage** | Scale tickets, yields from loads, grain bins and inventory, grain moisture and bin temperature monitoring |
-| **Running the farm** | To-do list, checklists, a Monday meeting page, calendar, monthly plan, day book, alerts and phone push notifications, search |
+| **Running the farm** | To-do list, checklists, a Monday meeting page, calendar, monthly plan, day book, alerts and phone push notifications, your tasks in a phone home-screen widget, search |
 | **Integrations** | John Deere Operations Center, Lindsay FieldNET pivots, QuickBooks Online ([setup checklist](docs/QUICKBOOKS.md)), weather, market prices, email invoice import, and Claude for writing up advice and reports |
 
 Each integration is off until you give it your own account or key. Nothing
 here connects to anyone else's farm.
+
+## Finding your way
+
+The menu is grouped by **season**, the way a farm's year runs, with the
+year-round parts as their own sections:
+
+**Home · Fields · Map · Planting season · Growing season · Harvest season ·
+Winter season · Financials · Cattle · Equipment · Tasks & calendar · Tools**,
+with **Settings** pinned at the bottom.
+
+- **Section › view › tabs.** A section (Harvest season) holds views (Bins,
+  Weigh scale, Pre-harvest intervals…). Each view has one row of tabs (Bins |
+  Bin estimator | Moisture); if there are more than fit, the rest are behind
+  a **+N ▾** at the end of the row. The header shows where you are, and the
+  section name in it is a link back.
+- **Shortcuts (↗).** Some views belong in more than one season, such as
+  Equipment service in Winter or Contracts at Harvest. They are listed in
+  both, and the ↗ marks the copy that is a shortcut to the view's home section.
+- **On a phone** there's a bar along the bottom, with **More** for
+  everything else. Tapping a section opens that section's own page: each view
+  with a line about what it's for.
+- **Make the menu yours:** **Settings → My account → Menu**. You can pick
+  sections and views separately for the phone and the computer, change their
+  order, and choose the four phone-bar buttons. A view you hide is still in
+  More → All views.
+- **Search:** press **Ctrl+K** (⌘K on a Mac) or **/** on a computer, or use
+  Search at the top of More on a phone. It finds pages, tabs, reports and
+  records.
+- **Switch off what your farm doesn't do.** An admin can hide whole parts of
+  the app for everyone (cattle, irrigation, the river, collars…) under
+  **Settings → Farm setup → Parts of the app**. Their views leave everyone's
+  menu (a section left empty goes too), and their scheduled jobs skip
+  themselves.
+
+Old addresses keep working: a bookmark to a page that has since been split
+up lands on the right view and tab.
 
 ## Getting started
 
@@ -58,8 +94,8 @@ here connects to anyone else's farm.
 2. **Follow [SETUP.md](SETUP.md).** It walks through creating the database,
    loading the schema and putting the site online, in about an hour.
 3. **Make it yours.** Sign in and open **Settings → Farm setup**: your name,
-   logo, location, units, suppliers, which parts of the app you use, and your
-   keys. A few pieces built around the original farm's rivers, weather stations
+   logo, location, units, suppliers and which parts of the app you use. Keys
+   for the services you connect go in **Settings → Connections**. A few pieces built around the original farm's rivers, weather stations
    and moisture meter need a small code change — [docs/CUSTOMIZING.md](docs/CUSTOMIZING.md)
    has copy-and-paste prompts for your AI assistant.
 

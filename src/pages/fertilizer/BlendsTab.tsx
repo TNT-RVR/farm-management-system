@@ -28,8 +28,11 @@ import {
   type Targets,
 } from '@/lib/blend'
 import { cn } from '@/lib/utils'
+import { money as fmtMoney } from '@/lib/format'
+import { askConfirm } from '@/components/askConfirm'
+import { TABLE_HEAD } from '@/lib/table-style'
 
-const money = (v: number | null | undefined) => (v == null ? '—' : `$${v.toLocaleString('en-CA', { maximumFractionDigits: v < 100 ? 2 : 0 })}`)
+const money = (v: number | null | undefined) => fmtMoney(v, v != null && v < 100 ? 2 : 0, { min: 0, neg: 'inside' })
 const lb = (v: number) => v.toLocaleString('en-CA', { maximumFractionDigits: v < 10 ? 1 : 0 })
 /** Nutrient names as the advice model is sent them — plain ASCII, one spelling everywhere. */
 const ADVICE_NAME: Record<keyof Targets, string> = { n: 'N', p: 'P2O5', k: 'K2O', s: 'S', zn: 'Zn' }
@@ -109,7 +112,7 @@ function BlendTable({
       </div>
       {children}
       <table className="mt-2 w-full text-xs">
-        <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+        <thead className={TABLE_HEAD}>
           <tr>
             <th className="py-1 font-medium">Product</th>
             <th className="py-1 text-right font-medium">lb/ac</th>
@@ -391,7 +394,7 @@ export function BlendsTab() {
       const msg = using.length
         ? `Delete ${p.name}? It is in ${using.length} saved blend${using.length === 1 ? '' : 's'} (${using.slice(0, 5).join(', ')}${using.length > 5 ? '…' : ''}). They keep their figures but open without it. Untick it instead to just leave it out of the mixes.`
         : `Delete ${p.name} from the products?`
-      if (!window.confirm(msg)) return
+      if (!(await askConfirm(msg))) return
       const { error } = await supabase.from('fert_blend_products').delete().eq('id', p.id)
       if (error) throw error
     },
@@ -612,8 +615,8 @@ export function BlendsTab() {
           ESN or 40 Rock in first.
         </HelpNote>
         <div className="mt-2 overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+          <table className="w-full min-w-[560px] text-xs">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="py-1 font-medium">Use</th>
                 <th className="py-1 font-medium">Product</th>
@@ -741,7 +744,7 @@ export function BlendsTab() {
                     </button>
                   )}
                   {isMgr && (
-                    <button type="button" onClick={() => confirm(`Delete "${b.name}"?`) && deleteBlend.mutate(b.id)} aria-label="Delete" className="rounded p-1 text-gray-400 hover:bg-gray-100">
+                    <button type="button" onClick={async () => await askConfirm(`Delete "${b.name}"?`) && deleteBlend.mutate(b.id)} aria-label="Delete" className="rounded p-1 text-gray-400 hover:bg-gray-100">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   )}

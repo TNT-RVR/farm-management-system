@@ -37,6 +37,7 @@ import {
 import { expandOccurrences } from '@/lib/recur'
 import { useHarvestEstimates } from '@/lib/harvest-estimate-data'
 import { cn } from '@/lib/utils'
+import { askConfirm } from '@/components/askConfirm'
 
 const KIND_COLORS: Record<EventKind, string> = {
   general: 'bg-gray-200 text-gray-800',
@@ -319,11 +320,9 @@ function CalendarSubscribe({ token }: { token: string }) {
           {copied ? 'Copied' : 'Copy'}
         </button>
         <button
-          onClick={() => {
+          onClick={async () => {
             if (
-              window.confirm(
-                'Issue a new calendar address? The current one stops working, and you will need to re-add the calendar anywhere you have subscribed.',
-              )
+              await askConfirm('Issue a new calendar address? The current one stops working, and you will need to re-add the calendar anywhere you have subscribed.', { confirmLabel: 'Issue new address' })
             ) {
               regenerate.mutate()
             }
@@ -486,7 +485,7 @@ export function CalendarPage() {
               w.state === 'expired'
                 ? 'bg-gray-100 text-gray-500 ring-1 ring-gray-300'
                 : 'bg-amber-100 text-amber-900',
-            onClick: () => navigate(`/equipment/${e.id}`),
+            onClick: () => navigate(`/equipment/${e.id}?tab=warranty`),
           })
         })
     }

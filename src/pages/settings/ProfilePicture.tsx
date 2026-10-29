@@ -4,6 +4,7 @@ import { useAuth } from '@/lib/auth'
 import { loadAvatarSource, shrinkPhoto, useSetMyAvatar } from '@/lib/avatar'
 import { UserAvatar } from '@/components/UserAvatar'
 import { AvatarCropper } from './AvatarCropper'
+import { askConfirm } from '@/components/askConfirm'
 
 /** Your own picture: shown top right while you are in the app, and on your tasks. */
 export function ProfilePicture() {
@@ -40,7 +41,7 @@ export function ProfilePicture() {
           <button
             type="button"
             disabled={set.isPending}
-            onClick={() => window.confirm('Remove your picture?') && set.mutate(null)}
+            onClick={async () => await askConfirm('Remove your picture?', { confirmLabel: 'Remove' }) && set.mutate(null)}
             className="inline-flex items-center gap-1 self-start text-xs text-gray-500 hover:text-red-700"
           >
             <Trash2 className="h-3.5 w-3.5" /> Remove

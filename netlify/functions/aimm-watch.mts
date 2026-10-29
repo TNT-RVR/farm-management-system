@@ -1,8 +1,8 @@
-import { createClient } from '@supabase/supabase-js'
 import { MANAGER_ROLES } from './_jd.mts'
 import { htmlTitle, lineDiff, looksGone, readableText } from '../../src/lib/watch-text.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 // §15 "staying in sync with AIMM": periodically hash the AIMM/ACIS source
 // pages and flag changes for human review. Runs on a schedule AND can be
@@ -29,7 +29,7 @@ async function sha256(input: string | Uint8Array): Promise<string> {
  */
 async function handle(req: Request | null) {
   if (!url || !serviceKey) return new Response('Not configured', { status: 500 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
 
   // Every HTTP caller must prove it is an active manager. Treating a missing
   // Authorization header as "this must be the scheduler" was only safe while

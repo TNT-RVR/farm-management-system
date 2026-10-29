@@ -14,7 +14,7 @@ export function useRecropRules(enabled = true) {
     staleTime: 10 * 60_000,
     queryFn: async () => {
       const [rules, labels] = await Promise.all([
-        supabase.from('chemical_recrop_rules').select('registration_number, crop_key, following_crop, months, status, condition, quote'),
+        supabase.from('chemical_recrop_rules_v').select('registration_number, crop_key, following_crop, months, status, condition, quote'),
         supabase.from('chemical_labels').select('registration_number, recrop_status'),
       ])
       if (rules.error) throw rules.error

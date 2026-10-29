@@ -8,6 +8,7 @@ import { useCropPlans, useCrops, useFields } from '@/lib/queries'
 import { useRecropRules } from '@/lib/recrop'
 import { carryover, cropKey, type CarryoverHit } from '@/lib/rotation-engine'
 import { cn } from '@/lib/utils'
+import { CARD_HEAD } from '@/lib/table-style'
 
 function useSprayableProducts() {
   return useQuery({
@@ -85,10 +86,11 @@ export function SprayCheck({ fieldId }: { fieldId?: string }) {
   const noPlan = [...picked].filter((fid) => !rows.some((r) => r.fieldId === fid))
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3">
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-        <ShieldCheck className="h-4 w-4 text-brand-700" /> Before you spray: does it fit the rotation?
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h3 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <ShieldCheck className="h-4 w-4 text-white" /> Before you spray: does it fit the rotation?
       </h3>
+      <div className="p-3">
       <p className="mt-0.5 text-xs text-gray-500">
         Checks the product&apos;s label against the crops already planned for {cropYear + 1} and {cropYear + 2}. Planting taken as 1 May.
       </p>
@@ -169,6 +171,8 @@ export function SprayCheck({ fieldId }: { fieldId?: string }) {
           ))}
         </ul>
       )}
+
+      </div>
     </div>
   )
 }

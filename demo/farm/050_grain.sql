@@ -225,7 +225,7 @@ from (values
   ('0de30000-0000-4000-8000-000000000105', '0de30000-0000-4000-8000-000000000508', 8, '18:05', 12.0, 31.0, 9.6, 'dry', 'Run the fan anyway: green seed in the low spots.', '0de30000-0000-4000-8000-0000000000a1'),
   ('0de30000-0000-4000-8000-000000000110', '0de30000-0000-4000-8000-000000000501', 3, '11:30', 9.0, 34.5, 10.8, 'tough', 'Morning dew. Fan on #1 until it is under 10.', '0de30000-0000-4000-8000-0000000000a2'),
   ('0de30000-0000-4000-8000-000000000110', '0de30000-0000-4000-8000-000000000502', 1, '15:45', 14.0, 30.0, 9.5, 'dry', null, '0de30000-0000-4000-8000-0000000000a2'),
-  ('0de30000-0000-4000-8000-000000000115', null, 1, '16:30', 13.0, 38.0, 12.9, 'damp', 'Pods still rubbery on the creek side. Give it a few days.', '0de30000-0000-4000-8000-0000000000a1')
+  ('0de30000-0000-4000-8000-000000000115', null, 1, '16:30', 13.0, 38.0, 12.9, 'wet', 'Pods still rubbery on the creek side. Give it a few days.', '0de30000-0000-4000-8000-0000000000a1')
 ) as t(field_id, bin_id, ago, at, temp, reading, m, grade, note, who)
 join public.crop_plans p on p.field_id = t.field_id::uuid and p.crop_year = extract(year from current_date)::int
 join public.crops c on c.id = p.crop_id;

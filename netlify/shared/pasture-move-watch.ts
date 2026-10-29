@@ -295,7 +295,7 @@ export async function runPastureMoveWatch(sb: SupabaseClient, today = new Date()
       p_kind: 'pasture_move',
       p_title: `Move ${herdName} off ${p.name}`,
       p_body: body,
-      p_link: '/cattle',
+      p_link: '/cattle?tab=map',
       p_details: {
         pasture_id: pid,
         pasture: p.name,

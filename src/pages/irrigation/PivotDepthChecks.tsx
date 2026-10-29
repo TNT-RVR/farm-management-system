@@ -30,6 +30,7 @@ import {
   type MeterUnit,
   type Verdict,
 } from '@/lib/pivot-depth'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 type Check = Database['public']['Tables']['pivot_depth_checks']['Row']
 type Method = Check['method']
@@ -174,8 +175,8 @@ export function PivotDepthChecks() {
       </div>
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <table className="w-full min-w-[920px] text-xs">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-[10px] uppercase tracking-wide text-gray-500">
+          <thead className={TABLE_HEAD}>
+            <tr>
               <th className="px-2 py-2 font-medium">Pivot</th>
               <th className="px-2 py-2 font-medium">Panel at 100%</th>
               <th className="px-2 py-2 font-medium">From FieldNET flow</th>
@@ -427,7 +428,7 @@ function PivotDetail({
           <p className="text-gray-400">No checks recorded for this pivot.</p>
         ) : (
           <table className="w-full max-w-2xl">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="py-0.5 font-medium">Date</th>
                 <th className="py-0.5 font-medium">Method</th>

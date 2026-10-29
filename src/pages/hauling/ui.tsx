@@ -1,21 +1,11 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { useBasics, useOperatingSettings, useResetOperatingSetting, useSaveOperatingSetting } from '@/lib/hauling-data'
 import { cn } from '@/lib/utils'
 
 
 export const input = 'rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900'
 
-export function Card({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="rounded-lg border border-gray-200 bg-white">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-gray-100 px-3 py-2">
-        <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-        {right}
-      </div>
-      <div className="p-3">{children}</div>
-    </section>
-  )
-}
+export { Card } from '@/components/Card'
 
 export type NumberField<K extends string> = { key: K; label: string; unit?: string; hint?: string; step?: number }
 

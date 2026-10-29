@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fieldHarvestSoFar, bushelsFromKg, testWeightFor, isOpenLoad, lastTare, lastMoistureFor, type BinLoad } from './bin-loads'
+import { fieldHarvestSoFar, bushelsFromKg, testWeightFor, isOpenLoad, lastTare, lastMoistureFor, loadInBin, type BinLoad } from './bin-loads'
 
 describe('bushelsFromKg', () => {
   it('turns the scale photos into the bushels that went in the bin', () => {
@@ -111,5 +111,40 @@ describe('the moisture a new load starts at', () => {
   it('gives nothing with no crop or no reading', () => {
     expect(lastMoistureFor('', 2026, [test('basf', '2026-10-09T22:03:57+00:00', 8.2)], [])).toBeNull()
     expect(lastMoistureFor('durum', 2026, [], [load('a', 'durum', '2026-10-01', null)])).toBeNull()
+  })
+})
+
+describe('loadInBin', () => {
+  // Sam, 20 Oct 2026: fill the first bin to its room, the rest in the second.
+  const split = { bin_id: 'b1', overflow_bin_id: 'b2', first_bin_bu: 1000, bushels: 1763.7, net_kg: 40000 }
+  it('the first bin took its room, the second the rest, kilograms in the same share', () => {
+    expect(loadInBin(split, 'b1')).toEqual({ bushels: 1000, kg: (40000 * 1000) / 1763.7, part: 'first' })
+    const rest = loadInBin(split, 'b2')
+    expect(rest.part).toBe('rest')
+    expect(rest.bushels).toBeCloseTo(763.7, 5)
+    expect(rest.kg + loadInBin(split, 'b1').kg).toBeCloseTo(40000, 5)
+  })
+  it('a load less than the room it was given is all in the first bin', () => {
+    expect(loadInBin({ ...split, bushels: 800, net_kg: 18144 }, 'b2').bushels).toBe(0)
+    expect(loadInBin({ ...split, bushels: 800, net_kg: 18144 }, 'b1').bushels).toBe(800)
+  })
+  it('an unsplit load is all in its bin and none in any other', () => {
+    const one = { bin_id: 'b1', overflow_bin_id: null, first_bin_bu: null, bushels: 1200, net_kg: 27216 }
+    expect(loadInBin(one, 'b1')).toEqual({ bushels: 1200, kg: 27216, part: 'all' })
+    expect(loadInBin(one, 'b2').part).toBe('none')
+  })
+})
+
+describe('weigh times on the farm clock', () => {
+  it('a time box and a timestamp go back and forth exactly (Alberta, summer and winter)', async () => {
+    const { toTimeInput, fromTimeInput } = await import('./bin-loads')
+    // 1:58 pm MDT on 22 Oct is 19:58 UTC; 9 am MST on 5 Jan 2026 is 16:00 UTC.
+    // The winter case is before 1 Nov 2026, when Alberta stopped changing
+    // clocks: newer time-zone data (2026c) puts later winters at UTC-6, older
+    // data at UTC-7, so a later date passes or fails by machine.
+    expect(toTimeInput('2026-10-22T19:58:00Z')).toBe('2026-10-22T13:58')
+    expect(fromTimeInput('2026-10-22T13:58')).toBe('2026-10-22T19:58:00.000Z')
+    expect(fromTimeInput('2026-01-05T09:00')).toBe('2026-01-05T16:00:00.000Z')
+    expect(fromTimeInput('')).toBeNull()
   })
 })

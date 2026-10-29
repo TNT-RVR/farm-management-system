@@ -1,4 +1,5 @@
 import type { ReportSection } from '@/lib/table-report'
+import { myNamedSignature, type SignatureImage } from '@/lib/signature'
 import { formDate, missingAnswers, slashDate, stockReturnDue, type Disposition, type StockReturn } from '@/lib/grazing-leases'
 import { pick, yearParam, type Cell, type GatherContext, type ParamValues, type SectionedReport } from './framework'
 
@@ -25,7 +26,13 @@ export const CLIENT_ADMIN_EMAIL = 'user-c6e1@gov.ab.ca'
 /** Each table shows at least this many rows, the spare ones as lines to write on. */
 export const SPARE_ROWS = 2
 
-export type StockReturnForm = { disposition: Disposition; ret: StockReturn; ranchName?: string | null }
+export type StockReturnForm = {
+  disposition: Disposition
+  ret: StockReturn
+  ranchName?: string | null
+  /** The holder's saved signature, printed on the signature line. */
+  signature?: SignatureImage | null
+}
 
 const yn = (v: boolean | null) => (v === true ? 'YES' : v === false ? 'NO' : '')
 const n = (v: number | null | undefined): Cell => (v == null ? '' : v)
@@ -204,6 +211,7 @@ export function stockReturnSections(f: StockReturnForm): ReportSection[] {
       rows: [['', d.signer_name ?? '', slashDate(r.signed_on)]],
       // Room to sign above the rule, as on the paper form.
       minRowHeight: 34,
+      cellImages: f.signature ? [{ row: 0, col: 0, image: f.signature }] : undefined,
     },
     {
       title: 'Collection of information',
@@ -244,5 +252,5 @@ export async function gatherStockReturn(p: ParamValues, ctx: GatherContext): Pro
   // Loaded on demand: the page's data module brings React Query with it.
   const { loadStockReturnForm } = await import('@/lib/grazing-leases-data')
   const form = await loadStockReturnForm(id, year)
-  return stockReturnReport(form)
+  return stockReturnReport({ ...form, signature: await myNamedSignature(form.disposition.signer_name) })
 }

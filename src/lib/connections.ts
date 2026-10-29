@@ -48,7 +48,13 @@ export const STATUS_LABEL: Record<ConnectionStatus, string> = {
 export const STATUS_ORDER: ConnectionStatus[] = ['attention', 'not_set_up', 'working', 'off']
 
 /** The panels that hold a connection's own controls (the old Integrations cards). */
-export type PanelId = 'john_deere' | 'fieldnet' | 'quickbooks' | 'crop_history' | 'binsense' | 'plc' | 'satellite'
+export type PanelId =
+  | 'john_deere'
+  | 'fieldnet'
+  | 'quickbooks'
+  | 'crop_history'
+  | 'binsense'
+  | 'satellite'
 
 export type ConnectionDef = {
   id: string
@@ -272,16 +278,6 @@ export const CONNECTIONS: ConnectionDef[] = [
   },
   // ---- Sensors & PLC
   {
-    id: 'plc',
-    name: 'PLC panel (Modbus TCP)',
-    category: 'Sensors & PLC',
-    health: ['plc_agent'],
-    panel: 'plc',
-    about:
-      'The agent runs on a PC at the shop and reads the panel over Modbus TCP; nothing hosted can reach the panel, so it stays empty until that machine is set up and pointed at /api/plc-sync. Every control is a request the agent carries out, not an action from here.',
-    keywords: 'turbine twido schneider modbus pi agent',
-  },
-  {
     id: 'binsense',
     name: 'BinSense readings (CSV)',
     category: 'Sensors & PLC',
@@ -299,6 +295,15 @@ export const CONNECTIONS: ConnectionDef[] = [
     health: ['solar_solis'],
     about: 'Hourly production from the solar plants, through the SolisCloud API once Solis support has turned API access on.',
     keywords: 'solar power production kwh inverter',
+  },
+  {
+    id: 'telus_fuel',
+    name: 'TELUS fuel gauges',
+    category: 'Sensors & PLC',
+    keyGroup: 'TELUS fuel gauges',
+    health: ['fuel_telus'],
+    about: 'Tank levels from the TELUS Farm Inventory gauges every 15 minutes, onto the Fuel page tanks. Telus has no published API, so it signs in as the farm and reads what its own site reads.',
+    keywords: 'fuel tanks diesel gas level gauge telus farm inventory smart dock',
   },
   // ---- Email & messages
   {
@@ -331,9 +336,9 @@ export const CONNECTIONS: ConnectionDef[] = [
     id: 'reminders',
     name: 'Reminders and the Monday brief',
     category: 'Email & messages',
-    health: ['monday_brief', 'lease_reminders', 'fert_reminders', 'meeting_facts'],
-    about: 'The Monday brief to managers, lease and fertilizer reminders, and the Monday-meeting facts.',
-    keywords: 'monday meeting brief lease rent reminders',
+    health: ['monday_brief', 'lease_reminders', 'fert_reminders', 'meeting_facts', 'harvest_nudges'],
+    about: 'The Monday brief to managers, lease and fertilizer reminders, the Monday-meeting facts, and the harvest question about a field the scale has gone quiet on.',
+    keywords: 'monday meeting brief lease rent reminders harvest finished',
   },
   // ---- AI
   {

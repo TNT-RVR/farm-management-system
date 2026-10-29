@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { Check, Copy, ExternalLink } from 'lucide-react'
 import { Fold } from '@/components/Fold'
+import { HelpNote } from '@/components/HelpNote'
+import { CARD_HEAD } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 /**
  * The pieces Farm setup cannot change yet, with what to gather and a prompt to
@@ -200,13 +203,14 @@ export function CopyPrompt({ text }: { text: string }) {
 /** On Farm setup: the remaining pieces, each with what to gather and a prompt to copy. */
 export function CustomizingGuide() {
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <h2 className="text-sm font-semibold text-gray-900">Fitting the rest to your farm</h2>
-      <p className="mt-0.5 text-xs text-gray-500">
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h2 className={cn('font-medium', CARD_HEAD)}>Fitting the rest to your farm</h2>
+      <div className="p-4">
+      <HelpNote className="mt-0.5 text-xs" summary="These still need a small code change.">
         These were built around the original farm and still need a small code change. Each says what to gather
         and gives a prompt to paste into your AI assistant. Check the result against the source before relying
         on it — this is a prototype.
-      </p>
+      </HelpNote>
       <div className="mt-3 space-y-2">
         {GUIDES.map((g) => (
           <Fold key={g.key} title={g.title} storageKey={`customize-${g.key}`}>
@@ -233,6 +237,8 @@ export function CustomizingGuide() {
             <p className="mt-2 text-xs text-gray-500">{g.skip}</p>
           </Fold>
         ))}
+      </div>
+
       </div>
     </section>
   )

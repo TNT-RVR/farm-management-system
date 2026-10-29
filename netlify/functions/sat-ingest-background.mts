@@ -32,7 +32,7 @@ export default async (req: Request) => {
   const limitFields = fieldsParam ? Number(fieldsParam) : undefined
   const reprocess = url.searchParams.get('reprocess') === '1'
 
-  const result = await runFullIngest(sb, { days, limitFields, reprocess })
+  const result = await runFullIngest(sb, { days, limitFields, reprocess, pastures: true })
   // Logged rather than returned: by now the 202 is long since sent, and the
   // function log is the only place this can still be read.
   console.log('Satellite ingest:', JSON.stringify(result))

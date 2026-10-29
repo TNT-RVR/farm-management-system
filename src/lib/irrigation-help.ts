@@ -184,10 +184,11 @@ export const SETUP_HELP: Record<string, ColumnHelp> = {
       'That is the real cost: alerts that are always wrong get read with the same eye as the ones that are not, and the field that genuinely does need water in September is the one that gets missed.',
     ],
     how: {
-      label: 'When to tick it',
+      label: 'Mostly it ticks itself',
       lines: [
-        'When the last pass is off and you do not intend to water this field again this year.',
-        'Untick it if you change your mind — nothing is lost, and the next sync raises a to-do again if the balance calls for one.',
+        'The daily sync sets it once harvest is recorded on the field, or once the crop is past maturity and the pivot has not run for a week. Hover the box to read which of those it was.',
+        'It also takes itself back: a pivot pass logged after the box was ticked clears it, and the to-dos come back. In 2026 twelve fields were ticked in one sitting on 31 August and five of them were then watered into September and October with the to-dos muted.',
+        'Tick it by hand when the last pass is off and the app has not caught up. Untick it if you change your mind — nothing is lost.',
         'It clears itself for next season: this is recorded against this field for this crop year, and next year starts a new row.',
       ],
     },

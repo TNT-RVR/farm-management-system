@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Camera, Star, Trash2, X } from 'lucide-react'
 import { useAuth, hasManagerAccess } from '@/lib/auth'
 import { useAddPhoto, useDeletePhoto, usePhotoUrls, type ChecklistPhoto } from '@/lib/checklist-map'
+import { askConfirm } from '@/components/askConfirm'
 
 /**
  * A row of photos with an add button. Template photos show how a place is
@@ -84,9 +85,9 @@ export function PhotoStrip({
             )}
             {canDelete(big) && (
               <button
-                onClick={(e) => {
+                onClick={async (e) => {
                   e.stopPropagation()
-                  if (window.confirm('Delete this photo?')) {
+                  if (await askConfirm('Delete this photo?')) {
                     del.mutate(big)
                     setBig(null)
                   }

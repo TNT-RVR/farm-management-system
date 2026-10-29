@@ -9,7 +9,7 @@
 import { KIND_DESCRIPTIONS, KIND_LABELS } from './notification-format'
 
 export const NOTIFICATION_GROUPS = [
-  { key: 'tasks', label: 'Tasks', kinds: ['task_assigned', 'task_completed', 'task_reminder', 'service_due', 'monday_brief'] },
+  { key: 'tasks', label: 'Tasks', kinds: ['task_assigned', 'task_completed', 'task_reminder', 'service_due', 'truck_inspection', 'monday_brief'] },
   {
     key: 'water',
     label: 'Irrigation & water',
@@ -29,14 +29,14 @@ export const NOTIFICATION_GROUPS = [
   },
   { key: 'weather', label: 'Weather & frost', kinds: ['crop_weather', 'winterizing_freeze'] },
   { key: 'crops', label: 'Crops & fields', kinds: ['spray_rotation_conflict', 'jd_boundary', 'combine_out_of_date', 'lease'] },
-  { key: 'bins', label: 'Bins', kinds: ['bin_needs_air'] },
+  { key: 'bins', label: 'Bins', kinds: ['bin_needs_air', 'seed_bin_check'] },
   { key: 'cattle', label: 'Cattle & grazing', kinds: ['grazing_restriction', 'grazing_conflict', 'pasture_move', 'stock_return'] },
   {
     key: 'markets',
     label: 'Markets & prices',
     kinds: ['market_alert', 'fert_buy_window', 'n_ratio_moved', 'fert_deadline', 'ab_input_prices', 'grant_new'],
   },
-  { key: 'app', label: 'Integrations & app', kinds: ['integration_alert', 'app_notice', 'fixer_stuck'] },
+  { key: 'app', label: 'Integrations & app', kinds: ['integration_alert', 'fuel_gauge_silent', 'app_notice', 'fixer_stuck'] },
 ] as const satisfies readonly { key: string; label: string; kinds: readonly string[] }[]
 
 /**

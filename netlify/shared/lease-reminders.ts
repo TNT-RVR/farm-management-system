@@ -171,7 +171,7 @@ async function remindStockReturns(sb: SupabaseClient, today: string): Promise<st
     p_kind: 'stock_return',
     p_title: plan.title,
     p_body: plan.body,
-    p_link: '/grazing-leases',
+    p_link: '/cattle-markets?tab=leases',
   })
   if (error) return `stock return reminder failed: ${error.message}`
   await sb.from('reminder_log').insert({ key: plan.key })

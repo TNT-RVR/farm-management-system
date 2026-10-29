@@ -11,12 +11,15 @@ import { fieldHarvestSoFar, useBinLoads, useDeliverySites, useSetLastLoad, useUs
 import { useBins } from '@/lib/bins'
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
-import { DeleteLoadButton } from '@/pages/bins/WeighIn'
+import { DeleteLoadButton, EditLoadDialog } from '@/pages/bins/WeighIn'
+import { rowClick } from '@/components/RecordEditor'
+import type { BinLoad } from '@/lib/bin-loads'
 import { TRAIT_LABEL, TRAIT_SHORT, type HerbicideTrait } from '@/lib/canola-trait'
 import { fetchAreaYields, type CropAreaYield } from '@/lib/cropAreaYields'
 import { AreaYieldEditor } from '@/components/AreaYieldEditor'
 import { AbnormalYearMark } from '@/components/AbnormalYearMark'
 import { abnormalIndex, abnormalKey, useAbnormalYears } from '@/lib/abnormal-yields'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const SOURCE_LABEL: Record<string, string> = {
   scale: 'Scale loads',
@@ -45,12 +48,25 @@ export function FieldYieldHistory({
   history,
   cropName,
   canEdit,
+  canEditYear,
+  partnerYears,
   canolaTrait,
 }: {
   fieldId: string
   history: FieldYield[]
   cropName: (id: string) => string
   canEdit: boolean
+  /**
+   * A crop-share partner's years (lib/partner-view.ts): he types yields in
+   * these and reads the rest. The managers' tools (loads, adding or deleting
+   * a year, marks, the scale reset) stay on canEdit.
+   */
+  canEditYear?: (year: number) => boolean
+  /**
+   * A crop-share partner's years on this field. His crop (potatoes) never
+   * crosses our scale, so no row appears by itself: he adds his own year's.
+   */
+  partnerYears?: number[]
   /** A canola's herbicide trait (null trait = not known); null for any other crop. */
   canolaTrait?: (cropId: string, variety: string | null) => { trait: HerbicideTrait | null; from: string | null } | null
 }) {
@@ -61,6 +77,8 @@ export function FieldYieldHistory({
   const { data: bins } = useBins()
   const { data: sites } = useDeliverySites()
   const [showLoads, setShowLoads] = useState(false)
+  // A load opened from the list to correct.
+  const [editingLoad, setEditingLoad] = useState<BinLoad | null>(null)
   const resetToScale = useUseScaleYield()
   const [error, setError] = useState('')
   const { data: crops } = useCrops()
@@ -97,6 +115,10 @@ export function FieldYieldHistory({
       predicate: (q) => ['crop_history', 'crop_plans', 'crop_position', 'field_yield', 'fert_crop_history'].includes(String(q.queryKey[0])),
     })
 
+  const yearOpen = (y: number) => canEdit || (canEditYear?.(y) ?? false)
+  // His years with no row yet: the ones he may add.
+  const partnerToAdd = (partnerYears ?? []).filter((y) => !history.some((h) => h.crop_year === y))
+
   const save = useMutation({
     mutationFn: async (v: { id: string; patch: Partial<Pick<FieldYield, 'acres' | 'yield_per_acre' | 'actual_yield_total' | 'clean_total' | 'clean_yield_per_acre'>> }) => {
       const { error } = await supabase.from('crop_history').update(v.patch).eq('id', v.id)
@@ -117,6 +139,7 @@ export function FieldYieldHistory({
       if (!Number.isInteger(year) || year < 1950 || year > cropYear + 1) throw new Error('Give the crop year as four digits.')
       if (history.some((h) => h.crop_year === year)) throw new Error(`${year} already has a row; change it in the table.`)
       if (locked(year)) throw new Error(`${year} is locked. Unlock it for corrections on the Planner first.`)
+      if (!yearOpen(year)) throw new Error(`${year} is not one of your years on this field.`)
       const acres = (p.acres as number | null) ?? null
       const pre = fillYieldPair(acres, (p.yield_per_acre as number | null) ?? null, (p.actual_yield_total as number | null) ?? null)
       const clean = fillYieldPair(acres, (p.clean_yield_per_acre as number | null) ?? null, (p.clean_total as number | null) ?? null)
@@ -207,7 +230,7 @@ export function FieldYieldHistory({
       key={`${h.id}:${key}:${h[key] ?? ''}`}
       type="number"
       inputMode="decimal"
-      disabled={!canEdit || save.isPending}
+      disabled={!yearOpen(h.crop_year) || save.isPending}
       defaultValue={h[key] ?? ''}
       placeholder="—"
       onBlur={(e) => {
@@ -240,11 +263,17 @@ export function FieldYieldHistory({
               {showLoads ? 'Hide the loads' : 'Show the loads'}
             </button>
           </p>
+          {editingLoad && <EditLoadDialog load={editingLoad} onClose={() => setEditingLoad(null)} />}
           {showLoads && (
             <table className="mt-2 w-full rounded-md bg-white text-xs">
               <tbody className="divide-y divide-gray-100">
                 {season.list.map((l) => (
-                  <tr key={l.id}>
+                  <tr
+                    key={l.id}
+                    onClick={canEdit ? rowClick(() => setEditingLoad(l)) : undefined}
+                    title={canEdit ? 'Open the load to correct it' : undefined}
+                    className={cn(canEdit && 'cursor-pointer hover:bg-gray-50')}
+                  >
                     <td className="px-2 py-1 tabular-nums text-gray-700">{l.loaded_on}</td>
                     <td className="px-2 py-1 text-gray-700">
                       {l.delivery_site_id
@@ -301,9 +330,9 @@ export function FieldYieldHistory({
       <div className="rounded-lg border border-gray-200 bg-white p-4">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-gray-700">Crop history</h3>
-          {canEdit && (
+          {(canEdit || partnerToAdd.length > 0) && (
             <AddButton
-              label="Add a year"
+              label={canEdit ? 'Add a year' : `Add ${partnerToAdd[0]}`}
               onClick={() => {
                 add.reset()
                 setAdding(true)
@@ -313,9 +342,9 @@ export function FieldYieldHistory({
         </div>
         {history.length || areaLines?.length ? (
           <div className="overflow-x-auto">
-            <table className="mt-2 w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
+            <table className="mt-2 w-full min-w-[860px] text-sm">
+              <thead className={TABLE_HEAD}>
+                <tr>
                   <th className="py-1 pr-3 font-medium">Year</th>
                   <th className="py-1 pr-3 font-medium">Crop</th>
                   <th className="py-1 pr-3 text-right font-medium">Acres</th>
@@ -336,8 +365,8 @@ export function FieldYieldHistory({
                     return (
                       <tr
                         key={`area-${l.crop_year}-${l.crop_id}`}
-                        className={cn('border-t border-gray-100 align-top', canEdit && 'cursor-pointer hover:bg-gray-50')}
-                        onClick={canEdit ? () => setEditingArea({ cropYear: l.crop_year, cropId: l.crop_id, acres: l.acres, row: l.row }) : undefined}
+                        className={cn('border-t border-gray-100 align-top', yearOpen(l.crop_year) && 'cursor-pointer hover:bg-gray-50')}
+                        onClick={yearOpen(l.crop_year) ? () => setEditingArea({ cropYear: l.crop_year, cropId: l.crop_id, acres: l.acres, row: l.row }) : undefined}
                       >
                         <td className="py-1.5 pr-3">{l.crop_year}</td>
                         <td className="py-1.5 pr-3">
@@ -496,7 +525,7 @@ export function FieldYieldHistory({
             onClose={() => setEditingArea(null)}
           />
         )}
-        {canEdit && history.length > 0 && (
+        {history.some((h) => yearOpen(h.crop_year)) && (
           <HelpNote className="mt-2" summary="Type per-acre or total; the other fills in." title="Entering yields">
             Type the yield per acre or the total and the other follows from the acres, for both the pre-clean (field-run) yield and
             the yield after clean-out. This season's plan, marketing position and bin estimate use the clean yield once it is
@@ -511,7 +540,7 @@ export function FieldYieldHistory({
         <RecordEditModal
           title="Add a year to the crop history"
           fields={metaFields(null)}
-          row={{ crop_year: history.length ? Math.min(...history.map((h) => h.crop_year)) - 1 : cropYear - 1 }}
+          row={{ crop_year: !canEdit && partnerToAdd.length ? partnerToAdd[0] : history.length ? Math.min(...history.map((h) => h.crop_year)) - 1 : cropYear - 1 }}
           saving={add.isPending}
           error={add.error ? (add.error as Error).message : null}
           onClose={() => setAdding(false)}
@@ -560,6 +589,13 @@ export function FieldYieldHistory({
  * A canola's herbicide trait, so the field's past Liberty and Roundup canola
  * can be read at a glance — what decides which company can use it next.
  */
+const TRAIT_BADGE: Record<HerbicideTrait, string> = {
+  liberty: 'bg-sky-100 text-sky-800',
+  roundup: 'bg-orange-100 text-orange-800',
+  clearfield: 'bg-violet-100 text-violet-800',
+  conventional: 'bg-gray-100 text-gray-700',
+}
+
 function TraitBadge({ t }: { t: { trait: HerbicideTrait | null; from: string | null } | null }) {
   if (!t) return null
   if (!t.trait)
@@ -572,7 +608,7 @@ function TraitBadge({ t }: { t: { trait: HerbicideTrait | null; from: string | n
     <span
       className={cn(
         'mt-0.5 inline-block rounded px-1.5 py-px text-[10px] font-semibold',
-        t.trait === 'liberty' ? 'bg-sky-100 text-sky-800' : 'bg-orange-100 text-orange-800',
+        TRAIT_BADGE[t.trait],
       )}
       title={`${TRAIT_LABEL[t.trait]}${t.from ? ` (from ${t.from})` : ''}`}
     >

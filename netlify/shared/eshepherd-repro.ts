@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { farmToday } from './dates.ts'
 
 /**
  * eShepherd's pregnancy (cycling) model, read from the public Grafana
@@ -106,7 +107,7 @@ export async function pullRepro(): Promise<Record<string, unknown>[]> {
     days_since_heat: int(at('ds_clock', i)),
     not_cycling_since: day(at('not_cycling_since', i)),
     nc_days: int(at('nc_days', i)),
-    observed_on: day(at('time', i)) ?? new Date().toISOString().slice(0, 10),
+    observed_on: day(at('time', i)) ?? farmToday(),
     synced_at: new Date().toISOString(),
   }))
 }

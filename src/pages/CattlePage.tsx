@@ -1,34 +1,46 @@
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { lazy, useEffect, useMemo, useState } from 'react'
 import { Check, Pencil, Plus, Trash2 } from 'lucide-react'
-import { PregnancyTab } from '@/pages/cattle/PregnancyTab'
-import { FeedCalculator } from '@/pages/cattle/FeedCalculator'
-import { CattleMarketsTab } from '@/pages/cattle/MarketsTab'
-import { FeedRecordsTab } from '@/pages/cattle/FeedRecordsTab'
-import { ManifestsTab } from '@/pages/cattle/ManifestsTab'
-import { GrazingLeasesTab } from '@/pages/cattle/GrazingLeasesTab'
-import { AllRanchesFeed, AllRanchesGrazing } from '@/pages/cattle/AllRanches'
-import { PastureMap } from '@/pages/cattle/PastureMap'
 import { GrazingRestrictionBanner } from '@/components/GrazingRestrictions'
-import { RotationList } from '@/pages/cattle/RotationList'
-import { HerdLocation } from '@/pages/cattle/HerdLocation'
-import { Underutilisation } from '@/pages/cattle/Underutilisation'
-import { GrazingCalculator } from '@/pages/cattle/GrazingCalculator'
-import { GrazingSettings } from '@/pages/cattle/GrazingSettings'
-import { FirstRanchCard } from '@/pages/cattle/AddRanch'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useMainRanch, useRanches } from '@/lib/ranches'
-import { useFeature } from '@/lib/farm-setup'
+import { isPathOff, useDisabledPaths, useFeature } from '@/lib/farm-setup'
+import { isViewDenied } from '@/lib/nav'
+import { useTab } from '@/lib/useTab'
+import { PillTabs } from '@/components/PillTabs'
 import { mobsNow, useActivations } from '@/lib/eshepherd'
 import { mobClass } from '@/lib/pasture-move'
-import { ReplacementHeifers } from '@/pages/cattle/ReplacementHeifers'
-import { CattleGroupsCard, HerdAnimals } from '@/pages/cattle/HerdAnimals'
 import { useHerdCountMutations, useHerdCounts } from '@/lib/cattle'
 import { useCropYear } from '@/lib/crop-year'
 import { useFeedPlan } from '@/lib/feed'
 import { cn } from '@/lib/utils'
 import { InfoPopover } from '@/components/InfoPopover'
 import { SETUP_LINKS } from '@/lib/setup-links'
+import { TabSuspense } from '@/components/TabSuspense'
+
+// Each tab is its own chunk: the map, the charts and the calculators load when their tab opens.
+const PregnancyTab = lazy(() => import('@/pages/cattle/PregnancyTab').then((m) => ({ default: m.PregnancyTab })))
+const FeedCalculator = lazy(() => import('@/pages/cattle/FeedCalculator').then((m) => ({ default: m.FeedCalculator })))
+const CattleMarketsTab = lazy(() => import('@/pages/cattle/MarketsTab').then((m) => ({ default: m.CattleMarketsTab })))
+const FeedRecordsTab = lazy(() => import('@/pages/cattle/FeedRecordsTab').then((m) => ({ default: m.FeedRecordsTab })))
+const ManifestsTab = lazy(() => import('@/pages/cattle/ManifestsTab').then((m) => ({ default: m.ManifestsTab })))
+const GrazingLeasesTab = lazy(() => import('@/pages/cattle/GrazingLeasesTab').then((m) => ({ default: m.GrazingLeasesTab })))
+const PastureInsurance = lazy(() => import('@/pages/cattle/PastureInsurance').then((m) => ({ default: m.PastureInsurance })))
+const AllRanchesFeed = lazy(() => import('@/pages/cattle/AllRanches').then((m) => ({ default: m.AllRanchesFeed })))
+const AllRanchesGrazing = lazy(() => import('@/pages/cattle/AllRanches').then((m) => ({ default: m.AllRanchesGrazing })))
+const PastureMap = lazy(() => import('@/pages/cattle/PastureMap').then((m) => ({ default: m.PastureMap })))
+const RotationList = lazy(() => import('@/pages/cattle/RotationList').then((m) => ({ default: m.RotationList })))
+const HerdLocation = lazy(() => import('@/pages/cattle/HerdLocation').then((m) => ({ default: m.HerdLocation })))
+const Underutilisation = lazy(() => import('@/pages/cattle/Underutilisation').then((m) => ({ default: m.Underutilisation })))
+const GrazingCalculator = lazy(() => import('@/pages/cattle/GrazingCalculator').then((m) => ({ default: m.GrazingCalculator })))
+const GrazingSettings = lazy(() => import('@/pages/cattle/GrazingSettings').then((m) => ({ default: m.GrazingSettings })))
+const FirstRanchCard = lazy(() => import('@/pages/cattle/AddRanch').then((m) => ({ default: m.FirstRanchCard })))
+const BaleChecksPage = lazy(() => import('@/pages/BaleChecksPage').then((m) => ({ default: m.BaleChecksPage })))
+const GrazingRestrictionsPage = lazy(() => import('@/pages/GrazingRestrictionsPage').then((m) => ({ default: m.GrazingRestrictionsPage })))
+const ReplacementHeifers = lazy(() => import('@/pages/cattle/ReplacementHeifers').then((m) => ({ default: m.ReplacementHeifers })))
+const HerdAnimals = lazy(() => import('@/pages/cattle/HerdAnimals').then((m) => ({ default: m.HerdAnimals })))
+const CattleGroupsCard = lazy(() => import('@/pages/cattle/HerdAnimals').then((m) => ({ default: m.CattleGroupsCard })))
+import { askConfirm } from '@/components/askConfirm'
 
 /**
  * The herd is tracked as group totals (head per class), not individually tagged
@@ -207,8 +219,8 @@ function HerdCountsCard({ isManager, ranchId }: { isManager: boolean; ranchId: s
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
                     <button
-                      onClick={() => {
-                        if (window.confirm(`Remove "${c.class_name}" from the head count?`))
+                      onClick={async () => {
+                        if (await askConfirm(`Remove "${c.class_name}" from the head count?`, { confirmLabel: 'Remove' }))
                           remove.mutate(c.id)
                       }}
                       className="rounded-md p-1 text-gray-300 hover:bg-red-50 hover:text-red-600"
@@ -235,7 +247,7 @@ function HerdCountsCard({ isManager, ranchId }: { isManager: boolean; ranchId: s
               placeholder="Group (e.g. Yearlings)"
               value={newRow.class_name}
               onChange={(e) => setNewRow((r) => ({ ...r, class_name: e.target.value }))}
-              className="min-w-0 flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm"
+              className="min-w-0 flex-1 basis-full rounded-md border border-gray-300 px-2 py-1 text-sm sm:basis-48"
             />
             <input
               type="number"
@@ -276,28 +288,128 @@ function HerdCountsCard({ isManager, ranchId }: { isManager: boolean; ranchId: s
   )
 }
 
-// The map comes first and opens by default: it is the section that answers
-// "where is the herd and what is the grass doing", which is the question being
-// asked most of the time. Everything else is a calculation you go looking for.
-//
-// A type rather than a list, since the sidebar became this navigation: the
-// labels live in nav.ts now, and keeping a second copy here only invited the
-// two to drift.
-type CattleTab =
-  | 'map'
-  | 'herd'
-  | 'grazing'
-  | 'feed'
-  | 'records'
-  | 'pregnancy'
-  | 'markets'
-  | 'manifests'
-  | 'leases'
-  | 'settings'
+/*
+ * Cattle in five views, each with its own tab bar (Sam, 24 Oct 2026): twelve
+ * menu entries were the sidebar standing in for tabs. Pastures, Herd, Feed,
+ * Sales & paperwork and Cattle settings are the views; what used to be its own
+ * menu entry is a tab of one of them, and its old address redirects there.
+ *
+ * The map comes first in Pastures and opens by default: it answers "where is
+ * the herd and what is the grass doing", which is the question being asked
+ * most of the time. Everything else is a calculation you go looking for.
+ */
+export type CattleView = 'pastures' | 'herd' | 'feed' | 'sales' | 'settings'
+
+type CattleTab = {
+  key: string
+  label: string
+  /**
+   * The address this tab had as its own page. Its feature switch and any
+   * per-user "no access" an admin set were written against it, so both still
+   * close the tab.
+   */
+  was: string
+  /** Narrowed by the Ranch filter. The rest list or pick ranches themselves. */
+  ranchScoped: boolean
+}
+
+const VIEWS: Record<Exclude<CattleView, 'settings'>, { path: string; tabs: CattleTab[]; alias?: Record<string, string> }> = {
+  pastures: {
+    path: '/cattle',
+    tabs: [
+      { key: 'map', label: 'Map', was: '/cattle', ranchScoped: true },
+      { key: 'grazing', label: 'Grazing', was: '/grazing', ranchScoped: true },
+      { key: 'restrictions', label: 'Spray restrictions', was: '/grazing-restrictions', ranchScoped: false },
+    ],
+    alias: { 'grazing-restrictions': 'restrictions' },
+  },
+  herd: {
+    path: '/herd',
+    tabs: [
+      { key: 'herd', label: 'Herd', was: '/herd', ranchScoped: true },
+      { key: 'pregnancy', label: 'Pregnancy', was: '/pregnancy', ranchScoped: true },
+    ],
+  },
+  feed: {
+    path: '/feed',
+    tabs: [
+      { key: 'plan', label: 'Feed plan', was: '/feed', ranchScoped: true },
+      { key: 'records', label: 'Feed records', was: '/feed-records', ranchScoped: true },
+      { key: 'bale-checks', label: 'Bale checks', was: '/bale-checks', ranchScoped: false },
+    ],
+    alias: { 'feed-records': 'records', feed: 'plan' },
+  },
+  sales: {
+    path: '/cattle-markets',
+    tabs: [
+      { key: 'markets', label: 'Markets', was: '/cattle-markets', ranchScoped: false },
+      { key: 'manifests', label: 'Manifests', was: '/manifests', ranchScoped: false },
+      { key: 'leases', label: 'Grazing leases', was: '/grazing-leases', ranchScoped: false },
+      { key: 'insurance', label: 'Pasture insurance', was: '/pasture-insurance', ranchScoped: false },
+    ],
+    alias: { 'grazing-leases': 'leases' },
+  },
+}
+
+/** Where each old address went, for the redirects in App.tsx. */
+const CATTLE_REDIRECTS: Record<string, string> = {
+  '/grazing': '/cattle?tab=grazing',
+  '/grazing-restrictions': '/cattle?tab=restrictions',
+  '/pregnancy': '/herd?tab=pregnancy',
+  '/feed-records': '/feed?tab=records',
+  '/bale-checks': '/feed?tab=bale-checks',
+  '/manifests': '/cattle-markets?tab=manifests',
+  '/grazing-leases': '/cattle-markets?tab=leases',
+}
+
+/**
+ * An old cattle address: onto its view and tab, keeping whatever else the link
+ * carried (?ranch=, ?lot=, ?new=1, ?lease=), which the tabs still read.
+ */
+export function CattleRedirect() {
+  const { pathname, search } = useLocation()
+  const [path, tabQuery] = (CATTLE_REDIRECTS[pathname] ?? '/cattle?tab=map').split('?')
+  const params = new URLSearchParams(search)
+  params.set('tab', new URLSearchParams(tabQuery).get('tab')!)
+  return <Navigate to={`${path}?${params.toString()}`} replace />
+}
 
 const RANCH_STORE_KEY = 'cattle_ranch_id'
 
-export function CattlePage({ section = 'map' }: { section?: CattleTab } = {}) {
+export function CattlePage({ view = 'pastures' }: { view?: CattleView } = {}) {
+  // Keyed by view: the five routes share this component, and a tab remembered
+  // for one must not carry over when the sidebar moves to another.
+  return view === 'settings' ? <CattleBody key={view} view={view} tabs={[]} /> : <TabbedView key={view} view={view} />
+}
+
+function TabbedView({ view }: { view: Exclude<CattleView, 'settings'> }) {
+  const { profile } = useAuth()
+  const off = useDisabledPaths()
+  const def = VIEWS[view]
+  // A switched-off feature, or a page an admin closed to this person, takes
+  // its tab out; the view itself goes from the menus when none are left.
+  const tabs = def.tabs.filter(
+    (t) => !isPathOff(off, `${def.path}?tab=${t.key}`) && !isPathOff(off, t.was) && !isViewDenied(profile, t.was),
+  )
+  const keys = tabs.map((t) => t.key)
+  const [asked, setTab] = useTab(`cattle-${view}`, keys, keys[0] ?? def.tabs[0].key, (a) => def.alias?.[a])
+  // The remembered tab can be one that has since been switched off.
+  const tab = keys.includes(asked) ? asked : keys[0]
+  if (!tab) return <p className="p-6 text-sm text-gray-500">This part of the app is switched off.</p>
+  return <CattleBody view={view} tabs={tabs} tab={tab} setTab={setTab} />
+}
+
+function CattleBody({
+  view,
+  tabs,
+  tab,
+  setTab,
+}: {
+  view: CattleView
+  tabs: CattleTab[]
+  tab?: string
+  setTab?: (t: string) => void
+}) {
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
   const { data: ranches } = useRanches()
@@ -306,9 +418,6 @@ export function CattlePage({ section = 'map' }: { section?: CattleTab } = {}) {
   const collarsOn = useFeature('pregnancy')
   const { cropYear } = useCropYear()
   const navigate = useNavigate()
-  // The section comes from the route now — the sidebar is the tab bar. Kept as
-  // a variable rather than inlined so the six branches below are untouched.
-  const tab = section
   const [ranchPref, setRanchPref] = useState<string>(
     () => localStorage.getItem(RANCH_STORE_KEY) ?? '',
   )
@@ -324,6 +433,8 @@ export function CattlePage({ section = 'map' }: { section?: CattleTab } = {}) {
   useEffect(() => {
     if (seenRanch) localStorage.setItem(RANCH_STORE_KEY, seenRanch)
   }, [seenRanch])
+
+  const current = tabs.find((t) => t.key === tab)
 
   /**
    * The empty string means every ranch.
@@ -344,69 +455,93 @@ export function CattlePage({ section = 'map' }: { section?: CattleTab } = {}) {
     localStorage.setItem(RANCH_STORE_KEY, id)
   }
 
+  // Bale checks and Spray restrictions were pages of their own that never
+  // needed a ranch; they still don't.
+  const needsRanches = tab !== 'bale-checks' && tab !== 'restrictions'
+
   // Loaded and empty is a new farm, not a slow network: ask for a ranch rather
   // than waiting forever for one that will never arrive.
-  if (ranches && ranches.length === 0) {
-    return <FirstRanchCard isManager={isManager} />
+  if (needsRanches && ranches && ranches.length === 0) {
+    return (
+      <TabSuspense>
+        <FirstRanchCard isManager={isManager} />
+      </TabSuspense>
+    )
   }
 
-  if (!ranches || (!ranch && !allRanches)) {
+  if (needsRanches && (!ranches || (!ranch && !allRanches))) {
     return <p className="p-6 text-sm text-gray-400">Loading ranches…</p>
   }
 
-  // Markets, manifests, leases and settings are not scoped to a ranch (each lists or
-  // picks ranches itself), so the picker would change nothing there. The map
-  // keeps it: it narrows "Where the cattle are" to that ranch's mobs.
-  const ranchList = ranches.map((r) => ({ id: r.id, name: r.name }))
-  const ranchScoped = tab !== 'markets' && tab !== 'manifests' && tab !== 'leases' && tab !== 'settings'
+  // The Ranch picker is a filter, not a tab: it shows only on the tabs it
+  // narrows. Markets, manifests, leases, settings, bale checks and spray
+  // restrictions list or pick ranches themselves, so it would change nothing.
+  const ranchList = (ranches ?? []).map((r) => ({ id: r.id, name: r.name }))
+  const ranchScoped = !!current?.ranchScoped
+  // One tab left (the rest switched off) needs no bar.
+  const showTabs = tabs.length > 1 && !!setTab
 
   return (
     <div>
-      {ranchScoped && (
-        <div className="border-b border-gray-200 bg-white px-4 md:px-6 print:hidden">
-          {/* Ranch sub-menu — the tabs below that use it are scoped to the selected ranch. */}
-          <div className="flex items-center gap-2 pt-3">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-              Ranch
-            </span>
-            <div className="flex flex-wrap rounded-md border border-gray-200 p-0.5">
-              <button
-                onClick={() => selectRanch(ALL_RANCHES)}
-                className={cn(
-                  'rounded px-3 py-1 text-sm font-medium transition-colors',
-                  allRanches ? 'bg-brand-700 text-white' : 'text-gray-600 hover:bg-gray-50',
-                )}
-              >
-                All
-              </button>
-              {ranches.map((r) => (
+      {(showTabs || ranchScoped) && (
+        <div className="space-y-2 border-b border-gray-200 bg-white px-4 py-3 md:px-6 print:hidden">
+          {showTabs && (
+            <PillTabs tabs={tabs.map((t) => ({ key: t.key, label: t.label }))} value={tab!} onChange={setTab!} />
+          )}
+          {ranchScoped && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                Ranch
+              </span>
+              <div className="flex flex-wrap rounded-md border border-gray-200 p-0.5">
                 <button
-                  key={r.id}
-                  onClick={() => selectRanch(r.id)}
+                  onClick={() => selectRanch(ALL_RANCHES)}
                   className={cn(
                     'rounded px-3 py-1 text-sm font-medium transition-colors',
-                    !allRanches && r.id === ranchId
-                      ? 'bg-brand-700 text-white'
-                      : 'text-gray-600 hover:bg-gray-50',
+                    allRanches ? 'bg-brand-700 text-white' : 'text-gray-600 hover:bg-gray-50',
                   )}
                 >
-                  {r.name}
+                  All
                 </button>
-              ))}
+                {(ranches ?? []).map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => selectRanch(r.id)}
+                    className={cn(
+                      'rounded px-3 py-1 text-sm font-medium transition-colors',
+                      !allRanches && r.id === ranchId
+                        ? 'bg-brand-700 text-white'
+                        : 'text-gray-600 hover:bg-gray-50',
+                    )}
+                  >
+                    {r.name}
+                  </button>
+                ))}
+              </div>
+              {/* Rename and delete live with Add ranch in Cattle settings. */}
+              {isManager && (
+                <button
+                  onClick={() => navigate('/cattle-settings')}
+                  className="text-xs font-medium text-gray-400 hover:text-brand-700 hover:underline"
+                >
+                  Manage
+                </button>
+              )}
             </div>
-            {/* Rename and delete live with Add ranch in Cattle settings. */}
-            {isManager && (
-              <button
-                onClick={() => navigate('/cattle-settings')}
-                className="text-xs font-medium text-gray-400 hover:text-brand-700 hover:underline"
-              >
-                Manage
-              </button>
-            )}
-          </div>
+          )}
         </div>
       )}
-      {tab === 'herd' ? (
+      <TabSuspense>
+      {view === 'settings' ? (
+        <div className="p-4 md:p-6">
+          <GrazingSettings ranches={ranchList} isManager={isManager} />
+        </div>
+      ) : tab === 'restrictions' ? (
+        // Its own page until the split, padding and all.
+        <GrazingRestrictionsPage />
+      ) : tab === 'bale-checks' ? (
+        <BaleChecksPage />
+      ) : tab === 'herd' ? (
         <div className="mx-auto max-w-5xl p-4 md:p-6">
           <div className="max-w-2xl">
             <HerdCountsCard isManager={isManager} ranchId={ranchId} />
@@ -443,37 +578,31 @@ export function CattlePage({ section = 'map' }: { section?: CattleTab } = {}) {
           ) : tab === 'markets' ? (
             <CattleMarketsTab onGoToSettings={(id) => navigate(SETUP_LINKS.cattleCosts(id))} />
           ) : tab === 'records' ? (
-            <FeedRecordsTab
-              ranchId={ranchId}
-              ranches={(ranches ?? []).map((r) => ({ id: r.id, name: r.name }))}
-              canEdit={isManager}
-            />
+            <FeedRecordsTab ranchId={ranchId} ranches={ranchList} canEdit={isManager} />
           ) : tab === 'pregnancy' ? (
-            <PregnancyTab ranchId={ranchId} ranches={(ranches ?? []).map((r) => ({ id: r.id, name: r.name }))} isManager={isManager} />
+            <PregnancyTab ranchId={ranchId} ranches={ranchList} isManager={isManager} />
           ) : tab === 'manifests' ? (
             <ManifestsTab cropYear={cropYear} canEdit={isManager} />
           ) : tab === 'leases' ? (
             <GrazingLeasesTab canEdit={isManager} />
+          ) : tab === 'insurance' ? (
+            <PastureInsurance isManager={isManager} />
           ) : tab === 'grazing' ? (
             ranch ? (
               <GrazingCalculator isManager={isManager} ranch={ranch} />
             ) : (
-              <AllRanchesGrazing isManager={isManager} ranches={ranches} />
+              <AllRanchesGrazing isManager={isManager} ranches={ranches ?? []} />
             )
-          ) : tab === 'feed' ? (
+          ) : tab === 'plan' ? (
             ranch ? (
               <FeedCalculator isManager={isManager} ranchId={ranchId} />
             ) : (
-              <AllRanchesFeed isManager={isManager} ranches={ranches} />
+              <AllRanchesFeed isManager={isManager} ranches={ranches ?? []} />
             )
-          ) : (
-            <GrazingSettings
-              ranches={(ranches ?? []).map((r) => ({ id: r.id, name: r.name }))}
-              isManager={isManager}
-            />
-          )}
+          ) : null}
         </div>
       )}
+      </TabSuspense>
     </div>
   )
 }

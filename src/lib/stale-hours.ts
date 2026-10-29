@@ -11,6 +11,8 @@
  * the what's-missing checklist and the tests share one copy.
  */
 
+import { farmTz } from './farm-context'
+
 export const STALE_HOURS_DAYS = 30
 
 export type HoursRow = {
@@ -45,7 +47,7 @@ export function hoursStaleSince(machine: HoursRow, fleet: readonly HoursRow[], n
 
 /** "Jul 2, 2026", the farm's calendar day of the last reading. */
 export function staleHoursDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-CA', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Edmonton' })
+  return new Date(iso).toLocaleDateString('en-CA', { day: 'numeric', month: 'short', year: 'numeric', timeZone: farmTz() })
 }
 
 /** "hours not updating since Jul 2, 2026". */

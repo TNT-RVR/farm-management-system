@@ -9,6 +9,7 @@ import { useMarketPrices, useMarketSeries } from '@/lib/markets'
 import { totalsByProduct, type ProductTotal } from '@/lib/fertilizer-plan'
 import { cn } from '@/lib/utils'
 import { useFarmSettings } from '@/lib/farm-setup'
+import { money as fmtMoney, pct as fmtPct } from '@/lib/format'
 
 const ZOOMS = [
   { label: '1y', years: 1 },
@@ -26,11 +27,8 @@ const shiftYears = (iso: string, back: number) => {
 const backOneYear = (iso: string) => shiftYears(iso, 1)
 const backTenYears = (iso: string) => shiftYears(iso, 10)
 
-const pct = (v: number | null) =>
-  v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`
-
-const money = (v: number | null) =>
-  v == null ? '—' : `$${v.toLocaleString('en-CA', { maximumFractionDigits: 0 })}`
+const pct = (v: number | null) => fmtPct(v, 1, { sign: true })
+const money = (v: number | null) => fmtMoney(v, 0, { neg: 'inside' })
 
 /** US dollars a short ton into Canadian dollars a tonne. */
 const SHORT_TONS_PER_TONNE = 1.10231
@@ -261,7 +259,7 @@ export function MarketTab({ isManager }: { isManager: boolean }) {
               .filter(Boolean)
               .join('; ') || 'Nothing in the cheap or dear third of its range'}
             .{' '}
-            <Link to="/fertilizer?tab=Savings" className="text-brand-700 underline decoration-dotted">
+            <Link to="/fertilizer/savings" className="text-brand-700 underline decoration-dotted">
               Buy-window alert on Savings
             </Link>
           </p>
@@ -287,11 +285,11 @@ export function MarketTab({ isManager }: { isManager: boolean }) {
                 <PriceAlerts series={dtnSeries} isManager={isManager} />
                 {/* Said here, where the line is set, rather than under the
                     tab where it read as a note about something else. */}
-                <p className="mt-2 rounded-md bg-white px-3 py-2 text-[11px] text-gray-500 shadow">
+                <HelpNote className="mt-2 rounded-md bg-white px-3 py-2 shadow" summary="A watch fires once per crossing." title="How a watch fires">
                   A watch fires once per crossing, not once per quote — a price that drops through
                   your line and stays there does not keep telling you. Set the line at the price you
                   would actually buy at.
-                </p>
+                </HelpNote>
                 <button
                   type="button"
                   onClick={() => setWatching(false)}
@@ -396,7 +394,7 @@ export function MarketTab({ isManager }: { isManager: boolean }) {
           is only the market. */}
       <p className="px-1 text-xs text-gray-500">
         What {retailerName} charges this farm, and quotes:{' '}
-        <Link to="/fertilizer?tab=Pricing" className="text-brand-700 underline decoration-dotted">
+        <Link to="/fertilizer/prices?tab=pricing" className="text-brand-700 underline decoration-dotted">
           Prices → Pricing
         </Link>
         .

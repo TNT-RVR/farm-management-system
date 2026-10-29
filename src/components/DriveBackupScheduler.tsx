@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { canSeeFinances, useAuth } from '@/lib/auth'
 import { useIntegrations } from '@/lib/integrations'
-import { backupDue, latestRuns, startRun, RUN_STALE_MIN } from '@/lib/drive-backup'
+import { backupDue, latestRuns, startRun, whenIdle, RUN_STALE_MIN } from '@/lib/drive-backup'
 import { NOW_EVENT } from '@/lib/drive-backup-progress'
 
 // The runner pulls in every report's code: loaded only when a backup starts.
@@ -12,6 +12,11 @@ const BackupRunner = lazy(() => import('./DriveBackup'))
  * minute and a half after the app opens and every half hour after, and runs
  * the Google Drive backup when it is due (lib/drive-backup.ts backupDue), or
  * at once on "Back up now".
+ *
+ * A scheduled run starts only while the tab is on screen and the browser is
+ * idle: a backup in a background tab is throttled to a crawl and can die with
+ * it, and one that starts mid-keystroke is felt. A check that finds the tab
+ * hidden waits for it to come back rather than for the next half hour.
  */
 const CHECK_EVERY_MS = 30 * 60_000
 const FIRST_CHECK_MS = 90_000
@@ -26,8 +31,15 @@ export function DriveBackupScheduler() {
 
   useEffect(() => {
     if (!finances || !connected || !profile?.id) return
+    let waitingForTab = false
+    let cancelIdle: (() => void) | null = null
     const check = async (force: boolean) => {
       if (busy.current) return
+      if (!force && document.visibilityState !== 'visible') {
+        waitingForTab = true
+        return
+      }
+      waitingForTab = false
       try {
         const runs = await latestRuns(5)
         if (!force && !backupDue(runs)) return
@@ -38,14 +50,25 @@ export function DriveBackupScheduler() {
         busy.current = false
       }
     }
-    const first = window.setTimeout(() => void check(false), FIRST_CHECK_MS)
-    const every = window.setInterval(() => void check(false), CHECK_EVERY_MS)
+    // "Back up now" was asked for, so it goes at once; the schedule waits for a quiet moment.
+    const scheduled = () => {
+      cancelIdle?.()
+      cancelIdle = whenIdle(() => void check(false))
+    }
+    const first = window.setTimeout(scheduled, FIRST_CHECK_MS)
+    const every = window.setInterval(scheduled, CHECK_EVERY_MS)
     const now = () => void check(true)
+    const shown = () => {
+      if (waitingForTab && document.visibilityState === 'visible') scheduled()
+    }
     window.addEventListener(NOW_EVENT, now)
+    document.addEventListener('visibilitychange', shown)
     return () => {
       window.clearTimeout(first)
       window.clearInterval(every)
+      cancelIdle?.()
       window.removeEventListener(NOW_EVENT, now)
+      document.removeEventListener('visibilitychange', shown)
     }
   }, [finances, connected, profile?.id])
 

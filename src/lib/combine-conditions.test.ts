@@ -46,7 +46,7 @@ const hour = (time: string, tempC: number, rh: number, wind = 10, gust = 15): Wx
   windDir: 200,
 })
 
-const bands: MoistureBands = { dry_max: 10, tough_max: 12, damp_max: null, moist_max: null }
+const bands: MoistureBands = { dry_max: 10, tough_max: 12}
 
 const base = (over: Partial<ConditionsInput> = {}): ConditionsInput => ({
   crop: 'wheat',
@@ -169,7 +169,7 @@ describe('the rules', () => {
     const a = suggest(base({ weather: dry }))
     expect(dirOf(a, 'rotor_rpm')).toBe('down')
     expect(dirOf(a, 'concave_mm')).toBe('up')
-    const corn = suggest(base({ crop: 'corn', weather: dry, moisture: { now: { pct: 16, source: 'test' }, next: [], bands: { dry_max: 15.5, tough_max: 17.5, damp_max: 21, moist_max: 25 } } }))
+    const corn = suggest(base({ crop: 'corn', weather: dry, moisture: { now: { pct: 16, source: 'test' }, next: [], bands: { dry_max: 15.5, tough_max: 17.5} } }))
     expect(corn.fired).not.toContain('brittle-straw')
   })
 
@@ -182,7 +182,7 @@ describe('the rules', () => {
 
   it('strong wind lowers the fan for a light seed and only asks for a look in wheat', () => {
     const windy = { now: hour('2030-09-01T14:00', 20, 50, 35, 55), next: [] }
-    expect(dirOf(suggest(base({ crop: 'canola', weather: windy, moisture: { now: { pct: 7, source: 'test' }, next: [], bands: { dry_max: 8, tough_max: 10, damp_max: null, moist_max: null } } })), 'fan_rpm')).toBe('down')
+    expect(dirOf(suggest(base({ crop: 'canola', weather: windy, moisture: { now: { pct: 7, source: 'test' }, next: [], bands: { dry_max: 8, tough_max: 10} } })), 'fan_rpm')).toBe('down')
     expect(dirOf(suggest(base({ weather: windy })), 'fan_rpm')).toBe('check')
     expect(suggest(base({ crop: 'corn', weather: windy })).fired).not.toContain('wind')
   })
@@ -209,7 +209,7 @@ describe('the rules', () => {
   })
 
   it('beans below their floor count as very dry; tough beans are not threshed harder', () => {
-    const beanBands: MoistureBands = { dry_max: 16, tough_max: 16.5, damp_max: null, moist_max: null, dry_min: 14 }
+    const beanBands: MoistureBands = { dry_max: 16, tough_max: 16.5, dry_min: 14 }
     const dry = suggest(base({ crop: 'beans', moisture: { now: { pct: 13, source: 'test' }, next: [], bands: beanBands } }))
     expect(dry.fired).toContain('over-dry')
     expect(dirOf(dry, 'rotor_rpm')).toBe('down')

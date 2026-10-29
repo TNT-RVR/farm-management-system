@@ -4,18 +4,21 @@ import { SETUP_LINKS } from '@/lib/setup-links'
 import { hasAdminAccess, useAuth } from '@/lib/auth'
 import { isPathOff, useDisabledPaths } from '@/lib/farm-setup'
 import { isViewDenied } from '@/lib/nav'
+import { PARTNER_HOME, isPartnerPath } from '@/lib/partner'
+import { usePartnerView } from '@/lib/partner-view'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { useMfaGate } from '@/lib/mfa'
 import { MfaChallenge } from '@/components/Mfa'
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { session, profile, loading } = useAuth()
+  const { session, profile, loading, profileReady } = useAuth()
   const { pathname } = useLocation()
   // Features the farm switched off in Farm setup: closed to everyone, admins
   // included, so a typed address cannot open a screen the menu no longer shows.
   // The settings page is never off, or there would be no way back.
   const off = useDisabledPaths()
   const mfa = useMfaGate(session?.user.id ?? null, session?.expires_at)
+  const partnerView = usePartnerView()
 
   if (!isSupabaseConfigured) {
     return (
@@ -47,6 +50,10 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   if (mfa.isLoading) return <div className="flex h-full items-center justify-center text-gray-500">Loading…</div>
   if (mfa.data?.needsCode) return <MfaChallenge />
 
+  // The role decides which screens exist and where fields are read from
+  // (lib/partner.ts), so nothing renders until it is known.
+  if (!profileReady) return <div className="flex h-full items-center justify-center text-gray-500">Loading…</div>
+
   if (profile && !profile.active) {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -55,6 +62,13 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
         </div>
       </div>
     )
+  }
+
+  // A crop-share partner has his fields and his account, nothing else. The
+  // database keeps him out of the rest regardless; this keeps him off screens
+  // that would only show empty farm-wide lists.
+  if (profile && partnerView && !isPartnerPath(pathname)) {
+    return <Navigate to={PARTNER_HOME} replace />
   }
 
   // An admin can close off sections per user. This stops the URL being typed

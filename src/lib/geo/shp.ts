@@ -7,20 +7,10 @@
  */
 import type { MultiPolygon, Position } from 'geojson'
 import { ringAreaM2 } from './area'
+import { pointInRing } from './point-in'
 
 const SHAPE_NULL = 0
 const SHAPE_POLYGON = 5
-
-function pointInRing(pt: Position, ring: Position[]): boolean {
-  const [x, y] = pt
-  let inside = false
-  for (let i = 0; i < ring.length - 1; i++) {
-    const [x1, y1] = ring[i]
-    const [x2, y2] = ring[i + 1]
-    if (y1 > y !== y2 > y && x < ((x2 - x1) * (y - y1)) / (y2 - y1) + x1) inside = !inside
-  }
-  return inside
-}
 
 /** Group rings into GeoJSON MultiPolygon coordinates with RFC 7946 winding. */
 export function ringsToMultiPolygon(rings: Position[][]): MultiPolygon['coordinates'] {

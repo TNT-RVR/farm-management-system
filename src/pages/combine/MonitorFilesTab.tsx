@@ -41,6 +41,7 @@ import {
 } from '@/lib/combine-monitor-data'
 import { useCropYear } from '@/lib/crop-year'
 import { cn } from '@/lib/utils'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * Combine → Monitor files: the files the combine display reads off a stick,
@@ -575,7 +576,7 @@ function BoundariesCard({
 
       <div className="mt-2 max-h-96 overflow-auto">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-white text-left text-xs text-gray-500">
+          <thead className={cn(TABLE_HEAD, 'sticky top-0')}>
             <tr>
               <th className="w-6 py-1" />
               <th className="py-1 pr-2 font-medium">Farm</th>

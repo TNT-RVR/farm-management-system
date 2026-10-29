@@ -3,6 +3,7 @@ import { ExternalLink, Loader2, RefreshCw } from 'lucide-react'
 import { latestRuns, rootFolderId, BACKUP_EVERY_HOURS } from '@/lib/drive-backup'
 import { backUpNow, useBackupProgress } from '@/lib/drive-backup-progress'
 import { useEffect } from 'react'
+import { HelpNote } from '@/components/HelpNote'
 
 const when = (iso: string) => new Date(iso).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -56,10 +57,10 @@ export function DriveBackupStatus() {
           </button>
         </span>
       </div>
-      <p className="mt-1 text-[11px] text-gray-500">
+      <HelpNote className="mt-1" summary="Every report as a CSV and a PDF.">
         Every report as a CSV and a PDF, in RVR Management App → its section → the report. Kept current every {BACKUP_EVERY_HOURS} hours while an owner or the
         accountant has the app open; Drive keeps each file&apos;s earlier versions.
-      </p>
+      </HelpNote>
       {last && (last.errors.length > 0 || last.skipped.length > 0) && (
         <details className="mt-1">
           <summary className="cursor-pointer text-[11px] text-gray-500">

@@ -3,10 +3,63 @@ import { Select } from '@/components/Select'
 import { HelpNote } from '@/components/HelpNote'
 import { useSetRanch, type Ranch } from '@/lib/ranches'
 import { useCattleSales } from '@/lib/cattleMarkets'
-import { useFarmSettings } from '@/lib/farm-setup'
+import { useFarmSettings, useSaveFarmSetup } from '@/lib/farm-setup'
+import { hasAdminAccess, useAuth } from '@/lib/auth'
 import { historyWeight, monthName, saleWeightSource } from '@/lib/calf-sale'
+import { CARD_HEAD } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: monthName(i + 1) }))
+
+/**
+ * The sale month and weight for a ranch that hasn't set its own below. Moved
+ * here from Farm setup (Sam, 29 Oct 2026). It is a farm_setup value, which
+ * only an admin can change.
+ */
+export function FarmCalfSaleDefault() {
+  const { profile } = useAuth()
+  const canEdit = hasAdminAccess(profile?.role)
+  const farm = useFarmSettings()
+  const save = useSaveFarmSetup()
+  return (
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <Tag className="h-4 w-4 text-brand-100" /> Calf sale — any ranch not set below
+      </h2>
+      <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
+        <label className="text-xs text-gray-600">
+          Calves usually sold in
+          <span className="mt-0.5 block w-36">
+            <Select
+              value={String(farm.calfSaleMonth)}
+              options={MONTHS}
+              disabled={!canEdit}
+              size="sm"
+              onChange={(m) => save.mutate({ calf_sale_month: Number(m) })}
+            />
+          </span>
+        </label>
+        <label key={farm.calfSaleWeightLb} className="text-xs text-gray-600">
+          At about
+          <span className="mt-0.5 flex items-center gap-1">
+            <input
+              type="number"
+              step="10"
+              disabled={!canEdit}
+              defaultValue={farm.calfSaleWeightLb}
+              onBlur={(e) => {
+                const v = Math.round(Number(e.target.value))
+                if (v !== farm.calfSaleWeightLb && v >= 100 && v <= 1500) save.mutate({ calf_sale_weight_lb: v })
+              }}
+              className="w-24 rounded-md border border-gray-200 px-1.5 py-1 text-right text-sm tabular-nums disabled:border-transparent disabled:bg-transparent"
+            />
+            <span className="text-gray-400">lb</span>
+          </span>
+        </label>
+      </div>
+    </section>
+  )
+}
 
 /**
  * Weaning and the calf sale, per ranch (Sam, 5 Oct 2026). The two ranches
@@ -43,17 +96,18 @@ export function CalfSaleSettings({ ranch, isManager }: { ranch: Ranch; isManager
           <span className="text-gray-400">lb</span>
         </span>
         <span className="block text-[10px] text-gray-400">
-          {ranch[key] != null ? 'typed — clear it to use your sales' : h ? `blank: ${saleWeightSource(h)}` : 'blank: no sales on record, Farm setup’s figure'}
+          {ranch[key] != null ? 'typed — clear it to use your sales' : h ? `blank: ${saleWeightSource(h)}` : 'blank: no sales on record, the figure above'}
         </span>
       </label>
     )
   }
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-3">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-        <Tag className="h-4 w-4 text-gray-400" /> Weaning and calf sale — {ranch.name}
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <Tag className="h-4 w-4 text-brand-100" /> Weaning and calf sale — {ranch.name}
       </h2>
+      <div className="p-3">
       <HelpNote className="mt-1 text-xs" summary="Used by the Feed, Grazing and Markets tabs and the move-out alert." title="What these do">
         <p>
           <b>Weaning date</b>: until this day the calves are at side — counted on grass with the cows and fed through the cows&apos; ration. From it, the
@@ -92,6 +146,8 @@ export function CalfSaleSettings({ ranch, isManager }: { ranch: Ranch; isManager
         </label>
         {weightField('steer_sale_weight_lb', 'steers', 'Steers sell at')}
         {weightField('heifer_sale_weight_lb', 'heifers', 'Heifers sell at')}
+      </div>
+
       </div>
     </section>
   )

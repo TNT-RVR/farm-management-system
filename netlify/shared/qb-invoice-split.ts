@@ -2,6 +2,7 @@ import './pdf-polyfills.ts'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { QbAccount } from '../functions/_quickbooks.mts'
 import { extractText, getDocumentProxy } from 'unpdf'
+import { callClaude, HAIKU_4_5 } from './anthropic.ts'
 
 /**
  * What a supplier's invoices were for — labour, parts, freight, other — read
@@ -31,7 +32,7 @@ type QbGet = <T>(a: QbAccount, path: string, accept?: string) => Promise<T>
 const chunks = <T>(xs: T[], n = 150) =>
   Array.from({ length: Math.ceil(xs.length / n) }, (_, k) => xs.slice(k * n, k * n + n))
 
-const FAST_MODEL = () => process.env.ANTHROPIC_FAST_MODEL ?? 'claude-haiku-4-5-20251001'
+const FAST_MODEL = () => process.env.ANTHROPIC_FAST_MODEL ?? HAIKU_4_5
 const num = (v: unknown) =>
   v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v)
 
@@ -79,24 +80,15 @@ async function splitOne(
         { type: 'text', text: `Supplier invoice ${fname} (a scan).` },
       ]
   const model = FAST_MODEL()
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    signal: AbortSignal.timeout(90_000),
-    body: JSON.stringify({
-      model,
-      max_tokens: 600,
-      system:
-        'You read one supplier invoice for a farm and split its amount, before tax, into labour (service, travel, mileage, truck/service charges), parts (parts, materials, supplies), freight and other. Use the invoice line items. If the lines are not itemised, put the whole pre-tax amount where it plainly belongs and say so in notes. A progress or final invoice that subtracts earlier billings: split only what this invoice bills (scale its labour/parts so they add up to the pre-tax amount on this invoice) and start notes with "Progress billing:". Never invent a figure the invoice does not support; use null when there is none.',
-      tools: [SPLIT_TOOL],
-      tool_choice: { type: 'tool', name: SPLIT_TOOL.name },
-      messages: [{ role: 'user', content }],
-    }),
-  })
+  const res = await callClaude({
+    model,
+    maxTokens: 600,
+    system:
+      'You read one supplier invoice for a farm and split its amount, before tax, into labour (service, travel, mileage, truck/service charges), parts (parts, materials, supplies), freight and other. Use the invoice line items. If the lines are not itemised, put the whole pre-tax amount where it plainly belongs and say so in notes. A progress or final invoice that subtracts earlier billings: split only what this invoice bills (scale its labour/parts so they add up to the pre-tax amount on this invoice) and start notes with "Progress billing:". Never invent a figure the invoice does not support; use null when there is none.',
+    tools: [SPLIT_TOOL],
+    tool_choice: { type: 'tool', name: SPLIT_TOOL.name },
+    messages: [{ role: 'user', content }],
+  }, { apiKey, signal: AbortSignal.timeout(90_000) })
   if (!res.ok) throw new Error(`model ${res.status}`)
   const out = (await res.json()) as { content: { type: string; input?: Record<string, unknown> }[] }
   const i = out.content.find((c) => c.type === 'tool_use')?.input ?? {}

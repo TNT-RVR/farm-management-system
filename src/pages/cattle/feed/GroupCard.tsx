@@ -6,6 +6,7 @@ import { useRationMutations, useUpdateGroup, type GroupRationRow, type HerdCount
 import { cn } from '@/lib/utils'
 import { FeedInfo } from './FeedInfo'
 import { FromHerdChip, Num, WarningList, n0, n1, yardAmount } from './bits'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const GROWING: FeedClass[] = ['backgrounder', 'heifer_calf']
 
@@ -54,7 +55,7 @@ export function GroupCard({
       {/* Header: the answer first */}
       <div className="flex flex-wrap items-start gap-3 p-3">
         <input type="checkbox" checked={included} disabled={!isManager} onChange={onToggle} className="mt-1 h-4 w-4 rounded border-gray-300 text-brand-700" aria-label={`Feed ${group.class_name} this winter`} />
-        <button type="button" onClick={() => setOpen((o) => !o)} className="min-w-0 flex-1 text-left">
+        <button type="button" onClick={() => setOpen((o) => !o)} className="min-w-0 flex-1 basis-48 text-left">
           <p className="flex items-center gap-1 text-sm font-semibold text-gray-900">
             {open ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
             {group.class_name}
@@ -84,7 +85,7 @@ export function GroupCard({
           )}
         </button>
         {included && result && result.lines.length > 0 && (
-          <div className="text-right text-xs">
+          <div className="w-full text-right text-xs sm:w-auto">
             <p className={cn('text-lg font-bold tabular-nums', result.energyMetPct < 90 ? 'text-red-700' : 'text-gray-900')}>{n1(result.dmLb)} <span className="text-xs font-normal text-gray-500">lb DM/hd</span></p>
             <p className="text-gray-500">
               energy {n0(result.energyMetPct)}% · protein {n0(result.proteinMetPct)}%
@@ -167,8 +168,8 @@ export function GroupCard({
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[620px] text-sm">
-                <thead>
-                  <tr className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+                <thead className={TABLE_HEAD}>
+                  <tr>
                     <th className="py-1 font-medium">Feed</th>
                     <th className="py-1 text-right font-medium" title="Share of this group's daily dry matter — what it is fed today">
                       Group share (% DM)

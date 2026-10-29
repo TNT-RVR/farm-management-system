@@ -1,8 +1,8 @@
-import { createClient } from '@supabase/supabase-js'
 import { judgeProbe } from '../../src/lib/probeHealth.ts'
 import { MANAGER_ROLES } from './_jd.mts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 // Integration / data-feed health monitor. Runs hourly on a schedule (a manager
 // can also trigger it manually via POST). For each enabled source it either
@@ -58,7 +58,7 @@ async function probeRiver(): Promise<{ dataAt: string | null; detail: string }> 
  */
 async function handle(req: Request | null) {
   if (!url || !serviceKey) return new Response('Not configured', { status: 500 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
 
   // Every HTTP caller must prove it is an active manager. Treating a missing
   // Authorization header as "this must be the scheduler" was only safe while
@@ -176,7 +176,7 @@ async function handle(req: Request | null) {
         p_kind: 'integration_alert',
         p_title: `⚠ ${r.label}: ${status}`,
         p_body: detail ?? 'A monitored data feed needs attention.',
-        p_link: '/integrations',
+        p_link: '/settings/connections',
         p_details: {
           source_key: r.source_key,
           label: r.label,
@@ -196,7 +196,7 @@ async function handle(req: Request | null) {
         p_kind: 'integration_alert',
         p_title: `✓ ${r.label}: recovered`,
         p_body: detail ?? 'The feed is healthy again.',
-        p_link: '/integrations',
+        p_link: '/settings/connections',
         p_details: { source_key: r.source_key, label: r.label, status, detail },
       })
       alerted = false

@@ -78,8 +78,6 @@ export function MoistureTestDetail({ test, onClose }: { test: MoistureTest; onCl
     return {
       dry_max: c.moisture_dry_max ?? null,
       tough_max: c.moisture_tough_max ?? null,
-      damp_max: c.moisture_damp_max ?? null,
-      moist_max: c.moisture_moist_max ?? null,
       dry_min: c.moisture_dry_min ?? null,
     }
   }

@@ -1,3 +1,5 @@
+import { haversineM } from './geo/measure'
+
 /**
  * Road distances between the shop, the bins, the fields and the elevators.
  *
@@ -60,6 +62,8 @@ export const shopKey = 'shop'
 export const binsKey = 'bins'
 export const fieldKey = (id: string) => `field:${id}`
 export const siteKey = (id: string) => `site:${id}`
+/** One of the farm's own unloading yards (farm_yards) — a hay yard, a ranch. The main yard is the bins. */
+export const yardKey = (id: string) => `yard:${id}`
 export type StartKey = typeof shopKey | typeof binsKey
 
 /**
@@ -83,14 +87,9 @@ export const pitKey = 'pit'
 export type PitChoice = StartKey | typeof pitKey
 export const PIT_LABEL: Record<PitChoice, string> = { ...START_LABEL, pit: 'the silage pit' }
 
-/** Great-circle metres. */
+/** Great-circle metres (lib/geo/measure). Also used by the Netlify functions, via netlify/shared. */
 export function metresBetween(a: LatLng, b: LatLng): number {
-  const R = 6_371_000
-  const rad = Math.PI / 180
-  const dLat = (b.lat - a.lat) * rad
-  const dLng = (b.lng - a.lng) * rad
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)))
+  return haversineM([a.lng, a.lat], [b.lng, b.lat])
 }
 
 /**
@@ -293,12 +292,30 @@ export function routeBetween<T extends Pick<RouteRow, 'from_key' | 'to_key'>>(ro
   return routes.find((r) => r.from_key === a && r.to_key === b) ?? routes.find((r) => r.from_key === b && r.to_key === a) ?? null
 }
 
-/** "52.374, -113.545" or a Google Maps link pasted whole. */
+/** "52.374, -113.545" or a Google Maps link pasted whole: any real point on the globe. */
 export function parseLatLng(s: string): LatLng | null {
   const m = s.match(/(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/) ?? s.match(/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/)
   if (!m) return null
   const lat = Number(m[1])
   const lng = Number(m[2])
-  if (!(lat > 40 && lat < 60 && lng < -100 && lng > -125)) return null
+  if (!(Math.abs(lat) <= 90 && Math.abs(lng) <= 180)) return null
   return { lat, lng }
+}
+
+/**
+ * Further than this from the farm and a typed place is taken for a slip (a
+ * dropped minus sign, latitude and longitude swapped) rather than somewhere a
+ * truck goes. It used to be a box around southern Alberta, which turned away
+ * every farm east of Manitoba (24 Oct 2026).
+ */
+export const FAR_FROM_FARM_KM = 600
+
+/** What is wrong with a typed place, in a sentence, or null when it will do. */
+export function locationProblem(text: string, farm: LatLng): string | null {
+  if (!text.trim()) return null
+  const p = parseLatLng(text)
+  if (!p) return 'Not a location. Paste "latitude, longitude" or a Google Maps link.'
+  const km = metresBetween(p, farm) / 1000
+  if (km > FAR_FROM_FARM_KM) return `That is ${Math.round(km).toLocaleString('en-CA')} km from the farm. Check the numbers: a missing minus sign?`
+  return null
 }

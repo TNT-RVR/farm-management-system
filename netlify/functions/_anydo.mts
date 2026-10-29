@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { admin, decryptToken, encryptToken, json, makeChallenge, makeVerifier } from './_fieldnet.mts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { isStaff } from '../shared/staff.ts'
 
 export { admin, json, makeChallenge, makeVerifier }
 
@@ -34,8 +35,8 @@ export async function requireUser(req: Request, sb: SupabaseClient): Promise<str
   const { data } = await getUserMfa(sb, jwt)
   const id = data.user?.id
   if (!id) return null
-  const { data: u } = await sb.from('users').select('active').eq('id', id).maybeSingle()
-  return u?.active ? id : null
+  const { data: u } = await sb.from('users').select('active, role').eq('id', id).maybeSingle()
+  return isStaff(u) ? id : null
 }
 
 /**

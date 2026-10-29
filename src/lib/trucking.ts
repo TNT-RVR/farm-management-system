@@ -14,14 +14,22 @@
 import { convertMass, type MassUnit } from './bushels'
 import type { Trip } from './road-routes'
 
-export type HaulMode = 'direct' | 'bin_yard' | 'bin_yard_then_elevator' | 'buyer_pickup'
+export type HaulMode = 'direct' | 'bin_yard' | 'bin_yard_then_elevator' | 'buyer_pickup' | 'buyer_from_field' | 'grazed'
 
-export const HAUL_MODES: { key: HaulMode; label: string; hint: string; needsSite: boolean }[] = [
-  { key: 'direct', label: 'Straight to the elevator', hint: 'field → elevator', needsSite: true },
-  { key: 'bin_yard', label: 'Bin yard only', hint: 'field → our bins, and it stays (feed, carry-over)', needsSite: false },
-  { key: 'bin_yard_then_elevator', label: 'Bin yard, then the elevator', hint: 'field → our bins now, bins → elevator later', needsSite: true },
-  { key: 'buyer_pickup', label: 'Buyer picks up at the yard', hint: 'field → our bins; the buyer trucks it from there at their cost', needsSite: false },
+/** needsYard: the crop is unloaded at one of our yards, so the plan says which (the main yard when none is picked). */
+export const HAUL_MODES: { key: HaulMode; label: string; hint: string; needsSite: boolean; needsYard: boolean }[] = [
+  { key: 'direct', label: 'Straight to the elevator', hint: 'field → elevator', needsSite: true, needsYard: false },
+  { key: 'bin_yard', label: 'Our yard only', hint: 'field → our yard, and it stays (feed, carry-over)', needsSite: false, needsYard: true },
+  { key: 'bin_yard_then_elevator', label: 'Bin yard, then the elevator', hint: 'field → our bins now, bins → elevator later', needsSite: true, needsYard: true },
+  { key: 'buyer_pickup', label: 'Buyer picks up at the yard', hint: 'field → our yard; the buyer trucks it from there at their cost', needsSite: false, needsYard: true },
+  // High-moisture corn the buyer harvests and hauls, a crop-share partner's potatoes: nothing on our trucks.
+  { key: 'buyer_from_field', label: 'Buyer hauls from the field', hint: 'the buyer or a crop-share partner trucks it off the field; none of it on our trucks', needsSite: false, needsYard: false },
+  // Feed the cattle eat where it grows (11-Coulee, 12-Crown Hill in 2026).
+  { key: 'grazed', label: 'Grazed', hint: 'the cattle graze it where it grows; nothing trucked', needsSite: false, needsYard: false },
 ]
+
+/** What the main yard is called when a plan picks no other yard. */
+export const MAIN_YARD = 'Main yard'
 
 export type TruckSettings = {
   /** Tonnes a load. */
@@ -109,8 +117,9 @@ function leg(label: string, tonnes: number, trip: Trip, truck: TruckSettings, di
 /**
  * The trucking for one field's crop.
  *
- * `trips` are one way: field entry → the bins, field entry → the chosen
- * elevator, the bins → the chosen elevator. A leg the plan needs but has no
+ * `trips` are one way: field entry → the yard it unloads at (the bins of
+ * the main yard, or the farm yard the plan picks), field entry → the chosen
+ * elevator, that yard → the chosen elevator. A leg the plan needs but has no
  * distance for is reported in `missing` and left out, never costed at zero km
  * silently.
  */
@@ -119,12 +128,15 @@ export function haulCost(args: {
   mode: HaulMode
   trips: { fieldYard: Trip | null; fieldSite: Trip | null; yardSite: Trip | null }
   siteName: string | null
+  /** The yard it unloads at; null = the main yard. */
+  yardName?: string | null
   truck: { field: TruckSettings; highway: TruckSettings }
   dieselPerL: number
   wage: number
 }): HaulCost {
   const { tonnes, mode, trips, truck, dieselPerL, wage } = args
   const site = args.siteName ?? 'the elevator'
+  const yard = args.yardName ?? MAIN_YARD
   const legs: HaulLeg[] = []
   const missing: string[] = []
   const add = (label: string, trip: Trip | null, t: TruckSettings, what: string) => {
@@ -134,9 +146,9 @@ export function haulCost(args: {
   const needsSite = HAUL_MODES.find((m) => m.key === mode)?.needsSite
   if (needsSite && !args.siteName) missing.push('which elevator')
   if (mode === 'direct' && args.siteName) add(`Field → ${site}`, trips.fieldSite, truck.field, `a distance from the field to ${site}`)
-  if (mode === 'bin_yard' || mode === 'buyer_pickup' || mode === 'bin_yard_then_elevator')
-    add('Field → bin yard', trips.fieldYard, truck.field, 'a distance from the bins to the field')
-  if (mode === 'bin_yard_then_elevator' && args.siteName) add(`Bin yard → ${site}`, trips.yardSite, truck.highway, `a distance from the bins to ${site}`)
+  if (HAUL_MODES.find((m) => m.key === mode)?.needsYard)
+    add(`Field → ${yard}`, trips.fieldYard, truck.field, args.yardName ? `a pin for ${args.yardName} (Distances)` : 'a distance from the bins to the field')
+  if (mode === 'bin_yard_then_elevator' && args.siteName) add(`${yard} → ${site}`, trips.yardSite, truck.highway, `a distance from ${args.yardName ?? 'the bins'} to ${site}`)
 
   const sum = (k: 'litres' | 'hours' | 'fuel' | 'labour' | 'total') => legs.reduce((s, l) => s + l[k], 0)
   const total = sum('total')

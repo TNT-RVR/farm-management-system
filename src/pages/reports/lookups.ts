@@ -3,6 +3,7 @@ import { CONTACT_TYPES } from '@/lib/sales'
 import { alertGuide } from '@/lib/alert-guides'
 import { AUDIT_TABLES } from '@/lib/reports/audit'
 import { fetchAll, type LookupKey } from '@/lib/reports/framework'
+import { driverChoices } from '@/lib/reports/driver-log-data'
 
 /**
  * The lists a report row's lookup picker offers, one entry per LookupKey.
@@ -21,6 +22,8 @@ export const LOOKUP_LISTS: Record<LookupKey, () => Promise<LookupOption[]>> = {
     return [...new Set(rows.map((r) => r.supplier?.trim()).filter((s): s is string => !!s))].sort().map((s) => ({ value: s, label: s }))
   },
   auditTables: async () => AUDIT_TABLES,
+  // Everyone who has driven a load, the person on file or the name typed.
+  drivers: driverChoices,
   contactTypes: async () => CONTACT_TYPES.map((t) => ({ value: t, label: t.replaceAll('_', ' ') })),
 
   // The kinds of alert this person has had (notifications are each person's

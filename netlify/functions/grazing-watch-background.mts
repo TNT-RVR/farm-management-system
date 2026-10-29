@@ -2,6 +2,7 @@ import { admin, json, requireManager } from './_jd.mts'
 import { extractPendingGrazingRules } from '../shared/grazing-rules-core.ts'
 import { runGrazingWatch } from '../shared/grazing-watch.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { SONNET_5 } from '../shared/anthropic.ts'
 
 // Sprays that keep livestock off a field: reads any new or changed label's
 // grazing rules first, then tells the managers about new sprays on ground
@@ -13,14 +14,14 @@ import { hydrateSecrets } from '../shared/secrets.ts'
 // John Deere operations sync; a manager can run it too. { "dryRun": true }
 // returns what it would send and writes nothing.
 let apiKey = process.env.ANTHROPIC_API_KEY
-let model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5'
+let model = process.env.ANTHROPIC_MODEL ?? SONNET_5
 let workerKey = process.env.JOB_WORKER_KEY
 
 export default async (req: Request) => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
   apiKey = process.env.ANTHROPIC_API_KEY
-  model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5'
+  model = process.env.ANTHROPIC_MODEL ?? SONNET_5
   workerKey = process.env.JOB_WORKER_KEY
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405)
   const sb = admin()

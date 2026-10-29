@@ -6,6 +6,7 @@ import { FUEL_DEFAULTS, MIN_LOGGED_PASSES, OP_KINDS, kindOf, sumFuel, type OpKin
 import { HelpNote } from '@/components/HelpNote'
 import { Card, SettingsGroup, type NumberField } from './ui'
 import { FieldLink, Sources, money, n0, n1 } from '../fertilizer/savings/ui'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const KIND_FIELDS = (unit: string): NumberField<OpKind>[] => OP_KINDS.map((k) => ({ key: k.key, label: k.label, unit, hint: k.machine }))
 
@@ -56,7 +57,7 @@ export function FuelTab({ year, isManager }: { year: number; isManager: boolean 
       <Card
         title={`Fuel by field, ${year}`}
         right={
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-brand-100">
             {n0(farm.inField + farm.travel)} L · {money((farm.inField + farm.travel) * d)} · {n0(farm.logged)} L of it logged by the machines
           </span>
         }
@@ -65,7 +66,7 @@ export function FuelTab({ year, isManager }: { year: number; isManager: boolean 
           sources={[
             { label: 'Passes: John Deere Operations Center', to: '/field-progress' },
             { label: "Fuel logged: the FUEL column of each pass's per-point export" },
-            { label: 'Road: the Distances tab', to: '/hauling?tab=distances' },
+            { label: 'Road: the Distances tab', to: '/fuel?tab=distances' },
           ]}
         />
         {isLoading ? (
@@ -73,7 +74,7 @@ export function FuelTab({ year, isManager }: { year: number; isManager: boolean 
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+              <thead className={TABLE_HEAD}>
                 <tr>
                   <th className="px-2 py-1 font-medium">Field</th>
                   <th className="px-2 py-1 text-right font-medium">Passes</th>
@@ -131,7 +132,7 @@ export function FuelTab({ year, isManager }: { year: number; isManager: boolean 
 
       <Card title="Litres an acre">
         <table className="mb-3 w-full max-w-xl text-xs">
-          <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th className="py-1 font-medium">Work</th>
               <th className="py-1 text-right font-medium">Our machines logged</th>

@@ -1,4 +1,6 @@
-import type { MultiPolygon, Polygon, Position } from 'geojson'
+import type { MultiPolygon, Polygon } from 'geojson'
+import { haversineM } from './geo/measure'
+import { pointInGeometry } from './geo/point-in'
 
 /**
  * Which field you are standing in.
@@ -14,39 +16,18 @@ import type { MultiPolygon, Polygon, Position } from 'geojson'
  */
 
 /**
- * Is a point inside a ring? Ray casting, counting crossings to the east.
+ * Is a point inside a field's boundary, holes respected?
  *
- * Longitude/latitude are treated as plain x/y. Over a quarter section that
- * costs nothing, and the alternative — projecting every boundary — would be
- * arithmetic nobody could check against a map.
+ * Longitude/latitude are treated as plain x/y (lib/geo/point-in). Over a
+ * quarter section that costs nothing, and the alternative — projecting every
+ * boundary — would be arithmetic nobody could check against a map.
  */
-function inRing(lng: number, lat: number, ring: Position[]): boolean {
-  let inside = false
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i]
-    const [xj, yj] = ring[j]
-    // Strictly one side of the edge, so a vertex is not counted twice.
-    const straddles = yi > lat !== yj > lat
-    if (straddles && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside
-  }
-  return inside
-}
-
-/** Inside the outer ring and outside every hole. */
-function inPolygon(lng: number, lat: number, rings: Position[][]): boolean {
-  if (!rings.length || !inRing(lng, lat, rings[0])) return false
-  for (let i = 1; i < rings.length; i++) if (inRing(lng, lat, rings[i])) return false
-  return true
-}
-
 export function pointInBoundary(
   lng: number,
   lat: number,
   boundary: Polygon | MultiPolygon | null | undefined,
 ): boolean {
-  if (!boundary) return false
-  if (boundary.type === 'Polygon') return inPolygon(lng, lat, boundary.coordinates)
-  return boundary.coordinates.some((poly) => inPolygon(lng, lat, poly))
+  return pointInGeometry([lng, lat], boundary)
 }
 
 export type FieldShape = { fieldId: string; boundary: Polygon | MultiPolygon | null | undefined }
@@ -62,13 +43,9 @@ export function fieldAt(lng: number, lat: number, shapes: FieldShape[]): string 
   return null
 }
 
-/** Metres between two points. Equirectangular — fine over a field, cheap to run. */
+/** Metres between two points (great circle, lib/geo/measure). */
 export function metresBetween(aLng: number, aLat: number, bLng: number, bLat: number): number {
-  const R = 6_371_000
-  const toRad = Math.PI / 180
-  const x = (bLng - aLng) * toRad * Math.cos(((aLat + bLat) / 2) * toRad)
-  const y = (bLat - aLat) * toRad
-  return Math.sqrt(x * x + y * y) * R
+  return haversineM([aLng, aLat], [bLng, bLat])
 }
 
 /**

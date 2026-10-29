@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { buyWindow } from '../../src/lib/fert-savings/tools'
 import { MANAGER_ROLES } from '../functions/_jd.mts'
 import { farmRetailer } from '../../src/lib/farm-context.ts'
+import { farmToday } from './dates.ts'
 
 /**
  * The buy-window alert and the early-order reminder.
@@ -54,7 +55,7 @@ export async function evaluateBuySignals(sb: SupabaseClient): Promise<{ checked:
           kind: 'fert_buy_window',
           title: `Fertilizer in its cheap third: ${crossed.map((c) => c.split(' at ')[0]).join(', ')}`,
           body: `This week's DTN retail: ${crossed.join('; ')}. Worth asking ${farmRetailer()} for a price.`,
-          link: '/fertilizer?tab=Savings',
+          link: '/fertilizer/savings',
         })),
       )
   }
@@ -62,8 +63,10 @@ export async function evaluateBuySignals(sb: SupabaseClient): Promise<{ checked:
 }
 
 export async function remindPrograms(sb: SupabaseClient): Promise<{ reminded: number; passed: number }> {
-  const today = new Date().toISOString().slice(0, 10)
-  const weekOut = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10)
+  // The farm's date: the UTC one turned over at 6 pm and closed a program on
+  // the evening of its own deadline day.
+  const today = farmToday()
+  const weekOut = farmToday(new Date(Date.now() + 7 * 86_400_000))
   const { data: due } = await sb
     .from('fert_programs')
     .select('id, supplier, name, deadline, discount_pct, discount_per_tonne, terms')
@@ -83,7 +86,7 @@ export async function remindPrograms(sb: SupabaseClient): Promise<{ reminded: nu
             kind: 'fert_deadline',
             title: `${p.supplier} ${p.name} closes ${p.deadline}`,
             body: `${discount ? `${discount} off. ` : ''}${p.terms ?? ''}`.trim() || 'Early-order deadline in a week.',
-            link: '/fertilizer?tab=Savings',
+            link: '/fertilizer/savings',
           })),
         )
       await sb.from('fert_programs').update({ reminded_at: new Date().toISOString() }).eq('id', p.id)

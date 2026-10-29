@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import { Camera, Check, Crosshair, Pencil, Plus, Trash2, X } from 'lucide-react'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { boundariesForYear, useAllBoundaries, useFields } from '@/lib/queries'
 import { useCropYear } from '@/lib/crop-year'
 import { useHere } from '@/lib/useHere'
@@ -28,7 +27,8 @@ import {
 import { EMPTY_SOIL_READING, readingProblem, readingToMm, useFieldCapacity, useSaveSoilReading } from '@/lib/soil-moisture'
 import { useUnitSystem } from '@/lib/units'
 import { cn } from '@/lib/utils'
-import { farmMapCenter } from '@/lib/farm-setup'
+import { askConfirm } from '@/components/askConfirm'
+import { usePartnerAccess } from '@/lib/partner-view'
 
 const colourOf = (c: ScoutCategory) => SCOUT_CATEGORIES.find((x) => x.value === c)?.colour ?? '#0284c7'
 const when = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
@@ -129,7 +129,10 @@ type ScoutStart = { field: string | null; spot: [number, number] | null }
 function ScoutForm({ cropYear, initialField = null, spot = null, onClose }: { cropYear: number; initialField?: string | null; spot?: [number, number] | null; onClose: () => void }) {
   // Opened from a map click, the clicked spot is the pin: no need to ask the phone.
   const here = useHere(!spot)
-  const { data: fields } = useFields()
+  const { data: allFields } = useFields()
+  // A crop-share partner records only on his fields in his years (lib/partner-view.ts).
+  const access = usePartnerAccess()
+  const fields = access.partner ? (allFields ?? []).filter((f) => access.canWrite(f.id, cropYear)) : allFields
   const save = useSaveScoutNote()
   const [category, setCategory] = useState<ScoutCategory>('weed')
   const [subject, setSubject] = useState('')
@@ -234,8 +237,11 @@ function ScoutForm({ cropYear, initialField = null, spot = null, onClose }: { cr
           ariaLabel="Field"
           placeholder="Field"
           onChange={setFieldChoice}
-          options={[{ value: '', label: 'No field' }, ...(fields ?? []).map((f) => ({ value: f.id, label: f.name }))]}
+          options={[...(access.partner ? [] : [{ value: '', label: 'No field' }]), ...(fields ?? []).map((f) => ({ value: f.id, label: f.name }))]}
         />
+        {access.partner && !fields?.length && (
+          <p className="text-xs text-amber-700 sm:col-span-2">None of your fields are listed for you in {cropYear}, so there is nowhere to add a note this year.</p>
+        )}
         <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Notes — how many, how far in, stage…" className="rounded-md border border-gray-300 px-2 py-1.5 text-sm sm:col-span-2" />
         <label className="flex items-center gap-2 text-xs text-gray-600">
           <input type="checkbox" checked={usePosition} onChange={(e) => setUsePosition(e.target.checked)} />
@@ -350,8 +356,8 @@ function ScoutDetail({ note, fieldName, onClose }: { note: ScoutNote; fieldName:
           <div className="mt-4 flex justify-between gap-2">
             <button
               type="button"
-              onClick={() => {
-                if (confirm('Delete this pin and its photos?')) del.mutate(note, { onSuccess: onClose })
+              onClick={async () => {
+                if (await askConfirm('Delete this pin and its photos?')) del.mutate(note, { onSuccess: onClose })
               }}
               className="inline-flex items-center gap-1 rounded-md border border-red-200 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50"
             >
@@ -400,8 +406,6 @@ function ScoutMap({
 }) {
   const { data: allBoundaries } = useAllBoundaries()
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
-  const [ready, setReady] = useState(false)
   const pickRef = useRef(onPick)
   const fieldRef = useRef(onField)
   useEffect(() => {
@@ -409,11 +413,11 @@ function ScoutMap({
     fieldRef.current = onField
   }, [onPick, onField])
 
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({ container: containerRef.current, style: SATELLITE_STYLE, center: farmMapCenter(), zoom: 10, attributionControl: { compact: true } })
-    map.addControl(new maplibregl.NavigationControl(), 'top-right')
-    map.on('load', () => {
+  const { mapRef, ready } = useFarmMap(containerRef, {
+    zoom: 10,
+    attribution: 'compact',
+    controls: { nav: {} },
+    onReady: (map) => {
       map.addSource('scout-fields', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
       // Invisible, but it makes the inside of a field clickable.
       map.addLayer({ id: 'scout-fields-fill', type: 'fill', source: 'scout-fields', paint: { 'fill-color': '#ffffff', 'fill-opacity': 0 } })
@@ -441,14 +445,8 @@ function ScoutMap({
       map.on('mousemove', (e) => {
         map.getCanvas().style.cursor = map.queryRenderedFeatures(e.point, { layers: ['scout-pins', 'scout-fields-fill'] }).length ? 'pointer' : ''
       })
-      setReady(true)
-    })
-    mapRef.current = map
-    return () => {
-      map.remove()
-      mapRef.current = null
-    }
-  }, [])
+    },
+  })
 
   const framed = useRef(false)
   useEffect(() => {
@@ -484,7 +482,7 @@ function ScoutMap({
       map.fitBounds(bounds, { padding: 30, duration: 0 })
       framed.current = true
     }
-  }, [ready, allBoundaries, notes, cropYear])
+  }, [mapRef, ready, allBoundaries, notes, cropYear])
 
   return (
     <div className="relative h-[55vh] overflow-hidden rounded-lg border border-gray-200 lg:h-[70vh]">
@@ -508,18 +506,23 @@ function ScoutMap({
  */
 export function FieldScouting({ fieldId }: { fieldId: string }) {
   const { data: notes, isLoading } = useFieldScoutNotes(fieldId)
+  const { cropYear } = useCropYear()
+  // A crop-share partner adds notes only in the years the field is his.
+  const access = usePartnerAccess()
   const [openId, setOpenId] = useState<string | null>(null)
   const open = notes?.find((n) => n.id === openId) ?? null
   return (
     <div className="mt-4 space-y-2">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-800">Scouting notes</h2>
+        {access.canWrite(fieldId, cropYear) && (
         <Link
           to={`/scouting?new=1&field=${fieldId}`}
           className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
         >
           <Plus className="h-4 w-4" /> New scouting report
         </Link>
+        )}
       </div>
       {isLoading && <p className="text-xs text-gray-500">Loading…</p>}
       {!isLoading && !notes?.length && (

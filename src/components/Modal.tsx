@@ -1,5 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
+
+/** Fired when a pop-up opens, so anything hanging over the page closes. */
+export const MODAL_OPENED = 'rvr:modal-opened'
 
 /**
  * Centered modal overlay.
@@ -17,17 +21,29 @@ export function Modal({
   title: string
   onClose: () => void
   children: React.ReactNode
-  /** Room for a detail view with tables in it, not just a form. */
-  wide?: boolean
+  /**
+   * Room for a detail view with tables in it, not just a form. 'xl' widens
+   * it further on a computer screen (the bin pop-up, Sam 20 Oct 2026: "too
+   * tight on the desktop"); on a phone every size is the screen's width.
+   */
+  wide?: boolean | 'xl'
 }) {
-  return (
+  // Any dropdown left open behind this closes: its menu is drawn on the page
+  // body too, and one left open hung over the pop-up (Sam, 26 Oct 2026).
+  useEffect(() => {
+    window.dispatchEvent(new Event(MODAL_OPENED))
+  }, [])
+
+  // Drawn on the page body, not where it sits in the page: inside a scrolling
+  // panel its layer is only as high as that panel's.
+  return createPortal(
     // role="dialog": a click inside never counts as a click on the row that opened it (RecordEditor rowClick).
-    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-2 sm:p-4">
+    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-2 sm:p-4">
       {/* Scrolls inside itself on a phone. A form taller than the screen used
           to run straight off the bottom with the Save button on the far side
           of it, and the page behind does not scroll while a modal is up.
           A narrower margin on a phone leaves the form more of its width. */}
-      <div className={`max-h-[calc(100dvh-1rem)] w-full sm:max-h-[calc(100dvh-2rem)] ${wide ? 'max-w-2xl' : 'max-w-md'} overflow-y-auto overscroll-contain rounded-lg bg-white p-3 shadow-xl sm:p-4`}>
+      <div className={`max-h-[calc(100dvh-1rem)] w-full sm:max-h-[calc(100dvh-2rem)] ${wide === 'xl' ? 'max-w-2xl lg:max-w-4xl' : wide ? 'max-w-2xl' : 'max-w-md'} overflow-y-auto overscroll-contain rounded-lg bg-white p-3 shadow-xl sm:p-4`}>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-900">{title}</h2>
           <button onClick={onClose} className="rounded p-1 text-gray-400 hover:bg-gray-100" aria-label="Close">
@@ -36,7 +52,8 @@ export function Modal({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

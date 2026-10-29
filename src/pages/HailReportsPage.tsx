@@ -57,7 +57,8 @@ export function HailReportsPage() {
       </h1>
       <HelpNote className="mt-0.5 max-w-2xl" summary="Hail inspection reports to confirm against your fields." title="How hail reports work">
         AFSC inspection summaries, read automatically and held here for you to confirm. Confirming
-        one records the hail event on the field, which is what ticks the Hail box on the field list.
+        one records the hail event on the field — the day it fell, the assessed loss and the acres
+        — and that is what the Hail column on the field list shows.
       </HelpNote>
 
       {isManager && (

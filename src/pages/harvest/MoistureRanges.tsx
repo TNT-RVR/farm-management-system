@@ -15,23 +15,19 @@ const BAR: Record<Grade, string> = {
   too_dry: 'bg-sky-300',
   dry: 'bg-green-500',
   tough: 'bg-amber-400',
-  damp: 'bg-orange-500',
-  moist: 'bg-red-500',
-  wet: 'bg-red-700',
+  wet: 'bg-red-600',
 }
 const DOT: Record<Grade, string> = { ...BAR }
 
-const LEGEND: Grade[] = ['too_dry', 'dry', 'tough', 'damp', 'moist', 'wet']
+const LEGEND: Grade[] = ['too_dry', 'dry', 'tough', 'wet']
 
 type CropRow = NonNullable<ReturnType<typeof useCrops>['data']>[number]
-type Key = keyof Pick<MoistureBands, 'dry_min' | 'dry_max' | 'tough_max' | 'damp_max' | 'moist_max'>
+type Key = keyof Pick<MoistureBands, 'dry_min' | 'dry_max' | 'tough_max'>
 
 const bandsOf = (c: CropRow): MoistureBands => ({
   dry_min: c.moisture_dry_min,
   dry_max: c.moisture_dry_max,
   tough_max: c.moisture_tough_max,
-  damp_max: c.moisture_damp_max,
-  moist_max: c.moisture_moist_max,
 })
 
 const pct = (v: number | null | undefined) => (v == null ? '—' : `${Number(v).toFixed(1).replace(/\.0$/, '')}%`)
@@ -123,7 +119,7 @@ function CropCard({ crop, onEdit }: { crop: CropRow; onEdit: () => void }) {
       <div className="flex flex-wrap gap-1.5 text-[11px]">
         {b.dry_min != null && <Tag grade="too_dry">Too dry under {pct(b.dry_min)}</Tag>}
         {b.tough_max != null && b.dry_max != null && b.tough_max > b.dry_max && <Tag grade="tough">Air on to {pct(b.tough_max)}</Tag>}
-        {dryAbove != null && <Tag grade="damp">Dry it over {pct(dryAbove)}</Tag>}
+        {dryAbove != null && <Tag grade="wet">Wet over {pct(dryAbove)}</Tag>}
       </div>
     </article>
   )
@@ -188,9 +184,7 @@ function SlimBar({ bands }: { bands: MoistureBands }) {
 const LEVELS: { key: Key; grade: Grade; label: string; hint: string }[] = [
   { key: 'dry_min', grade: 'too_dry', label: 'Too dry below', hint: 'Under this it cracks and loses weight' },
   { key: 'dry_max', grade: 'dry', label: 'Safe to bin up to', hint: 'Straight grade, binned as it is' },
-  { key: 'tough_max', grade: 'tough', label: 'Bin with air on up to', hint: 'Tough: keeps only with the fan on' },
-  { key: 'damp_max', grade: 'damp', label: 'Damp up to', hint: 'Needs drying' },
-  { key: 'moist_max', grade: 'moist', label: 'Moist up to', hint: 'Needs drying; over this it is wet' },
+  { key: 'tough_max', grade: 'tough', label: 'Bin with air on up to', hint: 'Tough: keeps only with the fan on; over this it is wet' },
 ]
 const round1 = (v: number) => Math.round(v * 10) / 10
 
@@ -202,8 +196,6 @@ function EditLevels({ crop, onDone }: { crop: CropRow; onDone: () => void }) {
     dry_min: start.dry_min ?? null,
     dry_max: start.dry_max ?? null,
     tough_max: start.tough_max ?? null,
-    damp_max: start.damp_max ?? null,
-    moist_max: start.moist_max ?? null,
   })
   // The bar's scale is fixed while editing, so a handle does not run away from the finger.
   const [scale] = useState(() => {
@@ -233,8 +225,6 @@ function EditLevels({ crop, onDone }: { crop: CropRow; onDone: () => void }) {
         p_dry_min: vals.dry_min,
         p_dry_max: vals.dry_max,
         p_tough_max: vals.tough_max,
-        p_damp_max: vals.damp_max,
-        p_moist_max: vals.moist_max,
       })
       if (error) throw error
     },

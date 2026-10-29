@@ -11,6 +11,7 @@ import { useFieldSeasons } from '@/lib/irrigation'
 import { conv, depthToMm, type UnitSystem } from '@/lib/units'
 import { cn } from '@/lib/utils'
 import { RainGaugeManager, RainReadingsList } from './RainGauges'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const md = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
 const mdt = (ts: string) =>
@@ -314,7 +315,7 @@ export function PivotBlock({ fieldId, year, u }: { fieldId: string; year: number
       {data.passes.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[420px]">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="py-0.5 font-medium">Started</th>
                 <th className="py-0.5 font-medium">Ran</th>

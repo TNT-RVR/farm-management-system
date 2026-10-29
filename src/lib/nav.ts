@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { Ban, Baby, CircleDollarSign, Thermometer, Fuel, Flower2, Beef, BookOpen, Bug, KeyRound, Calculator, CalendarDays, CheckSquare, ClipboardCheck, ClipboardList, Cloud, Container, Droplets, FileSignature, FileText, FlaskConical, Gauge, Info, Landmark, LayoutDashboard, Leaf, LineChart, Map as MapIcon, Presentation, Repeat, ArrowLeftRight, ScrollText, Settings, Sprout, Plug, Tractor, Truck, Users, Video, Waves, Wheat } from 'lucide-react'
+import { CircleDollarSign, Fuel, Flower2, Beef, BookOpen, Bug, KeyRound, Calculator, CalendarDays, CheckSquare, ClipboardCheck, ClipboardList, Cloud, Container, Droplets, FileSignature, FileText, FlaskConical, Info, Landmark, LayoutDashboard, LineChart, Map as MapIcon, Presentation, Repeat, ArrowLeftRight, Scale, Timer, Settings, SprayCan, Sprout, Plug, Tractor, Truck, Users, Video, Waves, Wheat } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { GrainBin } from '@/components/icons/GrainBin'
 import { supabase } from './supabase'
@@ -53,7 +53,7 @@ export const NAV_ITEMS: NavItem[] = [
       { to: '/quickbooks', label: 'QuickBooks', icon: CircleDollarSign },
       { to: '/rotation', label: 'Rotation', icon: Repeat },
       { to: '/crop-compare', label: 'Compare crops', icon: ArrowLeftRight },
-      { to: '/canola-reports', label: 'Canola reports', icon: Flower2 },
+      { to: '/canola-reports', label: 'Isolation', icon: Flower2 },
       { to: '/crops', label: 'Crop Settings', icon: Wheat },
       { to: '/markets', label: 'Markets', icon: LineChart },
       { to: '/contracts', label: 'Contracts', icon: FileSignature },
@@ -78,16 +78,30 @@ export const NAV_ITEMS: NavItem[] = [
     icon: CalendarDays,
     children: [
       { to: '/calendar', label: 'Calendar', icon: CalendarDays },
-      { to: '/monthly', label: 'Monthly', icon: CalendarDays },
+      { to: '/monthly', label: 'Monthly jobs', icon: CalendarDays },
       // Things that happen on a date, so they live with the dates.
       { to: '/events', label: 'Conferences', icon: CalendarDays },
       { to: '/meeting', label: 'Monday meeting', icon: Presentation },
     ],
   },
-  // One view: the bins (estimator, bins & allocations, bin map) and how wet
-  // what went in them was, as tabs. Storage was its own section until
-  // 25 Sep 2026; /bins still lands on the right tab here.
-  { to: '/harvest', label: 'Harvest', icon: GrainBin },
+  // Harvest was one page of seven tabs and is four views since 24 Oct 2026
+  // (Sam). Like Equipment, the parent is still a real route — the bins — so
+  // the phone bar, saved prefs and a typed /harvest land where they always
+  // did, and on the sidebar it opens the four. Without the children the scale,
+  // the pre-harvest intervals and the reports would have no way in from this
+  // menu, and an admin could not close one off. Storage was its own section
+  // until 25 Sep 2026; /bins still lands on the bins.
+  {
+    to: '/harvest',
+    label: 'Harvest',
+    icon: GrainBin,
+    children: [
+      { to: '/harvest', label: 'Bins', icon: GrainBin },
+      { to: '/weigh-scale', label: 'Weigh scale', icon: Scale },
+      { to: '/pre-harvest', label: 'Pre-harvest intervals', icon: Timer },
+      { to: '/harvest-reports', label: 'Harvest reports', icon: FileText },
+    ],
+  },
   {
     // Not a route — see the note on Inputs.
     to: '/water',
@@ -96,7 +110,6 @@ export const NAV_ITEMS: NavItem[] = [
     children: [
       { to: '/irrigation', label: 'Soil moisture', icon: Waves },
       { to: '/river', label: 'River', icon: Waves },
-      { to: '/turbines', label: 'Turbines', icon: Gauge },
       { to: '/irrigation-info', label: 'Pivots & pumps', icon: Info },
     ],
   },
@@ -110,6 +123,15 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Sprout,
     children: [
       { to: '/chemicals', label: 'Chemical', icon: FlaskConical },
+      // Its own entry, not just a link from Chemical: /spraying is its own route,
+      // so an entry here is what lets an admin close it off per person, and the
+      // spray check is the page the crew wants in June (Sam, 24 Oct 2026).
+      { to: '/spraying', label: 'Spraying', icon: SprayCan },
+      // Fertilizer is five views since 24 Oct 2026 (/fertilizer/soil, /plan, …).
+      // One link still, at /fertilizer: it reopens the view last used (soil
+      // tests the first time), is lit on all five, and stays the key that
+      // nav_prefs and denied_views were saved under — a denial of /fertilizer
+      // still covers every view. The page has a view picker for this menu.
       { to: '/fertilizer', label: 'Fertilizer', icon: Sprout },
       { to: '/fuel', label: 'Fuel', icon: Fuel },
       { to: '/utilities', label: 'Utilities', icon: Plug },
@@ -121,17 +143,12 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Cattle',
     icon: Beef,
     children: [
-      { to: '/cattle', label: 'Map', icon: MapIcon },
+      // Five views, the rest their tabs (Sam, 24 Oct 2026); the old
+      // addresses redirect to the tab.
+      { to: '/cattle', label: 'Pastures', icon: MapIcon },
       { to: '/herd', label: 'Herd', icon: Beef },
-      { to: '/grazing', label: 'Grazing', icon: Leaf },
       { to: '/feed', label: 'Feed', icon: Container },
-      { to: '/feed-records', label: 'Feed records', icon: ClipboardList },
-      { to: '/bale-checks', label: 'Bale checks', icon: Thermometer },
-      { to: '/pregnancy', label: 'Pregnancy', icon: Baby },
-      { to: '/grazing-restrictions', label: 'Spray restrictions', icon: Ban },
-      { to: '/cattle-markets', label: 'Markets', icon: LineChart },
-      { to: '/manifests', label: 'Manifests', icon: FileSignature },
-      { to: '/grazing-leases', label: 'Grazing leases', icon: ScrollText },
+      { to: '/cattle-markets', label: 'Sales & paperwork', icon: LineChart },
       { to: '/cattle-settings', label: 'Settings', icon: Settings },
     ],
   },
@@ -140,10 +157,14 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Equipment',
     icon: Tractor,
     children: [
-      { to: '/equipment', label: 'The fleet', icon: Tractor },
+      // Truck inspections are a truck's tab here since 24 Oct 2026 (Sam).
+      { to: '/equipment', label: 'Equipment service', icon: Tractor },
       { to: '/combine', label: 'Combine', icon: Wheat },
-      { to: '/calculator?tab=planter', label: 'Planter', icon: Sprout },
-      { to: '/hauling', label: 'Travel & trucking', icon: Truck },
+      { to: '/planter', label: 'Planter', icon: Sprout },
+      // Fuel & trucking is one page since 24 Oct 2026; Inputs → Fuel opens it at
+      // the prices, this one at the road side. A distinct key, so nav_prefs and
+      // denied_views (keyed by path) keep the two entries apart.
+      { to: '/fuel?tab=distances', label: 'Fuel & trucking', icon: Truck },
     ],
   },
   { to: '/cameras', label: 'Cameras', icon: Video },

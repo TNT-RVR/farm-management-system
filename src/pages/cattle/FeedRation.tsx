@@ -8,8 +8,8 @@ import { useFeedRation, useFeedRationMutations, type FeedPlan } from '@/lib/feed
 import { ranchNeed, tonnesPerUnit, type HerdRow } from '@/lib/feed-crops'
 import { useRotationContext } from '@/lib/rotation-context'
 import { cn } from '@/lib/utils'
-
-const n0 = (v: number) => Math.round(v).toLocaleString('en-CA')
+import { n0 } from '@/lib/format'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * The ranch's winter ration by home-grown feed, and whether the crop plan
@@ -83,8 +83,8 @@ export function FeedRation({
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <table className="w-full min-w-[600px] text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-[11px] uppercase tracking-wide text-gray-500">
+          <thead className={TABLE_HEAD}>
+            <tr>
               <th className="px-3 py-2 font-medium">Feed</th>
               <th
                 className="px-3 py-2 text-right font-medium"
@@ -200,8 +200,8 @@ export function FeedRation({
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wide text-gray-500">
+              <thead className={TABLE_HEAD}>
+                <tr>
                   <th className="px-3 py-1.5 font-medium">Feed</th>
                   <th className="px-3 py-1.5 text-right font-medium" title="This ranch's need, tonnes as fed">This ranch</th>
                   <th className="px-3 py-1.5 text-right font-medium" title="Every ranch's need, tonnes as fed">All ranches</th>

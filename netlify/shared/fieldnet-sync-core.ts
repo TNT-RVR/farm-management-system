@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fieldnetAccessToken, fieldnetGet, fieldnetList, listFrom } from '../functions/_fieldnet.mts'
 import { farmTz } from '../../src/lib/farm-context.ts'
+import { rowChanged } from './row-diff.ts'
 
 // Core FieldNET → app sync, shared by the on-demand function (fieldnet-sync.mts)
 // and the scheduled refresh (fieldnet-sync-cron.mts). Pulls live systems +
@@ -215,7 +216,15 @@ export type FieldnetSyncResult = {
   errors: string[]
 }
 
-export async function runFieldnetSync(sb: SupabaseClient): Promise<FieldnetSyncResult> {
+// The columns the sync writes (bar synced_at), compared against what is stored
+// so an unchanged pivot is not rewritten every run.
+const COMPARED = ['name', 'irrigator_type', 'subtype', 'direction', 'speed_pct', 'is_water_on', 'operational_status', 'comms_status', 'latitude', 'longitude', 'geometry', 'raw', 'field_id'] as const
+
+/** Whether a freshly built row differs from the stored one in anything the sync writes. */
+export const systemRowChanged = (next: Record<string, unknown>, stored: Record<string, unknown> | undefined) =>
+  rowChanged(next, stored, COMPARED, ['device_updated_at'])
+
+export async function runFieldnetSync(sb: SupabaseClient, opts: { applied?: boolean } = {}): Promise<FieldnetSyncResult> {
   const result: FieldnetSyncResult = {
     systems: 0,
     controllers: 0,
@@ -312,12 +321,10 @@ export async function runFieldnetSync(sb: SupabaseClient): Promise<FieldnetSyncR
     //    so we only alert on a NEW transition into a fault state.
     const { data: existing } = await sb
       .from('fieldnet_systems')
-      .select('fieldnet_id, field_id, name, operational_status, applied_behind_deg')
+      .select('fieldnet_id, field_id, name, irrigator_type, subtype, direction, speed_pct, is_water_on, operational_status, comms_status, latitude, longitude, geometry, device_updated_at, raw')
+    const stored = new Map((existing ?? []).map((r) => [r.fieldnet_id as string, r as Record<string, unknown>]))
     const existingLink = new Map((existing ?? []).map((r) => [r.fieldnet_id, r.field_id]))
     const priorStatus = new Map((existing ?? []).map((r) => [r.fieldnet_id, r.operational_status]))
-    const priorBehind = new Map(
-      (existing ?? []).map((r) => [r.fieldnet_id, (r.applied_behind_deg as number | null) ?? 0]),
-    )
     // Match FieldNET pivots to fields by the legal land description embedded in
     // the pivot name (most reliable), then by exact name. Never clobber a link a
     // manager has already set by hand.
@@ -339,9 +346,18 @@ export async function runFieldnetSync(sb: SupabaseClient): Promise<FieldnetSyncR
       return { ...r, field_id }
     })
 
-    if (rows.length) {
-      const { error } = await sb.from('fieldnet_systems').upsert(rows, { onConflict: 'fieldnet_id' })
+    // Only pivots whose values moved are rewritten (the raw JSON and geometry
+    // are most of a row); the rest just have their sync time stamped, in one
+    // statement, so the panel's "synced … ago" stays true.
+    const changed = rows.filter((r) => systemRowChanged(r, stored.get(r.fieldnet_id)))
+    const unchanged = rows.filter((r) => !changed.includes(r)).map((r) => r.fieldnet_id)
+    if (changed.length) {
+      const { error } = await sb.from('fieldnet_systems').upsert(changed, { onConflict: 'fieldnet_id' })
       if (error) throw new Error(`upsert systems: ${error.message}`)
+    }
+    if (unchanged.length) {
+      const { error } = await sb.from('fieldnet_systems').update({ synced_at: now }).in('fieldnet_id', unchanged)
+      if (error) throw new Error(`stamp systems: ${error.message}`)
     }
 
     // 4. Fault alerts — notify managers when a pivot enters a fault state it
@@ -362,97 +378,14 @@ export async function runFieldnetSync(sb: SupabaseClient): Promise<FieldnetSyncR
       }
     }
 
-    // 5. Applied irrigation: the season picture for the map and the uneven-
-    //    watering alert. The day-by-day water that feeds the balance is no
-    //    longer written here — it is rebuilt per local day and per degree by
-    //    fieldnet-applied (hourly), because diffing this season total against
-    //    a start-of-UTC-day watermark lost water between syncs, lost whole days
-    //    when a sync failed, and filed evening passes on tomorrow.
-    const now2 = new Date()
-    const cropYear = Number(now2.toLocaleDateString('en-CA', { timeZone: farmTz() }).slice(0, 4))
-    // From 1 January, not a sliding 150 days: by October a sliding window had
-    // dropped May's water out of the "season" total.
-    const seasonFrom = `${cropYear}-01-01`
-    const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10)
-    for (const r of rows) {
-      if (!r.field_id) continue
-      try {
-        const applied = listFrom(
-          await fieldnetGet(
-            token,
-            `/irrigation-systems/${r.fieldnet_id}/applied-irrigation?from=${seasonFrom}&to=${tomorrow}`,
-          ),
-        ) as AppliedFeature[]
-        const cum = areaWeightedDepth(applied) // season-to-date mean applied mm
-        const season = parseSectors(applied, cum)
-
-        // The same sectors for the shorter windows, so the map heatmap can show
-        // absolute applied depth over the season, last 30 days, or last 7 days.
-        const windows: Record<string, unknown> = { season: season.summary }
-        for (const [key, days] of [
-          ['month', 30],
-          ['week', 7],
-        ] as const) {
-          try {
-            const from = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
-            const feats = listFrom(
-              await fieldnetGet(
-                token,
-                `/irrigation-systems/${r.fieldnet_id}/applied-irrigation?from=${from}&to=${tomorrow}`,
-              ),
-            ) as AppliedFeature[]
-            windows[key] = parseSectors(feats, areaWeightedDepth(feats)).summary
-          } catch {
-            windows[key] = { sectors: [], mean: 0, min: null, max: null }
-          }
-        }
-
-        // A stopped pass is an equipment event before it is a data problem:
-        // the useful response is that somebody walks out to the pivot, not that
-        // the balance quietly averages the dry arc away. Fires on the crossing
-        // only, like the fault alert, so a pivot left behind does not nag daily.
-        const behindNow = Math.round(season.behindDeg)
-        const behindPrev = priorBehind.get(r.fieldnet_id) ?? 0
-        if (
-          behindNow >= BEHIND_ALERT_DEG &&
-          behindPrev < BEHIND_ALERT_DEG &&
-          cum >= BEHIND_ALERT_MIN_MEAN_MM
-        ) {
-          const driest = season.min == null ? null : Math.round(season.min)
-          const link = r.field_id ? `/fields/${r.field_id}` : '/irrigation-info'
-          const { error: alertErr } = await sb.rpc('fn_notify_managers', {
-            p_kind: 'fieldnet_behind',
-            p_title: `Uneven watering: ${r.name ?? 'FieldNET pivot'}`,
-            p_body:
-              `${behindNow}° of the circle is behind the rest of the field` +
-              (driest == null
-                ? '.'
-                : ` — driest ${driest} mm against a ${Math.round(cum)} mm average.`) +
-              ' Check whether a pass stopped partway.',
-            p_link: link,
-          })
-          if (!alertErr) result.alerts++
-        }
-
-        await sb
-          .from('fieldnet_systems')
-          .update({
-            applied_sectors: season.sectors,
-            // The sector POLYGONS, not just their bearings. A zone cut across
-            // the ring by a straight line needs the AREA of each sector falling
-            // inside it, which {depth, a0, a1} cannot answer — so the shape has
-            // to survive the sync for fn_area_weighted_depth to intersect.
-            applied_geom: { type: 'FeatureCollection', features: applied },
-            applied_mean_mm: Math.round(cum * 10) / 10,
-            applied_min_mm: season.min == null ? null : Math.round(season.min * 10) / 10,
-            applied_behind_deg: Math.round(season.behindDeg),
-            applied_windows: windows,
-          })
-          .eq('fieldnet_id', r.fieldnet_id)
-
-      } catch (e) {
-        result.errors.push(`applied ${r.name}: ${(e as Error).message.slice(0, 80)}`)
-      }
+    // 5. Applied irrigation (season / month / week sectors for the map and the
+    //    uneven-watering alert). Three FieldNET calls per pivot, so the 30-min
+    //    cron leaves it to the hourly fieldnet-applied job; "Sync now" still
+    //    refreshes it here.
+    if (opts.applied !== false) {
+      const applied = await refreshAppliedWindows(sb, { token })
+      result.alerts += applied.alerts
+      result.errors.push(...applied.errors)
     }
 
     await sb
@@ -482,4 +415,110 @@ export async function runFieldnetSync(sb: SupabaseClient): Promise<FieldnetSyncR
       .eq('provider', 'fieldnet')
     throw e
   }
+}
+
+/**
+ * The applied-irrigation picture per linked pivot: season-to-date sectors and
+ * polygons, the last 30 and 7 days for the map heatmap, and the uneven-watering
+ * alert on the crossing. Run hourly by fieldnet-applied and on "Sync now".
+ */
+export async function refreshAppliedWindows(
+  sb: SupabaseClient,
+  opts: { token?: string; onlyFieldnetId?: string } = {},
+): Promise<{ pivots: number; alerts: number; errors: string[] }> {
+  const out = { pivots: 0, alerts: 0, errors: [] as string[] }
+  const token = opts.token ?? (await fieldnetAccessToken(sb))
+  let q = sb.from('fieldnet_systems').select('fieldnet_id, name, field_id, applied_behind_deg').not('field_id', 'is', null)
+  if (opts.onlyFieldnetId) q = q.eq('fieldnet_id', opts.onlyFieldnetId)
+  const { data: systems, error } = await q
+  if (error) throw new Error(`applied systems: ${error.message}`)
+  out.pivots = systems?.length ?? 0
+  // The day-by-day water that feeds the balance is not written here — it is
+  // rebuilt per local day and per degree by rebuildApplied (fieldnet-applied).
+  const now2 = new Date()
+  const cropYear = Number(now2.toLocaleDateString('en-CA', { timeZone: farmTz() }).slice(0, 4))
+  // From 1 January, not a sliding 150 days: by October a sliding window had
+  // dropped May's water out of the "season" total.
+  const seasonFrom = `${cropYear}-01-01`
+  const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10)
+  for (const r of systems ?? []) {
+    try {
+      const applied = listFrom(
+        await fieldnetGet(
+          token,
+          `/irrigation-systems/${r.fieldnet_id}/applied-irrigation?from=${seasonFrom}&to=${tomorrow}`,
+        ),
+      ) as AppliedFeature[]
+      const cum = areaWeightedDepth(applied) // season-to-date mean applied mm
+      const season = parseSectors(applied, cum)
+
+      // The same sectors for the shorter windows, so the map heatmap can show
+      // absolute applied depth over the season, last 30 days, or last 7 days.
+      const windows: Record<string, unknown> = { season: season.summary }
+      for (const [key, days] of [
+        ['month', 30],
+        ['week', 7],
+      ] as const) {
+        try {
+          const from = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
+          const feats = listFrom(
+            await fieldnetGet(
+              token,
+              `/irrigation-systems/${r.fieldnet_id}/applied-irrigation?from=${from}&to=${tomorrow}`,
+            ),
+          ) as AppliedFeature[]
+          windows[key] = parseSectors(feats, areaWeightedDepth(feats)).summary
+        } catch {
+          windows[key] = { sectors: [], mean: 0, min: null, max: null }
+        }
+      }
+
+      // A stopped pass is an equipment event before it is a data problem:
+      // the useful response is that somebody walks out to the pivot, not that
+      // the balance quietly averages the dry arc away. Fires on the crossing
+      // only, like the fault alert, so a pivot left behind does not nag daily.
+      const behindNow = Math.round(season.behindDeg)
+      const behindPrev = (r.applied_behind_deg as number | null) ?? 0
+      if (
+        behindNow >= BEHIND_ALERT_DEG &&
+        behindPrev < BEHIND_ALERT_DEG &&
+        cum >= BEHIND_ALERT_MIN_MEAN_MM
+      ) {
+        const driest = season.min == null ? null : Math.round(season.min)
+        const link = r.field_id ? `/fields/${r.field_id}` : '/irrigation-info'
+        const { error: alertErr } = await sb.rpc('fn_notify_managers', {
+          p_kind: 'fieldnet_behind',
+          p_title: `Uneven watering: ${r.name ?? 'FieldNET pivot'}`,
+          p_body:
+            `${behindNow}° of the circle is behind the rest of the field` +
+            (driest == null
+              ? '.'
+              : ` — driest ${driest} mm against a ${Math.round(cum)} mm average.`) +
+            ' Check whether a pass stopped partway.',
+          p_link: link,
+        })
+        if (!alertErr) out.alerts++
+      }
+
+      await sb
+        .from('fieldnet_systems')
+        .update({
+          applied_sectors: season.sectors,
+          // The sector POLYGONS, not just their bearings. A zone cut across
+          // the ring by a straight line needs the AREA of each sector falling
+          // inside it, which {depth, a0, a1} cannot answer — so the shape has
+          // to survive the sync for fn_area_weighted_depth to intersect.
+          applied_geom: { type: 'FeatureCollection', features: applied },
+          applied_mean_mm: Math.round(cum * 10) / 10,
+          applied_min_mm: season.min == null ? null : Math.round(season.min * 10) / 10,
+          applied_behind_deg: Math.round(season.behindDeg),
+          applied_windows: windows,
+        })
+        .eq('fieldnet_id', r.fieldnet_id)
+
+    } catch (e) {
+      out.errors.push(`applied ${r.name}: ${(e as Error).message.slice(0, 80)}`)
+    }
+  }
+  return out
 }

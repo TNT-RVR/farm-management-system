@@ -1,16 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl, { type GeoJSONSource } from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import type { FeatureCollection, MultiPolygon, Position } from 'geojson'
 import { X } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { largestRing } from '@/lib/geo/rings'
 import { PolygonDraw, type DrawState } from '@/lib/geo/polygon-draw'
 import { supabase } from '@/lib/supabase'
 import type { Json } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
-import { farmMapCenter } from '@/lib/farm-setup'
 
 const SRC = 'boundary-others'
 const LINE = 'boundary-others-line'
@@ -53,9 +51,7 @@ export function BoundaryEditor({
   onClose: () => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
   const drawRef = useRef<PolygonDraw | null>(null)
-  const [ready, setReady] = useState(false)
   const [draw, setDraw] = useState<DrawState>(EMPTY)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -75,28 +71,18 @@ export function BoundaryEditor({
   const startRing = useMemo(() => largestRing(frozen.existing), [frozen])
   const openCentre = frozen.centre
 
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-    const start = startRing ? boundsOfRing(startRing) : null
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: SATELLITE_STYLE,
-      center: openCentre ?? farmMapCenter(),
+  const start = useMemo(() => (startRing ? boundsOfRing(startRing) : null), [startRing])
+  const { mapRef, ready } = useFarmMap(
+    containerRef,
+    {
+      center: openCentre ?? undefined,
       // Close enough that field edges are visible without hunting for them.
       zoom: openCentre || start ? 15 : 11,
-      attributionControl: false,
-    })
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-    map.on('load', () => {
-      if (start) map.fitBounds(start, { padding: 60, duration: 0 })
-      setReady(true)
-    })
-    mapRef.current = map
-    return () => {
-      map.remove()
-      mapRef.current = null
-    }
-  }, [openCentre, startRing])
+      bounds: start,
+      fitPadding: 60,
+    },
+    [openCentre, start],
+  )
 
   // The neighbours, so an edge can be matched to the one beside it rather than
   // guessed at from the imagery alone.
@@ -124,7 +110,7 @@ export function BoundaryEditor({
         'line-dasharray': [2, 2],
       },
     })
-  }, [ready, others])
+  }, [mapRef, ready, others])
 
   useEffect(() => {
     const map = mapRef.current
@@ -136,7 +122,7 @@ export function BoundaryEditor({
       d.destroy()
       drawRef.current = null
     }
-  }, [ready, startRing])
+  }, [mapRef, ready, startRing])
 
   const save = async () => {
     const mp = drawRef.current?.finish()

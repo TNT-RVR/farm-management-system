@@ -27,6 +27,8 @@ import { useCropInputs, useCrops } from '@/lib/queries'
 import { useCropYear } from '@/lib/crop-year'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
+import { money as fmtMoney } from '@/lib/format'
+import { CARD_HEAD } from '@/lib/table-style'
 
 const ZOOMS = [
   { label: '1y', years: 1 },
@@ -48,8 +50,7 @@ const TONNE_PER_BU_LABEL = (commodity: string | null) => {
   return bu ? `${bu} bu/tonne` : 'its bushel weight'
 }
 
-const money = (v: number, dp = 2) =>
-  v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: dp })
+const money = (v: number, dp = 2) => fmtMoney(v, dp, { neg: '-' })
 
 /** A commodity's series split into the three things they mean. */
 function groupSeries(series: MarketSeries[]) {
@@ -283,19 +284,22 @@ export function MarketsTab() {
       </div>
 
       {/* 1. Price history, 3. elevator bids on the same axis. */}
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <h3 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
           {chosen} — price history
           <InfoPopover title="Farm gate and elevator bid">
             Alberta farm gate monthly, with the weekly elevator bid where we have it. Farm gate is a
             provincial average and a month at a time; the elevator bid is what you would sell into.
           </InfoPopover>
         </h3>
+        <div className="p-4">
         <PriceChart
           series={[...groups.history, ...groups.bids]}
           points={sinceYears(points ?? [], zoom.years)}
           unit="$/tonne"
         />
+
+        </div>
       </section>
 
       {/* 6. Basis, in a line: the working is behind ⓘ, the record of past

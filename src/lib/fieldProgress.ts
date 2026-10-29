@@ -58,6 +58,18 @@ export type ProgressField = {
   hasHarvest: boolean
   /** Any Deere operation at all this season: tillage, spraying, anything. */
   hasAnyOperation: boolean
+  /**
+   * Somebody is at the harvest: a Deere pass, a hand record, or grain across
+   * the scale. Not that it is off — Deere merges every visit to a field into
+   * one operation, so a field being combined today has had one since the hour
+   * the combine arrived.
+   */
+  harvestStarted?: boolean
+  /** A person said the last of it is away. The last-load mark writes one. */
+  harvestFinished?: boolean
+  /** The newest load off the field this year, as a farm day. */
+  lastLoadOn?: string | null
+  loads?: number
 }
 
 export type Bucket = { acres: number; fields: number }
@@ -75,6 +87,12 @@ export type Progress = {
   unrecorded: Bucket
   /** No operation and no sign of one. Genuinely still to do. */
   remaining: Bucket
+  /**
+   * Harvest only: started and not finished — a combine has been on it, or
+   * grain has crossed the scale off it, and nothing says the last is away.
+   * A subset of `remaining`, because a field being combined is not done.
+   */
+  going: Bucket
   /** Left out because the crop is not seeded or not harvested. */
   excluded: Bucket
   /** done / target, 0-100. Null when nothing is targeted. */
@@ -93,6 +111,7 @@ export function progressFor(kind: ProgressKind, fields: ProgressField[]): Progre
   let done = EMPTY
   let unrecorded = EMPTY
   let remaining = EMPTY
+  let going = EMPTY
   let excluded = EMPTY
 
   for (const f of fields) {
@@ -108,10 +127,18 @@ export function progressFor(kind: ProgressKind, fields: ProgressField[]): Progre
     }
 
     target = add(target, acres)
-    const hasOp = kind === 'seeding' ? f.hasSeeding : f.hasHarvest
+    // Harvest counts done only on a statement that the field is off —
+    // harvestFinished. hasHarvest is any evidence at all, which called a
+    // field done on its first pass; it is the fallback for a caller that has
+    // not been given the finer answer.
+    const hasOp =
+      kind === 'seeding' ? f.hasSeeding : (f.harvestFinished ?? f.hasHarvest)
     if (hasOp) done = add(done, acres)
     else if (kind === 'seeding' && f.hasAnyOperation) unrecorded = add(unrecorded, acres)
-    else remaining = add(remaining, acres)
+    else {
+      remaining = add(remaining, acres)
+      if (kind === 'harvest' && (f.harvestStarted ?? false)) going = add(going, acres)
+    }
   }
 
   return {
@@ -120,6 +147,7 @@ export function progressFor(kind: ProgressKind, fields: ProgressField[]): Progre
     done,
     unrecorded,
     remaining,
+    going,
     excluded,
     pct: pctOf(done.acres, target.acres),
     pctIncludingUnrecorded: pctOf(done.acres + unrecorded.acres, target.acres),

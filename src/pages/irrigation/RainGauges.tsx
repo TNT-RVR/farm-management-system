@@ -5,6 +5,7 @@ import { useAllRainGauges, useDeleteRainGauge, useDeleteRainReading, useSaveRain
 import { keepOpenOnError } from '@/lib/record-actions'
 import { conv, depthToMm, type UnitSystem } from '@/lib/units'
 import { cn } from '@/lib/utils'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const md = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
 
@@ -32,7 +33,7 @@ export function RainReadingsList({ readings, gaugeName, u }: { readings: Reading
   return (
     <div>
       <table className="w-full max-w-md">
-        <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+        <thead className={TABLE_HEAD}>
           <tr>
             <th className="py-0.5 font-medium">Date</th>
             <th className="py-0.5 text-right font-medium">Rain ({unit})</th>

@@ -2,9 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLandDeals } from '@/lib/land-deals-data'
 import { useFixedAreas, useFixedPerAcre, useLandSharePerAcre } from '@/lib/farm-costs'
 import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import { TriangleAlert } from 'lucide-react'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { useProductResolver } from '@/lib/products'
 import { boundariesForYear, useAllBoundaries, useFields } from '@/lib/queries'
 import { colourStops } from '@/lib/profit-loss'
@@ -16,7 +15,8 @@ import { Legend } from '@/components/ProfitLossLines'
 import { BreakevenCard } from '@/components/BreakevenCard'
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
-import { farmMapCenter } from '@/lib/farm-setup'
+import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
+import { CARD_HEAD } from '@/lib/table-style'
 
 /** Fields with no yield yet: real costs, no revenue, so no profit colour. */
 const NO_YIELD = '#9ca3af'
@@ -74,8 +74,6 @@ export function ProfitLossFarm({
   const stops = useMemo(() => colourStops(range), [range[0], range[1]]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
-  const [ready, setReady] = useState(false)
   const [mapError, setMapError] = useState<string | null>(null)
   const [hover, setHover] = useState<FieldBooks | null>(null)
   const booksRef = useRef<FieldBooks[]>([])
@@ -85,41 +83,31 @@ export function ProfitLossFarm({
     pickRef.current = onPickField
   }, [books, onPickField])
 
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: SATELLITE_STYLE,
-      center: farmMapCenter(),
-      zoom: 10,
-      attributionControl: { compact: true },
-    })
-    map.addControl(new maplibregl.NavigationControl(), 'top-right')
-    map.on('load', () => setReady(true))
-    // MapLibre reports failures here and nowhere else — see TopographyPage.
-    map.on('error', (e) => setMapError(e.error?.message ?? 'The map failed to draw'))
-    const find = (e: maplibregl.MapLayerMouseEvent) => {
-      const id = e.features?.[0]?.properties?.fieldId
-      return booksRef.current.find((b) => b.fieldId === id) ?? null
-    }
-    map.on('click', 'pl-farm-fill', (e) => {
-      const b = find(e)
-      if (b) pickRef.current(b.fieldId)
-    })
-    map.on('mousemove', 'pl-farm-fill', (e) => {
-      map.getCanvas().style.cursor = 'pointer'
-      setHover(find(e))
-    })
-    map.on('mouseleave', 'pl-farm-fill', () => {
-      map.getCanvas().style.cursor = ''
-      setHover(null)
-    })
-    mapRef.current = map
-    return () => {
-      map.remove()
-      mapRef.current = null
-    }
-  }, [])
+  const { mapRef, ready } = useFarmMap(containerRef, {
+    zoom: 10,
+    attribution: 'compact',
+    controls: { nav: {} },
+    onCreate: (map) => {
+      // MapLibre reports failures here and nowhere else — see TopographyPage.
+      map.on('error', (e) => setMapError(e.error?.message ?? 'The map failed to draw'))
+      const find = (e: maplibregl.MapLayerMouseEvent) => {
+        const id = e.features?.[0]?.properties?.fieldId
+        return booksRef.current.find((b) => b.fieldId === id) ?? null
+      }
+      map.on('click', 'pl-farm-fill', (e) => {
+        const b = find(e)
+        if (b) pickRef.current(b.fieldId)
+      })
+      map.on('mousemove', 'pl-farm-fill', (e) => {
+        map.getCanvas().style.cursor = 'pointer'
+        setHover(find(e))
+      })
+      map.on('mouseleave', 'pl-farm-fill', () => {
+        map.getCanvas().style.cursor = ''
+        setHover(null)
+      })
+    },
+  })
 
   const framed = useRef(false)
   useEffect(() => {
@@ -165,7 +153,7 @@ export function ProfitLossFarm({
       for (const f of data.features) walk((f.geometry as { coordinates?: unknown }).coordinates)
       map.fitBounds(bounds, { padding: 40, duration: 600 })
     }
-  }, [ready, allBoundaries, books, stops, cropYear])
+  }, [mapRef, ready, allBoundaries, books, stops, cropYear])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -199,10 +187,11 @@ export function ProfitLossFarm({
         {error && <p className="rounded-md bg-red-50 p-2 text-xs text-red-700">{(error as Error).message}</p>}
         {isLoading && <p className="text-sm text-gray-500">Loading the farm…</p>}
 
-        <section className="rounded-lg border border-gray-200 bg-white p-3">
-          <h2 className="text-sm font-semibold text-gray-800">
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <h2 className={cn('font-medium', CARD_HEAD)}>
             Whole farm · {cropYear} · {priceMode} prices
           </h2>
+          <div className="p-3">
           <dl className="mt-2 space-y-1 text-sm">
             <div className="flex justify-between gap-3">
               <dt className="text-gray-600">Harvested</dt>
@@ -248,10 +237,13 @@ export function ProfitLossFarm({
               can have the row typed over or taken off.
             </HelpNote>
           )}
+
+          </div>
         </section>
 
-        <section className="rounded-lg border border-gray-200 bg-white p-3">
-          <h2 className="text-sm font-semibold text-gray-800">Fields, best to worst</h2>
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <h2 className={cn('font-medium', CARD_HEAD)}>Fields, best to worst</h2>
+          <div className="p-3">
           <ul className="mt-2 divide-y divide-gray-100 text-xs">
             {books.map((b) => (
               <li key={b.fieldId}>
@@ -282,9 +274,13 @@ export function ProfitLossFarm({
               Some fields have inputs with no price, left out of their totals. Open the field to type the price in.
             </p>
           )}
+
+          </div>
         </section>
 
         <BreakevenCard books={books} seasons={seasons} />
+        {/* Savings tool #19, kept with Profit / Loss since 26 Oct 2026 (lib/fert-savings/homes.ts). */}
+        <SavingsHere ids={[19]} className="space-y-2" />
       </aside>
     </div>
   )

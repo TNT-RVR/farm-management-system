@@ -43,46 +43,61 @@ export const FEATURES: Feature[] = [
     key: 'irrigation',
     label: 'Irrigation',
     description: 'Soil-moisture scheduling, pivots and pumps, water rights.',
-    paths: ['/irrigation', '/irrigation-info', '/river', '/turbines'],
+    paths: [
+      '/irrigation',
+      '/irrigation-info',
+      '/river',
+    ],
   },
   { key: 'river', label: 'River levels', description: 'River flows, dam-release alerts and river and canal water quality. Set up for the original farm’s river; see Fitting it to your farm.', paths: ['/river'], parent: 'irrigation' },
-  {
-    key: 'turbines',
-    label: 'Pump station control',
-    description: 'Turbine start/stop and alarms through an on-site controller (PLC).',
-    paths: ['/turbines'],
-    parent: 'irrigation',
-  },
   {
     key: 'cattle',
     label: 'Cattle',
     description: 'Herd, grazing, winter feed, cattle prices and the pasture map.',
-    paths: ['/cattle', '/herd', '/grazing', '/feed', '/feed-records', '/pregnancy', '/grazing-restrictions', '/cattle-markets', '/manifests', '/grazing-leases', '/cattle-settings'],
+    // The five views, then the old addresses that now redirect into their tabs
+    // (Sam, 24 Oct 2026), so a bookmark to one is closed off too.
+    paths: [
+      '/cattle',
+      '/herd',
+      '/feed',
+      '/cattle-markets',
+      '/cattle-settings',
+      '/grazing',
+      '/feed-records',
+      '/pregnancy',
+      '/grazing-restrictions',
+      '/manifests',
+      '/grazing-leases',
+      '/bale-checks',
+    ],
   },
   {
     key: 'pregnancy',
     label: 'Collar pregnancy tracking',
     description: 'Heat and pregnancy from virtual-fencing collars (eShepherd).',
-    paths: ['/pregnancy'],
+    // A tab of Herd now; the old address redirects there.
+    paths: ['/pregnancy', '/herd?tab=pregnancy'],
     parent: 'cattle',
   },
-  { key: 'manifests', label: 'Livestock manifests', description: 'Printable manifests for hauling cattle.', paths: ['/manifests'], parent: 'cattle' },
+  { key: 'manifests', label: 'Livestock manifests', description: 'Printable manifests for hauling cattle.', paths: ['/manifests', '/cattle-markets?tab=manifests'], parent: 'cattle' },
   {
     key: 'grazing_leases',
     label: 'Provincial grazing leases',
     description: "Alberta's yearly Stewardship Stock Return for each grazing lease, with a January reminder.",
-    paths: ['/grazing-leases'],
+    paths: ['/grazing-leases', '/cattle-markets?tab=leases'],
     parent: 'cattle',
   },
   { key: 'fertilizer', label: 'Fertilizer', description: 'Soil tests, requirements, blends, prices and savings tools.', paths: ['/fertilizer'] },
-  { key: 'harvest', label: 'Harvest & bins', description: 'Weighing loads, bin inventory, grain moisture.', paths: ['/harvest'] },
+  { key: 'harvest', label: 'Harvest & bins', description: 'Weighing loads, bin inventory, grain moisture.', paths: ['/harvest', '/weigh-scale', '/pre-harvest', '/harvest-reports'] },
   { key: 'combine', label: 'Combine settings', description: 'Starting settings and loss checks for the combine.', paths: ['/combine'] },
-  { key: 'hauling', label: 'Travel & trucking', description: 'Road distances, fuel and haul plans.', paths: ['/hauling'] },
+  // Tabs of Fuel & trucking since 24 Oct 2026: off hides Distances, Trucking cost,
+  // Spreading & silage and the fuel-use fold there (FuelPage reads useFeature).
+  { key: 'hauling', label: 'Distances & trucking', description: 'Road distances, fuel use and haul plans.', paths: [] },
   { key: 'markets', label: 'Marketing & contracts', description: 'Crop prices, contracts and deliveries.', paths: ['/markets', '/contracts'] },
   { key: 'hail', label: 'Hail reports', description: 'Crop-insurance hail inspection reports.', paths: ['/hail'] },
   { key: 'leases', label: 'Land leases', description: 'Rented and crop-shared land, terms and reminders.', paths: ['/leases'] },
   { key: 'scouting', label: 'Scouting', description: 'Field scouting reports with photos.', paths: ['/scouting'] },
-  { key: 'equipment', label: 'Equipment', description: 'The fleet, service intervals and warranties.', paths: ['/equipment'] },
+  { key: 'equipment', label: 'Equipment', description: 'The fleet, service intervals, warranties and truck inspections.', paths: ['/equipment', '/checklists/truck-inspection'] },
   // A tab of Utilities (6 Oct 2026): switched off, the Solar tab goes and the page keeps Power.
   { key: 'solar', label: 'Solar', description: 'What the solar panels make, from SolisCloud.', paths: [] },
   { key: 'cameras', label: 'Cameras', description: 'Yard and bin cameras.', paths: ['/cameras'] },
@@ -111,13 +126,6 @@ FEATURES.push(
     parent: 'irrigation',
   },
   {
-    key: 'basf_report',
-    label: 'Contract canola bin report',
-    description: 'The BASF bin-monitoring report for contract canola.',
-    paths: [],
-    parent: 'harvest',
-  },
-  {
     key: 'time_off',
     label: 'Staff time off',
     description: 'Who is away, from a time-off calendar link (most HR and payroll systems offer one).',
@@ -132,7 +140,7 @@ FEATURES.push(
 export type FarmSettings = {
   retailerName: string
   districtName: string
-  combineModel: string
+  riverName: string
   mainRanchId: string | null
   calfSaleMonth: number
   calfSaleWeightLb: number
@@ -143,8 +151,7 @@ export const settingsOf = (s: Partial<FarmSetup> | null | undefined): FarmSettin
   // Generic until the farm names its own; this farm's row carries ICI and SMRID.
   retailerName: s?.retailer_name?.trim() || 'Retailer',
   districtName: s?.irrigation_district_name?.trim() || 'Irrigation district',
-  // Blank until the farm names its combine: the New Holland manual tab only shows for a CR.
-  combineModel: s?.combine_model?.trim() || '',
+  riverName: s?.river_name?.trim() || 'River',
   mainRanchId: s?.main_ranch_id ?? null,
   calfSaleMonth: s?.calf_sale_month ?? 12,
   calfSaleWeightLb: s?.calf_sale_weight_lb ?? 450,
@@ -169,10 +176,24 @@ export function disabledPaths(features: Record<string, unknown> | null | undefin
   return FEATURES.filter((f) => !featureOn(features, f.key)).flatMap((f) => f.paths)
 }
 
-/** Is this path inside a switched-off feature? Prefix match, like section access. */
+/**
+ * Is this path inside a switched-off feature? Prefix match, like section access.
+ *
+ * A feature that is one tab of a page names it as `/page?tab=<key>`: that closes
+ * the tab and nothing else, and only an address that names the tab matches it.
+ * Since the page splits (Sam, 24 Oct 2026) Pregnancy, Manifests and Grazing
+ * leases are tabs, and switching one off must still take it out of the menus,
+ * tiles, search and reports, which all pass their full link here. The page
+ * itself drops the tab, since a route guard sees only the bare path.
+ */
 export function isPathOff(paths: string[], pathname: string): boolean {
-  const bare = pathname.split('?')[0]
-  return paths.some((p) => bare === p || bare.startsWith(p + '/'))
+  const [bare, query = ''] = pathname.split('?')
+  const tab = new URLSearchParams(query).get('tab')
+  return paths.some((p) => {
+    const q = p.indexOf('?')
+    if (q < 0) return bare === p || bare.startsWith(p + '/')
+    return tab !== null && bare === p.slice(0, q) && tab === new URLSearchParams(p.slice(q + 1)).get('tab')
+  })
 }
 
 const KEY = ['farm_setup']
@@ -190,6 +211,17 @@ export function useFarmSetup() {
       return (data ?? null) as FarmSetup | null
     },
   })
+}
+
+/**
+ * The month the fiscal year ends in, once Farm setup has loaded; null until
+ * then, so no books window is worked out on the default and fetched for the
+ * wrong months. A farm with no setup row yet is on a calendar year.
+ */
+export function useFiscalEndMonth(): number | null {
+  const q = useFarmSetup()
+  if (q.isPending) return null
+  return q.data?.fiscal_year_end_month ?? 12
 }
 
 /** Save (insert or update) the one row. Admins only; the database enforces it. */
@@ -322,7 +354,7 @@ export function useFirstRunRedirect() {
     } catch {
       // No session storage: still send them, it just may happen again.
     }
-    navigate('/settings?tab=Farm%20setup')
+    navigate('/settings/farm')
   }, [isSuccess, data, profile?.role, pathname, navigate])
 }
 
@@ -349,7 +381,9 @@ export function useApplyFarmSetup() {
       description: data?.farm_description,
       retailer: data?.retailer_name,
       district: data?.irrigation_district_name,
+      river: data?.river_name,
       mainRanchId: data?.main_ranch_id,
+      fiscalEndMonth: data?.fiscal_year_end_month,
     })
-  }, [data?.farm_name, data?.time_zone, data?.province, data?.farm_description, data?.retailer_name, data?.irrigation_district_name, data?.main_ranch_id])
+  }, [data?.farm_name, data?.time_zone, data?.province, data?.farm_description, data?.retailer_name, data?.irrigation_district_name, data?.river_name, data?.main_ranch_id, data?.fiscal_year_end_month])
 }

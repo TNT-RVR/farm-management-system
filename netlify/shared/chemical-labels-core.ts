@@ -12,6 +12,7 @@ import { extractText, getDocumentProxy } from 'unpdf'
 // verified against six real products on 2026-08-07.
 
 import { CHUNK_THRESHOLD, chunkLabelText, mergeExtractions } from './label-chunks.ts'
+import { callClaude, SONNET_5_5 } from './anthropic.ts'
 
 const API = 'https://pest-control.canada.ca/pesticide-registry-api/api'
 const UA = 'RVR-Management/1.0 (farm management app)'
@@ -223,29 +224,21 @@ type LabelReply = {
 
 /** One request for a label's record. */
 async function askOnce(body: string, apiKey: string, model: string): Promise<LabelReply> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      // 4096 was too small: a 21-page label produced 22 crop rows and one real
-      // product was rejected as "too long to summarise". It was lowered on a
-      // hypothesis about why reads were failing that turned out to be wrong —
-      // the actual cause was a database trigger rejecting every write.
-      max_tokens: 8192,
-      // Reading a label is copying out what it says, as it was on Sonnet 4.5
-      // with no thinking; thinking left on would spend the 8192 above.
-      // between_tools is Sonnet 5.5's lowest setting, and only it accepts it.
-      ...(model.startsWith('claude-sonnet-5-5') ? { thinking: { type: 'between_tools' } } : {}),
-      tools: [RECORD_TOOL],
-      tool_choice: { type: 'auto' },
-      messages: [{ role: 'user', content: `${PROMPT}\n\n--- LABEL ---\n${body}` }],
-    }),
-  })
+  const res = await callClaude({
+    model,
+    // 4096 was too small: a 21-page label produced 22 crop rows and one real
+    // product was rejected as "too long to summarise". It was lowered on a
+    // hypothesis about why reads were failing that turned out to be wrong —
+    // the actual cause was a database trigger rejecting every write.
+    maxTokens: 8192,
+    // Reading a label is copying out what it says, as it was on Sonnet 4.5
+    // with no thinking; thinking left on would spend the 8192 above.
+    // between_tools is Sonnet 5.5's lowest setting, and only it accepts it.
+    ...(model.startsWith(SONNET_5_5) ? { thinking: { type: 'between_tools' } } : {}),
+    tools: [RECORD_TOOL],
+    tool_choice: { type: 'auto' },
+    messages: [{ role: 'user', content: `${PROMPT}\n\n--- LABEL ---\n${body}` }],
+  }, { apiKey })
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`)
   return (await res.json()) as LabelReply
 }

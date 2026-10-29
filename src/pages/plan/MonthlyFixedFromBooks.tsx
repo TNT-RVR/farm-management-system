@@ -65,8 +65,8 @@ export function MonthlyFixedFromBooks({ year, locked }: { year: number; locked: 
         <p>
           After the nightly QuickBooks sync, from the 10th of each month, the Profit and Loss for the last twelve full months is put through the
           same rules as &ldquo;From the books&rdquo;: cash only (no depreciation), the management fee off labour and overhead, the crops&apos;
-          share of each part. It is written to the crop year being planned and spread over that year&apos;s planned acres. The month a fiscal
-          year closes (September), the closed year is written once more from its own finished books. A year saved by hand here is left alone
+          share of each part. It is written to the crop year being planned and spread over that year&apos;s planned acres. The month after the
+          fiscal year ends (Farm setup), the crop that year paid for is written once more from its finished books, while that year is still open. A year saved by hand here is left alone
           until it is switched back on.
         </p>
       </HelpNote>

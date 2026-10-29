@@ -14,6 +14,8 @@ import { PanelOfflineWarning, PivotBlock, RainBlock, SeasonInputs, usePivotInfo 
 import { SeasonOutlookBlock, SoilCalibrationBlock, SoilReadingsBlock } from './FieldAimmBlocks'
 import { HandEventActions } from './HandEventActions'
 import { DetailList, rowClick } from '@/components/RecordEditor'
+import { n1 } from '@/lib/format'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /** Every irrigation event on one field in a year, newest first. */
 export function useFieldEvents(fieldId: string, year: number) {
@@ -172,7 +174,7 @@ function AppliedBlock({ fieldId, w, u, year }: { fieldId: string; w: FieldWater;
       {w.events.length > 0 && (
         <div className="mt-1.5 overflow-x-auto">
           <table className="w-full min-w-[320px]">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="py-0.5 font-medium">Date</th>
                 <th className="py-0.5 text-right font-medium">Gross ({unit})</th>
@@ -245,8 +247,6 @@ function AppliedBlock({ fieldId, w, u, year }: { fieldId: string; w: FieldWater;
     </div>
   )
 }
-
-const n1 = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 1 }))
 
 /**
  * The selected field's records, water use and water right, under its graph.

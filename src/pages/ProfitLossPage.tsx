@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { applyDeal, dealFor, isOffTheTop } from '@/lib/land-deals'
 import { useLandDeals } from '@/lib/land-deals-data'
 import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import { CircleDollarSign, RefreshCw, TriangleAlert, Upload, X } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { YieldImport } from '@/components/YieldImport'
@@ -10,7 +9,7 @@ import { supabase } from '@/lib/supabase'
 import { Legend, LinesTable } from '@/components/ProfitLossLines'
 import { ProfitLossFarm } from '@/pages/ProfitLossFarm'
 import { Select } from '@/components/Select'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useCropYear } from '@/lib/crop-year'
 import { useFieldOperations } from '@/lib/fieldOps'
@@ -43,7 +42,6 @@ import { useOperatingCostLines } from '@/lib/operating-costs'
 import type { FuelOpRow } from '@/lib/hauling-data'
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
-import { farmMapCenter } from '@/lib/farm-setup'
 
 /**
  * The Profit/Loss Map: which parts of a field made money and which lost it.
@@ -213,8 +211,6 @@ function ProfitLossField({
 
   // The map, built once; layers follow the data.
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
-  const [ready, setReady] = useState(false)
   const [mapError, setMapError] = useState<string | null>(null)
   const cellsRef = useRef<PlCell[]>([])
   useEffect(() => {
@@ -222,32 +218,22 @@ function ProfitLossField({
     pickKeyRef.current = pickKey
   }, [cells, pickKey])
 
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: SATELLITE_STYLE,
-      center: farmMapCenter(),
-      zoom: 11,
-      attributionControl: { compact: true },
-    })
-    map.addControl(new maplibregl.NavigationControl(), 'top-right')
-    map.on('load', () => setReady(true))
-    // MapLibre reports failures here and nowhere else — see TopographyPage.
-    map.on('error', (e) => setMapError(e.error?.message ?? 'The map failed to draw'))
-    map.on('click', (e) => {
-      const [gx, gy] = cellOf(e.lngLat.lng, e.lngLat.lat)
-      const k = cellKey(gx, gy)
-      setPicked(cellsRef.current.find((c) => cellKey(c.gx, c.gy) === k) ?? null)
-    })
-    map.on('mouseenter', 'pl-cells', () => (map.getCanvas().style.cursor = 'pointer'))
-    map.on('mouseleave', 'pl-cells', () => (map.getCanvas().style.cursor = ''))
-    mapRef.current = map
-    return () => {
-      map.remove()
-      mapRef.current = null
-    }
-  }, [])
+  const { mapRef, ready } = useFarmMap(containerRef, {
+    zoom: 11,
+    attribution: 'compact',
+    controls: { nav: {} },
+    onCreate: (map) => {
+      // MapLibre reports failures here and nowhere else — see TopographyPage.
+      map.on('error', (e) => setMapError(e.error?.message ?? 'The map failed to draw'))
+      map.on('click', (e) => {
+        const [gx, gy] = cellOf(e.lngLat.lng, e.lngLat.lat)
+        const k = cellKey(gx, gy)
+        setPicked(cellsRef.current.find((c) => cellKey(c.gx, c.gy) === k) ?? null)
+      })
+      map.on('mouseenter', 'pl-cells', () => (map.getCanvas().style.cursor = 'pointer'))
+      map.on('mouseleave', 'pl-cells', () => (map.getCanvas().style.cursor = ''))
+    },
+  })
 
   const range = useMemo(() => profitRange(cells), [cells])
   const stops = useMemo(() => colourStops(range), [range])
@@ -420,7 +406,7 @@ function ProfitLossField({
         { padding: 40, duration: 600 },
       )
     }
-  }, [cells, ready, stops, field?.id, cropYear, contour, look, showUnread])
+  }, [mapRef, cells, ready, stops, field?.id, cropYear, contour, look, showUnread])
 
   const ungridded = (ops ?? []).filter(
     (o) =>

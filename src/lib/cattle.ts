@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import type { Database } from './database.types'
+import { REFERENCE_STALE_MS } from './stale'
 
 export type CattleRow = Database['public']['Tables']['cattle']['Row']
 export type CattleSex = NonNullable<CattleRow['sex']>
@@ -47,6 +48,7 @@ export function cattleQuery(ranchId?: string | null) {
       if (error) throw error
       return data
     },
+    staleTime: REFERENCE_STALE_MS,
   }
 }
 

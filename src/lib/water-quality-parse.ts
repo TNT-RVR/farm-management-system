@@ -23,15 +23,30 @@ export function ecToMicro(v: number): number {
   return v < 10 ? v * 1000 : v
 }
 
-/** "2024-09-04 10:35", Alberta local time, to an ISO instant. */
+/**
+ * The province's water-quality data is stamped in Alberta's own local time,
+ * whichever farm reads it, so this is Alberta's zone and not the farm's.
+ */
+const IDWQ_TZ = 'America/Edmonton'
+
+/** How far Alberta's clock is from UTC at an instant, in ms (summer time -6 h, winter -7 h). */
+function albertaOffsetMs(t: number): number {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { timeZone: IDWQ_TZ, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' })
+      .formatToParts(new Date(t))
+      .map((x) => [x.type, x.value]),
+  )
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute) - t
+}
+
+/** "2024-09-04 10:35", Alberta local time, to an ISO instant (summer or winter time, exactly). */
 export function idwqTime(s: string): string | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2}))?/.exec(s.trim())
   if (!m) return null
-  const month = Number(m[2])
-  // Mountain Daylight Time roughly mid-March to early November.
-  const offset = month >= 4 && month <= 10 ? '-06:00' : '-07:00'
-  const hh = (m[4] ?? '12').padStart(2, '0')
-  return `${m[1]}-${m[2]}-${m[3]}T${hh}:${m[5] ?? '00'}:00${offset}`
+  const wall = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] ?? '12'), Number(m[5] ?? '0'))
+  // Read the offset at the first guess, then again at the corrected time (they differ only across a change).
+  const first = wall - albertaOffsetMs(wall)
+  return new Date(wall - albertaOffsetMs(first)).toISOString()
 }
 
 /** SAR from sodium, calcium and magnesium in mg/L (meq/L inside). */

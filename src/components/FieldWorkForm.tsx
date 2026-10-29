@@ -13,6 +13,7 @@ import { useFeedTypesFull } from '@/lib/winter-feeding'
 import { useRanches } from '@/lib/ranches'
 import { useFarmSettings } from '@/lib/farm-setup'
 import { useFeedStoragePlaces } from '@/lib/feed-inventory'
+import { usePartnerAccess } from '@/lib/partner-view'
 
 const numOrNull = (s: string) => {
   if (s.trim() === '') return null
@@ -110,6 +111,8 @@ export function FieldWorkForm({
   const startIso = fromLocalInput(started)
   const finishIso = fromLocalInput(finished)
   const year = workCropYear({ started_at: startIso, finished_at: finishIso })
+  // A crop-share partner records only in the years the field is his (lib/partner-view.ts).
+  const access = usePartnerAccess()
   const { data: plans } = useCropPlans(year)
   const fieldZones = (zones ?? []).filter((z) => z.field_id === fieldId && z.crop_year === year)
   const zone = fieldZones.find((z) => z.id === zoneId) ?? null
@@ -168,6 +171,10 @@ export function FieldWorkForm({
   const submit = async () => {
     setFailed(null)
     if (missing || order || !profile) return
+    if (!access.canWrite(fieldId, year)) {
+      setFailed(`This work falls in the ${year} crop year, which is not one of your years on this field.`)
+      return
+    }
     const n = numOrNull(atOnce)
     try {
       const r = await save.mutateAsync({

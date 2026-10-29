@@ -31,6 +31,9 @@ export const WORK_TYPES: WorkTypeDef[] = [
   { key: 'swathing', label: 'Swathing', countsAs: null },
   { key: 'cultivation', label: 'Cultivation', countsAs: 'tillage', unit: 'in deep' },
   { key: 'harvesting', label: 'Harvesting / Combining', countsAs: 'harvest', unit: 'bu' },
+  // Grazed off instead of combined (Sam, 27 Oct 2026): the field is done
+  // either way, so it counts for harvest and the progress bar moves.
+  { key: 'grazing', label: 'Grazed', countsAs: 'harvest' },
   { key: 'seeding', label: 'Seeding', countsAs: 'seeding' },
   { key: 'spraying', label: 'Spraying', countsAs: 'application' },
   { key: 'fertilizing', label: 'Fertilizing / Spreading', countsAs: 'application' },
@@ -49,7 +52,9 @@ export const WORK_TYPES: WorkTypeDef[] = [
 ]
 
 /** The built-in types, then any a manager added (active ones), before "Other". */
-export function workTypeList(custom: readonly Pick<FieldWorkType, 'label' | 'counts_as' | 'active'>[] = []): WorkTypeDef[] {
+export function workTypeList(
+  custom: readonly Pick<FieldWorkType, 'label' | 'counts_as' | 'active'>[] = [],
+): WorkTypeDef[] {
   const builtIn = WORK_TYPES.filter((t) => t.key !== 'other')
   const taken = new Set(WORK_TYPES.map((t) => t.label.toLowerCase()))
   const extra = custom
@@ -87,7 +92,8 @@ type Times = Pick<FieldWorkRecord, 'started_at' | 'finished_at' | 'hours'>
  * finish does not. Without one, start to finish. Null when neither is known.
  */
 export function workHours(r: Times): { hours: number | null; from: 'typed' | 'times' | null } {
-  if (r.hours != null && Number.isFinite(Number(r.hours)) && Number(r.hours) > 0) return { hours: Number(r.hours), from: 'typed' }
+  if (r.hours != null && Number.isFinite(Number(r.hours)) && Number(r.hours) > 0)
+    return { hours: Number(r.hours), from: 'typed' }
   if (r.started_at && r.finished_at) {
     const ms = Date.parse(r.finished_at) - Date.parse(r.started_at)
     if (Number.isFinite(ms) && ms > 0) return { hours: ms / HOUR, from: 'times' }
@@ -96,7 +102,10 @@ export function workHours(r: Times): { hours: number | null; from: 'typed' | 'ti
 }
 
 /** Hours times the machines going at once: two balers for 5 h is 10 machine-hours. */
-export function machineHours(hours: number | null, machinesAtOnce: number | null | undefined): number | null {
+export function machineHours(
+  hours: number | null,
+  machinesAtOnce: number | null | undefined,
+): number | null {
   if (hours == null) return null
   const n = machinesAtOnce != null && machinesAtOnce >= 1 ? Math.round(machinesAtOnce) : 1
   return hours * n
@@ -122,19 +131,28 @@ export function workWindow(r: Times): { from: string; to: string } | null {
   if (!end) return null
   if (r.started_at && r.finished_at) return { from: r.started_at, to: r.finished_at }
   if (r.finished_at && r.hours != null && Number(r.hours) > 0) {
-    return { from: new Date(Date.parse(r.finished_at) - Number(r.hours) * HOUR).toISOString(), to: r.finished_at }
+    return {
+      from: new Date(Date.parse(r.finished_at) - Number(r.hours) * HOUR).toISOString(),
+      to: r.finished_at,
+    }
   }
   return { from: end, to: end }
 }
 
 /** The farm's calendar day the work belongs to: the day it finished. */
-export function workDay(r: Pick<FieldWorkRecord, 'started_at' | 'finished_at'>, timeZone = farmTz()): string | null {
+export function workDay(
+  r: Pick<FieldWorkRecord, 'started_at' | 'finished_at'>,
+  timeZone = farmTz(),
+): string | null {
   const at = r.finished_at ?? r.started_at
   return at ? new Date(at).toLocaleDateString('en-CA', { timeZone }) : null
 }
 
 /** A crop year for a record: the year of its day, else this year. */
-export function workCropYear(r: Pick<FieldWorkRecord, 'started_at' | 'finished_at'>, timeZone = farmTz()): number {
+export function workCropYear(
+  r: Pick<FieldWorkRecord, 'started_at' | 'finished_at'>,
+  timeZone = farmTz(),
+): number {
   const d = workDay(r, timeZone)
   return d ? Number(d.slice(0, 4)) : new Date().getFullYear()
 }
@@ -241,14 +259,20 @@ export function meanDirection(degs: readonly number[]): number | null {
  * highest gust and the total rain. An instant, or a window with no hour inside
  * it, takes the nearest hour to the end. Null when nothing is close enough.
  */
-export function summariseWeather(rows: readonly HourReading[], span: { from: string; to: string }): WorkWeather | null {
+export function summariseWeather(
+  rows: readonly HourReading[],
+  span: { from: string; to: string },
+): WorkWeather | null {
   const from = Date.parse(span.from)
   const to = Date.parse(span.to)
   if (!Number.isFinite(from) || !Number.isFinite(to)) return null
-  let picked = to > from ? rows.filter((r) => {
-    const t = Date.parse(r.ts)
-    return t + HOUR > from && t < to
-  }) : []
+  let picked =
+    to > from
+      ? rows.filter((r) => {
+          const t = Date.parse(r.ts)
+          return t + HOUR > from && t < to
+        })
+      : []
   if (!picked.length) {
     const one = nearestHour(rows, span.to)
     if (!one) return null
@@ -270,10 +294,29 @@ export function summariseWeather(rows: readonly HourReading[], span: { from: str
   }
 }
 
-const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
+const COMPASS = [
+  'N',
+  'NNE',
+  'NE',
+  'ENE',
+  'E',
+  'ESE',
+  'SE',
+  'SSE',
+  'S',
+  'SSW',
+  'SW',
+  'WSW',
+  'W',
+  'WNW',
+  'NW',
+  'NNW',
+]
 /** 315 → "NW". The direction the wind comes from. */
 export const compass = (deg: number | null | undefined) =>
-  deg == null || !Number.isFinite(deg) ? null : COMPASS[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16]
+  deg == null || !Number.isFinite(deg)
+    ? null
+    : COMPASS[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16]
 
 /** "14° · RH 45% · wind 18 km/h NW, gusts 31 · 0.4 mm · 520 W/m²" */
 export function weatherLine(w: WorkWeather | null | undefined): string | null {
@@ -283,7 +326,9 @@ export function weatherLine(w: WorkWeather | null | undefined): string | null {
   if (w.rh != null) parts.push(`RH ${Math.round(w.rh)}%`)
   if (w.wind_kmh != null) {
     const dir = compass(w.wind_dir_deg)
-    parts.push(`wind ${Math.round(w.wind_kmh)} km/h${dir ? ` ${dir}` : ''}${w.gust_kmh != null ? `, gusts ${Math.round(w.gust_kmh)}` : ''}`)
+    parts.push(
+      `wind ${Math.round(w.wind_kmh)} km/h${dir ? ` ${dir}` : ''}${w.gust_kmh != null ? `, gusts ${Math.round(w.gust_kmh)}` : ''}`,
+    )
   }
   if (w.precip_mm != null) parts.push(w.precip_mm > 0 ? `${w.precip_mm} mm rain` : 'no rain')
   if (w.solar_wm2 != null) parts.push(`${Math.round(w.solar_wm2)} W/m²`)
@@ -291,7 +336,11 @@ export function weatherLine(w: WorkWeather | null | undefined): string | null {
 }
 
 /** Is it worth asking for the weather yet? The time must have passed. */
-export function weatherDue(r: Times & Pick<FieldWorkRecord, 'weather' | 'weather_tried_at'>, now = Date.now(), retryMs = 6 * HOUR): boolean {
+export function weatherDue(
+  r: Times & Pick<FieldWorkRecord, 'weather' | 'weather_tried_at'>,
+  now = Date.now(),
+  retryMs = 6 * HOUR,
+): boolean {
   if (r.weather) return false
   const span = weatherSpan(r)
   if (!span || Date.parse(span.to) > now) return false
@@ -337,7 +386,10 @@ function passWindows(op: DeerePassLite): [number, number][] {
  * Passes somebody has already called a different job are left out.
  */
 export function possibleDuplicates(
-  rec: Pick<FieldWorkRecord, 'field_id' | 'counts_as' | 'started_at' | 'finished_at' | 'hours' | 'not_duplicate_of'>,
+  rec: Pick<
+    FieldWorkRecord,
+    'field_id' | 'counts_as' | 'started_at' | 'finished_at' | 'hours' | 'not_duplicate_of'
+  >,
   ops: readonly DeerePassLite[],
   slackMs = DUPLICATE_SLACK_MS,
 ): DeerePassLite[] {
@@ -363,10 +415,18 @@ export function possibleDuplicates(
  */
 export type HandWorkDay = { field_id: string; first: string; last: string }
 
-export type HandWorkRow = Pick<FieldWorkRecord, 'field_id' | 'crop_year' | 'counts_as' | 'started_at' | 'finished_at'>
+export type HandWorkRow = Pick<
+  FieldWorkRecord,
+  'field_id' | 'crop_year' | 'counts_as' | 'started_at' | 'finished_at'
+>
 
 /** Every hand record of `kind` in `year`, as farm days. */
-export function handWorkDays(recs: readonly HandWorkRow[], kind: WorkKind, year: number, timeZone = farmTz()): HandWorkDay[] {
+export function handWorkDays(
+  recs: readonly HandWorkRow[],
+  kind: WorkKind,
+  year: number,
+  timeZone = farmTz(),
+): HandWorkDay[] {
   const day = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone })
   const out: HandWorkDay[] = []
   for (const r of recs) {
@@ -379,7 +439,10 @@ export function handWorkDays(recs: readonly HandWorkRow[], kind: WorkKind, year:
 }
 
 /** The earliest start day, or the latest finish day, per field. */
-export function handDayByField(days: readonly HandWorkDay[], pick: 'first' | 'last'): Map<string, string> {
+export function handDayByField(
+  days: readonly HandWorkDay[],
+  pick: 'first' | 'last',
+): Map<string, string> {
   const out = new Map<string, string>()
   for (const d of days) {
     const v = d[pick]
@@ -391,20 +454,28 @@ export function handDayByField(days: readonly HandWorkDay[], pick: 'first' | 'la
 
 // ------------------------------------------------------------------ field finished
 
-export type FinishRow = Pick<FieldWorkRecord, 'field_id' | 'zone_id' | 'crop_year' | 'started_at' | 'finished_at'> & {
+export type FinishRow = Pick<
+  FieldWorkRecord,
+  'field_id' | 'zone_id' | 'crop_year' | 'started_at' | 'finished_at'
+> & {
   field_finished?: boolean | null
 }
 
 export type FinishDay = { finished: string; started: string | null }
 
 /** The key a finish is filed under: the crop area, or '' for the whole field. */
-export const finishKey = (fieldId: string, zoneId: string | null | undefined) => `${fieldId}:${zoneId ?? ''}`
+export const finishKey = (fieldId: string, zoneId: string | null | undefined) =>
+  `${fieldId}:${zoneId ?? ''}`
 
 /**
  * The latest "Field finished" per field and crop area in `year`, as farm
  * days. A record with only a start counts as finished that day.
  */
-export function finishedDays(recs: readonly FinishRow[], year: number, timeZone = farmTz()): Map<string, FinishDay> {
+export function finishedDays(
+  recs: readonly FinishRow[],
+  year: number,
+  timeZone = farmTz(),
+): Map<string, FinishDay> {
   const day = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone })
   const out = new Map<string, FinishDay>()
   for (const r of recs) {
@@ -414,7 +485,8 @@ export function finishedDays(recs: readonly FinishRow[], year: number, timeZone 
     const k = finishKey(r.field_id, r.zone_id)
     const finished = day(at)
     const cur = out.get(k)
-    if (!cur || finished > cur.finished) out.set(k, { finished, started: r.started_at ? day(r.started_at) : null })
+    if (!cur || finished > cur.finished)
+      out.set(k, { finished, started: r.started_at ? day(r.started_at) : null })
   }
   return out
 }
@@ -424,6 +496,14 @@ export function finishedDays(recs: readonly FinishRow[], year: number, timeZone 
  * for the whole field. A whole-field question is answered only by a
  * whole-field finish: one area done is not the field done.
  */
-export function finishedFor(days: ReadonlyMap<string, FinishDay>, fieldId: string, zoneId: string | null | undefined): FinishDay | null {
-  return (zoneId ? days.get(finishKey(fieldId, zoneId)) : undefined) ?? days.get(finishKey(fieldId, null)) ?? null
+export function finishedFor(
+  days: ReadonlyMap<string, FinishDay>,
+  fieldId: string,
+  zoneId: string | null | undefined,
+): FinishDay | null {
+  return (
+    (zoneId ? days.get(finishKey(fieldId, zoneId)) : undefined) ??
+    days.get(finishKey(fieldId, null)) ??
+    null
+  )
 }

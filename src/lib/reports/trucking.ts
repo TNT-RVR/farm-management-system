@@ -1,7 +1,7 @@
 import { allFieldsQuery, compareFieldNames } from '@/lib/queries'
 import { fieldCropsQuery, haulPlansQuery, type FieldCrop, type HaulPlan } from '@/lib/hauling-data'
 import { truckingFor, type Trucking } from '@/lib/operating-costs'
-import { HAUL_MODES } from '@/lib/trucking'
+import { HAUL_MODES, MAIN_YARD } from '@/lib/trucking'
 import { yearParam, type Cell, type GatherContext, type ParamValues, type ReportData, type ReportGroup } from './framework'
 import { loadOperating, type Operating } from './operating'
 
@@ -37,8 +37,10 @@ type Line = { field: string; crop: FieldCrop; plan: HaulPlan | null; t: Trucking
 const destinationOf = (l: Line): string => {
   if (!l.plan) return 'No haul plan set'
   if (l.t.site) return l.t.site.name
-  if (l.plan.mode === 'bin_yard') return 'Our bin yard (stays)'
+  if (l.plan.mode === 'grazed') return 'Grazed, not trucked'
+  if (l.plan.mode === 'bin_yard') return `${l.t.yard?.name ?? MAIN_YARD} (stays)`
   if (l.plan.mode === 'buyer_pickup') return 'Buyer picks up at the yard'
+  if (l.plan.mode === 'buyer_from_field') return 'Buyer hauls from the field'
   return 'Elevator not chosen'
 }
 
@@ -84,7 +86,7 @@ const totalOf = (label: string, ls: Line[]): Cell[] => {
   ]
 }
 
-export function truckingGroups(o: { fields: { id: string; name: string }[]; crops: Map<string, FieldCrop>; plans: Map<string, HaulPlan>; op: Pick<Operating, 'sites' | 'trip' | 'truck' | 'basics'> }): { groups: ReportGroup[]; lines: Line[] } {
+export function truckingGroups(o: { fields: { id: string; name: string }[]; crops: Map<string, FieldCrop>; plans: Map<string, HaulPlan>; op: Pick<Operating, 'sites' | 'yards' | 'trip' | 'truck' | 'basics'> }): { groups: ReportGroup[]; lines: Line[] } {
   const lines: Line[] = o.fields
     .filter((f) => o.crops.has(f.id))
     .sort((a, b) => compareFieldNames(a.name, b.name))
@@ -95,6 +97,7 @@ export function truckingGroups(o: { fields: { id: string; name: string }[]; crop
         fieldId: f.id,
         plan,
         sites: o.op.sites,
+        yards: o.op.yards,
         crop: { name: c.cropName, unit: c.unit, quantity: c.quantity, lbPerBu: c.lbPerBu },
         trip: o.op.trip,
         truck: o.op.truck,
@@ -109,7 +112,7 @@ export function truckingGroups(o: { fields: { id: string; name: string }[]; crop
     .sort((a, b) => order(a[0]) - order(b[0]) || a[0].localeCompare(b[0]))
     .map(([title, ls]): ReportGroup => ({
       title,
-      note: title === 'No haul plan set' ? 'Pick where each field’s crop goes on Travel & trucking → Trucking to cost it.' : undefined,
+      note: title === 'No haul plan set' ? 'Pick where each field’s crop goes on Fuel & trucking → Trucking cost to cost it.' : undefined,
       rows: ls.map(cells),
       totals: totalOf('Total', ls),
     }))
@@ -119,7 +122,7 @@ export function truckingGroups(o: { fields: { id: string; name: string }[]; crop
 export async function gatherTrucking(p: ParamValues, ctx: GatherContext): Promise<ReportData> {
   const year = yearParam(p, ctx)
   const [op, crops, plans, fields] = await Promise.all([loadOperating(), fieldCropsQuery(year).queryFn(), haulPlansQuery(year).queryFn(), allFieldsQuery().queryFn()])
-  if (!plans.size) throw new Error(`No haul plans are set for ${year} — pick where each field’s crop goes on Travel & trucking → Trucking.`)
+  if (!plans.size) throw new Error(`No haul plans are set for ${year} — pick where each field’s crop goes on Fuel & trucking → Trucking cost.`)
   const r = truckingGroups({ fields, crops, plans, op })
   const costed = r.lines.filter((l) => l.t.cost?.legs.length)
   const total = costed.reduce((s, l) => s + (l.t.cost?.total ?? 0), 0)

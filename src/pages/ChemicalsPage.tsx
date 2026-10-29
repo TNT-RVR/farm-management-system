@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { SprayCheck } from '@/components/SprayCheck'
+import { Navigate, useLocation } from 'react-router-dom'
 import { useCropYear } from '@/lib/crop-year'
 import { useCropPlans, useCrops } from '@/lib/queries'
 import { productName, readable } from '@/lib/chemical-display'
@@ -17,11 +17,11 @@ import { HelpNote } from '@/components/HelpNote'
 import { AdminOnly } from '@/components/TechnicalDetails'
 import { InventoryTab } from '@/pages/chemicals/InventoryTab'
 import { ProductPrices } from '@/components/ProductPrices'
-import { ReentryPanel } from '@/components/ReentryWarning'
-import { FieldEntryAlert } from '@/components/FieldEntryAlert'
 import { Select } from '@/components/Select'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import {
+  isFullChemical,
+  useChemical,
   useChemicalCount,
   useChemicalSearch,
   useChemicalTypes,
@@ -30,11 +30,12 @@ import {
   useLabelProgress,
   SEARCH_FIELDS,
   type SearchField,
-  type Chemical,
+  type ChemicalListRow,
 } from '@/lib/chemicals'
 import { cn } from '@/lib/utils'
 import { useFarmSettings } from '@/lib/farm-setup'
 import { localDate } from '@/lib/date-range'
+import { useDebouncedValue } from '@/lib/useDebouncedValue'
 
 const SEARCH_PLACEHOLDER: Record<SearchField, string> = {
   any: 'Product, active ingredient, pest or crop…',
@@ -45,7 +46,7 @@ const SEARCH_PLACEHOLDER: Record<SearchField, string> = {
 }
 
 /** Cancelled or expired registration — the thing you must not miss. */
-function registrationWarning(c: Chemical): string | null {
+function registrationWarning(c: ChemicalListRow): string | null {
   const status = (c.registration_status ?? '').toLowerCase()
   if (status && !status.includes('full') && !status.includes('emergency')) {
     return `Registration status: ${c.registration_status}`
@@ -83,7 +84,7 @@ function useFarmCrops(): string[] {
  * top again.
  */
 const PAGE = 40
-function RegistryList({ rows, canEdit }: { rows: Chemical[]; canEdit: boolean }) {
+function RegistryList({ rows, canEdit }: { rows: ChemicalListRow[]; canEdit: boolean }) {
   const [shown, setShown] = useState(PAGE)
   const farmCrops = useFarmCrops()
   return (
@@ -129,8 +130,11 @@ function typeColour(type: string | null | undefined): { stripe: string; chip: st
 }
 
 /** One product: a white card with its type's colour down the edge. */
-function ChemicalCard({ c, canEdit, farmCrops }: { c: Chemical; canEdit: boolean; farmCrops: string[] }) {
+function ChemicalCard({ c, canEdit, farmCrops }: { c: ChemicalListRow; canEdit: boolean; farmCrops: string[] }) {
   const [open, setOpen] = useState(false)
+  // A search result carries the list's columns only; the rest come when it is opened.
+  const full = useChemical(open && !isFullChemical(c) ? c.id : null)
+  const chemical = isFullChemical(c) ? c : (full.data ?? null)
   const warning = registrationWarning(c)
   const colour = typeColour(c.product_type)
 
@@ -160,21 +164,44 @@ function ChemicalCard({ c, canEdit, farmCrops }: { c: Chemical; canEdit: boolean
 
       {open && (
         <div className="border-t border-gray-100 bg-white px-3 py-3">
-          <ChemicalLabelDetail chemical={c} canEdit={canEdit} farmCrops={farmCrops} />
+          {chemical ? (
+            <ChemicalLabelDetail chemical={chemical} canEdit={canEdit} farmCrops={farmCrops} />
+          ) : (
+            <p className="text-xs text-gray-400">{full.error ? (full.error as Error).message : 'Loading…'}</p>
+          )}
         </div>
       )}
     </li>
   )
 }
 
+/**
+ * Before spraying and Recently sprayed moved to their own view, Spraying: they
+ * are in-season jobs, and the registry, shed and prices are looked up year
+ * round (Sam, 24 Oct 2026). Saved links to those two tabs go there.
+ */
+const MOVED: Record<string, string> = {
+  spraycheck: '/spraying?tab=spraycheck',
+  reentry: '/spraying?tab=reentry',
+}
+
 export function ChemicalsPage() {
+  const { search } = useLocation()
+  const moved = MOVED[new URLSearchParams(search).get('tab') ?? '']
+  if (moved) return <Navigate to={moved} replace />
+  return <ChemicalsView />
+}
+
+function ChemicalsView() {
   const { retailerName } = useFarmSettings()
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
   const [term, setTerm] = useState('')
   const [type, setType] = useState('')
   const [field, setField] = useState<SearchField>('any')
-  const { data: rows, isLoading } = useChemicalSearch(term, type, field)
+  // Searched a quarter-second after the typing stops, not on every key.
+  const searched = useDebouncedValue(term, 250)
+  const { data: rows, isLoading } = useChemicalSearch(searched, type, field)
   const { data: types } = useChemicalTypes()
   const { data: count } = useChemicalCount()
   const sync = useSyncChemicals()
@@ -188,7 +215,7 @@ export function ChemicalsPage() {
   // saved links to it still land there.
   const [tab, setTab] = useTab(
     'chemicals',
-    ['registry', 'inventory', 'prices', 'reentry', 'spraycheck'] as const,
+    ['registry', 'inventory', 'prices'] as const,
     'registry',
     (asked) => (asked === 'pricing' ? 'prices' : undefined),
   )
@@ -205,8 +232,6 @@ export function ChemicalsPage() {
               ? `${count ?? '—'} agricultural products, from Health Canada's pesticide registry. Refreshed monthly.`
               : tab === 'inventory'
                 ? `What is in the shed: bought on the ${retailerName} invoices, less what the sprayer put out, corrected by counts.`
-                : tab === 'spraycheck'
-                  ? 'Pick a product and the fields: see which planned crops its label rules out.'
                 : 'What we pay, from the invoices. Each product takes its price from its most recent one.'}
           </p>
         </div>
@@ -236,25 +261,14 @@ export function ChemicalsPage() {
           { key: 'registry', label: 'Registry' },
           { key: 'inventory', label: 'Inventory' },
           { key: 'prices', label: 'Prices' },
-          { key: 'reentry', label: 'Recently sprayed' },
-          { key: 'spraycheck', label: 'Before spraying' },
         ]}
         value={tab}
         onChange={setTab}
         className="mb-3"
       />
 
-      {tab === 'spraycheck' ? (
-        <SprayCheck />
-      ) : tab === 'inventory' ? (
+      {tab === 'inventory' ? (
         <InventoryTab />
-      ) : tab === 'reentry' ? (
-        <>
-          <div className="mb-3">
-            <FieldEntryAlert />
-          </div>
-          <ReentryPanel />
-        </>
       ) : tab === 'prices' ? (
         <ProductPrices category="chemical" />
       ) : (
@@ -335,7 +349,7 @@ export function ChemicalsPage() {
                 : 'Nothing matched that search.'}
             </p>
           ) : (
-            <RegistryList key={`${term}|${type}|${field}`} rows={rows ?? []} canEdit={isManager} />
+            <RegistryList key={`${searched}|${type}|${field}`} rows={rows ?? []} canEdit={isManager} />
           )}
         </>
       )}

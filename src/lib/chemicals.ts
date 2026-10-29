@@ -98,9 +98,25 @@ const ALL_COLUMNS = ['name', 'active_ingredients', 'pests', 'sites_of_use', 'reg
 
 export const SEARCH_LIMIT = 200
 
+/**
+ * What a typed search returns: the columns the result lists show. The
+ * registered sites and pests run to pages of text per product, and five
+ * columns' worth of two hundred of them came back on every keystroke; they are
+ * read when a product is opened (useChemical). The unsearched list keeps every
+ * column, because it is the one the offline warm-up saves for checking a label
+ * with no signal.
+ */
+export const CHEMICAL_LIST_COLUMNS = 'id, registration_number, name, registration_status, expiry_date, active_ingredients, product_type, registrant'
+export type ChemicalListRow = Pick<
+  Chemical,
+  'id' | 'registration_number' | 'name' | 'registration_status' | 'expiry_date' | 'active_ingredients' | 'product_type' | 'registrant'
+>
+/** A row with every column (from the unsearched list), so nothing more needs fetching to open it. */
+export const isFullChemical = (c: ChemicalListRow): c is Chemical => 'pests' in c && 'sites_of_use' in c
+
 /** Merge per-column result sets into one list: unique, by name, capped. */
-export function mergeMatches(sets: Chemical[][], limit = SEARCH_LIMIT): Chemical[] {
-  const byId = new Map<string, Chemical>()
+export function mergeMatches<T extends { id: string; name: string }>(sets: T[][], limit = SEARCH_LIMIT): T[] {
+  const byId = new Map<string, T>()
   for (const set of sets) for (const row of set) byId.set(row.id, row)
   return [...byId.values()]
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -132,16 +148,18 @@ export function chemicalSearchQuery(term: string, productType: string, field: Se
   const q = term.trim()
   return {
     queryKey: ['chemicals', q, productType, field],
-    queryFn: async () => {
-      const base = () => {
+    queryFn: async (): Promise<ChemicalListRow[]> => {
+      if (!q) {
         let x = supabase.from('chemicals').select('*').order('name').limit(SEARCH_LIMIT)
         if (productType) x = x.eq('product_type', productType)
-        return x
-      }
-      if (!q) {
-        const { data, error } = await base()
+        const { data, error } = await x
         if (error) throw error
         return data
+      }
+      const base = () => {
+        let x = supabase.from('chemicals').select(CHEMICAL_LIST_COLUMNS).order('name').limit(SEARCH_LIMIT)
+        if (productType) x = x.eq('product_type', productType)
+        return x
       }
       const like = `%${q}%`
       const columns = SEARCH_FIELDS[field].columns ?? ALL_COLUMNS
@@ -150,11 +168,27 @@ export function chemicalSearchQuery(term: string, productType: string, field: Se
       if (failed?.error) throw failed.error
       return mergeMatches(results.map((r) => r.data ?? []))
     },
+    // A typed search is never saved to the phone (offline.ts), so it need not
+    // outlive the visit in memory either.
+    ...(q ? { gcTime: 5 * 60_000 } : {}),
   }
 }
 
 export function useChemicalSearch(term: string, productType: string, field: SearchField = 'any') {
   return useQuery(chemicalSearchQuery(term, productType, field))
+}
+
+/** One product's every column, for opening a search result (which carries only the list's). */
+export function useChemical(id: string | null) {
+  return useQuery({
+    queryKey: ['chemical', id],
+    enabled: Boolean(id),
+    queryFn: async () => {
+      const { data, error } = await supabase.from('chemicals').select('*').eq('id', id!).single()
+      if (error) throw error
+      return data
+    },
+  })
 }
 
 export type ChemicalLabel = Database['public']['Tables']['chemical_labels']['Row']

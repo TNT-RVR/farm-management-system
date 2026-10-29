@@ -13,12 +13,13 @@ import { useFarmSettings } from '@/lib/farm-setup'
 import { useIrrigationSeason } from '@/lib/operation-cost-data'
 import { inchesFrom, irrigationCost, pivotRunsOnUs, type WaterUnit } from '@/lib/irrigation-cost'
 import { cn } from '@/lib/utils'
+import { money as fmtMoney, pct as fmtPct } from '@/lib/format'
+import { CARD_HEAD } from '@/lib/table-style'
 
 const box = 'w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-brand-600 focus:outline-none'
 const lbl = 'mb-0.5 block text-xs text-gray-500'
-const money = (v: number | null | undefined, digits = 0) =>
-  v == null ? '—' : `$${v.toLocaleString('en-CA', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`
-const pct = (v: number) => `${v.toFixed(v < 10 ? 1 : 0)}%`
+const money = (v: number | null | undefined, digits = 0) => fmtMoney(v, digits, { neg: 'inside' })
+const pct = (v: number) => fmtPct(v, v < 10 ? 1 : 0)
 
 const UNITS: { key: WaterUnit; label: string }[] = [
   { key: 'in', label: 'in' },
@@ -89,10 +90,11 @@ export function IrrigationCostCalculator() {
 
   return (
     <div className="grid grid-cols-1 items-start gap-4 lg:col-span-2 lg:grid-cols-2">
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-          <Droplets className="h-4 w-4 text-brand-700" /> The water
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+          <Droplets className="h-4 w-4 text-white" /> The water
         </h2>
+        <div className="p-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className={lbl}>Field</label>
@@ -148,12 +150,15 @@ export function IrrigationCostCalculator() {
             <input type="number" inputMode="decimal" value={labourHours} onChange={(e) => setLabourHours(e.target.value)} className={box} />
           </div>
         </div>
+
+        </div>
       </section>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-          <Receipt className="h-4 w-4 text-brand-700" /> Cost
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+          <Receipt className="h-4 w-4 text-white" /> Cost
         </h2>
+        <div className="p-4">
         {!pivot ? (
           <p className="text-sm text-gray-400">Pick a field with a pivot.</p>
         ) : !runs?.ok ? (
@@ -209,7 +214,7 @@ export function IrrigationCostCalculator() {
                     <div className="font-medium text-gray-800">Labour</div>
                     <div className="text-[11px] text-gray-500">
                       {c.labour != null ? `${hrs} h × $${basics.wage.toFixed(2)}/h (${basics.wageSource})` : 'add labour hours to count it'}
-                      <Link to="/hauling?tab=trucking" className="ml-1 inline-flex align-middle text-gray-400 hover:text-brand-700" aria-label="Wage">
+                      <Link to="/fuel?tab=trucking" className="ml-1 inline-flex align-middle text-gray-400 hover:text-brand-700" aria-label="Wage">
                         <ExternalLink className="h-3 w-3" />
                       </Link>
                       {c.labour != null && <span className="text-gray-400"> · the payroll is also in the fixed $/ac</span>}
@@ -271,6 +276,8 @@ export function IrrigationCostCalculator() {
             </div>
           </>
         )}
+
+        </div>
       </section>
     </div>
   )

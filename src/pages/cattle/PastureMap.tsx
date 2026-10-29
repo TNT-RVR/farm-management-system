@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl, { type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl'
 import { addPinImages, PIN_ICON_EXPR, withPins } from '@/lib/map-pins'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Feature, FeatureCollection, Point } from 'geojson'
 import { ChevronDown, Satellite } from 'lucide-react'
 import { AdminOnly } from '@/components/TechnicalDetails'
 import { HelpNote } from '@/components/HelpNote'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { raiseToTop } from '@/lib/geo/layer-order'
 import { pastureLabel } from '@/lib/pastureLabel'
 import {
@@ -54,7 +53,6 @@ import {
   useHiddenFeatureMutations,
   useHiddenFeatures,
 } from '@/lib/mymap-hidden'
-import { farmMapCenter } from '@/lib/farm-setup'
 
 const SRC = 'pastures'
 const FILL = 'pasture-fill'
@@ -140,12 +138,10 @@ function toFeatures(
  */
 export function PastureMap() {
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
-  const [ready, setReady] = useState(false)
-  // The map itself in state, not read off the ref during render: a ref does not
-  // re-render the child that needs it, and passing one only works by luck of a
-  // state flip happening at the same moment.
-  const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null)
+  const { map, mapRef, ready } = useFarmMap(containerRef, { zoom: 10, controls: { scale: true } })
+  // The map itself, not read off the ref during render: a ref does not
+  // re-render the child that needs it. Handed over once its style has loaded.
+  const mapInstance = ready ? map : null
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(true)
   // Weeds live here rather than on the crop map: what gets marked on this farm
@@ -264,28 +260,6 @@ export function PastureMap() {
   const withImagery = (pastures ?? []).filter((p) => p.ndvi != null).length
 
   useEffect(() => {
-    if (!containerRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: SATELLITE_STYLE,
-      center: farmMapCenter(),
-      zoom: 10,
-      attributionControl: false,
-    })
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-    map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
-    mapRef.current = map
-    map.on('load', () => {
-      setMapInstance(map)
-      setReady(true)
-    })
-    return () => {
-      map.remove()
-      mapRef.current = null
-    }
-  }, [])
-
-  useEffect(() => {
     const map = mapRef.current
     if (!ready || !map) return
     const existing = map.getSource(SRC) as GeoJSONSource | undefined
@@ -333,7 +307,7 @@ export function PastureMap() {
     })
     map.on('mouseenter', FILL, () => (map.getCanvas().style.cursor = 'pointer'))
     map.on('mouseleave', FILL, () => (map.getCanvas().style.cursor = ''))
-  }, [ready, features])
+  }, [mapRef, ready, features])
 
   /**
    * The cattle-side My Map layers, drawn above the paddock shading.
@@ -423,7 +397,7 @@ export function PastureMap() {
     })
     void addPinImages(map)
     raiseLabels(map)
-  }, [ready, cattleOverlay])
+  }, [mapRef, ready, cattleOverlay])
 
   /**
    * The rule, rather than a list of places that have to remember it.
@@ -442,7 +416,7 @@ export function PastureMap() {
     return () => {
       map.off('styledata', onStyle)
     }
-  }, [ready])
+  }, [mapRef, ready])
 
   // Read through refs so the map's click handler — registered once — always
   // sees the current mode without the layer effect having to re-run.
@@ -463,7 +437,7 @@ export function PastureMap() {
     return () => {
       map.off('click', onClick)
     }
-  }, [ready])
+  }, [mapRef, ready])
 
   /**
    * The herd on its paddock.
@@ -506,7 +480,7 @@ export function PastureMap() {
       })
     }
     raiseLabels(map)
-  }, [ready, features, herd])
+  }, [mapRef, ready, features, herd])
 
   /**
    * Per-pixel rasters over the paddocks.
@@ -579,7 +553,7 @@ export function PastureMap() {
     }
     // Whatever went on above, the letters end up on top of it.
     raiseLabels(map)
-  }, [ready, ndviRasters, photoRasters, fillMode, ndviScale])
+  }, [mapRef, ready, ndviRasters, photoRasters, fillMode, ndviScale])
 
   // Frame every paddock once we know where they are.
   const framed = useRef(false)
@@ -595,7 +569,7 @@ export function PastureMap() {
     }
     if (!b.isEmpty()) map.fitBounds(b, { padding: 40, duration: 0 })
     framed.current = true
-  }, [ready, features])
+  }, [mapRef, ready, features])
 
   // Any pin on the My Map's Water layer that is not here yet, classified by
   // its name. Adds only: the pins here are the record now, and a pin deleted

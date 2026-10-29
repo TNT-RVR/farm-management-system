@@ -8,11 +8,10 @@
 // the forecast can plan on a normal season and this year can be read against it.
 import { seasonNormal, seasonToDate } from '../shared/ranch-rain.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
-import { farmTz } from '../../src/lib/farm-context.ts'
+import { farmToday } from '../shared/dates.ts'
 
 export const config = { path: '/api/ranch-precip' }
 
-const farmToday = () => new Date().toLocaleDateString('en-CA', { timeZone: farmTz() })
 
 export default async (req: Request) => {
   // Keys saved on Farm setup, where Netlify's environment has none.

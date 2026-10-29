@@ -7,9 +7,12 @@ import { RestrictionLines } from '@/components/GrazingRestrictions'
 import { FieldLivestockAccess } from '@/pages/cattle/FieldLivestockAccess'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useChemicalSearch } from '@/lib/chemicals'
+import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { activeRestrictions, blocking, fmtDay, headlineFor, untilWord } from '@/lib/grazing-restrictions'
 import { useGrazingPicture, usePastureSprayMutations, usePastureSprays } from '@/lib/grazing-restrictions-hooks'
 import { farmTz } from '@/lib/farm-context'
+import { CARD_HEAD } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 /**
  * Every field and pasture a spray keeps livestock off, farm-wide.
@@ -45,10 +48,11 @@ export function GrazingRestrictionsPage() {
       </div>
 
       {clashes.length > 0 && (
-        <section className="rounded-lg border border-red-300 bg-red-50 p-3 text-red-900">
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-            <Ban className="h-4 w-4 text-red-600" /> Cattle on (or planned for) sprayed ground
+        <section className="overflow-hidden rounded-lg border border-red-300 bg-red-50 text-red-900">
+          <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+            <Ban className="h-4 w-4 text-amber-200" /> Cattle on (or planned for) sprayed ground
           </h2>
+          <div className="p-3">
           <ul className="mt-1 space-y-1 text-xs">
             {clashes.map((c) => (
               <li key={c.key}>
@@ -61,6 +65,8 @@ export function GrazingRestrictionsPage() {
               </li>
             ))}
           </ul>
+
+          </div>
         </section>
       )}
 
@@ -98,10 +104,11 @@ export function GrazingRestrictionsPage() {
       <PastureSprays pastures={picture.places.filter((p) => p.kind === 'pasture').map((p) => ({ id: p.id, name: p.name }))} isManager={isManager} />
 
       {(picture.unread.length > 0 || picture.unmatched.length > 0) && (
-        <section className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-            <CircleHelp className="h-4 w-4 text-amber-600" /> Not known yet
+        <section className="overflow-hidden rounded-lg border border-amber-300 bg-amber-50 text-xs text-amber-900">
+          <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+            <CircleHelp className="h-4 w-4 text-amber-200" /> Not known yet
           </h2>
+          <div className="p-3">
           <p className="mt-0.5">Unknown is not the same as safe.</p>
           {picture.unread.length > 0 && (
             <>
@@ -128,13 +135,15 @@ export function GrazingRestrictionsPage() {
               </ul>
               <p className="mt-1">
                 Match them on{' '}
-                <Link to="/chemicals?tab=pricing" className="underline">
+                <Link to="/chemicals?tab=prices" className="underline">
                   Chemical → Pricing settings
                 </Link>{' '}
                 so their labels count.
               </p>
             </>
           )}
+
+          </div>
         </section>
       )}
     </div>
@@ -147,15 +156,16 @@ function PastureSprays({ pastures, isManager }: { pastures: { id: string; name: 
   const { data: rows } = usePastureSprays()
   const [f, setF] = useState({ pastureId: '', on: new Date().toLocaleDateString('en-CA', { timeZone: farmTz() }), product: '', reg: '', notes: '' })
   const [term, setTerm] = useState('')
-  const { data: matches } = useChemicalSearch(term.length >= 3 ? term : '', '')
+  const searched = useDebouncedValue(term, 250)
+  const { data: matches } = useChemicalSearch(searched.length >= 3 ? searched : '', '')
   const pick = term.length >= 3 ? (matches ?? []).slice(0, 8) : []
   type SprayRow = NonNullable<typeof rows>[number]
   const [editing, setEditing] = useState<SprayRow | null>(null)
 
   return (
     <section className="rounded-lg border border-gray-200 bg-white">
-      <h2 className="flex items-center gap-1.5 border-b border-gray-200 px-3 py-2 text-sm font-semibold text-gray-900">
-        <SprayCan className="h-4 w-4 text-gray-400" /> Pasture sprays
+      <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <SprayCan className="h-4 w-4 text-brand-100" /> Pasture sprays
       </h2>
       <p className="px-3 pt-2 text-xs text-gray-500">
         John Deere records the crop fields only. A pasture sprayed any other way goes here, so its label counts too.

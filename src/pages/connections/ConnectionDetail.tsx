@@ -22,7 +22,6 @@ const PANELS: Record<PanelId, LazyExoticComponent<ComponentType<PanelProps>>> = 
   quickbooks: lazy(() => import('./panels/QuickBooksPanel').then((m) => ({ default: m.QuickBooksPanel }))),
   crop_history: lazy(() => import('./panels/CropHistoryImport').then((m) => ({ default: m.CropHistoryImport }))),
   binsense: lazy(() => import('./panels/BinSenseImport').then((m) => ({ default: m.BinSenseImport }))),
-  plc: lazy(() => import('./panels/PlcPanel').then((m) => ({ default: m.PlcPanel }))),
   satellite: lazy(() => import('@/components/SatelliteSyncCard').then((m) => ({ default: m.SatelliteSyncCard }))),
 }
 

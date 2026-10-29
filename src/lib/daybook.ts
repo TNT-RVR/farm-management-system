@@ -197,7 +197,7 @@ export function daybookQuery(day: string) {
           at: null,
           title: `${c.event_type}${c.product ? ` · ${c.product}` : ''}`,
           detail: c.notes ?? null,
-          to: c.cattle_id ? `/cattle/${c.cattle_id}` : '/herd',
+          to: c.cattle_id ? `/cattle/${c.cattle_id}` : '/herd?tab=herd',
         })
       }
       for (const f of feed ?? []) {
@@ -206,7 +206,7 @@ export function daybookQuery(day: string) {
           at: null,
           title: `Fed ${f.herd_group ?? 'the herd'}${f.head_count ? ` · ${f.head_count} head` : ''}`,
           detail: f.notes ?? null,
-          to: '/feed-records',
+          to: '/feed?tab=records',
         })
       }
       for (const s of services ?? []) {
@@ -215,7 +215,7 @@ export function daybookQuery(day: string) {
           at: null,
           title: `Service on ${equipment?.find((e) => e.id === s.equipment_id)?.name ?? 'a machine'}`,
           detail: [s.engine_hours != null ? `${Math.round(s.engine_hours)} h` : null, s.notes].filter(Boolean).join(' · '),
-          to: s.equipment_id ? `/equipment/${s.equipment_id}` : '/equipment',
+          to: s.equipment_id ? `/equipment/${s.equipment_id}?tab=service` : '/equipment',
         })
       }
       for (const l of loads ?? []) {

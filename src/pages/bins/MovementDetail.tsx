@@ -6,7 +6,8 @@ import { DeleteButton, DetailList, EditButton, RecordEditModal, type EditField }
 import { useCrops, useFields } from '@/lib/queries'
 import { useBins } from '@/lib/bins'
 import { binCropOptions } from '@/lib/bin-contents'
-import { refreshAfterLoad } from '@/lib/bin-loads'
+import { refreshAfterLoad, useDeliverySites } from '@/lib/bin-loads'
+import { shipmentPatch, PICKED_UP } from '@/lib/bin-shipping'
 import { GRAIN_MOVEMENT_TYPES, useEditGrainMovement, useTransferCandidates, type GrainMovementRow } from '@/lib/inventory'
 import { findTransferPartner, loadIdOf, movementEditProblem, movementSource } from '@/lib/record-edits'
 
@@ -42,6 +43,8 @@ export function MovementDetail({
   const { data: crops } = useCrops()
   const { data: fields } = useFields()
   const { data: bins } = useBins()
+  const { data: sites } = useDeliverySites()
+  const isShipment = m.movement_type === 'delivery_out'
   const edit = useEditGrainMovement(() => refreshAfterLoad(qc))
   const source = movementSource(m)
   const { data: candidates, isLoading: looking } = useTransferCandidates(source === 'transfer' ? m : null)
@@ -52,6 +55,9 @@ export function MovementDetail({
   const cropName = (id: string | null) => (crops ?? []).find((c) => c.id === id)?.name ?? null
   const fieldName = (id: string | null) => (fields ?? []).find((f) => f.id === id)?.name ?? null
   const binName = (id: string | null) => (bins ?? []).find((b) => b.id === id)?.name ?? null
+  const siteName = (id: string | null) => (sites ?? []).find((s) => s.id === id)?.name ?? null
+  // Where a shipment went, said plainly.
+  const wentTo = !isShipment ? null : m.picked_up ? `Picked up at our yard${m.shipped_to ? ` by ${m.shipped_to}` : ''}` : (siteName(m.delivery_site_id) ?? m.shipped_to)
   const loadId = loadIdOf(m)
 
   const editFields: EditField[] =
@@ -79,6 +85,22 @@ export function MovementDetail({
           },
           { key: 'moved_at', label: 'Date', kind: 'date', required: true },
           { key: 'ticket_number', label: 'Ticket number', kind: 'text' },
+          // A shipment: where it went (26 Oct 2026).
+          ...(isShipment
+            ? ([
+                {
+                  key: 'ship_to',
+                  label: 'Where it went',
+                  kind: 'select',
+                  options: [
+                    { value: '', label: 'Not recorded' },
+                    ...(sites ?? []).map((s) => ({ value: s.id, label: s.name })),
+                    { value: PICKED_UP, label: 'Picked up at our yard' },
+                  ],
+                },
+                { key: 'shipped_to', label: 'Picked up by', kind: 'text', placeholder: 'BASF, Corteva… (when picked up at the yard)' },
+              ] as EditField[])
+            : []),
           { key: 'notes', label: 'Note', kind: 'textarea' },
         ]
 
@@ -95,7 +117,7 @@ export function MovementDetail({
       await edit.update.mutateAsync({
         id: m.id,
         partnerId: partner?.id ?? null,
-        patch: { ...patch, bushels: Math.round((amount as number) * 100) / 100 } as GrainMovementRow,
+        patch: { ...shipmentPatch(patch, kind), bushels: Math.round((amount as number) * 100) / 100 } as GrainMovementRow,
       })
     } catch (e) {
       setError((e as Error).message)
@@ -117,6 +139,7 @@ export function MovementDetail({
               ['Crop', cropName(m.crop_id)],
               ['Field', fieldName(m.field_id)],
               ['Ticket', source === 'load' ? null : m.ticket_number],
+              ['Went to', wentTo],
               [m.movement_type === 'transfer_in' ? 'From' : 'To', partner ? binName(partner.bin_id) : null],
               ['Note', m.notes],
               ['Entered', new Date(m.created_at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })],
@@ -165,7 +188,7 @@ export function MovementDetail({
         <RecordEditModal
           title={source === 'transfer' ? 'Correct this move' : 'Correct this movement'}
           fields={editFields}
-          row={{ ...m, bushels: Number(m.bushels) }}
+          row={{ ...m, bushels: Number(m.bushels), ship_to: m.picked_up ? PICKED_UP : (m.delivery_site_id ?? '') }}
           saving={edit.update.isPending}
           error={error}
           onClose={() => {

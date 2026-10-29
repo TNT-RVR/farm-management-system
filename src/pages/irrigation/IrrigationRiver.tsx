@@ -27,6 +27,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { useWheelZoom } from '@/lib/useWheelZoom'
 import { cn } from '@/lib/utils'
 import { WaterQualityCard } from './WaterQualityCard'
+import { CARD_HEAD } from '@/lib/table-style'
 
 // The two ranches sit on different water, so the River tab is split by ranch.
 //
@@ -491,8 +492,9 @@ export function IrrigationRiver({ isManager, ranchName }: { isManager: boolean; 
       {gapNote && <p className="mb-2 rounded-md bg-amber-50 px-3 py-1.5 text-xs text-amber-800">{gapNote}</p>}
 
       {/* Multi-station flow graph */}
-      <div className="rounded-lg border border-gray-200 bg-white p-3">
-        <h2 className="mb-1 text-center text-sm font-semibold text-gray-900">{cfg.chartTitle}</h2>
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <h2 className={cn('text-center font-medium', CARD_HEAD)}>{cfg.chartTitle}</h2>
+        <div className="p-3">
         {isLoading ? (
           <p className="py-16 text-center text-sm text-gray-400">Loading…</p>
         ) : isError ? (
@@ -535,6 +537,8 @@ export function IrrigationRiver({ isManager, ranchName }: { isManager: boolean; 
         <HelpNote className="mt-1 px-1" summary="Scroll on the chart to zoom in/out." title="Reading the river chart">
           <p>{cfg.footnote}</p>
         </HelpNote>
+
+        </div>
       </div>
       <WaterQualityCard isManager={isManager} />
     </div>

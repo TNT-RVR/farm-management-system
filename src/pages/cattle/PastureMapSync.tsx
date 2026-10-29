@@ -32,7 +32,7 @@ export function PastureMapSync({ isManager }: { isManager: boolean }) {
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-3">
       <div className="flex flex-wrap items-start gap-3">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-48">
           <h2 className="text-sm font-semibold text-gray-900">Pastures from the My Maps</h2>
           <HelpNote
             className="mt-0.5 text-xs text-gray-600"
@@ -52,7 +52,7 @@ export function PastureMapSync({ isManager }: { isManager: boolean }) {
             type="button"
             onClick={() => sync.mutate()}
             disabled={sync.isPending}
-            className="flex shrink-0 items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="flex w-full shrink-0 items-center justify-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:w-auto"
           >
             <RefreshCw className={cn('h-3.5 w-3.5', sync.isPending && 'animate-spin')} /> Update now
           </button>
@@ -88,7 +88,7 @@ function RanchMapLink({ ranch, isManager }: { ranch: Ranch; isManager: boolean }
         onChange={(e) => setValue(e.target.value)}
         disabled={!isManager}
         placeholder="farm map (paste this ranch's own My Map link)"
-        className="min-w-0 flex-1 rounded-md border border-gray-300 px-2 py-1 disabled:bg-gray-50"
+        className="min-w-0 flex-1 basis-full rounded-md border border-gray-300 px-2 py-1 disabled:bg-gray-50 sm:basis-48"
       />
       {isManager && (
         <button type="submit" disabled={!changed || !valid || set.isPending} className="rounded-md bg-brand-700 px-2.5 py-1 font-semibold text-white disabled:opacity-40">

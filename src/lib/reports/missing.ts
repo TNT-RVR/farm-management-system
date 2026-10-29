@@ -264,29 +264,29 @@ export const CHECKS: MissingCheck[] = [
     id: 'entry-pins',
     title: "Fields with no entry pin",
     why: "needed for distances, fuel and hauling",
-    area: 'Travel & trucking',
-    path: '/hauling?tab=distances',
+    area: 'Fuel & trucking',
+    path: '/fuel?tab=distances',
     run: (d) => {
       const pinned = new Set(d.entries.map((e) => e.field_id))
       return d.fields
         .filter((f) => f.active && !pinned.has(f.id))
         .sort((a, b) => compareFieldNames(a.name, b.name))
-        .map((f) => ({ area: 'Travel & trucking', item: fieldLabel(f.name), missing: 'No entry pin — distances use a suggested gate', where: 'Travel & trucking → Distances', path: '/hauling?tab=distances' }))
+        .map((f) => ({ area: 'Fuel & trucking', item: fieldLabel(f.name), missing: 'No entry pin — distances use a suggested gate', where: 'Fuel & trucking → Distances', path: '/fuel?tab=distances' }))
     },
   },
   {
     id: 'farm-trails',
     title: "Fields with no farm trail mapped",
     why: "last stretch is a straight-line guess",
-    area: 'Travel & trucking',
-    path: '/hauling?tab=distances',
+    area: 'Fuel & trucking',
+    path: '/fuel?tab=distances',
     run: (d) => {
       const name = fieldName(d)
       const ids = new Set(d.routes.filter((r) => r.from_key === 'shop' && r.to_key.startsWith('field:') && r.method === 'road+straight').map((r) => r.to_key.slice(6)))
       const active = new Set(d.fields.filter((f) => f.active).map((f) => f.id))
       return [...ids]
         .filter((id) => active.has(id))
-        .map((id) => ({ area: 'Travel & trucking', item: name(id), missing: 'No farm trail mapped — the last stretch is a straight line × 1.3', where: 'Travel & trucking → Distances', path: '/hauling?tab=distances' }))
+        .map((id) => ({ area: 'Fuel & trucking', item: name(id), missing: 'No farm trail mapped — the last stretch is a straight line × 1.3', where: 'Fuel & trucking → Distances', path: '/fuel?tab=distances' }))
         .sort(byName)
     },
   },
@@ -463,7 +463,7 @@ export const CHECKS: MissingCheck[] = [
     title: "Herd weights still the starting figures",
     why: "needed for an accurate feed budget",
     area: 'Cattle',
-    path: '/herd',
+    path: '/herd?tab=herd',
     run: (d) => {
       const ranch = new Map(d.ranches.map((r) => [r.id, r.name]))
       const start = (c: string) => (/bull/i.test(c) ? 1700 : /heifer/i.test(c) ? 900 : /cal(f|ves)/i.test(c) ? 650 : /cow/i.test(c) ? 1400 : null)
@@ -474,7 +474,7 @@ export const CHECKS: MissingCheck[] = [
           item: `${ranch.get(h.ranch_id ?? '') ?? 'Ranch'} · ${h.class_name}`,
           missing: `Weight (${num(h.avg_weight_lb)?.toLocaleString('en-CA')} lb) and condition score (3) are still the starting figures`,
           where: 'Herd',
-          path: '/herd',
+          path: '/herd?tab=herd',
         }))
     },
   },
@@ -483,11 +483,11 @@ export const CHECKS: MissingCheck[] = [
     title: "Ranches with no feed counted",
     why: "needed for “will the feed last”",
     area: 'Cattle',
-    path: '/feed-records',
+    path: '/feed?tab=records',
     run: (d) =>
       d.ranches
         .filter((r) => !d.feed.some((f) => f.ranch_id === r.id && (num(f.remaining_lb) ?? 0) > 0))
-        .map((r) => ({ area: 'Cattle', item: `${r.name} feed`, missing: 'No feed counted on hand — “Will the feed last” cannot answer', where: 'Feed records → Feed put up → Counted on hand', path: '/feed-records' })),
+        .map((r) => ({ area: 'Cattle', item: `${r.name} feed`, missing: 'No feed counted on hand — “Will the feed last” cannot answer', where: 'Feed records → Feed put up → Counted on hand', path: '/feed?tab=records' })),
   },
   {
     id: 'cattle-costs',
@@ -520,20 +520,20 @@ export const CHECKS: MissingCheck[] = [
     title: "Grazing pastures not on the map",
     why: "needed to graze them on the map",
     area: 'Cattle',
-    path: '/grazing',
+    path: '/cattle?tab=grazing',
     run: (d) =>
       d.grazingPastures
         .filter((g) => g.active !== false && !g.pasture_id)
-        .map((g) => ({ area: 'Cattle', item: g.name, missing: 'On the grazing list but not linked to a mapped pasture', where: 'Grazing', path: '/grazing' })),
+        .map((g) => ({ area: 'Cattle', item: g.name, missing: 'On the grazing list but not linked to a mapped pasture', where: 'Grazing', path: '/cattle?tab=grazing' })),
   },
   {
     id: 'my-maps',
     title: "Ranches with no Google My Map",
     why: "needed to sync pastures and water points",
     area: 'Cattle',
-    path: '/cattle',
+    path: '/cattle?tab=map',
     run: (d) =>
-      d.ranches.filter((r) => !r.mymaps_url).map((r) => ({ area: 'Cattle', item: `${r.name} map`, missing: 'Google My Map not linked — its pastures and water points are not synced', where: 'Cattle → Map', path: '/cattle' })),
+      d.ranches.filter((r) => !r.mymaps_url).map((r) => ({ area: 'Cattle', item: `${r.name} map`, missing: 'Google My Map not linked — its pastures and water points are not synced', where: 'Cattle → Map', path: '/cattle?tab=map' })),
   },
   {
     id: 'leases',
@@ -600,7 +600,7 @@ export const CHECKS: MissingCheck[] = [
     title: 'Bale weights blank',
     why: 'needed to count baled feed in pounds',
     area: 'Cattle',
-    path: '/feed-records',
+    path: '/feed?tab=records',
     run: (d) => {
       const type = new Map(d.feedTypes.map((t) => [t.id, t]))
       return (['round', 'big_square'] as const)
@@ -612,7 +612,7 @@ export const CHECKS: MissingCheck[] = [
             return !(t && t.default_unit === unit && num(t.default_lb_per_bale) != null)
           }).length
           return unweighed
-            ? { area: 'Cattle', item: unit === 'round' ? 'Round bale weight' : 'Big square bale weight', missing: `Blank — ${plural(unweighed, 'baled entry', 'baled entries')} cannot be weighed`, where: 'Feed records → Counted on hand → Bale weights', path: '/feed-records' }
+            ? { area: 'Cattle', item: unit === 'round' ? 'Round bale weight' : 'Big square bale weight', missing: `Blank — ${plural(unweighed, 'baled entry', 'baled entries')} cannot be weighed`, where: 'Feed records → Counted on hand → Bale weights', path: '/feed?tab=records' }
             : null
         })
         .filter((x): x is MissingItem => x != null)
@@ -676,15 +676,15 @@ export const CHECKS: MissingCheck[] = [
     id: 'haul-plan',
     title: 'Fields with no haul plan',
     why: 'needed for trucking cost by field',
-    area: 'Travel & trucking',
-    path: '/hauling?tab=trucking',
+    area: 'Fuel & trucking',
+    path: '/fuel?tab=trucking',
     run: (d) => {
       const crop = new Map(d.crops.map((c) => [c.id, c]))
       const planned = new Set(d.haulPlans.filter((h) => h.crop_year === d.year).map((h) => h.field_id))
       const name = fieldName(d)
       // Fed at home (silage, green feed) is not trucked off the farm.
       const ids = new Set(harvestedUnits(d).filter((u) => !crop.get(u.cropId)?.own_use && !planned.has(u.fieldId)).map((u) => u.fieldId))
-      return [...ids].map((id) => ({ area: 'Travel & trucking', item: name(id), missing: `No haul plan for the ${d.year} crop`, where: 'Travel & trucking → Trucking', path: '/hauling?tab=trucking' })).sort(byName)
+      return [...ids].map((id) => ({ area: 'Fuel & trucking', item: name(id), missing: `No haul plan for the ${d.year} crop`, where: 'Fuel & trucking → Trucking cost', path: '/fuel?tab=trucking' })).sort(byName)
     },
   },  {
     // Service reminders count engine hours; a machine gone quiet never comes due.
@@ -702,7 +702,7 @@ export const CHECKS: MissingCheck[] = [
           item: m.name ?? 'A machine',
           missing: `Hours not updating since ${staleHoursDate(stale.get(m.id)!)} — its service due points by hours can't be trusted`,
           where: 'Equipment → the machine (check its Deere modem)',
-          path: `/equipment/${m.id}`,
+          path: `/equipment/${m.id}?tab=service`,
         }))
         .sort((a, b) => a.item.localeCompare(b.item))
     },
@@ -735,7 +735,7 @@ export function missingItems(d: MissingData, o: { isOwner: boolean; viewOff?: (p
 }
 
 /** The order areas are listed in. */
-const AREAS = ['Fields', 'Crops', 'Money', 'Spraying', 'Irrigation', 'Equipment', 'Travel & trucking', 'Utilities', 'Cattle', 'Leases']
+const AREAS = ['Fields', 'Crops', 'Money', 'Spraying', 'Irrigation', 'Equipment', 'Fuel & trucking', 'Utilities', 'Cattle', 'Leases']
 
 /* ── The checklist ──────────────────────────────────────────────────────── */
 

@@ -50,13 +50,30 @@ export function fieldListRows(
   }))
 }
 
+export type FieldSeason = {
+  id: string
+  irrigation_done_at: string | null
+  irrigation_done_source?: 'person' | 'auto' | null
+  irrigation_done_note?: string | null
+}
+
 /**
  * One season row per field for the year. A zoned field has several; the
- * whole-field row is the one "done watering" belongs on, and it comes first.
+ * whole-field row is the one the season's watering belongs on, and it comes
+ * first.
  */
-export function fieldSeasonMap(seasons: { id: string; field_id: string; irrigation_done_at: string | null }[]) {
-  const m = new Map<string, { id: string; irrigation_done_at: string | null }>()
-  for (const s of seasons) if (!m.has(s.field_id)) m.set(s.field_id, { id: s.id, irrigation_done_at: s.irrigation_done_at })
+export function fieldSeasonMap(
+  seasons: (FieldSeason & { field_id: string })[],
+): Map<string, FieldSeason> {
+  const m = new Map<string, FieldSeason>()
+  for (const s of seasons)
+    if (!m.has(s.field_id))
+      m.set(s.field_id, {
+        id: s.id,
+        irrigation_done_at: s.irrigation_done_at,
+        irrigation_done_source: s.irrigation_done_source ?? null,
+        irrigation_done_note: s.irrigation_done_note ?? null,
+      })
   return m
 }
 
@@ -64,14 +81,26 @@ export function doneWateringFields(seasonByField: Map<string, { irrigation_done_
   return new Set([...seasonByField].filter(([, s]) => s.irrigation_done_at).map(([id]) => id))
 }
 
-export function fieldListColumns(o: { cropYear: number; hailFields: Set<string>; doneFields: Set<string> }): ExportColumn<FieldListRow>[] {
+/**
+ * The field list, on screen and in the CSV.
+ *
+ * Where there were two tick boxes — Hail and Done watering — there is now one
+ * state (lib/field-state.ts says why) and a hail chip that can say "twice"
+ * and "17% on 125 ac", which a box could not. The CSV carries the same two as
+ * words so the file reads the way the screen does.
+ */
+export function fieldListColumns(o: {
+  cropYear: number
+  state: (id: string) => { label: string; why: string }
+  hail: (id: string) => string | null
+}): ExportColumn<FieldListRow>[] {
   return [
     { key: 'name', label: 'Field', value: (r) => r.name },
     { key: 'legal', label: 'Legal Description', value: (r) => r.legal_land_description },
     { key: 'crop', label: `Crop ${o.cropYear}`, value: (r) => r.crop_name },
     { key: 'map_acres', label: 'Map Acres', value: (r) => r.map_acres },
-    { key: 'hail', label: `Hail ${o.cropYear}`, value: (r) => (o.hailFields.has(r.id) ? 'yes' : 'no') },
-    { key: 'watered', label: 'Done watering', value: (r) => (o.doneFields.has(r.id) ? 'yes' : 'no') },
+    { key: 'state', label: `Season ${o.cropYear}`, value: (r) => o.state(r.id).label },
+    { key: 'hail', label: `Hail ${o.cropYear}`, value: (r) => o.hail(r.id) ?? '' },
   ]
 }
 
@@ -108,6 +137,7 @@ export function cropListColumns(cropYear: number): ExportColumn<CropListRow>[] {
     { key: 'price', label: `${cropYear} Price`, value: (r) => r.price.value },
     { key: 'binned', label: 'Stored in bins', value: (r) => (r.needs_bins !== false ? 1 : 0) },
     { key: 'combines', label: 'On the combines', value: (r) => (r.on_combines !== false ? 1 : 0) },
+    { key: 'weighed', label: 'Weighed at the scale', value: (r) => (r.weighed !== false ? 1 : 0) },
     { key: 'cost', label: `${cropYear} Cost/ac`, value: (r) => r.cost.total },
   ]
 }

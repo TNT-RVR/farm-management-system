@@ -30,12 +30,18 @@ export function FieldCropCard({
   cropYear,
   boundaryAcres,
   canEdit,
+  canRecord = canEdit,
 }: {
   fieldId: string
   cropYear: number
   /** Acres from the boundary, used when a plan is created from scratch. */
   boundaryAcres: number | null
   canEdit: boolean
+  /**
+   * May enter this year's yields and goal. Defaults to canEdit; a crop-share
+   * partner may in his own years only, without the plan's other controls.
+   */
+  canRecord?: boolean
 }) {
   const { data: crops } = useCrops()
   const { data: plans } = useCropPlans(cropYear)
@@ -121,12 +127,15 @@ export function FieldCropCard({
               Split crops →
             </Link>
           )}
-          <Link
-            to={`/plan?tab=plan&crop=${plan?.crop_id ?? ''}`}
-            className="text-xs text-brand-700 hover:underline"
-          >
-            Yield and budget →
-          </Link>
+          {/* The farm's plan and budget; not a partner's (canEdit is managers). */}
+          {canEdit && (
+            <Link
+              to={`/plan?tab=plan&crop=${plan?.crop_id ?? ''}`}
+              className="text-xs text-brand-700 hover:underline"
+            >
+              Yield and budget →
+            </Link>
+          )}
         </span>
       </div>
 
@@ -158,7 +167,7 @@ export function FieldCropCard({
                     {(() => {
                       const y = areaYields?.find((a) => a.crop_id === z.crop_id) ?? null
                       const label = y?.yield_per_acre != null ? `${y.yield_per_acre} ${y.yield_unit ?? zc?.yield_unit ?? ''}/ac` : null
-                      return canEdit ? (
+                      return canRecord ? (
                         <button
                           type="button"
                           onClick={() => setEditing({ cropId: z.crop_id, row: y })}
@@ -187,7 +196,7 @@ export function FieldCropCard({
         zones={zones ?? []}
         crops={crops ?? []}
       />
-      <YieldScorecard fieldId={fieldId} cropYear={cropYear} canEdit={canEdit} plan={plan} crops={crops ?? []} zones={zones ?? []} />
+      <YieldScorecard fieldId={fieldId} cropYear={cropYear} canEdit={canRecord} plan={plan} crops={crops ?? []} zones={zones ?? []} />
       {editing && (
         <AreaYieldEditor
           fieldId={fieldId}

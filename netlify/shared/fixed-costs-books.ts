@@ -14,9 +14,9 @@ import { lastTwelveMonths, targetYears } from '../../src/lib/fixed-books-window.
  * it through the same rules as Financials → Farm costs → From the books
  * (fixedFromBooks): cash only, so no depreciation; the management fee off
  * labour and overhead; the crops' share of each part. The result is written to
- * the crop year being planned — the one whose fiscal year (Sep–Aug) is under
- * way — and, the month a fiscal year closes, to the closed year as well, so it
- * ends on its own finished books.
+ * the crop year being planned (from 1 August, next year's) and, the month
+ * after a fiscal year closes (Farm setup's year-end), to the crop that year
+ * paid for as well, so it ends on its own finished books.
  *
  * Runs after the nightly QuickBooks sync. Monthly in effect: a year already
  * read from the same twelve months is skipped, and nothing runs before the

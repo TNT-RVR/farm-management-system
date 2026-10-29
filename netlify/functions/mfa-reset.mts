@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 // ADMIN-only: remove someone's authenticator, for a lost or replaced phone.
 // They sign in with their password alone afterwards and can set up a new one.
@@ -23,7 +23,7 @@ export default async (req: Request) => {
   const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
   if (!jwt) return json({ error: 'Not authenticated' }, 401)
 
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
   const { data: caller } = await getUserMfa(sb, jwt)
   if (!caller.user) return json({ error: 'Invalid session' }, 401)
   const { data: profile } = await sb.from('users').select('role, active, is_owner').eq('id', caller.user.id).single()

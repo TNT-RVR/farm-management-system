@@ -27,7 +27,7 @@ const check = (over: Partial<LossHistoryRow> & { id: string }): LossHistoryRow =
   ...over,
 })
 const at = (moisturePct: number | null, rh: number | null): Conditions => ({ moisturePct, rh, tempC: null, windKmh: null })
-const bands: MoistureBands = { dry_max: 10, tough_max: 12.5, damp_max: 15, moist_max: null }
+const bands: MoistureBands = { dry_max: 10, tough_max: 12.5}
 
 describe('similar conditions', () => {
   it('matches the same moisture band and near the same humidity', () => {
@@ -42,7 +42,7 @@ describe('similar conditions', () => {
   })
 
   it('caps the distance inside one band, and uses points without bands', () => {
-    const wide: MoistureBands = { dry_max: 20, tough_max: null, damp_max: null, moist_max: null }
+    const wide: MoistureBands = { dry_max: 20, tough_max: null}
     expect(similarConditions(at(10, 45), at(13, 45), wide)).toBe(false)
     expect(similarConditions(at(10, 45), at(11.5, 45), null)).toBe(true)
     expect(similarConditions(at(10, 45), at(11.6, 45), null)).toBe(false)

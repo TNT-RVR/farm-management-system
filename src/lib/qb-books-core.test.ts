@@ -103,7 +103,9 @@ describe('fixedFromBooks', () => {
 })
 
 it('fiscalYear and partNote', () => {
-  expect(fiscalYear(2026)).toEqual({ start: '2025-09-01', end: '2026-08-31', label: 'Sep 2025 – Aug 2026' })
+  expect(fiscalYear(2026, 8)).toEqual({ endYear: 2026, start: '2025-09-01', end: '2026-08-31', label: 'Sep 2025 – Aug 2026' })
+  // A March year-end pays for the 2026 crop from April 2026 to March 2027.
+  expect(fiscalYear(2026, 3)).toEqual({ endYear: 2027, start: '2026-04-01', end: '2027-03-31', label: 'Apr 2026 – Mar 2027' })
   const r = parseReport(PL)
   expect(partNote(r.accounts.filter((a) => a.id === '10' || a.id === '11'), 'Sep 2025 – Aug 2026')).toBe(
     'QuickBooks P&L Sep 2025 – Aug 2026: payroll 80,000.00 + hired mans house 10,000.00',

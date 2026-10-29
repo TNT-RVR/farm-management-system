@@ -1,3 +1,5 @@
+import { farmFiscalEndMonth } from './farm-context'
+import { fiscalYearForCrop, type FiscalYear } from './fiscal-year'
 import type { FixedCategory } from './farm-costs'
 
 /**
@@ -307,9 +309,13 @@ export function fixedFromBooks(
   return { parts, fee, feeAccounts, leftOut, guessed, swappedPower: swapped }
 }
 
-/** The fiscal year a crop year is paid in: September before harvest to the August of it. */
-export function fiscalYear(cropYear: number): { start: string; end: string; label: string } {
-  return { start: `${cropYear - 1}-09-01`, end: `${cropYear}-08-31`, label: `Sep ${cropYear - 1} – Aug ${cropYear}` }
+/**
+ * The fiscal year a crop year is paid in, on Farm setup's year-end: the one
+ * with that summer in it (fiscal-year.ts). With an August year-end it is
+ * September before harvest to the August of it, as it always was.
+ */
+export function fiscalYear(cropYear: number, endMonth: number = farmFiscalEndMonth()): FiscalYear {
+  return fiscalYearForCrop(cropYear, endMonth)
 }
 
 /** "payroll 635,561.92 + casual labour 98,588.60" — what a part is made of, for its note. */

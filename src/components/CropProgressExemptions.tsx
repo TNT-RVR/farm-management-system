@@ -3,6 +3,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * Which crops count toward seeding and harvest progress.
@@ -90,8 +91,8 @@ export function CropProgressExemptions({ canEdit }: { canEdit: boolean }) {
             <p className="text-sm text-gray-500">Loading…</p>
           ) : (
             <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-500">
+              <thead className={TABLE_HEAD}>
+                <tr>
                   <th className="py-1 font-medium">Crop</th>
                   <th className="w-20 py-1 text-center font-medium">We seed</th>
                   <th className="w-24 py-1 text-center font-medium">We harvest</th>

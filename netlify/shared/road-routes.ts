@@ -13,6 +13,7 @@ import {
   shopKey,
   siteKey,
   snapTableUrl,
+  yardKey,
   type LatLng,
   type Place,
   type RouteRow,
@@ -99,17 +100,18 @@ async function readAll<T>(page: (from: number, to: number) => PromiseLike<{ data
 
 export async function runRoadRoutes(sb: SupabaseClient, opts: { force?: boolean; budgetMs?: number } = {}): Promise<RoadRoutesResult> {
   const deadline = Date.now() + (opts.budgetMs ?? 20_000)
-  const [settings, points, active, entries, bounds, sites, trailRows, manual] = await Promise.all([
+  const [settings, points, active, entries, bounds, sites, yardRows, trailRows, manual] = await Promise.all([
     sb.from('operating_settings').select('key, value').in('key', ['shop', 'bins', 'yard', 'trail_speed', 'silage_pit']),
     sb.from('field_points').select('id, lat, lng'),
     sb.from('fields').select('id, route_via, route_through').eq('active', true),
     sb.from('field_entries').select('field_id, lat, lng'),
     sb.from('field_boundaries_geojson').select('field_id, geometry').is('valid_to', null),
     sb.from('delivery_sites').select('id, lat, lng').eq('active', true).not('lat', 'is', null).not('lng', 'is', null),
+    sb.from('farm_yards').select('id, lat, lng').eq('active', true).not('lat', 'is', null).not('lng', 'is', null),
     sb.from('farm_trails_geojson').select('id, name, geometry'),
     sb.from('road_routes').select('from_key, to_key').eq('source', 'manual'),
   ])
-  for (const r of [settings, points, active, entries, bounds, sites, trailRows, manual]) if (r.error) throw new Error(r.error.message)
+  for (const r of [settings, points, active, entries, bounds, sites, yardRows, trailRows, manual]) if (r.error) throw new Error(r.error.message)
   const snapRows = await readAll<SnapRow>((a, b) => sb.from('road_snaps').select('*').order('id').range(a, b))
 
   const setting = new Map((settings.data ?? []).map((r) => [r.key as string, r.value as unknown]))
@@ -122,7 +124,10 @@ export async function runRoadRoutes(sb: SupabaseClient, opts: { force?: boolean;
   }
   // Optional: only the silage haul measures from it.
   const pit = placeOf(pitKey, setting.get('silage_pit'))
-  const homes: Place[] = pit ? [shop, bins, pit] : [shop, bins]
+  // The farm's other unloading yards (a hay yard, a ranch): feed is trucked
+  // from a field to one, and it may go on to an elevator from there.
+  const yards: Place[] = (yardRows.data ?? []).map((y) => ({ key: yardKey(y.id as string), lat: Number(y.lat), lng: Number(y.lng) }))
+  const homes: Place[] = [shop, bins, ...(pit ? [pit] : []), ...yards]
   const trailKmh = num((setting.get('trail_speed') as { kmh?: unknown } | undefined)?.kmh) ?? TRAIL_KMH_DEFAULT
   const elevators: Place[] = (sites.data ?? []).map((s) => ({ key: siteKey(s.id as string), lat: Number(s.lat), lng: Number(s.lng) }))
   // Via points a field's route must pass through (fields.route_through): each is
@@ -168,7 +173,7 @@ export async function runRoadRoutes(sb: SupabaseClient, opts: { force?: boolean;
   for (let i = 0; i < moved.length; i += 200) await sb.from('road_snaps').delete().in('id', moved.slice(i, i + 200))
   const lookup = (origin: string) => (p: LatLng) => cache.get(origin)?.get(ptKey(p))
 
-  type FieldPlans = { shop: PlanResult; bins: PlanResult; pit: PlanResult | null }
+  type FieldPlans = { shop: PlanResult; bins: PlanResult; pit: PlanResult | null; yards: [Place, PlanResult][] }
   const compute = () => {
     const needs = new Map<string, Map<string, LatLng>>()
     const need = (origin: string, pts: LatLng[]) => {
@@ -198,12 +203,12 @@ export async function runRoadRoutes(sb: SupabaseClient, opts: { force?: boolean;
         if (r.need.length) need(lastKey, r.need)
         return r.plan ? { ...r, plan: withLegs(r.plan, legs) } : r
       }
-      const p = { shop: one(shop), bins: one(bins), pit: pit ? one(pit) : null }
+      const p = { shop: one(shop), bins: one(bins), pit: pit ? one(pit) : null, yards: yards.map((y): [Place, PlanResult] => [y, one(y)]) }
       plans.set(f.id, p)
       // Grain leaves for an elevator the way it came in to the bins.
       if (p.bins.plan) for (const e of elevators) if (!lookup(e.key)(p.bins.plan.approach)) need(e.key, [p.bins.plan.approach])
     }
-    for (const e of elevators) if (!lookup(binsKey)(e)) need(binsKey, [e])
+    for (const y of [bins, ...yards]) for (const e of elevators) if (!lookup(y.key)(e)) need(y.key, [e])
     return { plans, needs }
   }
 
@@ -311,6 +316,10 @@ export async function runRoadRoutes(sb: SupabaseClient, opts: { force?: boolean;
     }
     if (pit && p.pit?.plan && !typed.has(`${pitKey}>${fk}`)) rows.push(row(pit, fk, p.pit.plan.entry, p.pit.plan))
     else if (pit && p.pit && !p.pit.plan && p.pit.need.length) waiting++
+    for (const [y, r] of p.yards) {
+      if (r.plan && !typed.has(`${y.key}>${fk}`)) rows.push(row(y, fk, r.plan.entry, r.plan))
+      else if (!r.plan && r.need.length) waiting++
+    }
     const b = p.bins.plan
     if (!b) continue
     for (const e of elevators) {
@@ -318,14 +327,15 @@ export async function runRoadRoutes(sb: SupabaseClient, opts: { force?: boolean;
       if (leg && !typed.has(`${fk}>${e.key}`)) rows.push(row({ key: fk, ...b.entry }, e.key, e, leg))
     }
   }
-  for (const e of elevators) {
-    const s = lookup(binsKey)(e)
-    if (s?.roadKm == null || s.roadMin == null || typed.has(`${binsKey}>${e.key}`)) continue
+  // From the bins, and from each farm yard, out to every elevator.
+  for (const [y, e] of [bins, ...yards].flatMap((y) => elevators.map((e) => [y, e] as const))) {
+    const s = lookup(y.key)(e)
+    if (s?.roadKm == null || s.roadMin == null || typed.has(`${y.key}>${e.key}`)) continue
     rows.push({
-      from_key: binsKey,
+      from_key: y.key,
       to_key: e.key,
-      from_lat: bins.lat,
-      from_lng: bins.lng,
+      from_lat: y.lat,
+      from_lng: y.lng,
       to_lat: e.lat,
       to_lng: e.lng,
       distance_km: s.roadKm,

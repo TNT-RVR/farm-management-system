@@ -23,6 +23,7 @@ import {
   type PlaceKind,
 } from '@/lib/gas-bills'
 import { cn } from '@/lib/utils'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 const money0 = (v: number) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
 const perGj = (v: number | null) => (v == null ? '—' : `$${v.toFixed(2)}`)
@@ -114,7 +115,7 @@ export function GasBills() {
         {bySite.length ? (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[620px] text-sm">
-              <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+              <thead className={TABLE_HEAD}>
                 <tr>
                   <th className="py-1 pr-3 font-medium">Site</th>
                   <th className="py-1 pr-3 text-right font-medium">Bills</th>
@@ -137,11 +138,12 @@ export function GasBills() {
       </section>
 
       {byYear.length > 0 && (
-        <section className="rounded-lg border border-gray-200 bg-white p-3">
-          <h2 className="mb-2 text-sm font-semibold text-gray-900">By year</h2>
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <h2 className={cn('font-medium', CARD_HEAD)}>By year</h2>
+          <div className="p-3">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
-              <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+              <thead className={TABLE_HEAD}>
                 <tr>
                   <th className="py-1 pr-3 font-medium">Year</th>
                   <th className="py-1 pr-3 text-right font-medium">Bills</th>
@@ -159,6 +161,8 @@ export function GasBills() {
               </tbody>
             </table>
           </div>
+
+          </div>
         </section>
       )}
 
@@ -166,7 +170,7 @@ export function GasBills() {
         <Fold title="By month" summary={`${byMonth.length} months`} storageKey="gas-by-month">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[420px] text-sm">
-              <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+              <thead className={TABLE_HEAD}>
                 <tr>
                   <th className="py-1 pr-3 font-medium">Month</th>
                   <th className="py-1 pr-3 text-right font-medium">Bills</th>

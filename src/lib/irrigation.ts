@@ -235,6 +235,12 @@ export function useFieldBalanceSeries(fieldId: string | undefined) {
  * it. A database trigger retires the standing task the moment this lands —
  * waiting for the next sync would leave the task the person is looking at
  * sitting there, which reads as the tick not having worked.
+ *
+ * The daily sync also sets and clears this by itself now
+ * (src/lib/watering-done.ts). Writing 'person' here is what keeps the two
+ * apart on screen: a season the app worked out shows its reasoning, and one
+ * somebody marked says so. The one thing that overrules a person is a pivot
+ * pass logged after the mark, which is not an opinion.
  */
 export function useSetIrrigationDone(cropYear: number) {
   const queryClient = useQueryClient()
@@ -245,6 +251,8 @@ export function useSetIrrigationDone(cropYear: number) {
         .update({
           irrigation_done_at: v.done ? new Date().toISOString() : null,
           irrigation_done_by: v.done ? v.userId : null,
+          irrigation_done_source: v.done ? 'person' : null,
+          irrigation_done_note: null,
         })
         .eq('id', v.seasonId)
       if (error) throw error

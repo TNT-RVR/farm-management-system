@@ -264,3 +264,45 @@ export function flagsFor(
   }
   return out
 }
+
+/**
+ * The screenshot is of a different bin from the one it is being added to
+ * (Sam, 27 Oct 2026) — easy to do with the Bin-Sense list open and a dozen
+ * bins in it, and a reading on the wrong bin is worse than no reading.
+ *
+ * Compared by the numbers in the two names, which is what people read:
+ * Bin-Sense says "Bin #21", ours says "Main Yard - #21". A name with no number
+ * in it proves nothing either way, so that passes without a warning.
+ */
+const numbersIn = (s: string) => (s.match(/\d+/g) ?? []).map(Number)
+export function differentBin(shot: string | null, ours: string): boolean {
+  if (!shot) return false
+  const a = numbersIn(shot)
+  const b = numbersIn(ours)
+  if (!a.length || !b.length) return false
+  return !a.some((n) => b.includes(n))
+}
+
+/**
+ * Which sensors on the cable are above the grain, worked out from how much is
+ * in the bin (Sam, 27 Oct 2026: "I can also make the app work this out on
+ * its own" — the app knows the bushels and the bin's capacity).
+ *
+ * The cable hangs the height of the bin with its sensors spread evenly down
+ * it, so sensor i of n from the top covers the slice between (n-i-1)/n and
+ * (n-i)/n of the bin's height. A sensor is only called air when the WHOLE of
+ * its slice is above the grain: a bin half full of grain that has peaked in
+ * the middle, or a hopper bottom holding its first bushels in the cone, both
+ * put the grain higher than the bushels alone suggest, and leaving a sensor
+ * out that was buried loses a real reading. The person sees the ticks and can
+ * change any of them.
+ *
+ * `share` is bushels held ÷ capacity. Nothing is ticked without both figures,
+ * nor for an empty bin, where every sensor would go and there would be no
+ * reading left to save.
+ */
+export function aboveGrain(count: number, share: number | null | undefined): boolean[] {
+  const none = Array.from({ length: Math.max(0, count) }, () => false)
+  if (!count || share == null || !Number.isFinite(share) || share <= 0 || share >= 1) return none
+  return none.map((_, i) => (count - i - 1) / count > share)
+}

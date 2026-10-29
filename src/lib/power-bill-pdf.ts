@@ -16,13 +16,7 @@ import { groupRows, type Word } from './ici-invoice-pdf.ts'
  * - **A notice**: the retailer's "your ebill has arrived" email or a payment
  *   receipt, forwarded and printed to PDF. An amount and a date; no sites.
  * - **Anything else**: a power bill in a layout not known here (left to the
- *   model reader, netlify/shared/power-bill-read.ts), or not a power bill —
- *   among them Azgard Solar's equipment invoices, booked to the same vendor
- *   as its power. (No Azgard power bill PDF had been seen when this was
- *   written, 16 Oct 2026: none attached in QuickBooks, none in the mailbox,
- *   and the portal's PDFs will not come out of the page. One that turns up
- *   goes to the model, and the sites the portal already has are left off it:
- *   see coveredByPortal in power-bills-core.ts.)
+ *   model reader, netlify/shared/power-bill-read.ts), or not a power bill.
  *
  * Every site's charges are checked against the bill's own subtotals and
  * totals; a reading that does not add up says so in `warnings`.
@@ -87,7 +81,7 @@ export type ParsedNotice = {
   due_date: string | null
 }
 
-export type ParsedOther = { kind: 'other'; looksLikePower: boolean; /** What it is, when known: "an Azgard Solar equipment invoice". */ note?: string }
+export type ParsedOther = { kind: 'other'; looksLikePower: boolean; /** What it is, when known: "a solar supplier's equipment invoice". */ note?: string }
 
 export type PowerPdfReading = ParsedBill | ParsedNotice | ParsedOther
 
@@ -380,7 +374,6 @@ const RETAILERS: [RegExp, string][] = [
   [/equs/i, 'EQUS REA'],
   [/hudson/i, 'Hudson Energy'],
   [/fortis/i, 'FortisAlberta'],
-  [/azgard/i, 'Azgard Energy'],
 ]
 const retailerOf = (t: string) => RETAILERS.find(([re]) => re.test(t))?.[1] ?? null
 
@@ -455,20 +448,10 @@ export function parseBillNotice(text: string): ParsedNotice | null {
   return null
 }
 
-/** An electricity retailer's name that is Azgard (its bills are printed by UtilNet). */
-export const isAzgardRetailer = (t: string | null | undefined) => /azgard|utilnet/i.test(t ?? '')
-
-/**
- * Azgard Solar's own invoice for equipment (modules, racking, a utility
- * application), booked to the same vendor in QuickBooks as the power: an
- * invoice with item lines and no energy on it.
- */
-export const isAzgardEquipmentInvoice = (text: string) => /Azgard Solar/i.test(text) && /\bI\s?N\s?V\s?O\s?I\s?C\s?E\b/.test(text) && /Item Description/i.test(text) && !/\bkWh\b/i.test(text)
 
 /** One power bill PDF, from its words and its text. */
 export function readPowerBillText(pages: Word[][], text: string): PowerPdfReading {
   if (isEpcorBill(text)) return parseEpcorBill(pages)
-  if (isAzgardEquipmentInvoice(text)) return { kind: 'other', looksLikePower: false, note: 'An Azgard Solar equipment invoice (solar modules, racking), not a power bill' }
   const notice = parseBillNotice(text)
   if (notice) return notice
   // A bill in a layout not known here: it has a site or meter and some kWh.

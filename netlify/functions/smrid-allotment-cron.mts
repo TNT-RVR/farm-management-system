@@ -1,8 +1,8 @@
-import { createClient } from '@supabase/supabase-js'
 import { syncSmridAllotment } from '../shared/smrid-allotment.ts'
 import { MANAGER_ROLES } from './_jd.mts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { farmFeatureOn } from '../../src/lib/farm-context.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 // Every morning: read SMRID's notices and bring the season's allotment up to
 // what the district last announced (15 → 16 → 17 in during 2026). Managers get
@@ -19,7 +19,7 @@ export default async () => {
   // Switched off in Farm setup (or a fresh install that has not turned it on).
   if (!farmFeatureOn('district_allotment')) return new Response('Irrigation district allotment is switched off in Farm setup', { status: 200 })
   if (!url || !serviceKey) return new Response('Not configured', { status: 500 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
   const now = new Date().toISOString()
   try {
     const r = await syncSmridAllotment(sb, async () => {

@@ -7,6 +7,7 @@ import { quickbooksConnect, useQbCompany, useQbDisconnect, useQbSync } from '@/l
 import { cn } from '@/lib/utils'
 import { OAuthBanner } from './OAuthBanner'
 import { syncedAt } from './format'
+import { askConfirm } from '@/components/askConfirm'
 
 /**
  * QuickBooks Online: connect, sync, disconnect. Owners and finance access only
@@ -103,8 +104,8 @@ export function QuickBooksPanel() {
                 Re-read everything
               </button>
               <button
-                onClick={() => {
-                  if (window.confirm('Disconnect QuickBooks? The synced records stay; nothing new comes in until you connect again.')) disconnect.mutate()
+                onClick={async () => {
+                  if (await askConfirm('Disconnect QuickBooks? The synced records stay; nothing new comes in until you connect again.', { confirmLabel: 'Disconnect' })) disconnect.mutate()
                 }}
                 disabled={disconnect.isPending}
                 className="rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"

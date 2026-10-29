@@ -3,6 +3,7 @@ import { Plus, RotateCcw, X } from 'lucide-react'
 import { useDeleteLine, useSaveLine } from '@/lib/profit-loss-data'
 import { money, type Line, type SavedLine, type Side } from '@/lib/profit-loss-lines'
 import { cn } from '@/lib/utils'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * One side of a field's books on the Profit/Loss Map:
@@ -76,11 +77,12 @@ export function LinesTable({
       : save.mutate({ fieldId, cropYear, line: toSaved(l, { removed: true }) })
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-3">
-      <h2 className="text-sm font-semibold text-gray-800">{title}</h2>
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h2 className={cn('font-medium', CARD_HEAD)}>{title}</h2>
+      <div className="p-3">
       <table className="mt-2 w-full table-fixed text-xs">
-        <thead>
-          <tr className="text-left text-[11px] text-gray-500">
+        <thead className={TABLE_HEAD}>
+          <tr>
             <th className="w-[36%] pb-1 font-medium">{side === 'input' ? 'Input' : 'Output'}</th>
             <th className="pb-1 text-right font-medium">Cost</th>
             <th className="pb-1 text-right font-medium">Total amount</th>
@@ -176,6 +178,8 @@ export function LinesTable({
           </button>
         ))}
       {error && <p className="mt-1 text-[11px] text-red-600">{error.message}</p>}
+
+      </div>
     </section>
   )
 }

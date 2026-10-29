@@ -8,6 +8,7 @@ import {
   useSaveProduct,
   type JdProduct,
 } from '@/lib/products'
+import { askConfirm } from '@/components/askConfirm'
 
 /**
  * What the Label column shows for a product with no PMRA registration.
@@ -75,8 +76,8 @@ export function ProductSheetCell({
           {canEdit && (
             <button
               type="button"
-              onClick={() => {
-                if (window.confirm(`Remove “${d.title}”?`)) remove.mutate(d)
+              onClick={async () => {
+                if (await askConfirm(`Remove “${d.title}”?`, { confirmLabel: 'Remove' })) remove.mutate(d)
               }}
               className="text-gray-300 hover:text-red-600"
               aria-label="Remove this sheet"

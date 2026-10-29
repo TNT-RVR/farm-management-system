@@ -4,13 +4,20 @@ import { groupPhotos } from './equipment-details'
 
 /**
  * Photos of the irrigation equipment: pump_photos (nameplates, the pump, the
- * control panel) and pivot_photos (the pivot nameplate). Both keep a resized
- * JPEG the way scale tickets do; the lists here carry no images — each one is
- * fetched when it is opened, under a LIVE_ONLY key (src/lib/offline.ts) so it
- * is never saved on the device.
+ * control panel) and pivot_photos (the pivot nameplate). Each is a resized
+ * JPEG in the equipment-photos bucket (src/lib/stored-photos.ts); the lists
+ * here carry its path, not the image, and the signed links are made when the
+ * photos are shown, under a LIVE_ONLY key (src/lib/offline.ts).
  */
 
-export type EquipmentPhotoMeta = { id: string; caption: string | null; created_at: string }
+export type EquipmentPhotoMeta = {
+  id: string
+  caption: string | null
+  filename: string | null
+  /** The file in the equipment-photos bucket. */
+  storage_path: string
+  created_at: string
+}
 
 export type PhotoKind = 'pump' | 'pivot'
 
@@ -26,10 +33,10 @@ export function useEquipmentPhotoIndex(kind: PhotoKind) {
     queryKey: [t.indexKey],
     staleTime: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase.from(t.table).select(`id, ${t.owner}, caption, created_at`).order('created_at')
+      const { data, error } = await supabase.from(t.table).select(`id, ${t.owner}, caption, filename, storage_path, created_at`).order('created_at')
       if (error) throw error
-      const rows = (data ?? []) as unknown as (EquipmentPhotoMeta & Record<string, string>)[]
-      return groupPhotos(rows, (r) => r[t.owner])
+      const rows = (data ?? []) as unknown as (EquipmentPhotoMeta & Record<string, string | null>)[]
+      return groupPhotos(rows, (r) => r[t.owner] ?? '')
     },
   })
 }

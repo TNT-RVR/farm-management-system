@@ -60,7 +60,7 @@ export function FuelTotal({ rows, dieselPerL, acres }: { rows: OpFuel[]; dieselP
         in fuel across these passes{acres ? ` · ${$((s.litres * dieselPerL) / acres)}/ac` : ''} — {L(s.inField)} in the field
         {s.logged > 0 && s.logged < s.inField ? ` (${L(s.logged)} of it logged by the machines)` : s.logged > 0 ? ' (logged by the machines)' : ' (estimated)'}, {L(s.travel)} driving to it
         and back ({Math.round(s.travelKm)} km) · diesel ${dieselPerL.toFixed(2)}/L ·{' '}
-        <Link to="/hauling?tab=fuel" className="text-brand-700 underline decoration-dotted">
+        <Link to="/fuel?tab=fuel#fuel-use" className="text-brand-700 underline decoration-dotted">
           how it is worked out
         </Link>
       </span>

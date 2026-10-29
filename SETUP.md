@@ -81,21 +81,29 @@ template button isn't there, use GitHub's **Import repository** instead.
 
 ## 4. Make it yours — in the app
 
-Open **Settings → Farm setup**. The checklist at the top takes you through it:
+Open **Settings → Farm setup**. The checklist on its *Overview* tab takes you
+through it:
 
-- your farm's name, logo, location, province, time zone and units;
-- **Site address** and **Notification secret** (press *Generate*) under
-  *Connections and keys* — sign-in links, John Deere and phone notifications
-  use them;
+- your farm's name, logo, location, province, time zone and units (*Your
+  farm*);
+- **Site address** and **Notification secret** (press *Generate*) in
+  **Settings → Connections** — sign-in links, John Deere and phone
+  notifications use them;
 - your retailer, irrigation district, combine, main ranch and calf sale;
-- which parts of the app your farm uses — parts built for the original farm's
-  equipment (its pump-station controller, collars, contract canola report,
-  staff calendar, irrigation district, retailer invoices) start switched off;
-- the keys for anything you connect (below).
+- which parts of the app your farm uses (*Parts of the app*) — parts built for
+  the original farm's equipment (its pump-station controller, collars,
+  contract canola report, staff calendar, irrigation district, retailer
+  invoices) start switched off, and anything you switch off leaves the menu
+  for everyone;
+- the keys for anything you connect, in **Settings → Connections** (below).
 
 Then the **Getting started** card on the home screen walks through crops,
 fields (draw them, import a shapefile or KML, or connect John Deere), this
 year's plan and, if you run cattle, your first ranch.
+
+The README's [Finding your way](README.md#finding-your-way) explains the
+season menu, and each person can arrange their own under **Settings → My
+account → Menu**.
 
 For anything else, ask your AI assistant. [CLAUDE.md](CLAUDE.md) tells it how
 the project fits together.
@@ -105,8 +113,8 @@ the project fits together.
 Step-by-step instructions and costs for each are in
 [docs/RUNNING-COSTS.md](docs/RUNNING-COSTS.md).
 
-Each stays off until its keys are set. Paste them in **Settings → Farm setup →
-Connections and keys**, where they are stored so only the server can read
+Each stays off until its keys are set. Paste them in **Settings →
+Connections**, where they are stored so only the server can read
 them. A Netlify environment variable with the same name also works, and wins
 if both are set.
 
@@ -138,7 +146,7 @@ About forty jobs run on a schedule — weather, prices, river levels, Deere
 syncs, reminders. Jobs for things you haven't connected or have switched off
 skip themselves, but they still start. On Netlify's free plan, watch
 **Usage** for the first week; if you're close to the limit, switch off parts
-of the app you don't use in Farm setup. Each deploy costs credits too, which
+of the app you don't use in Farm setup → Parts of the app. Each deploy costs credits too, which
 matters more than the jobs while you're customizing. See
 [docs/RUNNING-COSTS.md](docs/RUNNING-COSTS.md#1-website-netlify).
 
@@ -146,7 +154,7 @@ matters more than the jobs while you're customizing. See
 
 Rivers, the weather stations behind irrigation scheduling, the grain moisture
 meter and irrigation districts were built around the original farm. The
-bottom of **Settings → Farm setup** — and [docs/CUSTOMIZING.md](docs/CUSTOMIZING.md)
+*Fitting it to your farm* tab of **Settings → Farm setup** — and [docs/CUSTOMIZING.md](docs/CUSTOMIZING.md)
 — says what to gather for each and gives a prompt to paste into your AI
 assistant.
 

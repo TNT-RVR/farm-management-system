@@ -22,10 +22,8 @@ import { cn } from '@/lib/utils'
 import { cullCowValue, useCowQuotes } from '@/lib/cull-cow'
 import type { CattleHelpKey } from '@/lib/cattle-help'
 import { CattleInfo } from './CattleInfo'
-
-const money = (v: number | null | undefined) =>
-  v == null || !Number.isFinite(v) ? '—' : `${v < 0 ? '−' : ''}$${Math.abs(Math.round(v)).toLocaleString('en-CA')}`
-const n0 = (v: number) => Math.round(v).toLocaleString('en-CA')
+import { money, n0 } from '@/lib/format'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 type Quote = { lo: number; hi: number; perCwt: number }
 
@@ -314,8 +312,8 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
           </p>
           <ul className="mt-2 space-y-1.5">
             {inputs.sale.map((s) => (
-              <li key={s.key} className={cn('flex items-baseline gap-2 rounded-md px-2 py-1 text-sm', s.key === bestKey ? 'bg-green-50 ring-1 ring-green-300' : '')}>
-                <span className="w-36 shrink-0 font-medium text-gray-900">
+              <li key={s.key} className={cn('flex flex-wrap items-baseline gap-2 rounded-md px-2 py-1 text-sm', s.key === bestKey ? 'bg-green-50 ring-1 ring-green-300' : '')}>
+                <span className="w-full shrink-0 font-medium text-gray-900 sm:w-36">
                   {s.label}
                   <span className="block text-[11px] font-normal text-gray-500">
                     {s.when} · {n0(s.weightLb)} lb{s.pricePerLb != null && ` @ $${s.pricePerLb.toFixed(2)}/lb`}
@@ -363,7 +361,7 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-[10px] uppercase tracking-wide text-gray-400">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th className="px-3 py-2 font-medium">Keep</th>
               <th className="px-3 py-2 text-right font-medium">Cows next year</th>

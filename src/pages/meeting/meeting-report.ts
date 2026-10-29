@@ -1,9 +1,11 @@
 import { useTasks } from '@/lib/tasks'
 import { useFields, useUsers } from '@/lib/queries'
-import { useCalendarEvents, useMonthlyInstances, useMonthlyTemplates } from '@/lib/calendar'
+import { useCalendarEvents } from '@/lib/calendar'
+import { assigneesOf, monthlyLists, outstanding, tasksByCopy, windowLabel, ymOf } from '@/lib/monthly'
+import { useMonthlyCopies, useMonthlyJobs } from '@/lib/monthly-data'
 import { useRuns } from '@/lib/checklists'
 import { useFieldSeasons, useForecastCrossings } from '@/lib/irrigation'
-import { carriedOver, dueInWeek, groupAlerts, MEETING_WEATHER_MODEL, useMeetingAlerts, monthlyOutstanding, toISO, unassignedTasks, useMeetingNote, waterThisWeek, weekDays, weekEventsOf, weekStart } from '@/lib/meeting'
+import { carriedOver, dueInWeek, groupAlerts, MEETING_WEATHER_MODEL, useMeetingAlerts, toISO, unassignedTasks, useMeetingNote, waterThisWeek, weekDays, weekEventsOf, weekStart } from '@/lib/meeting'
 import { awayThisWeek, useTimeOff } from '@/lib/timeoff'
 import { useFeature } from '@/lib/farm-setup'
 import { useWeeklyFact } from '@/lib/meeting-fact'
@@ -34,8 +36,8 @@ export const useMeetingRun: HookRun = (p, ctx) => {
   const events = useCalendarEvents()
   // The crop year the app is set to, as on the meeting page.
   const runs = useRuns(ctx.cropYear)
-  const templates = useMonthlyTemplates()
-  const instances = useMonthlyInstances(ctx.cropYear)
+  const templates = useMonthlyJobs()
+  const instances = useMonthlyCopies()
   const crossings = useForecastCrossings()
   const seasons = useFieldSeasons(ctx.cropYear)
   const note = useMeetingNote(monday)
@@ -74,7 +76,15 @@ export const useMeetingRun: HookRun = (p, ctx) => {
         carried: carriedOver(tasks.data ?? [], monday).map(lite),
         due: dueInWeek(tasks.data ?? [], monday).map(lite),
         unassigned: unassignedTasks(tasks.data ?? []).map(lite),
-        monthly: monthlyOutstanding(templates.data ?? [], instances.data ?? [], monday).map((x) => ({ title: x.template.title, who: nameOf(x.template.default_assignee) })),
+        // The meeting page's Monthly block, still to do: leftovers, then the meeting's month.
+        monthly: (() => {
+          const byCopy = tasksByCopy(tasks.data ?? [])
+          const lists = monthlyLists(templates.data ?? [], instances.data ?? [], ymOf(weekDays(monday)[0]))
+          return outstanding(lists, false).map((x) => {
+            const who = assigneesOf(byCopy.get(x.copy.id)).map(nameOf).filter((n): n is string => !!n)
+            return { title: x.job.title, when: x.start === x.end ? null : windowLabel(x.copy, x.job, true), who: who.length ? who.join(', ') : nameOf(x.job.default_assignee) }
+          })
+        })(),
         runs: (runs.data ?? []).filter((r) => r.status === 'open').map((r) => ({ name: r.name })),
         water: waterThisWeek(crossings.data ?? new Map(), done, fieldName, monday),
         doneWatering: [...done].map(fieldName).sort(),

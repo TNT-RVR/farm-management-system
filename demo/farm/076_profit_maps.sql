@@ -1,6 +1,6 @@
 -- Maps inside the fields (made up), all from the same productivity pattern as
 -- the satellite greenness (074_productivity.sql), so the low spots line up:
---   * productivity zones for every field (Fertilizer → Productivity zones, and
+--   * productivity zones for every field (Planting season → Fertility plan → Productivity zones, and
 --     the zone overlay on the map), from a 40 m grid clipped to the boundary;
 --   * this harvest's yield-monitor layer on three fields, on the app's own 5 m
 --     farm grid (the Profit/Loss map);

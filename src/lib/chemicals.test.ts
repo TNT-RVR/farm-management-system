@@ -129,7 +129,7 @@ describe('isExcludedType', () => {
 })
 
 describe('mergeMatches', () => {
-  const c = (id: string, name: string) => ({ id, name }) as never
+  const c = (id: string, name: string) => ({ id, name })
 
   it('dedupes a product found by more than one column', () => {
     const a = c('1', 'Roundup')

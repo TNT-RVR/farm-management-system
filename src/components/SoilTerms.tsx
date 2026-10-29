@@ -1,9 +1,8 @@
 import { InfoPopover } from '@/components/InfoPopover'
 import { TEXTURE, type SoilHorizon } from '@/lib/soil-landscape'
 import { SOIL_COLUMN_HELP, parseHorizon } from '@/lib/soil-glossary'
-
-const n1 = (v: number | null | undefined) =>
-  v == null ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 1 })
+import { n1 } from '@/lib/format'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /** The info button beside a column heading. */
 export function SoilTermInfo({ term }: { term: keyof typeof SOIL_COLUMN_HELP | string }) {
@@ -83,8 +82,8 @@ export function HorizonTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-[11px]">
-        <thead>
-          <tr className="border-b border-gray-200 text-left text-gray-500">
+        <thead className={TABLE_HEAD}>
+          <tr>
             {shown.map((c) => (
               <th
                 key={c.key}

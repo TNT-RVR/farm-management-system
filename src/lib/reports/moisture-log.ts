@@ -51,8 +51,6 @@ export const cropBands = (c: MCrop): MoistureBands => ({
   dry_min: num(c.moisture_dry_min),
   dry_max: num(c.moisture_dry_max),
   tough_max: num(c.moisture_tough_max),
-  damp_max: num(c.moisture_damp_max),
-  moist_max: num(c.moisture_moist_max),
 })
 
 /** The farm's day and time of a test. */

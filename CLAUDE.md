@@ -48,8 +48,25 @@ A farm and ranch management web app, installable on a phone.
   without the second step. A new server function that checks who is signed
   in must use `getUserMfa` (`netlify/shared/auth-mfa.ts`), not
   `sb.auth.getUser`.
-- **Every new page** needs a tile in `TILES` in `src/lib/tiles.ts`; a test
-  checks that nothing is unreachable from the home screen.
+- **Every new page** needs a lazy-loaded route in `src/App.tsx`, a tile in
+  `TILES` in `src/lib/tiles.ts`, and a view in the season menu,
+  `src/lib/nav-tree.ts` (`VIEW_LIST`, then list its key in its home section).
+  Tests check that every view points at a real route and sits in its home
+  section, and that nothing is unreachable from the home screen. Search
+  (`src/lib/search/`) indexes pages and tabs; add new tabs to `tabs.ts`.
+- **The menu is section › view › tabs.** Sections are grouped by season
+  (Planting, Growing, Harvest, Winter) among year-round ones (Fields,
+  Financials, Cattle, Equipment, Tasks & calendar, Tools, Settings). A view
+  may be listed in more than one section; outside its home it shows a ↗.
+  Each view has a single row of tabs (`src/components/PillTabs.tsx`, state
+  in `?tab=` via `src/lib/useTab.ts`); keep it to six or fewer, the rest fold
+  behind "+N ▾", and never add a second row of tabs inside a tab. A view
+  key is saved in people's menu choices (`users.menu_prefs`), so never
+  rename or reuse one.
+- **Keep old addresses working.** When a page is split or a tab is renamed,
+  add a redirect that maps the old path and `?tab=` to the new place
+  (examples: `src/lib/settings-routes.ts`, the redirects in `src/App.tsx`).
+  Bookmarks, notification links and alert rows in the database carry them.
 - Read comments before changing the code around them. Many explain a
   real-world reason (a supplier's quirk, a unit trap such as US vs imperial
   gallons, a sensor that lies) that isn't obvious from the code.
@@ -59,8 +76,9 @@ A farm and ranch management web app, installable on a phone.
 Good first steps, in roughly this order:
 
 1. **Settings → Farm setup in the app**, not code: name, logo, location,
-   units, suppliers, which parts of the app the farm uses, the keys, and a
-   description of the farm. Every AI feature reads that description, so a
+   units, suppliers, which parts of the app the farm uses (*Parts of the
+   app*: switching one off removes its views from everyone's menu), and a
+   description of the farm. Keys go in **Settings → Connections**. Every AI feature reads that description, so a
    good one (crops, soils, water, livestock, what the farm does NOT do) is
    worth more than any prompt change. `src/config/brand.ts` is only the
    fallback before setup is saved.

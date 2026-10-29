@@ -34,8 +34,22 @@ describe('field list', () => {
       { id: 's3', field_id: 'b', irrigation_done_at: null },
     ])
     expect([...doneWateringFields(seasons)]).toEqual(['a'])
-    const cols = fieldListColumns({ cropYear: 2026, hailFields: new Set(['b']), doneFields: new Set(['a']) })
-    expect(cols.map((c) => c.label)).toEqual(['Field', 'Legal Description', 'Crop 2026', 'Map Acres', 'Hail 2026', 'Done watering'])
+    expect(seasons.get('a')?.irrigation_done_source).toBeNull()
+  })
+
+  it('carries the season state and the hail chip into the CSV', () => {
+    const cols = fieldListColumns({
+      cropYear: 2026,
+      state: (id) => (id === 'a' ? { label: 'Off', why: 'last load 21 Oct' } : { label: 'Growing', why: '' }),
+      hail: (id) => (id === 'b' ? '17% on 125 ac' : null),
+    })
+    expect(cols.map((c) => c.label)).toEqual(['Field', 'Legal Description', 'Crop 2026', 'Map Acres', 'Season 2026', 'Hail 2026'])
+    const row = (id: string) => ({ id }) as Parameters<(typeof cols)[0]['value']>[0]
+    const by = (key: string) => cols.find((c) => c.key === key)!
+    expect(by('state').value(row('a'))).toBe('Off')
+    // Not "no": the file says what is recorded, and nothing is.
+    expect(by('hail').value(row('a'))).toBe('')
+    expect(by('hail').value(row('b'))).toBe('17% on 125 ac')
   })
 })
 

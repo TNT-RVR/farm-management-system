@@ -38,14 +38,6 @@ import { chunks, pdfWords, runAttachmentReader, type Reading, type ReaderOptions
  *
  * Natural gas (Direct Energy) is read by gas-bills-qb-read.ts, into Utilities → Gas.
  *
- * Azgard (Sam, 16 Oct 2026: read the Azgard power bills): its power comes
- * in from its account page (power_bills.source 'portal', a row per site per
- * invoice). QuickBooks books Azgard's power as bank payments with nothing
- * attached; the PDFs on its bills there are Azgard Solar's equipment invoices,
- * which are told apart and left out ('no_lines'). An Azgard power bill that is
- * attached later has no text layout known here, so it is queued for the model
- * reader, and power-bills-background leaves off it every site the account
- * page already has for that month (coveredByPortal).
  *
  * Runs nightly at the end of quickbooks-sync-background, on demand by
  * power-bills-qb-background, and locally by scripts/read-power-bills.mjs
@@ -55,7 +47,11 @@ import { chunks, pdfWords, runAttachmentReader, type Reading, type ReaderOptions
 export const READER = 'power_bills'
 export const HEALTH_KEY = 'power_bills_qb'
 /** The electricity retailers whose bills carry the PDFs, as QuickBooks names them. */
-export const VENDORS = ['epcor%', 'hudson energy%', 'equs%', 'azgard%'] as const
+export const VENDORS = [
+  'epcor%',
+  'hudson energy%',
+  'equs%',
+] as const
 export const SINCE = '2022-01-01'
 
 export type PowerStatus = 'sites' | 'notice' | 'queued' | 'kept' | 'duplicate' | 'no_lines' | 'failed'

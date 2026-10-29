@@ -1,3 +1,5 @@
+import { farmFiscalEndMonth } from './farm-context'
+import { fiscalEndYearOf } from './fiscal-year'
 import { COST_TIMING, DEFAULT_CROP_SHARES } from '@/lib/reports/lender-review'
 import { resolveCosts, type InputRow } from '@/lib/forecast'
 import { isOffTheTop } from '@/lib/land-deals'
@@ -397,8 +399,8 @@ export function cashForecast(opts: { today: string; opening: number; kinds: Kind
   }
 }
 
-/** The fiscal year (Sep-Aug) a month falls in, by the year it ends: Oct 2026 → 2027. */
-export const fiscalEndYear = (iso: string) => Number(iso.slice(0, 4)) + (Number(iso.slice(5, 7)) >= 9 ? 1 : 0)
+/** The fiscal year a month falls in, by the year it ends (Farm setup's year-end): Oct 2026 → 2027 with a March year-end. */
+export const fiscalEndYear = (iso: string, endMonth: number = farmFiscalEndMonth()) => fiscalEndYearOf(iso, endMonth)
 
 /* ── Each kind's year ───────────────────────────────────────────────────── */
 

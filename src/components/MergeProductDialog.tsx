@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { useMergeProducts, type JdProduct } from '@/lib/products'
 import { normaliseProductName } from '@/lib/ici-invoice'
 import { cn } from '@/lib/utils'
+import { HelpNote } from '@/components/HelpNote'
 
 /**
  * "This product is really that one."
@@ -74,10 +75,10 @@ export function MergeProductDialog({
             <h3 className="text-sm font-semibold text-gray-900">
               “{duplicate.name}” is the same as…
             </h3>
-            <p className="mt-0.5 text-xs text-gray-500">
+            <HelpNote className="mt-0.5 text-xs" summary="Everything moves onto the product you pick; this row goes." title="What merging does">
               Its Deere spellings and invoice lines move onto the product you pick, its name stays
               as a spelling of it, and the price becomes the newest invoice’s. The row itself goes.
-            </p>
+            </HelpNote>
           </div>
           <button onClick={onClose} className="ml-auto rounded p-1 text-gray-400 hover:bg-gray-100">
             <X className="h-4 w-4" />

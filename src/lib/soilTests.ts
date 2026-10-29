@@ -162,9 +162,11 @@ export function useAssessmentSweep() {
  * integrations board instead, and read back here — otherwise a refused or
  * failed run is indistinguishable from one that never started.
  */
-export function useAssessmentSweepStatus() {
+export function useAssessmentSweepStatus(pending: number | null | undefined) {
   return useQuery({
     queryKey: ['soil_assessment_sweep_status'],
+    // Read only while reports are waiting: the banner it feeds is hidden otherwise.
+    enabled: Boolean(pending),
     queryFn: async () => {
       const { data, error } = await supabase
         .from('integration_health')
@@ -178,7 +180,8 @@ export function useAssessmentSweepStatus() {
     // screen. It used to poll in the background for as long as the tab stayed
     // open — on phones that left Fertilizer up, forever. Coming back to the
     // tab refetches on focus, so the banner is current the moment it is seen.
-    refetchInterval: (q) => (q.state.data?.status === 'ok' ? 60_000 : 10_000),
+    // Stops once nothing is pending (the query is disabled then).
+    refetchInterval: (q) => (!pending ? false : q.state.data?.status === 'ok' ? 60_000 : 10_000),
   })
 }
 

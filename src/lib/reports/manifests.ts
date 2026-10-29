@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { PURPOSES, totalHead, type ManifestWithLines } from '@/lib/manifests'
 import type { ReportSection } from '@/lib/table-report'
+import { myNamedSignature, type SignatureImage } from '@/lib/signature'
 import { fetchAll, longDate, pick, type Cell, type GatherContext, type Gathered, type ParamValues, type ReportData } from './framework'
 
 /**
@@ -25,7 +26,7 @@ const purposeLabel = (v: string | null) => PURPOSES.find((p) => p.value === v)?.
 const join = (...xs: (string | null | undefined)[]) => xs.filter(Boolean).join(' - ')
 
 /** One manifest as the form's tables, the first starting a fresh page unless it is the first manifest. */
-export function manifestSections(m: ManifestWithLines, first: boolean): ReportSection[] {
+export function manifestSections(m: ManifestWithLines, first: boolean, signature?: SignatureImage | null): ReportSection[] {
   const head = totalHead(m.lines)
   const blanks = Math.max(0, BLANK_ROWS - m.lines.length)
   return [
@@ -65,8 +66,10 @@ export function manifestSections(m: ManifestWithLines, first: boolean): ReportSe
       note: DECLARATION,
       head: ['Owner or agent', 'Date', 'Driver'],
       rows: [[m.signed_by, m.signed_on, '']],
-      // Room to sign above the rule, as on the paper form.
+      // Room to sign above the rule, as on the paper form; your signature
+      // there when this manifest names you and you have saved one.
       minRowHeight: 34,
+      cellImages: signature ? [{ row: 0, col: 0, image: signature }] : undefined,
     },
   ]
 }
@@ -141,12 +144,15 @@ export async function gatherManifests(p: ParamValues, ctx: GatherContext): Promi
     const report: ReportData = { title: 'Livestock manifests', subtitle, meta, columns: MANIFEST_CSV_COLUMNS, groups: [{ title: '', rows: manifestCsvRows(list) }], filename }
     return report
   }
+  // Your own signature on the manifests that name you as owner or agent.
+  const names = [...new Set(list.map((m) => m.signed_by).filter((n): n is string => !!n?.trim()))]
+  const signatures = new Map(await Promise.all(names.map(async (n) => [n, await myNamedSignature(n)] as const)))
   return {
     title: single ? 'Livestock manifest' : 'Livestock manifests',
     subtitle,
     meta,
     orientation: 'portrait',
-    sections: list.flatMap((m, i) => manifestSections(m, i === 0)),
+    sections: list.flatMap((m, i) => manifestSections(m, i === 0, signatures.get(m.signed_by ?? ''))),
     filename,
   }
 }

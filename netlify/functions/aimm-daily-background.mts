@@ -3,7 +3,7 @@ import { syncFieldRain } from '../shared/field-rain.ts'
 import { rebuildApplied } from '../shared/fieldnet-applied.ts'
 import { runScheduled } from './irrigation-sync.mts'
 import { hydrateSecrets } from '../shared/secrets.ts'
-import { farmTz } from '../../src/lib/farm-context.ts'
+import { farmToday } from '../shared/dates.ts'
 
 // The morning AIMM run, in order: rain at each field for the last few days
 // (the 6 am radar totals are out by 8), FieldNET water for the last three
@@ -14,7 +14,6 @@ import { farmTz } from '../../src/lib/farm-context.ts'
 // a few minutes) before the balance runs; ?fieldnet=season re-derives the
 // whole season of FieldNET water too; ?skipFieldnet=1 leaves FieldNET alone.
 let workerKey = process.env.JOB_WORKER_KEY ?? process.env.FACT_WORKER_KEY ?? process.env.LABEL_WORKER_KEY
-const localToday = () => new Date().toLocaleDateString('en-CA', { timeZone: farmTz() })
 const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10)
 
 export default async (req: Request) => {
@@ -25,7 +24,7 @@ export default async (req: Request) => {
   const byWorker = Boolean(workerKey) && req.headers.get('x-worker-key') === workerKey
   if (!byWorker && !(await requireManager(req, sb))) return new Response('Forbidden', { status: 403 })
   const u = new URL(req.url)
-  const today = localToday()
+  const today = farmToday()
   const rainFrom = u.searchParams.get('from') ?? addDays(today, -4)
   const rain = await syncFieldRain(sb, { from: rainFrom, to: addDays(today, -1) })
   console.log('field rain:', JSON.stringify(rain))

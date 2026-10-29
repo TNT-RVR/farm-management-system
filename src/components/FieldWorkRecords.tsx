@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CheckCircle2, Clock, CloudOff, CopyCheck, PenLine, Plus, Settings2, Tractor, Trash2, User, Wheat, Wind } from 'lucide-react'
+import { CheckCircle2, Clock, CloudOff, CopyCheck, PenLine, Plus, Tractor, Trash2, User, Wheat, Wind } from 'lucide-react'
+import { SettingsButton } from '@/components/SettingsButton'
 import { ConfirmDialog, Modal } from '@/components/Modal'
 import { Select } from '@/components/Select'
 import { DeleteButton, DetailList, EditButton, rowClick } from '@/components/RecordEditor'
@@ -23,6 +24,7 @@ import {
 } from '@/lib/field-work-data'
 import { useFeedLotFedFrom, useFieldFeedLots, type FeedInventoryRow } from '@/lib/feed-inventory'
 import { baleTypeLabel, ordinal } from '@/lib/baling'
+import { usePartnerAccess } from '@/lib/partner-view'
 import {
   fmtHours,
   machineHours,
@@ -80,7 +82,7 @@ function effortLine(r: FieldWorkRecord): string | null {
 }
 
 /** Where a baling record's bales went: the feed supply entry, on Feed records. */
-const feedLotLink = (lot: FeedInventoryRow) => `/feed-records?ranch=${lot.ranch_id}&lot=${lot.id}`
+const feedLotLink = (lot: FeedInventoryRow) => `/feed?tab=records&ranch=${lot.ranch_id}&lot=${lot.id}`
 
 const baleWords = (n: number, unit: string) => {
   const word = baleTypeLabel(unit)
@@ -377,10 +379,13 @@ export function QueuedWorkCard({ item }: { item: OutboxItem }) {
 
 /** The Record work button, and the managers' list of extra work types beside it. */
 export function RecordWorkBar({ fieldId, fieldAcres, onSaved }: { fieldId: string; fieldAcres: number | null; onSaved?: (r: { queued: boolean }) => void }) {
+  // A crop-share partner records only on a field listed for him (lib/partner-view.ts).
+  const access = usePartnerAccess()
   const { profile } = useAuth()
   const [adding, setAdding] = useState(false)
   const [types, setTypes] = useState(false)
   const [finishing, setFinishing] = useState(false)
+  if (!access.canRecordOn(fieldId)) return null
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2">
       <button
@@ -398,9 +403,7 @@ export function RecordWorkBar({ fieldId, fieldAcres, onSaved }: { fieldId: strin
         <CheckCircle2 className="h-4 w-4" /> Field finished
       </button>
       {hasManagerAccess(profile?.role) && (
-        <button type="button" onClick={() => setTypes(true)} className="flex items-center gap-1 text-xs text-gray-500 hover:text-brand-700">
-          <Settings2 className="h-3.5 w-3.5" /> Work types
-        </button>
+        <SettingsButton label="Work types" onClick={() => setTypes(true)} />
       )}
       {adding && <FieldWorkForm fieldId={fieldId} fieldAcres={fieldAcres} onClose={() => setAdding(false)} onSaved={onSaved} />}
       {types && <WorkTypesEditor onClose={() => setTypes(false)} />}

@@ -9,7 +9,6 @@ import { HelpNote } from '@/components/HelpNote'
 import { Fold } from '@/components/Fold'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useCropYear } from '@/lib/crop-year'
-import { useFarmSettings } from '@/lib/farm-setup'
 import { useFields } from '@/lib/queries'
 import { useLossFieldDefaults } from '@/lib/combine-field'
 import { LossTrend } from '@/pages/combine/LossTrend'
@@ -73,6 +72,8 @@ import {
   startingPoints,
   type ManualRow,
 } from '@/lib/combine-manual'
+import { askConfirm } from '@/components/askConfirm'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 type Tab = 'setup' | 'fix' | 'loss' | 'book' | 'monitor'
 const TAB_KEYS: Tab[] = ['setup', 'fix', 'loss', 'book', 'monitor']
@@ -118,10 +119,16 @@ function CombineView() {
   )
   const [crop, setCrop] = useState<CombineCropKey>('canola')
   const [finishing, setFinishing] = useState(false)
-  const { combineModel } = useFarmSettings()
+  // The farm's combines are whatever Equipment lists as one; a farm runs more
+  // than one, so the title names each model once (Sam, 29 Oct 2026).
+  const { data: fleet } = useEquipment()
+  const combineModels = [
+    ...new Set((fleet ?? []).filter((e) => /combine/i.test(e.equipment_type ?? '') && e.model).map((e) => e.model!.trim())),
+  ]
+  const combineModel = combineModels.join(', ')
   // The manual typed in is New Holland's CR book, so its tab only means
   // something on a CR; any other machine lands on Starting settings instead.
-  const isCR = isCRSeries(combineModel)
+  const isCR = combineModels.some(isCRSeries)
   const tab = asked === 'book' && !isCR ? 'setup' : asked
 
   const baseline = CROP_BASELINES.find((c) => c.key === crop)!
@@ -310,8 +317,8 @@ function SetupTab({
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
+          <thead className={TABLE_HEAD}>
+            <tr>
               <th className="px-3 py-2 font-medium">Setting</th>
               <th className="px-3 py-2 text-right font-medium">Start here</th>
               <th className="px-3 py-2 text-right font-medium">
@@ -616,8 +623,9 @@ function LossTab({
   return (
     <div className="grid gap-3 lg:grid-cols-[minmax(0,22rem)_1fr]">
       <div className="space-y-3">
-        <div className="rounded-lg border border-gray-200 bg-white p-3">
-          <h3 className="mb-2 text-sm font-semibold text-gray-900">How to take the sample</h3>
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <h3 className={cn('font-medium', CARD_HEAD)}>How to take the sample</h3>
+          <div className="p-3">
           <ol className="list-decimal space-y-1 pl-4 text-xs text-gray-600">
             <li>Combine at working speed in a steady part of the field, then stop.</li>
             <li>
@@ -630,6 +638,8 @@ function LossTab({
               is the rotor, grain out in the chaff is the shoe.
             </li>
           </ol>
+
+          </div>
         </div>
 
         <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-3">
@@ -847,7 +857,7 @@ function LossTab({
         <LossTrend checks={checks ?? []} crop={crop} fieldId={form.fieldId} fieldName={fieldName} />
 
         <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <h3 className="border-b border-gray-200 px-3 py-2 text-sm font-semibold text-gray-900">
+          <h3 className={cn('font-medium', CARD_HEAD)}>
             {cropYear} checks
           </h3>
           {!checks?.length ? (
@@ -897,8 +907,8 @@ function LossTab({
                   </span>
                   {canEdit && (
                     <button
-                      onClick={() => {
-                        if (window.confirm(`Delete the ${Number(c.loss_bu_per_acre).toFixed(2)} bu/ac check of ${checkDate(c.checked_at)}?`)) del.mutate(c.id)
+                      onClick={async () => {
+                        if (await askConfirm(`Delete the ${Number(c.loss_bu_per_acre).toFixed(2)} bu/ac check of ${checkDate(c.checked_at)}?`)) del.mutate(c.id)
                       }}
                       className="shrink-0 rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-600"
                       aria-label="Delete this check"
@@ -1105,10 +1115,11 @@ function ManualRowCard({ row, caveat }: { row: ManualRow; caveat: string | null 
     ['Lower sieve', MM(row.lowerMm)],
   ]
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3">
-      <h3 className="text-sm font-semibold text-gray-900">
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h3 className={cn('font-medium', CARD_HEAD)}>
         Book row: {row.name} <BookBadge />
       </h3>
+      <div className="p-3">
       {caveat && <p className="mt-0.5 text-xs text-amber-800">{caveat}</p>}
       <dl className="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-2">
         {cells.map(([k, v]) => (
@@ -1118,6 +1129,8 @@ function ManualRowCard({ row, caveat }: { row: ManualRow; caveat: string | null 
           </div>
         ))}
       </dl>
+
+      </div>
     </div>
   )
 }
@@ -1145,8 +1158,9 @@ function BookTab({ crop }: { crop: CombineCropKey }) {
         </p>
       )}
 
-      <div className="rounded-lg border border-gray-200 bg-white p-3">
-        <h3 className="text-sm font-semibold text-gray-900">Configurations and footnotes</h3>
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <h3 className={cn('font-medium', CARD_HEAD)}>Configurations and footnotes</h3>
+        <div className="p-3">
         <ul className="mt-1 space-y-1.5 text-xs text-gray-700">
           {MANUAL_NOTES.map((n) => (
             <li key={n.title}>
@@ -1154,6 +1168,8 @@ function BookTab({ crop }: { crop: CombineCropKey }) {
             </li>
           ))}
         </ul>
+
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
@@ -1167,8 +1183,8 @@ function BookTab({ crop }: { crop: CombineCropKey }) {
         {showAll && (
           <div className="overflow-x-auto border-t border-gray-100">
             <table className="w-full text-xs">
-              <thead>
-                <tr className="text-left uppercase tracking-wide text-gray-500">
+              <thead className={TABLE_HEAD}>
+                <tr>
                   <th className="px-2 py-1.5 font-medium">Crop</th>
                   <th className="px-2 py-1.5 text-right font-medium">Drum</th>
                   <th className="px-2 py-1.5 text-right font-medium">DSP</th>

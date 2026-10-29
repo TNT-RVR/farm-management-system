@@ -13,10 +13,12 @@ import { fetchFarmPowerCost, powerPrices } from '@/lib/reports/water-review'
 import { SOLAR_STATE, dateIn, summarizeSolar, type SolarSiteSummary } from '@/lib/solar'
 import { useSolarDaily, useSolarHealth, useSolarLatest, useSolarRefresh, useSolarSites } from '@/lib/solar-data'
 import { cn } from '@/lib/utils'
+import { money as fmtMoney } from '@/lib/format'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const kwh = (v: number | null | undefined) => (v == null ? '—' : Math.round(v).toLocaleString('en-CA'))
 const kw = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 1 }))
-const dollars = (v: number | null | undefined) => (v == null ? '—' : `$${Math.round(v).toLocaleString('en-CA')}`)
+const dollars = (v: number | null | undefined) => fmtMoney(v, 0, { neg: 'inside' })
 const when = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString('en-CA', { timeZone: farmTz(), month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : null
 const MONTH = (ym: string) => new Date(`${ym}-15T12:00:00Z`).toLocaleDateString('en-CA', { month: 'short', timeZone: 'UTC' })
@@ -144,8 +146,8 @@ export function SolarPage({ embedded = false }: { embedded?: boolean } = {}) {
 
       <section className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-[11px] uppercase tracking-wide text-gray-500">
+          <thead className={TABLE_HEAD}>
+            <tr>
               <th className="px-3 py-2">Plant</th>
               <th className="px-2 py-2 text-right">kWp</th>
               {s.current && <th className="px-2 py-2 text-right">Now kW</th>}
@@ -191,8 +193,8 @@ export function SolarPage({ embedded = false }: { embedded?: boolean } = {}) {
         <Fold title={`${cropYear} by month`} storageKey="solar.byMonth" summary={`${kwh(s.total.yearKwh)} kWh`}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-left text-[11px] uppercase tracking-wide text-gray-500">
+              <thead className={TABLE_HEAD}>
+                <tr>
                   <th className="py-1 pr-2">Month</th>
                   {s.rows.map((r) => (
                     <th key={r.id} className="px-2 py-1 text-right">

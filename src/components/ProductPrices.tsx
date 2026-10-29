@@ -35,6 +35,10 @@ import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 import { handAddedProduct } from '@/lib/product-hand'
 import { carryover, type CropKey, type RecropRule } from '@/lib/rotation-engine'
+import { askConfirm } from '@/components/askConfirm'
+import { HelpNote } from '@/components/HelpNote'
+import { CardList, RowCard, type Fact } from '@/components/RowCards'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * The price book behind every input cost in the app.
@@ -46,6 +50,45 @@ import { carryover, type CropKey, type RecropRule } from '@/lib/rotation-engine'
  */
 /** A price older than a season is worth a second look before costing with it. */
 const STALE_DAYS = 400
+
+/**
+ * What went where and when, which is the whole reason for keeping application
+ * history against a price. Shown under the row on a wide screen and inside the
+ * card on a phone, so it lives on its own rather than being written twice.
+ */
+function Applications({ r }: { r: Row }) {
+  return (
+    <table className="w-full text-xs">
+      <thead className={TABLE_HEAD}>
+        <tr>
+          <th className="py-1 pr-4 font-medium">Date</th>
+          <th className="py-1 pr-4 font-medium">Field</th>
+          <th className="py-1 pr-4 font-medium">Rate</th>
+          <th className="hidden py-1 pr-4 font-medium sm:table-cell">Season</th>
+          <th className="hidden py-1 font-medium sm:table-cell">Applied as</th>
+        </tr>
+      </thead>
+      <tbody>
+        {r.applications.map((a) => (
+          <tr key={`${a.operation_id}-${a.applied_name}-${a.field_id}`}>
+            <td className="py-1 pr-4 tabular-nums text-gray-700">{a.applied_on ?? '—'}</td>
+            <td className="py-1 pr-4 text-gray-700">{a.field_name ?? 'unmatched field'}</td>
+            <td className="py-1 pr-4 tabular-nums text-gray-600">
+              {a.rate_value == null
+                ? '—'
+                : `${Number(a.rate_value).toLocaleString('en-CA', { maximumFractionDigits: 3 })} ${a.rate_unit ?? ''}`}
+            </td>
+            <td className="hidden py-1 pr-4 text-gray-500 sm:table-cell">{a.crop_season ?? '—'}</td>
+            <td className="hidden py-1 text-gray-500 sm:table-cell">
+              {a.applied_name}
+              {a.from_mix && a.mix_name && <span className="text-gray-400"> · in {a.mix_name}</span>}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
 
 function isStale(iso: string): boolean {
   const d = new Date(iso)
@@ -260,217 +303,198 @@ export function ProductPrices({
   // The sortable columns, plus Type, Crops, Invoice, the Deere aliases, and Label on chemicals.
   const colSpan = COLUMNS.length + 4 + (category === 'chemical' ? 2 : 0)
 
-  const renderRow = (r: Row) => {
+  /* Each row's figures, built once and handed to both the table and the card:
+     twelve columns is screens of sideways scrolling on a phone, so under `sm`
+     a row is read down the page instead. A cell that has nothing to say
+     returns null — the table draws its dash, the card leaves the line out. */
+  const cells = (r: Row) => {
     const p = r.product
-    const isOpen = open[p.id]
-    return (
-      <Fragment key={p.id}>
-        <tr className={cn(p.price_per_unit == null && 'bg-amber-50/40')}>
-          <td className="px-3 py-2 font-medium text-gray-800">
-            {p.name}
-            {/* Same jug, spelt again by an invoice or an operator. This is the
-                judgement the importer will not make; one click here makes it. */}
-            <button
-              type="button"
-              onClick={() => setMerging(p)}
-              title="This is a second spelling of another product — fold it in"
-              className="ml-2 text-[11px] font-normal text-gray-400 underline decoration-dotted hover:text-gray-800"
-            >
-              same as…
-            </button>
-            {/* Only once the applications and invoices have loaded, or every product would look unused. */}
-            {isManager &&
-              apps &&
-              purchases &&
-              handAddedProduct({
-                aliases: r.aliases.length,
-                purchases: purchases?.byProduct.get(p.id)?.length ?? 0,
-                applications: r.applications.length,
-              }) && (
-                <button
-                  type="button"
-                  disabled={deleteProduct.isPending}
-                  onClick={() => {
-                    if (window.confirm(`Delete ${p.name} from the price list? It was added by hand: no Deere record or invoice uses it.`)) deleteProduct.mutate(p.id)
-                  }}
-                  title="Added by hand and used by nothing — remove it"
-                  className="ml-2 text-[11px] font-normal text-red-400 underline decoration-dotted hover:text-red-700"
-                >
-                  delete
-                </button>
-              )}
-          </td>
-          <td className="px-3 py-2 text-xs text-gray-600">{r.type ?? <span className="text-gray-300">—</span>}</td>
-          <td className="px-3 py-2">
-            <select
-              value={p.unit}
-              onChange={(e) => saveProduct.mutate({ id: p.id, unit: e.target.value as 'L' | 'kg' })}
-              className="rounded border border-gray-300 px-1.5 py-1 text-xs"
-            >
-              <option value="L">$ / L</option>
-              <option value="kg">$ / kg</option>
-            </select>
-          </td>
-          <td className="px-3 py-2 text-right">
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              inputMode="decimal"
-              value={draft[p.id] ?? p.price_per_unit ?? ''}
-              onChange={(e) => setDraft((d) => ({ ...d, [p.id]: e.target.value }))}
-              onBlur={() => commit(p)}
-              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-              placeholder="—"
-              className="w-24 rounded border border-gray-300 px-2 py-1 text-right text-sm tabular-nums"
-            />
-          </td>
-          {/* Where the price came from, and when. A price with no date is
-              one somebody typed, and it has been ageing quietly ever
-              since while the field costs treated it as current. */}
-          <td className="px-3 py-2 text-xs">
-            {p.price_updated_on ? (
-              <span className={cn(isStale(p.price_updated_on) && 'text-amber-700')}>
-                {p.price_updated_on}
-                {p.price_source && (
-                  <span className="block text-[10px] text-gray-400">{p.price_source}</span>
-                )}
-              </span>
-            ) : p.price_per_unit != null ? (
-              <span className="text-gray-400">entered by hand</span>
-            ) : (
-              <span className="text-gray-300">—</span>
-            )}
-          </td>
-          {/* Which fields it went on. Two named, then a count — the full list
-              is one click away and a dozen field names in a cell is a wall. */}
-          <td className="px-3 py-2 text-xs">
-            {r.fields.length === 0 ? (
-              <span className="text-gray-300">—</span>
-            ) : (
+    return {
+      isOpen: !!open[p.id],
+      name: (
+        <>
+          {p.name}
+          {/* Same jug, spelt again by an invoice or an operator. This is the
+              judgement the importer will not make; one click here makes it. */}
+          <button
+            type="button"
+            onClick={() => setMerging(p)}
+            title="This is a second spelling of another product — fold it in"
+            className="ml-2 text-[11px] font-normal text-gray-400 underline decoration-dotted hover:text-gray-800"
+          >
+            same as…
+          </button>
+          {/* Only once the applications and invoices have loaded, or every product would look unused. */}
+          {isManager &&
+            apps &&
+            purchases &&
+            handAddedProduct({
+              aliases: r.aliases.length,
+              purchases: purchases?.byProduct.get(p.id)?.length ?? 0,
+              applications: r.applications.length,
+            }) && (
               <button
                 type="button"
-                onClick={() => setOpen((o) => ({ ...o, [p.id]: !o[p.id] }))}
-                className="inline-flex items-start gap-1 text-left text-gray-700 hover:text-gray-900"
+                disabled={deleteProduct.isPending}
+                onClick={async () => {
+                  if (await askConfirm(`Delete ${p.name} from the price list? It was added by hand: no Deere record or invoice uses it.`)) deleteProduct.mutate(p.id)
+                }}
+                title="Added by hand and used by nothing — remove it"
+                className="ml-2 text-[11px] font-normal text-red-400 underline decoration-dotted hover:text-red-700"
               >
-                <ChevronRight
-                  className={cn('mt-0.5 h-3 w-3 shrink-0 text-gray-400 transition-transform', isOpen && 'rotate-90')}
-                />
-                <span>
-                  {r.fields.slice(0, 2).join(', ')}
-                  {r.fields.length > 2 && (
-                    <span className="text-gray-400"> +{r.fields.length - 2} more</span>
-                  )}
-                </span>
+                delete
               </button>
             )}
-          </td>
-          {/* The crops it has actually gone on — not the label's list. */}
-          <td className="px-3 py-2 text-xs text-gray-700">
-            {r.crops.length === 0 ? <span className="text-gray-300">—</span> : r.crops.join(', ')}
-          </td>
-          {category === 'chemical' && (
-            <td className="px-3 py-2 text-xs">
-              {(() => {
-                const next = notNextYear(p.pmra_registration, recrop)
-                if (next == null) return <span className="text-gray-300" title="The label's re-cropping section has not been read yet">—</span>
-                if (!next.length) return <span className="text-green-700">none</span>
-                return (
-                  <span className="text-red-700" title={next.map((n) => `${n.crop}: ${n.why}`).join(' · ')}>
-                    {next.map((n) => n.crop).join(', ')}
-                  </span>
-                )
-              })()}
-            </td>
+        </>
+      ),
+      type: r.type ?? null,
+      unit: (
+        <select
+          value={p.unit}
+          onChange={(e) => saveProduct.mutate({ id: p.id, unit: e.target.value as 'L' | 'kg' })}
+          aria-label={`Price unit for ${p.name}`}
+          className="rounded border border-gray-300 px-1.5 py-1 text-xs"
+        >
+          <option value="L">$ / L</option>
+          <option value="kg">$ / kg</option>
+        </select>
+      ),
+      price: (
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          inputMode="decimal"
+          value={draft[p.id] ?? p.price_per_unit ?? ''}
+          onChange={(e) => setDraft((d) => ({ ...d, [p.id]: e.target.value }))}
+          onBlur={() => commit(p)}
+          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+          placeholder="—"
+          aria-label={`Price for ${p.name}`}
+          className="w-24 rounded border border-gray-300 px-2 py-1 text-right text-sm tabular-nums"
+        />
+      ),
+      /* Where the price came from, and when. A price with no date is one
+         somebody typed, and it has been ageing quietly ever since while the
+         field costs treated it as current. */
+      priceFrom: p.price_updated_on ? (
+        <span className={cn(isStale(p.price_updated_on) && 'text-amber-700')}>
+          {p.price_updated_on}
+          {p.price_source && <span className="block text-[10px] text-gray-400">{p.price_source}</span>}
+        </span>
+      ) : p.price_per_unit != null ? (
+        <span className="text-gray-400">entered by hand</span>
+      ) : null,
+      /* Which fields it went on. Two named, then a count — the full list is
+         one click away and a dozen field names in a cell is a wall. */
+      fields:
+        r.fields.length === 0 ? null : (
+          <button
+            type="button"
+            onClick={() => setOpen((o) => ({ ...o, [p.id]: !o[p.id] }))}
+            className="inline-flex items-start gap-1 text-left text-gray-700 hover:text-gray-900"
+          >
+            <ChevronRight
+              className={cn('mt-0.5 h-3 w-3 shrink-0 text-gray-400 transition-transform', open[p.id] && 'rotate-90')}
+            />
+            <span>
+              {r.fields.slice(0, 2).join(', ')}
+              {r.fields.length > 2 && <span className="text-gray-400"> +{r.fields.length - 2} more</span>}
+            </span>
+          </button>
+        ),
+      /* The crops it has actually gone on — not the label's list. */
+      crops: r.crops.length === 0 ? null : r.crops.join(', '),
+      notNext: (() => {
+        if (category !== 'chemical') return null
+        const next = notNextYear(p.pmra_registration, recrop)
+        if (next == null) return null
+        if (!next.length) return <span className="text-green-700">none</span>
+        return (
+          <span className="text-red-700" title={next.map((n) => `${n.crop}: ${n.why}`).join(' · ')}>
+            {next.map((n) => n.crop).join(', ')}
+          </span>
+        )
+      })(),
+      lastApplied: r.lastApplied ? (
+        <span>
+          {r.lastApplied}
+          {p.manual_last_applied === r.lastApplied && (
+            <span className="ml-1 text-[10px] text-gray-400" title="Typed in, not from Deere">
+              typed
+            </span>
           )}
-          <td className="px-3 py-2 text-xs">
-            {r.lastApplied ? (
-              <span>
-                {r.lastApplied}
-                {p.manual_last_applied === r.lastApplied && (
-                  <span className="ml-1 text-[10px] text-gray-400" title="Typed in, not from Deere">
-                    typed
-                  </span>
-                )}
-                <span className="block text-[10px] text-gray-400">
-                  {r.applications.length} application{r.applications.length === 1 ? '' : 's'}
-                  {isManager && (
-                    <button
-                      type="button"
-                      onClick={() => setEditingUse(p)}
-                      className="ml-1 underline decoration-dotted hover:text-gray-800"
-                    >
-                      edit
-                    </button>
-                  )}
-                </span>
-              </span>
-            ) : isManager ? (
+          <span className="block text-[10px] text-gray-400">
+            {r.applications.length} application{r.applications.length === 1 ? '' : 's'}
+            {isManager && (
               <button
                 type="button"
                 onClick={() => setEditingUse(p)}
-                className="text-gray-400 underline decoration-dotted hover:text-gray-800"
+                className="relative ml-1 underline decoration-dotted hover:text-gray-800 after:absolute after:-inset-2.5 after:content-[''] sm:after:content-none"
               >
-                add when &amp; what
+                edit
               </button>
-            ) : (
-              <span className="text-gray-300">—</span>
             )}
-          </td>
-          {category === 'chemical' && (
-            <td className="px-3 py-2 text-xs">
-              {p.pmra_registration ? (
-                <span className="flex flex-col gap-0.5">
-                  {/* The approved label, which in Canada IS the safety
-                      document — precautions, protective equipment, first aid
-                      and re-entry are all on it. Straight off Health Canada's
-                      registry so it is always the current issue, rather than a
-                      copy of ours that quietly goes out of date.
+          </span>
+        </span>
+      ) : isManager ? (
+        <button
+          type="button"
+          onClick={() => setEditingUse(p)}
+          className="text-gray-400 underline decoration-dotted hover:text-gray-800"
+        >
+          add when &amp; what
+        </button>
+      ) : null,
+      label:
+        category !== 'chemical' ? null : p.pmra_registration ? (
+          <span className="flex flex-col gap-0.5">
+            {/* The approved label, which in Canada IS the safety document —
+                precautions, protective equipment, first aid and re-entry are
+                all on it. Straight off Health Canada's registry so it is
+                always the current issue, rather than a copy of ours that
+                quietly goes out of date.
 
-                      Where the label has not been fetched yet there is still
-                      the registry search page, which is a worse link but a
-                      real one; a dead icon on a page somebody opened to check
-                      a precaution is the wrong failure. */}
-                  <button
-                    type="button"
-                    onClick={() => openLabel(p.pmra_registration as string)}
-                    title="Open the approved label — precautions, protective equipment, first aid, re-entry"
-                    className="inline-flex items-center gap-1 font-medium text-brand-700 hover:underline"
-                  >
-                    <ShieldAlert className="h-3.5 w-3.5" />
-                    Label
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLinking(p)}
-                    title="Change which registered product this is"
-                    className="text-left tabular-nums text-gray-500 underline decoration-dotted hover:text-gray-900"
-                  >
-                    {p.pmra_registration}
-                  </button>
-                </span>
-              ) : (
-                // No registration: the reason why, the supplier sheet if there
-                // is one, or the amber button until somebody has looked.
-                <ProductSheetCell product={p} canEdit={isManager} onLink={() => setLinking(p)} />
-              )}
-            </td>
-          )}
-          <td className="px-3 py-2 text-xs">
-            {r.invoiceNo ? (
-              <button
-                type="button"
-                onClick={() => setInvoice({ no: r.invoiceNo as string, productId: p.id })}
-                className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-              >
-                <FileText className="h-3 w-3" />
-                View
-              </button>
-            ) : (
-              <span className="text-gray-300">—</span>
-            )}
-          </td>
-          <td className="px-3 py-2 text-xs text-gray-500">
+                Where the label has not been fetched yet there is still the
+                registry search page, which is a worse link but a real one; a
+                dead icon on a page somebody opened to check a precaution is
+                the wrong failure. */}
+            <button
+              type="button"
+              onClick={() => openLabel(p.pmra_registration as string)}
+              title="Open the approved label — precautions, protective equipment, first aid, re-entry"
+              className="inline-flex items-center gap-1 font-medium text-brand-700 hover:underline"
+            >
+              <ShieldAlert className="h-3.5 w-3.5" />
+              Label
+            </button>
+            <button
+              type="button"
+              onClick={() => setLinking(p)}
+              title="Change which registered product this is"
+              className="text-left tabular-nums text-gray-500 underline decoration-dotted hover:text-gray-900"
+            >
+              {p.pmra_registration}
+            </button>
+          </span>
+        ) : (
+          // No registration: the reason why, the supplier sheet if there is
+          // one, or the amber button until somebody has looked.
+          <ProductSheetCell product={p} canEdit={isManager} onLink={() => setLinking(p)} />
+        ),
+      invoice: r.invoiceNo ? (
+        <button
+          type="button"
+          onClick={() => setInvoice({ no: r.invoiceNo as string, productId: p.id })}
+          className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+        >
+          <FileText className="h-3 w-3" />
+          View
+        </button>
+      ) : null,
+      aliases:
+        r.aliases.length === 0 ? null : (
+          <>
             {r.aliases.map((a) => (
               <span key={a} className="mr-1 inline-flex items-center gap-1">
                 <span>{a}</span>
@@ -479,56 +503,84 @@ export function ProductPrices({
                     type="button"
                     title="Not this product — split it out"
                     onClick={() => linkAlias.mutate({ deere_name: a, product_id: null })}
-                    className="text-gray-300 hover:text-red-600"
+                    className="relative text-gray-300 hover:text-red-600 after:absolute after:-inset-2.5 after:content-[''] sm:after:content-none"
                   >
                     ×
                   </button>
                 )}
               </span>
             ))}
-          </td>
+          </>
+        ),
+    }
+  }
+
+  const dash = <span className="text-gray-300">—</span>
+
+  const renderRow = (r: Row) => {
+    const p = r.product
+    const c = cells(r)
+    return (
+      <Fragment key={p.id}>
+        <tr className={cn(p.price_per_unit == null && 'bg-amber-50/40')}>
+          <td className="px-3 py-2 font-medium text-gray-800">{c.name}</td>
+          <td className="px-3 py-2 text-xs text-gray-600">{c.type ?? dash}</td>
+          <td className="px-3 py-2">{c.unit}</td>
+          <td className="px-3 py-2 text-right">{c.price}</td>
+          <td className="px-3 py-2 text-xs">{c.priceFrom ?? dash}</td>
+          <td className="px-3 py-2 text-xs">{c.fields ?? dash}</td>
+          <td className="px-3 py-2 text-xs text-gray-700">{c.crops ?? dash}</td>
+          {category === 'chemical' && (
+            <td className="px-3 py-2 text-xs">
+              {c.notNext ?? <span className="text-gray-300" title="The label's re-cropping section has not been read yet">—</span>}
+            </td>
+          )}
+          <td className="px-3 py-2 text-xs">{c.lastApplied ?? dash}</td>
+          {category === 'chemical' && <td className="px-3 py-2 text-xs">{c.label}</td>}
+          <td className="px-3 py-2 text-xs">{c.invoice ?? dash}</td>
+          <td className="px-3 py-2 text-xs text-gray-500">{c.aliases}</td>
         </tr>
 
         {/* The record of what went where and when, which is the whole reason
             for keeping application history against a price. */}
-        {isOpen && (
+        {c.isOpen && (
           <tr className="bg-gray-50/70">
             <td colSpan={colSpan} className="px-3 py-2">
-              <table className="w-full text-xs">
-                <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
-                  <tr>
-                    <th className="py-1 pr-4 font-medium">Date</th>
-                    <th className="py-1 pr-4 font-medium">Field</th>
-                    <th className="py-1 pr-4 font-medium">Rate</th>
-                    <th className="py-1 pr-4 font-medium">Season</th>
-                    <th className="py-1 font-medium">Applied as</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {r.applications.map((a) => (
-                    <tr key={`${a.operation_id}-${a.applied_name}-${a.field_id}`}>
-                      <td className="py-1 pr-4 tabular-nums text-gray-700">{a.applied_on ?? '—'}</td>
-                      <td className="py-1 pr-4 text-gray-700">{a.field_name ?? 'unmatched field'}</td>
-                      <td className="py-1 pr-4 tabular-nums text-gray-600">
-                        {a.rate_value == null
-                          ? '—'
-                          : `${Number(a.rate_value).toLocaleString('en-CA', { maximumFractionDigits: 3 })} ${a.rate_unit ?? ''}`}
-                      </td>
-                      <td className="py-1 pr-4 text-gray-500">{a.crop_season ?? '—'}</td>
-                      <td className="py-1 text-gray-500">
-                        {a.applied_name}
-                        {a.from_mix && a.mix_name && (
-                          <span className="text-gray-400"> · in {a.mix_name}</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <Applications r={r} />
             </td>
           </tr>
         )}
       </Fragment>
+    )
+  }
+
+  const renderCard = (r: Row) => {
+    const p = r.product
+    const c = cells(r)
+    const facts: Fact[] = [
+      {
+        label: 'Price',
+        node: (
+          <span className="flex flex-wrap items-center gap-2">
+            {c.price}
+            {c.unit}
+          </span>
+        ),
+      },
+      { label: 'Priced', node: c.priceFrom },
+      { label: 'Type', node: c.type },
+      { label: 'Fields', node: c.fields },
+      { label: 'Crops', node: c.crops },
+      { label: 'Not next year', node: c.notNext },
+      { label: 'Last applied', node: c.lastApplied },
+      { label: 'Label', node: c.label },
+      { label: 'Invoice', node: c.invoice },
+      { label: 'In Deere as', node: c.aliases },
+    ]
+    return (
+      <RowCard key={p.id} heading={c.name} facts={facts}>
+        {c.isOpen ? <Applications r={r} /> : null}
+      </RowCard>
     )
   }
 
@@ -660,9 +712,40 @@ export function ProductPrices({
         </div>
       )}
 
-      <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500">
+      {/* Twelve columns is screens of sideways scrolling on a phone, so under
+          `sm` each row is a card read down the page. Both are rendered and one
+          is hidden, which keeps the hidden copy out of the screen reader's way
+          as well. */}
+      <CardList className="mt-4 rounded-lg border border-gray-200 bg-white empty:hidden">
+        {sections.map((s) =>
+          s.kind === 'row' ? (
+            renderCard(s.item)
+          ) : (
+            <Fragment key={s.key}>
+              <li className="bg-gray-100/70 px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => setOpen((o) => ({ ...o, [s.key]: !o[s.key] }))}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-800"
+                >
+                  <ChevronRight className={cn('h-3.5 w-3.5 text-gray-400 transition-transform', open[s.key] && 'rotate-90')} />
+                  {s.label}
+                  <span className="font-normal text-gray-500">
+                    · {s.items.length} blends
+                    {priceRange(s.items)}
+                  </span>
+                </button>
+              </li>
+              {open[s.key] && s.items.map(renderCard)}
+            </Fragment>
+          ),
+        )}
+      </CardList>
+
+      <div className="mt-4 hidden overflow-x-auto rounded-lg border border-gray-200 bg-white sm:block">
+        {/* A min-width so the table scrolls rather than squeezing its cells. */}
+        <table className="w-full min-w-[1480px] text-sm">
+          <thead className={TABLE_HEAD}>
             <tr>
               {COLUMNS.map((c) => (
                 <Fragment key={c.key}>
@@ -673,8 +756,8 @@ export function ProductPrices({
                     type="button"
                     onClick={() => toggleSort(c.key)}
                     className={cn(
-                      'inline-flex items-center gap-1 hover:text-gray-900',
-                      sort?.key === c.key && 'text-gray-900',
+                      'inline-flex items-center gap-1 hover:text-brand-100',
+                      sort?.key === c.key && 'underline',
                     )}
                   >
                     {c.label}
@@ -744,30 +827,31 @@ export function ProductPrices({
             )}
           </tbody>
         </table>
-        {rows.length === 0 && (
-          <p className="px-3 py-6 text-center text-sm text-gray-500">
-            {q ? `No products match “${q}”.` : 'Nothing to show.'}
-            {hideNeverApplied && neverApplied > 0 && (
-              <>
-                {' '}
-                <button
-                  type="button"
-                  onClick={() => toggleHide(false)}
-                  className="text-brand-700 underline"
-                >
-                  Show the {neverApplied} never applied
-                </button>
-              </>
-            )}
-          </p>
-        )}
       </div>
 
-      <p className="mt-3 text-xs text-gray-500">
+      {rows.length === 0 && (
+        <p className="px-3 py-6 text-center text-sm text-gray-500">
+          {q ? `No products match “${q}”.` : 'Nothing to show.'}
+          {hideNeverApplied && neverApplied > 0 && (
+            <>
+              {' '}
+              <button
+                type="button"
+                onClick={() => toggleHide(false)}
+                className="text-brand-700 underline"
+              >
+                Show the {neverApplied} never applied
+              </button>
+            </>
+          )}
+        </p>
+      )}
+
+      <HelpNote className="mt-3 text-xs" summary="Leave a price blank for “not known yet”.">
         Products appear here automatically as they turn up in synced field work. A price of{' '}
         {fmtMoney(0)} is a real price; leave the box empty for “not known yet” so the field pages
         show a blank instead of a free pass.
-      </p>
+      </HelpNote>
 
       {editingUse && <ManualUseEditor product={editingUse} onClose={() => setEditingUse(null)} />}
 

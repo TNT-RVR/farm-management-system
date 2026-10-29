@@ -5,7 +5,7 @@
  */
 
 /** Where the bell's and the Notifications page's settings buttons go: My account → Notifications. */
-export const NOTIFICATION_SETTINGS_PATH = '/settings?section=notifications'
+export const NOTIFICATION_SETTINGS_PATH = '/settings/account?tab=notifications'
 
 /** Short labels, the grey "<what kind> · <date>" line under each item. */
 export const KIND_LABELS: Record<string, string> = {
@@ -23,6 +23,9 @@ export const KIND_LABELS: Record<string, string> = {
   water_quality_request: 'Water sample due',
   crop_weather: 'Frost or heat',
   bin_needs_air: 'Bin needs air',
+  seed_bin_check: 'Bin temperatures due',
+  truck_inspection: 'Truck inspection due',
+  fuel_gauge_silent: 'Fuel gauge silent',
   fert_buy_window: 'Fertilizer prices',
   n_ratio_moved: 'Fertilizer prices',
   fert_deadline: 'Fertilizer deadline',
@@ -67,6 +70,9 @@ export const KIND_DESCRIPTIONS: Record<string, string> = {
   water_quality_request: 'Time to send in an irrigation water sample.',
   crop_weather: 'Frost or heat in the forecast while crops are in the field.',
   bin_needs_air: "A bin's readings say it's time to run the aeration fans.",
+  seed_bin_check: "A seed company's bin temperature record is due: weekly for a month after harvest, then every second Monday until shipped.",
+  truck_inspection: 'Mondays in January: the semi trucks with no yearly inspection signed off yet this year.',
+  fuel_gauge_silent: 'A TELUS fuel gauge has not reported for a day, so its tank level on the Fuel page is going stale.',
   fert_buy_window: 'Fertilizer prices, or the nitrogen-to-crop price ratio, moved enough to change the best rate or time to buy.',
   fert_deadline: 'A fertilizer pre-order or price deadline is coming up.',
   ab_input_prices: "Alberta's monthly farm input price report was updated.",

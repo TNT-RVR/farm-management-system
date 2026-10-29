@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { useFieldEvents } from './FieldWaterPanel'
 import { mmFromHours, usePivotInfo } from './FieldExtras'
 import { HandEventActions } from './HandEventActions'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const md = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
 
@@ -39,7 +40,7 @@ export function AdjustIrrigation({ fieldId, year, u }: { fieldId: string; year: 
         ) : (
           <div className="mt-2 max-h-80 overflow-y-auto rounded border border-gray-200">
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-gray-50 text-left text-[10px] uppercase tracking-wide text-gray-400">
+              <thead className={cn(TABLE_HEAD, 'sticky top-0')}>
                 <tr>
                   <th className="px-2 py-1 font-medium">Date</th>
                   <th className="px-2 py-1 font-medium">From</th>

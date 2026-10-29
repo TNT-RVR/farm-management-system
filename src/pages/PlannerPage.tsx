@@ -613,7 +613,10 @@ export function PlannerPage() {
     <div className="p-4 md:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
         <h1 className="text-lg font-semibold text-gray-900">Financials · {cropYear}</h1>
-        <div className="flex items-center gap-2">
+        {/* The tab bar can shrink (min-w-0), so its ▾ takes the tabs that do
+            not fit instead of the row pushing the whole page sideways; on a
+            phone it takes a line of its own (Sam, 27 Oct 2026). */}
+        <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
           <PillTabs
             tabs={PLAN_TABS.map((t) => ({ key: t, label: t[0].toUpperCase() + t.slice(1) }))}
             value={tab}

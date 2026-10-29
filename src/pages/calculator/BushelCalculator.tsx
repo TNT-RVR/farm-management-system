@@ -9,6 +9,9 @@ import {
   MASS_UNITS,
   type MassUnit,
 } from '@/lib/bushels'
+import { HelpNote } from '@/components/HelpNote'
+import { CARD_HEAD } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 const numInput =
   'w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-brand-600 focus:outline-none'
@@ -55,10 +58,11 @@ export function BushelCalculator() {
   const needsCrop = lbPerBu == null
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-        <Wheat className="h-4 w-4 text-brand-700" /> Bushels &amp; weight
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <Wheat className="h-4 w-4 text-white" /> Bushels &amp; weight
       </h2>
+      <div className="p-4">
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr]">
         <div>
@@ -112,10 +116,10 @@ export function BushelCalculator() {
       </div>
 
       {needsCrop ? (
-        <p className="mt-3 rounded-md bg-gray-50 px-3 py-3 text-xs text-gray-500">
+        <HelpNote className="mt-3 rounded-md bg-gray-50 px-3 py-3 text-xs" summary="Pick a crop to work in bushels." title="Why a crop is needed">
           Pick a crop to work in bushels. A bushel is a different weight for every crop, so there is
           no honest answer without one — the weight units below still convert between themselves.
-        </p>
+        </HelpNote>
       ) : null}
 
       <table className="mt-3 w-full text-sm">
@@ -145,6 +149,8 @@ export function BushelCalculator() {
             ? `Using the trade standard for ${standard.label}. Type over it for the load on the scale.`
             : 'Metric tonnes and short tons differ by about 10% — both are listed.'}
       </p>
+
+      </div>
     </section>
   )
 }

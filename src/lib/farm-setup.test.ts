@@ -28,6 +28,16 @@ describe('feature switches', () => {
     expect(isPathOff(disabledPaths({ harvest: false }), '/harvest?tab=bins')).toBe(true)
   })
 
+  it('closes one tab of a page, and only that tab', () => {
+    const off = disabledPaths({ pregnancy: false })
+    expect(isPathOff(off, '/herd?tab=pregnancy')).toBe(true)
+    expect(isPathOff(off, '/herd?ranch=1&tab=pregnancy')).toBe(true)
+    expect(isPathOff(off, '/herd?tab=herd')).toBe(false)
+    expect(isPathOff(off, '/herd')).toBe(false)
+    // The old address, which redirects to the tab, is closed too.
+    expect(isPathOff(off, '/pregnancy')).toBe(true)
+  })
+
   it('never offers Settings as something to switch off', () => {
     // Settings is how a feature is switched back on.
     expect(FEATURES.flatMap((f) => f.paths)).not.toContain('/settings')
@@ -35,8 +45,12 @@ describe('feature switches', () => {
 
   it('names only sections that exist in the menu', () => {
     const menu = new Set(NAV_ITEMS.flatMap((i) => [i.to, ...(i.children ?? []).map((c) => c.to)]))
-    const known = new Set([...menu, '/hail', '/grazing-restrictions', '/manifests'])
-    for (const f of FEATURES) for (const p of f.paths) expect(known.has(p) || menu.has(p), `${f.key}: ${p}`).toBe(true)
+    // Old cattle addresses that redirect into a tab since the split (24 Oct 2026).
+    const redirects = ['/grazing', '/feed-records', '/pregnancy', '/grazing-restrictions', '/manifests', '/grazing-leases', '/bale-checks']
+    // /checklists/truck-inspection: a form reached from Checklists and Equipment service, off with Equipment.
+    const known = new Set([...menu, '/hail', ...redirects, '/checklists/truck-inspection'])
+    // A tab (`/page?tab=x`) counts when its page is in the menu.
+    for (const f of FEATURES) for (const p of f.paths) expect(known.has(p.split('?')[0]), `${f.key}: ${p}`).toBe(true)
   })
 
   it('has unique keys and parents that exist', () => {

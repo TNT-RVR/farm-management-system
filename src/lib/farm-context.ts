@@ -11,8 +11,10 @@
 
 const DEFAULT_TZ = 'America/Edmonton'
 const DEFAULT_PROVINCE = 'AB'
+/** A calendar year, until Farm setup says otherwise (the migration's default too). */
+const DEFAULT_FISCAL_END_MONTH = 12
 
-let client: { name?: string; tz?: string; province?: string; description?: string; retailer?: string; district?: string; mainRanchId?: string } = {}
+let client: { name?: string; tz?: string; province?: string; description?: string; retailer?: string; district?: string; river?: string; mainRanchId?: string; fiscalEndMonth?: number } = {}
 
 export function setFarmContext(c: {
   name?: string | null
@@ -21,7 +23,9 @@ export function setFarmContext(c: {
   description?: string | null
   retailer?: string | null
   district?: string | null
+  river?: string | null
   mainRanchId?: string | null
+  fiscalEndMonth?: number | null
 }) {
   client = {
     name: c.name?.trim() || undefined,
@@ -30,7 +34,9 @@ export function setFarmContext(c: {
     description: c.description?.trim() || undefined,
     retailer: c.retailer?.trim() || undefined,
     district: c.district?.trim() || undefined,
+    river: c.river?.trim() || undefined,
     mainRanchId: c.mainRanchId || undefined,
+    fiscalEndMonth: c.fiscalEndMonth || undefined,
   }
 }
 
@@ -46,6 +52,11 @@ export const farmTz = (): string => env('FARM_TZ') ?? client.tz ?? DEFAULT_TZ
 
 /** Two-letter province or state code. Decides which regional tools apply. */
 export const farmProvince = (): string => env('FARM_PROVINCE') ?? client.province ?? DEFAULT_PROVINCE
+/** The month the farm's fiscal year ends in, 1–12 (on that month's last day), from Farm setup. */
+export const farmFiscalEndMonth = (): number => {
+  const m = Number(env('FARM_FISCAL_END_MONTH') ?? client.fiscalEndMonth ?? DEFAULT_FISCAL_END_MONTH)
+  return Number.isInteger(m) && m >= 1 && m <= 12 ? m : DEFAULT_FISCAL_END_MONTH
+}
 
 /**
  * The farm described for an AI prompt: the farm's own words from setup when
@@ -71,6 +82,9 @@ export const farmRetailer = (): string => env('FARM_RETAILER') ?? client.retaile
 /** The farm's irrigation district; generic until Farm setup names one. */
 export const farmDistrict = (): string => env('FARM_DISTRICT') ?? client.district ?? 'Irrigation district'
 
+/** The river the farm pumps from under its own licences; generic until Farm setup names one. */
+export const farmRiver = (): string => env('FARM_RIVER') ?? client.river ?? 'River'
+
 /** The ranch to use where only one fits, by id; null to fall back to the first. */
 export const farmMainRanchId = (): string | null => env('FARM_MAIN_RANCH_ID') ?? client.mainRanchId ?? null
 
@@ -82,9 +96,7 @@ export const farmMainRanchId = (): string | null => env('FARM_MAIN_RANCH_ID') ??
  * setup decides for itself; keys it has not touched are on.
  */
 export const FRESH_OFF: Record<string, boolean> = {
-  turbines: false,
   pregnancy: false,
-  basf_report: false,
   time_off: false,
   // The river chain, its water chemistry and the district's reservoirs are
   // the original farm's; another farm sets up its own (docs/CUSTOMIZING.md).
@@ -97,7 +109,6 @@ export const FRESH_OFF: Record<string, boolean> = {
 /** Parents, for the server's switch checks (src/lib/farm-setup.ts has the full list). */
 const PARENT: Record<string, string> = {
   river: 'irrigation',
-  turbines: 'irrigation',
   district_allotment: 'irrigation',
   pregnancy: 'cattle',
   manifests: 'cattle',

@@ -32,7 +32,7 @@ describe('app search', () => {
   it('finds the bale log as a report and hides what is not allowed', () => {
     const hits = searchApp(index, 'bale temperature')
     expect(hits.some((h) => h.kind === 'report' && h.label.startsWith('Bale temperature'))).toBe(true)
-    expect(searchApp(index, 'bale temperature', (h) => h.gate !== '/bale-checks').some((h) => h.gate === '/bale-checks')).toBe(false)
+    expect(searchApp(index, 'bale temperature', (h) => h.gate !== '/feed?tab=bale-checks').some((h) => h.gate === '/feed?tab=bale-checks')).toBe(false)
   })
 
   it('one result per destination', () => {
@@ -44,7 +44,7 @@ describe('app search', () => {
 describe('role-gated tabs', () => {
   it('Farm setup tabs are left out for a non-admin', () => {
     const crew = buildAppIndex(TAB_ENTRIES, [], { isAdmin: false, isManager: false })
-    expect(crew.some((h) => h.to.includes('Farm setup'))).toBe(false)
-    expect(index.some((h) => h.to.includes('Farm setup'))).toBe(true)
+    expect(crew.some((h) => h.to.startsWith('/settings/farm'))).toBe(false)
+    expect(index.some((h) => h.to.startsWith('/settings/farm'))).toBe(true)
   })
 })

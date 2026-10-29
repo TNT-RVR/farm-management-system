@@ -1,7 +1,8 @@
-import { createClient } from '@supabase/supabase-js'
 import { advisorModel, alwaysThinks, replyProblem, replyText, type MessagesReply } from '../shared/anthropic-reply.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { farmProvinceName, withFarm } from '../../src/lib/farm-context.ts'
+import { admin } from '../shared/supabase-admin.ts'
+import { callClaude } from '../shared/anthropic.ts'
 
 /**
  * Rotation → recommendations: Claude's comparison of the three plans, written
@@ -43,7 +44,7 @@ export default async (req: Request) => {
 
   const { id } = (await req.json().catch(() => ({}))) as { id?: string }
   if (!id) return new Response('id required', { status: 400 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
   const { data: row } = await sb.from('rotation_advice').select('id, status, request').eq('id', id).single()
   // Only a waiting request: a retried wake-up must not write it twice.
   if (!row || row.status !== 'pending') return new Response('nothing to do', { status: 200 })
@@ -58,20 +59,15 @@ export default async (req: Request) => {
   }
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
-      body: JSON.stringify({
-        model,
-        // Room for the thinking before the answer; effort is the only dial on
-        // a model that always thinks.
-        max_tokens: 16000,
-        ...(alwaysThinks(model) ? { output_config: { effort: 'high' } } : {}),
-        system: withFarm(SYSTEM()),
-        messages: [{ role: 'user', content: `Field and options (JSON):\n${row.request}` }],
-      }),
-    })
+    const res = await callClaude({
+      model,
+      // Room for the thinking before the answer; effort is the only dial on
+      // a model that always thinks.
+      maxTokens: 16000,
+      ...(alwaysThinks(model) ? { output_config: { effort: 'high' } } : {}),
+      system: withFarm(SYSTEM()),
+      messages: [{ role: 'user', content: `Field and options (JSON):\n${row.request}` }],
+    }, { apiKey, signal: AbortSignal.timeout(MODEL_TIMEOUT_MS) })
     if (!res.ok) {
       await finish({ status: 'error', error: `The model could not answer (${res.status}): ${(await res.text()).slice(0, 300)}` })
       return new Response('model error', { status: 200 })

@@ -6,14 +6,25 @@ import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useBins } from '@/lib/bins'
 import { useBinContents } from '@/lib/bin-contents'
 import { useCrops, useFields } from '@/lib/queries'
-import { isOpenLoad, useBinLoads, useDeliverySites } from '@/lib/bin-loads'
+import { isOpenLoad, useBinLoads, useDeliverySites, type BinLoad } from '@/lib/bin-loads'
 import { DeleteLoadButton, EditLoadDialog } from '@/pages/bins/WeighIn'
 import { rowClick } from '@/components/RecordEditor'
+import { CardList, RowCard } from '@/components/RowCards'
 import { cn } from '@/lib/utils'
 import { ScaleTicketDetail } from './ScaleTicketDetail'
 import { useContacts, useContracts, type ContractRow } from '@/lib/sales'
-import { lbPerBushel, netInUnit, useScaleTicketMutations, useScaleTickets } from '@/lib/scale-tickets'
+import {
+  lbPerBushel,
+  loadsFor,
+  netInUnit,
+  useScaleTicketMutations,
+  useScaleTickets,
+  type ScaleTicket,
+} from '@/lib/scale-tickets'
 import { TicketPhotoButton, useTicketPhotoIndex } from './TicketPhoto'
+import { askConfirm } from '@/components/askConfirm'
+import { HelpNote } from '@/components/HelpNote'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * Scale tickets, in from the truck.
@@ -27,6 +38,11 @@ import { TicketPhotoButton, useTicketPhotoIndex } from './TicketPhoto'
  * Corn and beans are the two crops that go out on tickets here, and they are
  * counted differently: corn in bushels at 56 lb, beans in pounds. The crop on
  * the contract decides which.
+ *
+ * There is no general list of every load (Sam, 27 Oct 2026): this shows the
+ * loads on ONE contract, opened from that contract, or — with no contract
+ * given — the loads that are not on a contract yet, which sit under the
+ * contract list waiting to be put on one.
  */
 type Read = {
   buyer: string | null
@@ -49,7 +65,14 @@ type Read = {
 const n = (v: number | null | undefined, d = 0) =>
   v == null ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: d })
 
-export function ScaleTickets({ cropYear }: { cropYear: number }) {
+export function ScaleTickets({
+  cropYear,
+  forContractId,
+}: {
+  cropYear: number
+  /** The contract whose loads these are; left out for the ones on no contract. */
+  forContractId?: string
+}) {
   const { profile } = useAuth()
   const canEdit = hasManagerAccess(profile?.role)
   const { data: tickets } = useScaleTickets(cropYear)
@@ -62,7 +85,13 @@ export function ScaleTickets({ cropYear }: { cropYear: number }) {
   const { data: sites } = useDeliverySites()
   const { data: fields } = useFields()
   const { data: photos } = useTicketPhotoIndex()
-  const plantLoads = (loads ?? []).filter((l) => l.delivery_site_id && l.crop_year === cropYear && !isOpenLoad(l))
+  const plantLoads = (loads ?? []).filter(
+    (l) => l.delivery_site_id && l.crop_year === cropYear && !isOpenLoad(l),
+  )
+  // One contract's loads, or the ones not on a contract: never both, and never
+  // every load in the year.
+  const shownTickets = loadsFor(tickets ?? [], forContractId)
+  const shownLoads = loadsFor(plantLoads, forContractId)
   const { save, remove } = useScaleTicketMutations()
 
   const [reading, setReading] = useState(false)
@@ -88,12 +117,14 @@ export function ScaleTickets({ cropYear }: { cropYear: number }) {
   // came out of is almost always at the top.
   const candidateBins = useMemo(() => {
     if (!crop) return []
-    return (contents ?? [])
-      // bin_contents_current is the open rows only, so nothing here is emptied.
-      .filter((c) => c.crop_id === crop.id)
-      .map((c) => ({ content: c, bin: bins?.find((b) => b.id === c.bin_id) }))
-      .filter((x) => x.bin)
-      .sort((a, b) => (b.content.filled_on ?? '').localeCompare(a.content.filled_on ?? ''))
+    return (
+      (contents ?? [])
+        // bin_contents_current is the open rows only, so nothing here is emptied.
+        .filter((c) => c.crop_id === crop.id)
+        .map((c) => ({ content: c, bin: bins?.find((b) => b.id === c.bin_id) }))
+        .filter((x) => x.bin)
+        .sort((a, b) => (b.content.filled_on ?? '').localeCompare(a.content.filled_on ?? ''))
+    )
   }, [contents, bins, crop])
 
   const readFile = async (file: File) => {
@@ -103,7 +134,8 @@ export function ScaleTickets({ cropYear }: { cropYear: number }) {
       const {
         data: { session },
       } = await supabase.auth.getSession()
-      const type = file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
+      const type =
+        file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
       const res = await fetch('/api/scale-ticket-extract', {
         method: 'POST',
         headers: {
@@ -127,10 +159,16 @@ export function ScaleTickets({ cropYear }: { cropYear: number }) {
             (c) =>
               c.status !== 'cancelled' &&
               c.status !== 'delivered' &&
-              (cropOf(c)?.name ?? '').toLowerCase().includes(r.commodity!.toLowerCase().split(' ')[0]),
+              (cropOf(c)?.name ?? '')
+                .toLowerCase()
+                .includes(r.commodity!.toLowerCase().split(' ')[0]),
           )
         : []
-      const pick = byNo ?? (byCrop?.length === 1 ? byCrop[0] : undefined)
+      // Opened from a contract, the load goes on that contract whatever the
+      // ticket says; the ticket is only read for its figures.
+      const pick = forContractId
+        ? contracts?.find((c) => c.id === forContractId)
+        : (byNo ?? (byCrop?.length === 1 ? byCrop[0] : undefined))
       setContractId(pick?.id ?? '')
       const u = cropOf(pick)?.yield_unit ?? 'bu'
       const units = netInUnit(r, u, cropOf(pick)?.name)
@@ -197,15 +235,132 @@ export function ScaleTickets({ cropYear }: { cropYear: number }) {
     )
   }
 
-  const totals = useMemo(() => {
+  // Loads and units per contract, for the line under the list. Counting a
+  // dozen rows costs nothing, so it is not worth a memo.
+  const totals = (() => {
     const m = new Map<string, { loads: number; units: number }>()
-    for (const t of tickets ?? []) {
+    for (const t of shownTickets) {
       const k = t.contract_id ?? 'none'
       const cur = m.get(k) ?? { loads: 0, units: 0 }
       m.set(k, { loads: cur.loads + 1, units: cur.units + (t.net_units ?? 0) })
     }
     return m
-  }, [tickets])
+  })()
+
+  // What one ticket puts on the screen, built once: the card on a phone and the
+  // table from sm up are handed the same nodes, so there is one place to change.
+  const ticketCells = (t: ScaleTicket) => {
+    const c = contracts?.find((x) => x.id === t.contract_id)
+    return {
+      contract: c ? (
+        `${cropOf(c)?.name ?? '?'} · ${buyerOf(c)}`
+      ) : (
+        <span className="text-gray-500">
+          {[crops?.find((x) => x.id === t.crop_id)?.name, t.buyer].filter(Boolean).join(' · ') ||
+            '—'}
+          <span className="block text-[10px] text-gray-400">no contract</span>
+        </span>
+      ),
+      ticket: (
+        <>
+          {t.ticket_no ?? '—'}
+          {t.receipt_no && (
+            <span className="block text-[10px] text-gray-400">
+              receipt {t.receipt_no}
+              {t.grade ? ` · ${t.grade}` : ''}
+            </span>
+          )}
+          {t.bin_load_id && (
+            <span className="block text-[10px] text-green-700">
+              settles the farm load of{' '}
+              {(loads ?? []).find((l) => l.id === t.bin_load_id)?.loaded_on ?? '—'}
+            </span>
+          )}
+        </>
+      ),
+      cleanOut:
+        t.dockage_pct != null ? (
+          `${t.dockage_pct}%`
+        ) : (
+          <span
+            className="text-amber-700"
+            title="Not on the ticket: it comes on the plant's receipt"
+          >
+            waiting
+          </span>
+        ),
+      photo: (
+        <TicketPhotoButton
+          ticketId={t.id}
+          photoId={photos?.get(t.id)}
+          label={`Ticket ${t.ticket_no ?? t.receipt_no ?? t.delivered_on}`}
+          canEdit={canEdit}
+        />
+      ),
+      remove: canEdit ? (
+        <button
+          onClick={async () => {
+            if (
+              await askConfirm('Remove this load? The contract total goes back down.', {
+                confirmLabel: 'Remove',
+              })
+            )
+              remove.mutate(t.id)
+          }}
+          className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-600"
+          aria-label="Remove load"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      ) : null,
+    }
+  }
+
+  // The same for a farm load hauled straight to a plant.
+  const plantLoadCells = (l: BinLoad) => {
+    const c = contracts?.find((x) => x.id === l.contract_id)
+    const ticket = (tickets ?? []).find((t) => t.bin_load_id === l.id)
+    return {
+      contract: c ? (
+        `${c.contract_number ? `#${c.contract_number} · ` : ''}${cropOf(c)?.name ?? '?'} · ${buyerOf(c)}`
+      ) : (
+        <span className="text-gray-400">none</span>
+      ),
+      scale: (
+        <>
+          {n(l.net_kg == null ? null : Number(l.net_kg))} kg
+          <span className="block text-[11px] text-gray-500">
+            {n(l.bushels == null ? null : Number(l.bushels), 1)} bu
+          </span>
+        </>
+      ),
+      plantTicket: (
+        <>
+          {ticket ? (
+            <span className="text-green-700">
+              {ticket.ticket_no ? `#${ticket.ticket_no}` : 'Recorded'} · {n(ticket.net_units, 1)}{' '}
+              {ticket.unit ?? ''}
+            </span>
+          ) : c ? (
+            <span className="text-amber-700">
+              Waiting — counted from the farm scale until it comes
+            </span>
+          ) : (
+            <span className="text-gray-400">No contract picked</span>
+          )}
+          {canEdit && (
+            <span className="ml-1 align-middle">
+              <DeleteLoadButton load={l} />
+            </span>
+          )}
+        </>
+      ),
+    }
+  }
+
+  const emptyLine = forContractId
+    ? 'No loads on this contract yet.'
+    : `No loads waiting to be put on a contract for ${cropYear}.`
 
   return (
     <div className="space-y-4">
@@ -270,9 +425,13 @@ export function ScaleTickets({ cropYear }: { cropYear: number }) {
             <dt className="text-xs text-gray-500">Net</dt>
             <dd className="tabular-nums">{n(read.net_lb)} lb</dd>
             <dt className="text-xs text-gray-500">Moisture</dt>
-            <dd className="tabular-nums">{read.moisture_pct != null ? `${read.moisture_pct}%` : '—'}</dd>
+            <dd className="tabular-nums">
+              {read.moisture_pct != null ? `${read.moisture_pct}%` : '—'}
+            </dd>
             <dt className="text-xs text-gray-500">Dockage</dt>
-            <dd className="tabular-nums">{read.dockage_pct != null ? `${read.dockage_pct}%` : '—'}</dd>
+            <dd className="tabular-nums">
+              {read.dockage_pct != null ? `${read.dockage_pct}%` : '—'}
+            </dd>
             {read.protein_pct != null && (
               <>
                 <dt className="text-xs text-gray-500">Protein</dt>
@@ -327,7 +486,8 @@ export function ScaleTickets({ cropYear }: { cropYear: number }) {
               />
               {unit === 'bu' && read.net_lb != null && lbPerBushel(crop?.name) && (
                 <span className="mt-0.5 block text-[11px] text-gray-400">
-                  {n(read.net_lb)} lb ÷ {lbPerBushel(crop?.name)} = {n(read.net_lb / lbPerBushel(crop?.name)!, 1)} bu
+                  {n(read.net_lb)} lb ÷ {lbPerBushel(crop?.name)} ={' '}
+                  {n(read.net_lb / lbPerBushel(crop?.name)!, 1)} bu
                 </span>
               )}
             </label>
@@ -348,12 +508,17 @@ export function ScaleTickets({ cropYear }: { cropYear: number }) {
               />
               {binId && unit !== 'bu' && (
                 <span className="mt-0.5 block text-[11px] text-gray-400">
-                  Bins are counted in bushels, so a bean load is recorded but the bin is not drawn down.
+                  Bins are counted in bushels, so a bean load is recorded but the bin is not drawn
+                  down.
                 </span>
               )}
               {binId && unit === 'bu' && (
                 <label className="mt-1 flex items-center gap-1 text-[11px] text-gray-500">
-                  <input type="checkbox" checked={drawBin} onChange={(e) => setDrawBin(e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={drawBin}
+                    onChange={(e) => setDrawBin(e.target.checked)}
+                  />
                   draw the bin down by this load
                 </label>
               )}
@@ -378,96 +543,119 @@ export function ScaleTickets({ cropYear }: { cropYear: number }) {
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
-              <th className="px-3 py-2 font-medium">Date</th>
-              <th className="px-3 py-2 font-medium">Contract</th>
-              <th className="px-3 py-2 font-medium">Ticket</th>
-              <th className="px-3 py-2 text-right font-medium">Gross lb</th>
-              <th className="px-3 py-2 text-right font-medium">Net lb</th>
-              <th className="px-3 py-2 text-right font-medium" title="Dockage: what the plant cleaned out of the net, and the clean weight left — what is paid on.">
-                Clean-out
-              </th>
-              <th className="px-3 py-2 text-right font-medium">Clean lb</th>
-              <th className="px-3 py-2 text-right font-medium">Moist.</th>
-              <th className="px-3 py-2 text-right font-medium">Against</th>
-              <th className="px-3 py-2 font-medium">Bin</th>
-              <th className="w-8" />
-              {canEdit && <th className="w-8" />}
-            </tr>
-          </thead>
-          <tbody>
-            {(tickets ?? []).length === 0 && (
+      <div className="rounded-lg border border-gray-200 bg-white">
+        <p className="border-b border-gray-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Tickets from the elevator or plant ({shownTickets.length})
+        </p>
+        {/* A phone reads each load down the page; from sm up it is the table. */}
+        <CardList empty={emptyLine} isEmpty={shownTickets.length === 0}>
+          {shownTickets.map((t) => {
+            const d = ticketCells(t)
+            return (
+              <RowCard
+                key={t.id}
+                onClick={rowClick(() => setTicketId(t.id))}
+                heading={
+                  <span>
+                    {t.delivered_on}{' '}
+                    {!forContractId && (
+                      <span className="font-normal text-gray-500">{d.contract}</span>
+                    )}
+                  </span>
+                }
+                actions={
+                  <>
+                    {d.photo}
+                    {d.remove}
+                  </>
+                }
+                facts={[
+                  { label: 'Ticket', node: d.ticket },
+                  { label: 'Gross lb', node: n(t.gross_lb) },
+                  { label: 'Net lb', node: n(t.net_lb) },
+                  { label: 'Clean-out', node: d.cleanOut },
+                  { label: 'Clean lb', node: t.clean_net_lb != null ? n(t.clean_net_lb) : null },
+                  { label: 'Moisture', node: t.moisture_pct != null ? `${t.moisture_pct}%` : null },
+                  {
+                    label: 'Against',
+                    node: t.net_units != null ? `${n(t.net_units, 1)} ${t.unit ?? ''}` : null,
+                  },
+                  { label: 'Bin', node: bins?.find((b) => b.id === t.bin_id)?.name },
+                ]}
+              />
+            )
+          })}
+        </CardList>
+        <div className="hidden overflow-x-auto sm:block">
+          <table className="w-max min-w-full text-sm">
+            <thead className={TABLE_HEAD}>
               <tr>
-                <td colSpan={12} className="px-3 py-4 text-center text-sm text-gray-400">
-                  No loads recorded for {cropYear} yet.
-                </td>
-              </tr>
-            )}
-            {(tickets ?? []).map((t) => {
-              const c = contracts?.find((x) => x.id === t.contract_id)
-              return (
-                <tr
-                  key={t.id}
-                  onClick={rowClick(() => setTicketId(t.id))}
-                  className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-gray-50"
+                <th className="px-3 py-2 font-medium">Date</th>
+                {!forContractId && <th className="px-3 py-2 font-medium">Contract</th>}
+                <th className="px-3 py-2 font-medium">Ticket</th>
+                <th className="px-3 py-2 text-right font-medium">Gross lb</th>
+                <th className="px-3 py-2 text-right font-medium">Net lb</th>
+                <th
+                  className="px-3 py-2 text-right font-medium"
+                  title="Dockage: what the plant cleaned out of the net, and the clean weight left — what is paid on."
                 >
-                  <td className="px-3 py-2 tabular-nums">{t.delivered_on}</td>
-                  <td className="px-3 py-2">
-                    {c ? (
-                      `${cropOf(c)?.name ?? '?'} · ${buyerOf(c)}`
-                    ) : (
-                      <span className="text-gray-500">
-                        {[crops?.find((x) => x.id === t.crop_id)?.name, t.buyer].filter(Boolean).join(' · ') || '—'}
-                        <span className="block text-[10px] text-gray-400">no contract</span>
-                      </span>
-                    )}
+                  Clean-out
+                </th>
+                <th className="px-3 py-2 text-right font-medium">Clean lb</th>
+                <th className="px-3 py-2 text-right font-medium">Moist.</th>
+                <th className="px-3 py-2 text-right font-medium">Against</th>
+                <th className="px-3 py-2 font-medium">Bin</th>
+                <th className="w-8" />
+                {canEdit && <th className="w-8" />}
+              </tr>
+            </thead>
+            <tbody>
+              {shownTickets.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={forContractId ? 11 : 12}
+                    className="px-3 py-4 text-center text-sm text-gray-400"
+                  >
+                    {emptyLine}
                   </td>
-                  <td className="px-3 py-2 text-gray-500">
-                    {t.ticket_no ?? '—'}
-                    {t.receipt_no && <span className="block text-[10px] text-gray-400">receipt {t.receipt_no}{t.grade ? ` · ${t.grade}` : ''}</span>}
-                    {t.bin_load_id && (
-                      <span className="block text-[10px] text-green-700">
-                        settles the farm load of {(loads ?? []).find((l) => l.id === t.bin_load_id)?.loaded_on ?? '—'}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-500">{n(t.gross_lb)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{n(t.net_lb)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {t.dockage_pct != null ? `${t.dockage_pct}%` : <span className="text-amber-700" title="Not on the ticket: it comes on the plant's receipt">waiting</span>}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums font-medium">{t.clean_net_lb != null ? n(t.clean_net_lb) : '—'}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {t.moisture_pct != null ? `${t.moisture_pct}%` : '—'}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {t.net_units != null ? `${n(t.net_units, 1)} ${t.unit ?? ''}` : '—'}
-                  </td>
-                  <td className="px-3 py-2">{bins?.find((b) => b.id === t.bin_id)?.name ?? '—'}</td>
-                  <td className="px-1 py-2 text-center">
-                    <TicketPhotoButton ticketId={t.id} photoId={photos?.get(t.id)} label={`Ticket ${t.ticket_no ?? t.receipt_no ?? t.delivered_on}`} canEdit={canEdit} />
-                  </td>
-                  {canEdit && (
-                    <td className="px-2 py-2 text-right">
-                      <button
-                        onClick={() => {
-                          if (confirm('Remove this load? The contract total goes back down.')) remove.mutate(t.id)
-                        }}
-                        className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-600"
-                        aria-label="Remove load"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
-                  )}
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
+              )}
+              {shownTickets.map((t) => {
+                const d = ticketCells(t)
+                return (
+                  <tr
+                    key={t.id}
+                    onClick={rowClick(() => setTicketId(t.id))}
+                    className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-gray-50"
+                  >
+                    <td className="px-3 py-2 tabular-nums">{t.delivered_on}</td>
+                    {!forContractId && <td className="px-3 py-2">{d.contract}</td>}
+                    <td className="px-3 py-2 text-gray-500">{d.ticket}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                      {n(t.gross_lb)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{n(t.net_lb)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{d.cleanOut}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium">
+                      {t.clean_net_lb != null ? n(t.clean_net_lb) : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {t.moisture_pct != null ? `${t.moisture_pct}%` : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {t.net_units != null ? `${n(t.net_units, 1)} ${t.unit ?? ''}` : '—'}
+                    </td>
+                    <td className="px-3 py-2">
+                      {bins?.find((b) => b.id === t.bin_id)?.name ?? '—'}
+                    </td>
+                    <td className="px-1 py-2 text-center">{d.photo}</td>
+                    {canEdit && <td className="px-2 py-2 text-right">{d.remove}</td>}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {totals.size > 0 && (
@@ -484,68 +672,86 @@ export function ScaleTickets({ cropYear }: { cropYear: number }) {
         </p>
       )}
 
-      {plantLoads.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      {shownLoads.length > 0 && (
+        <div className="rounded-lg border border-gray-200 bg-white">
           <p className="border-b border-gray-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Farm loads straight to a plant ({plantLoads.length})
+            Hauled on our own scale, no plant ticket yet ({shownLoads.length})
           </p>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
-                <th className="px-3 py-2 font-medium">Date</th>
-                <th className="px-3 py-2 font-medium">Field</th>
-                <th className="px-3 py-2 font-medium">Plant</th>
-                <th className="px-3 py-2 font-medium">Contract</th>
-                <th className="px-3 py-2 text-right font-medium">Farm scale</th>
-                <th className="px-3 py-2 font-medium">Plant's ticket</th>
-              </tr>
-            </thead>
-            <tbody>
-              {plantLoads.map((l) => {
-                const c = contracts?.find((x) => x.id === l.contract_id)
-                const ticket = (tickets ?? []).find((t) => t.bin_load_id === l.id)
-                return (
-                  <tr
-                    key={l.id}
-                    onClick={canEdit ? rowClick(() => setLoadId(l.id)) : undefined}
-                    title={canEdit ? 'Open the load to see or correct it' : undefined}
-                    className={cn('border-b border-gray-100 last:border-0', canEdit && 'cursor-pointer hover:bg-gray-50')}
-                  >
-                    <td className="px-3 py-2 tabular-nums">{l.loaded_on}</td>
-                    <td className="px-3 py-2">{fields?.find((f) => f.id === l.field_id)?.name ?? '—'}</td>
-                    <td className="px-3 py-2">{sites?.find((x) => x.id === l.delivery_site_id)?.name ?? '—'}</td>
-                    <td className="px-3 py-2">
-                      {c ? `${c.contract_number ? `#${c.contract_number} · ` : ''}${cropOf(c)?.name ?? '?'} · ${buyerOf(c)}` : <span className="text-gray-400">none</span>}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {n(l.net_kg == null ? null : Number(l.net_kg))} kg
-                      <span className="block text-[11px] text-gray-500">{n(l.bushels == null ? null : Number(l.bushels), 1)} bu</span>
-                    </td>
-                    <td className="px-3 py-2 text-xs">
-                      {ticket ? (
-                        <span className="text-green-700">
-                          {ticket.ticket_no ? `#${ticket.ticket_no}` : 'Recorded'} · {n(ticket.net_units, 1)} {ticket.unit ?? ''}
-                        </span>
-                      ) : c ? (
-                        <span className="text-amber-700">Waiting — counted from the farm scale until it comes</span>
-                      ) : (
-                        <span className="text-gray-400">No contract picked</span>
+          {/* A phone reads each load down the page; from sm up it is the table. */}
+          <CardList>
+            {shownLoads.map((l) => {
+              const d = plantLoadCells(l)
+              return (
+                <RowCard
+                  key={l.id}
+                  onClick={canEdit ? rowClick(() => setLoadId(l.id)) : undefined}
+                  heading={
+                    <span>
+                      {l.loaded_on}{' '}
+                      <span className="font-normal text-gray-500">
+                        {fields?.find((f) => f.id === l.field_id)?.name ?? '—'}
+                      </span>
+                    </span>
+                  }
+                  facts={[
+                    { label: 'Plant', node: sites?.find((x) => x.id === l.delivery_site_id)?.name },
+                    ...(forContractId ? [] : [{ label: 'Contract', node: d.contract }]),
+                    { label: 'Farm scale', node: d.scale },
+                    { label: "Plant's ticket", node: d.plantTicket },
+                  ]}
+                />
+              )
+            })}
+          </CardList>
+          <div className="hidden overflow-x-auto sm:block">
+            <table className="w-max min-w-full text-sm">
+              <thead className={TABLE_HEAD}>
+                <tr>
+                  <th className="px-3 py-2 font-medium">Date</th>
+                  <th className="px-3 py-2 font-medium">Field</th>
+                  <th className="px-3 py-2 font-medium">Plant</th>
+                  {!forContractId && <th className="px-3 py-2 font-medium">Contract</th>}
+                  <th className="px-3 py-2 text-right font-medium">Farm scale</th>
+                  <th className="px-3 py-2 font-medium">Plant's ticket</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shownLoads.map((l) => {
+                  const d = plantLoadCells(l)
+                  return (
+                    <tr
+                      key={l.id}
+                      onClick={canEdit ? rowClick(() => setLoadId(l.id)) : undefined}
+                      title={canEdit ? 'Open the load to see or correct it' : undefined}
+                      className={cn(
+                        'border-b border-gray-100 last:border-0',
+                        canEdit && 'cursor-pointer hover:bg-gray-50',
                       )}
-                      {canEdit && (
-                        <span className="ml-1 align-middle">
-                          <DeleteLoadButton load={l} />
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          <p className="px-3 py-2 text-[11px] text-gray-400">
-            A plant ticket recorded against the same contract within three days and 10% of the farm's net weight settles the load
-            automatically, and its figure replaces the farm scale's in the contract's delivered total.
-          </p>
+                    >
+                      <td className="px-3 py-2 tabular-nums">{l.loaded_on}</td>
+                      <td className="px-3 py-2">
+                        {fields?.find((f) => f.id === l.field_id)?.name ?? '—'}
+                      </td>
+                      <td className="px-3 py-2">
+                        {sites?.find((x) => x.id === l.delivery_site_id)?.name ?? '—'}
+                      </td>
+                      {!forContractId && <td className="px-3 py-2">{d.contract}</td>}
+                      <td className="px-3 py-2 text-right tabular-nums">{d.scale}</td>
+                      <td className="px-3 py-2 text-xs">{d.plantTicket}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <HelpNote
+            className="px-3 py-2"
+            summary="A matching plant ticket settles the load automatically."
+          >
+            A plant ticket recorded against the same contract within three days and 10% of the
+            farm's net weight settles the load automatically, and its figure replaces the farm
+            scale's in the contract's delivered total.
+          </HelpNote>
         </div>
       )}
 
@@ -557,7 +763,9 @@ export function ScaleTickets({ cropYear }: { cropYear: number }) {
           <ScaleTicketDetail
             ticket={t}
             contracts={contracts ?? []}
-            contractLabel={(c) => `${cropOf(c)?.name ?? '?'} · ${buyerOf(c)}${c.contract_number ? ` · ${c.contract_number}` : ''}`}
+            contractLabel={(c) =>
+              `${cropOf(c)?.name ?? '?'} · ${buyerOf(c)}${c.contract_number ? ` · ${c.contract_number}` : ''}`
+            }
             crops={crops ?? []}
             bins={bins ?? []}
             load={settled}

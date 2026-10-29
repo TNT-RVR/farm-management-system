@@ -17,6 +17,8 @@ import {
 import { cn } from '@/lib/utils'
 import { FeedInfo } from './FeedInfo'
 import { Num, n0, n1 } from './bits'
+import { askConfirm } from '@/components/askConfirm'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const CATEGORY_LABEL: Record<FeedCategory, string> = {
   hay: 'Hay',
@@ -89,8 +91,8 @@ export function FeedQuality({
       {adding && <NewFeed onDone={() => setAdding(false)} />}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-sm">
-          <thead>
-            <tr className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+          <thead className={TABLE_HEAD}>
+            <tr>
               <th className="px-3 py-1.5 font-medium">Feed</th>
               <th className="px-2 py-1.5 font-medium">Kind</th>
               <th className="px-2 py-1.5 text-right font-medium">
@@ -301,7 +303,7 @@ function FeedDetail({ feed, tests, isManager, onGone }: { feed: FeedTypeRow; tes
     setChecking(true)
     try {
       const plan = feedTypeDeletePlan(await del.usage(feed.id))
-      if (!window.confirm(plan.message)) return
+      if (!(await askConfirm(plan.message, { confirmLabel: plan.action === 'archive' ? 'Archive' : 'Delete' }))) return
       await del.run.mutateAsync({ id: feed.id, action: plan.action })
       onGone()
     } catch {

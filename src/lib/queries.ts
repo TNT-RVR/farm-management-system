@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
+import { cropsSource, fieldsSource } from './partner'
 import { cleanFieldName } from './field-name'
+import { REFERENCE_STALE_MS } from './stale'
 import type { Database } from './database.types'
 
 export type FieldRow = Database['public']['Tables']['fields']['Row']
@@ -187,25 +189,41 @@ export function useHailEvents(cropYear: number) {
   return useQuery(hailEventsQuery(cropYear))
 }
 
+/**
+ * Record one hail event, or take one back.
+ *
+ * It used to be a tick box on the Fields list, and the box did two unsafe
+ * things (Sam, 29 Oct 2026). Ticking it stamped *today* as the day it
+ * hailed, which is the date the hail report and the AFSC paperwork then read.
+ * Unticking it ran a delete across the field and the year, so one stray tap
+ * took away every hail event on that field — the adjuster's loss percentage,
+ * acres and notes included. 6-Kellers had exactly that pair sitting in 2026:
+ * an AFSC inspection on 7 July, 17% on 125 acres, and a bare box-tick on
+ * 11 August. The box could have deleted the inspection.
+ *
+ * So: adding asks for the day, and nothing deletes more than the one event
+ * somebody chose.
+ */
 export function useHailMutations(cropYear: number) {
   const qc = useQueryClient()
-  const invalidate = () => void qc.invalidateQueries({ queryKey: ['field_hail_events', cropYear] })
-  // Toggle the Fields-list checkbox: add one event (today) or clear the year's.
-  const setHail = useMutation({
-    mutationFn: async ({ fieldId, on }: { fieldId: string; on: boolean }) => {
-      if (on) {
-        const { error } = await supabase
-          .from('field_hail_events')
-          .insert({ field_id: fieldId, crop_year: cropYear })
-        if (error) throw error
-      } else {
-        const { error } = await supabase
-          .from('field_hail_events')
-          .delete()
-          .eq('field_id', fieldId)
-          .eq('crop_year', cropYear)
-        if (error) throw error
-      }
+  const invalidate = () => void qc.invalidateQueries({ queryKey: ['field_hail_events'] })
+  const add = useMutation({
+    mutationFn: async (v: {
+      fieldId: string
+      eventDate: string
+      lossPct?: number | null
+      acres?: number | null
+      notes?: string | null
+    }) => {
+      const { error } = await supabase.from('field_hail_events').insert({
+        field_id: v.fieldId,
+        crop_year: cropYear,
+        event_date: v.eventDate,
+        loss_pct: v.lossPct ?? null,
+        acres: v.acres ?? null,
+        notes: v.notes?.trim() || null,
+      })
+      if (error) throw error
     },
     onSuccess: invalidate,
   })
@@ -216,7 +234,7 @@ export function useHailMutations(cropYear: number) {
     },
     onSuccess: invalidate,
   })
-  return { setHail, remove }
+  return { add, remove }
 }
 
 /**
@@ -297,15 +315,13 @@ export function compareFieldNames(a: string, b: string): number {
  * picker on the farm quietly listed archived fields.
  */
 export function fieldsQuery() {
-  return {
-    queryKey: ['fields'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('fields').select('*')
-      if (error) throw error
-      return [...data].filter((f) => f.active).sort((a, b) => compareFieldNames(a.name, b.name))
-    },
-  }
+  // Read off the all-fields query rather than fetched on its own: the two were
+  // the same select('*') under two keys, so a screen with a picker and the
+  // Fields page paid for the table twice, and offline one could be cached
+  // without the other. One cache entry, so the two lists cannot disagree.
+  return { ...allFieldsQuery(), select: activeFields }
 }
+const activeFields = (all: FieldRow[]) => all.filter((f) => f.active)
 
 export function useFields() {
   return useQuery(fieldsQuery())
@@ -316,10 +332,11 @@ export function allFieldsQuery() {
   return {
     queryKey: ['fields', 'all'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('fields').select('*')
+      const { data, error } = await supabase.from(fieldsSource()).select('*')
       if (error) throw error
       return [...data].sort((a, b) => compareFieldNames(a.name, b.name))
     },
+    staleTime: REFERENCE_STALE_MS,
   }
 }
 
@@ -336,6 +353,7 @@ export function allBoundariesQuery() {
       if (error) throw error
       return data
     },
+    staleTime: REFERENCE_STALE_MS,
   }
 }
 
@@ -390,6 +408,7 @@ export function usersQuery() {
       if (error) throw error
       return data
     },
+    staleTime: REFERENCE_STALE_MS,
   }
 }
 
@@ -515,10 +534,11 @@ export function cropsQuery() {
     // v2: rows carry on_combines (20261017010000). Invalidating ['crops'] still reaches it.
     queryKey: ['crops', 'v2'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('crops').select('*').order('name')
+      const { data, error } = await supabase.from(cropsSource()).select('*').order('name')
       if (error) throw error
       return data
     },
+    staleTime: REFERENCE_STALE_MS,
   }
 }
 

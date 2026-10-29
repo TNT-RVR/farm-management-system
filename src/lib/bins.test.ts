@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { binNumber, byYardThenNumber, estimateBins, planBinsForFields, type CropBinOverride, plansWithZones } from './bins'
+import { binNumber, byYardThenNumber, estimateBins, planBinsForFields, type CropBinOverride, plansWithZones, yardRoom } from './bins'
 import type { BinAllocationRow, BinRow } from './bins'
 import type { VarietySettingRow } from './crop-variety-settings'
 import type { CropPlanRow, CropRow } from './queries'
@@ -62,7 +62,7 @@ describe('estimateBins bin overrides', () => {
         { crop_id: 'corn', needs_bins: false, stored_bu: null, note: 'straight to the plant' },
       ],
     ])
-    const [line] = estimateBins(crops, plans, bins, allocs, acres, ov)
+    const [line] = estimateBins(crops, plans, bins, allocs, acres, { overrideByCrop: ov })
     expect(line.needsBins).toBe(false)
     expect(line.shortfallBu).toBe(0)
     expect(line.summary).toContain('straight to the plant')
@@ -74,7 +74,7 @@ describe('estimateBins bin overrides', () => {
     const ov = new Map<string, CropBinOverride>([
       ['corn', { crop_id: 'corn', needs_bins: null, stored_bu: 4000, note: null }],
     ])
-    const [line] = estimateBins(crops, plans, bins, allocs, acres, ov)
+    const [line] = estimateBins(crops, plans, bins, allocs, acres, { overrideByCrop: ov })
     expect(line.productionBu).toBe(4000)
     expect(line.shortfallBu).toBe(0) // 5000 bu allocated covers it
     expect(line.overridden).toBe(true)
@@ -86,7 +86,7 @@ describe('estimateBins bin overrides', () => {
     const ov = new Map<string, CropBinOverride>([
       ['corn', { crop_id: 'corn', needs_bins: true, stored_bu: null, note: null }],
     ])
-    const [line] = estimateBins(baled, plans, bins, allocs, acres, ov)
+    const [line] = estimateBins(baled, plans, bins, allocs, acres, { overrideByCrop: ov })
     expect(line.needsBins).toBe(true)
     expect(line.productionBu).toBe(10000)
   })
@@ -96,7 +96,7 @@ describe('estimateBins bin overrides', () => {
     const ov = new Map<string, CropBinOverride>([
       ['corn', { crop_id: 'corn', needs_bins: null, stored_bu: null, note: null }],
     ])
-    const [line] = estimateBins(baled, plans, bins, allocs, acres, ov)
+    const [line] = estimateBins(baled, plans, bins, allocs, acres, { overrideByCrop: ov })
     expect(line.needsBins).toBe(false)
   })
 })
@@ -270,7 +270,7 @@ describe('estimateBins with yield cuts and ranges', () => {
   const p = (over: Partial<CropPlanRow>) => plan({ crop_year: 2030, ...over })
 
   it('takes a cut off the estimate and says how much', () => {
-    const [line] = estimateBins([crop({})], [p({})], [bin('b1', 5000)], [], acres, undefined, undefined, [cut({ crop_id: 'corn', loss_pct: 25 })])
+    const [line] = estimateBins([crop({})], [p({})], [bin('b1', 5000)], [], acres, { cuts: [cut({ crop_id: 'corn', loss_pct: 25 })] })
     expect(line.estimatedBu).toBe(7500)
     expect(line.cutBu).toBe(2500)
     expect(line.cuts).toEqual([{ fieldId: 'f1', label: '−25% · hail' }])
@@ -290,7 +290,7 @@ describe('estimateBins with yield cuts and ranges', () => {
   it('a field hailed out needs no bin of its own', () => {
     const canola = crop({ id: 'canola', bin_policy: 'segregate_by_field', default_yield_per_acre: 50 })
     const plans = [p({ id: 'a', crop_id: 'canola', field_id: 'f1' }), p({ id: 'b', crop_id: 'canola', field_id: 'f2' })]
-    const [line] = estimateBins([canola], plans, [bin('b1', 6000), bin('b2', 6000)], [], acres, undefined, undefined, [cut({ loss_pct: 100 })])
+    const [line] = estimateBins([canola], plans, [bin('b1', 6000), bin('b2', 6000)], [], acres, { cuts: [cut({ loss_pct: 100 })] })
     expect(line.neededBins).toBe(1)
     expect(line.estimatedBu).toBe(5000)
   })
@@ -304,14 +304,14 @@ describe('estimateBins with yield cuts and ranges', () => {
       ],
       2030,
     )
-    const [line] = estimateBins([crop({})], plans, [], [], acres, undefined, undefined, [cut({ zone_id: 'z2', loss_pct: 50 })])
+    const [line] = estimateBins([crop({})], plans, [], [], acres, { cuts: [cut({ zone_id: 'z2', loss_pct: 50 })] })
     // 40 × 100 + 60 × 50
     expect(line.estimatedBu).toBe(7000)
     expect(line.cutBu).toBe(3000)
   })
 
   it('a harvested yield is not cut again', () => {
-    const [line] = estimateBins([crop({})], [p({ yield_per_acre_override: 90, yield_basis: 'clean' })], [], [], acres, undefined, undefined, [cut({ loss_pct: 50 })])
+    const [line] = estimateBins([crop({})], [p({ yield_per_acre_override: 90, yield_basis: 'clean' })], [], [], acres, { cuts: [cut({ loss_pct: 50 })] })
     expect(line.estimatedBu).toBe(9000)
     expect(line.cutBu).toBe(0)
   })
@@ -341,15 +341,120 @@ describe('estimateBins follows each plan’s variety', () => {
 
   it('takes the variety’s own normal yield, the crop’s for the rest', () => {
     const plans = [p({ id: 'a', field_id: 'f1', variety: 'Tall' }), p({ id: 'b', field_id: 'f2', variety: 'Plain' })]
-    const [line] = estimateBins([crop({})], plans, [], [], acres, undefined, undefined, undefined, [own('tall', { default_yield_per_acre: 150 })])
+    const [line] = estimateBins([crop({})], plans, [], [], acres, { varieties: [own('tall', { default_yield_per_acre: 150 })] })
     expect(line.estimatedBu).toBe(25000)
   })
 
   it('weighs a crop kept in pounds at each variety’s test weight', () => {
     const beans = crop({ yield_unit: 'lbs', default_yield_per_acre: 3000, test_weight_lb_per_bu: 60 })
     const plans = [p({ id: 'a', field_id: 'f1', variety: 'Light' }), p({ id: 'b', field_id: 'f2' })]
-    const [line] = estimateBins([beans], plans, [], [], acres, undefined, undefined, undefined, [own('Light', { test_weight_lb_per_bu: 50 })])
+    const [line] = estimateBins([beans], plans, [], [], acres, { varieties: [own('Light', { test_weight_lb_per_bu: 50 })] })
     // 300,000 lb at 50 + 300,000 lb at 60
     expect(line.estimatedBu).toBe(11000)
+  })
+})
+
+describe('estimateBins sizes what is left, not what was promised', () => {
+  // Sam, 27 Oct 2026: "the assessment is off as it takes allocation over
+  // what was actually binned and so there is wasted space not being shown as
+  // available." 100 ac at 100 bu/ac against one 5,000 bu bin.
+  const held = (bin_id: string, onhand_bu: number, crop_id: string | null = 'corn') => ({ bin_id, crop_id, onhand_bu })
+
+  it('counts the room left in a part-full bin, not the bin', () => {
+    const [line] = estimateBins([crop({})], [plan({})], [bin('b1', 5000)], [alloc('b1')], acres, {
+      onHand: [held('b1', 3000)],
+    })
+    expect(line.binnedBu).toBe(3000)
+    expect(line.toComeBu).toBe(7000) // 10,000 grown, 3,000 away
+    expect(line.freeInAllocatedBu).toBe(2000)
+    expect(line.shortfallBu).toBe(5000)
+    expect(line.summary).toContain('7,000 bu still to come vs 2,000 bu room')
+  })
+
+  it('is covered where the bin it has left is enough for the rest', () => {
+    const ov = new Map<string, CropBinOverride>([['corn', { crop_id: 'corn', needs_bins: null, stored_bu: 4000, note: null }]])
+    const [line] = estimateBins([crop({})], [plan({})], [bin('b1', 5000)], [alloc('b1')], acres, {
+      overrideByCrop: ov,
+      onHand: [held('b1', 3000)],
+    })
+    expect(line.toComeBu).toBe(1000)
+    expect(line.shortfallBu).toBe(0)
+    expect(line.summary).toContain('covered')
+  })
+
+  it('says so when the whole crop is already away', () => {
+    const [line] = estimateBins([crop({ default_yield_per_acre: 30 })], [plan({})], [bin('b1', 5000)], [alloc('b1')], acres, {
+      onHand: [held('b1', 3200)],
+    })
+    expect(line.toComeBu).toBe(0)
+    expect(line.shortfallBu).toBe(0)
+    expect(line.summary).toContain('All of it is in the bins')
+    expect(line.summary).toContain('1,800 bu room')
+  })
+
+  it('a crop marked not binned with grain in the bins says it out loud', () => {
+    const ov = new Map<string, CropBinOverride>([['corn', { crop_id: 'corn', needs_bins: false, stored_bu: null, note: null }]])
+    const [line] = estimateBins([crop({})], [plan({})], [bin('b1', 5000)], [], acres, {
+      overrideByCrop: ov,
+      onHand: [held('b1', 2500)],
+    })
+    expect(line.needsBins).toBe(false)
+    expect(line.binnedBu).toBe(2500)
+    expect(line.summary).toContain('2,500 bu of it is in the bins')
+  })
+
+  it('says when the bin set aside for a crop is full of something else', () => {
+    // #20 is held for the Corteva canola and has corn in it: the canola is
+    // still in the field and has nowhere allocated to go.
+    const canola = crop({ id: 'canola', name: 'Canola', bin_policy: 'segregate_by_field', default_yield_per_acre: 16 })
+    const [line] = estimateBins([canola], [plan({ crop_id: 'canola' })], [bin('b1', 3200)], [{ ...alloc('b1'), crop_id: 'canola' } as BinAllocationRow], acres, {
+      onHand: [held('b1', 3200)],
+    })
+    expect(line.binnedBu).toBe(0)
+    expect(line.shortfallBins).toBe(1)
+    expect(line.summary).toContain('1 bin for 1 field kept apart')
+    expect(line.summary).toContain('Its one bin is full')
+  })
+
+  it('a field already in a bin needs no more bins', () => {
+    const canola = crop({ id: 'canola', name: 'Canola', bin_policy: 'segregate_by_field', default_yield_per_acre: 70 })
+    const plans = [
+      plan({ id: 'p1', crop_id: 'canola', field_id: 'moreaus', planned_acres: 100 }),
+      plan({ id: 'p2', crop_id: 'canola', field_id: 'lindgren', planned_acres: 100 }),
+    ]
+    const yard = [bin('b1', 4000), bin('b2', 4000), bin('b3', 4000)]
+    // Both fields make 7,000 bu: two bins each out of 4,000 bu bins, four in all.
+    const dry = estimateBins([canola], plans, yard, [], acres)
+    expect(dry[0].neededBins).toBe(4)
+    // Moreaus is away in b1 and b2; only Lindgren is left.
+    const [line] = estimateBins([canola], plans, yard, [alloc('b1'), alloc('b2')], acres, {
+      onHand: [held('b1', 4000, 'canola'), held('b2', 3000, 'canola')],
+      binnedByField: new Map([['moreaus', 7000]]),
+      fieldsInBin: new Map([['b1', ['moreaus']], ['b2', ['moreaus']]]),
+    })
+    expect(line.neededBins).toBe(2)
+    expect(line.binnedBu).toBe(7000)
+    expect(line.summary).toContain('1 field still out')
+  })
+})
+
+describe('yardRoom', () => {
+  it('counts the empty half of a bin with grain in it', () => {
+    const room = yardRoom([bin('b1', 5000), bin('b2', 5000), bin('b3', 5000)], [
+      { bin_id: 'b1', crop_id: 'corn', onhand_bu: 5000 },
+      { bin_id: 'b2', crop_id: 'corn', onhand_bu: 1000 },
+    ])
+    expect(room.roomBu).toBe(9000)
+    expect(room.inUseRoomBu).toBe(4000)
+    expect([room.emptyBins, room.partBins, room.fullBins]).toEqual([1, 1, 1])
+  })
+
+  it('leaves out a bin holding a previous year’s grain, and any bin out of use', () => {
+    const bins = [bin('b1', 5000), { ...bin('b2', 5000), active: false } as BinRow]
+    expect(yardRoom(bins, [], new Set(['b1'])).roomBu).toBe(0)
+  })
+
+  it('is the whole capacity before anything is binned', () => {
+    expect(yardRoom([bin('b1', 4000), bin('b2', 2000)]).roomBu).toBe(6000)
   })
 })

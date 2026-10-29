@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabase'
 import { useHerdCounts } from '@/lib/cattle'
 import type { Database } from '@/lib/database.types'
 import { HelpNote } from '@/components/HelpNote'
+import { money as fmtMoney } from '@/lib/format'
+import { CARD_HEAD } from '@/lib/table-style'
 
 type Program = Database['public']['Tables']['mineral_programs']['Row']
 type Contact = Database['public']['Tables']['contacts']['Row']
@@ -33,7 +35,7 @@ function useCattleContacts() {
   })
 }
 
-const money = (v: number, dp = 2) => `$${v.toLocaleString('en-CA', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`
+const money = (v: number, dp = 2) => fmtMoney(v, dp, { neg: 'inside' })
 
 /**
  * Minerals and vet: who supplies them, how much goes out, and — once a receipt
@@ -105,10 +107,11 @@ export function CattleSuppliers({ ranches, isManager }: { ranches: { id: string;
   ]
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-3">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-        <Package className="h-4 w-4 text-gray-400" /> Minerals and vet
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <Package className="h-4 w-4 text-brand-100" /> Minerals and vet
       </h2>
+      <div className="p-3">
       <HelpNote className="mt-1 text-xs" summary="Prices wait for the receipts." title="Where these come from">
         <p>Sam, 5 Oct 2026. Type a tub&apos;s price from a receipt and the cost a head works out here. The calves at side are left out of the head: they eat from the cows&apos; tubs.</p>
       </HelpNote>
@@ -239,6 +242,8 @@ export function CattleSuppliers({ ranches, isManager }: { ranches: { id: string;
           ))}
           {vets.length === 0 && <p className="text-gray-400">None recorded.</p>}
         </div>
+      </div>
+
       </div>
     </section>
   )

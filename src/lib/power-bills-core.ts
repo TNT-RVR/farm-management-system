@@ -104,15 +104,15 @@ export function billedPricePerKwh(rows: PumpPower[]): { perKwh: number; kwh: num
   return kwh > 0 ? { perKwh: cost / kwh, kwh, cost } : null
 }
 
-/** A site row from the Azgard account page (power_bills.source 'portal'): one per site per invoice. */
+/** A site row from a retailer's account page (power_bills.source 'portal'): one per site per invoice. */
 export type PortalSite = { site_id: string | null; bill_date: string | null }
 
 const siteDigits = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '').replace(/^0+/, '')
 const dayOf = (d: string) => Date.parse(`${d}T00:00:00Z`) / 86_400_000
 
 /**
- * For each site on an Azgard bill read from its PDF (an upload, or a file
- * attached in QuickBooks), whether the Azgard account page already has that
+ * For each site on a bill read from its PDF (an upload, or a file attached
+ * in QuickBooks), whether the retailer's account page already has that
  * site for that invoice — so the month is not counted twice. The page's rows
  * carry the site ID and the invoice date (as their period's end), not a
  * period; a PDF's site is the same one when its site ID matches and the

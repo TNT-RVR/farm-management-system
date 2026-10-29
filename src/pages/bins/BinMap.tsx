@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import maplibregl, { type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
+import { hiddenYardNames, useBinYards, yardRank } from '@/lib/bin-yards'
+import maplibregl, { type MapMouseEvent } from 'maplibre-gl'
 import type { Feature, FeatureCollection } from 'geojson'
 import { MapPin, X } from 'lucide-react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap, useGeoJsonSource } from '@/lib/geo/use-farm-map'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { byYardThenNumber, useBinAllocations, useBinFieldsIn, useBinOnHand, useBins, type BinRow } from '@/lib/bins'
@@ -12,14 +12,22 @@ import { useCrops, useFields } from '@/lib/queries'
 import { cropColour, readableOn } from '@/lib/crop-colour'
 import { contentLabel, useBinContents } from '@/lib/bin-contents'
 import { BinDetail } from './BinDetail'
-import { farmMapCenter } from '@/lib/farm-setup'
 
 const SRC = 'bin-pins'
 const DOT = 'bin-pin-dot'
 const LABEL = 'bin-pin-label'
 
-/** The yard everybody means when they say "the yard". */
-const DEFAULT_YARD = 'Main Yard'
+/**
+ * What a pin says: the bin's number alone. The yard is the map you are on and
+ * "(Fertilizer Bin)" is the bin's own business, so both come off — a label
+ * wider than the pin sits on the satellite image and cannot be read.
+ */
+export function binLabel(name: string): string {
+  const short = name.replace(/\s*\([^)]*\)\s*/g, ' ').trim()
+  const n = short.match(/#\s*(\w+)/)
+  return n ? `#${n[1]}` : short.replace(/^.*?-\s*/, '') || name
+}
+
 
 /** A bin with nothing in it. Grey, so it does not read as an uncoloured crop. */
 const EMPTY = '#cbd5e1'
@@ -33,6 +41,11 @@ export type LocatedBin = {
   /** What it normally holds. Advisory — a fertilizer bin can still take grain. */
   usual: 'grain' | 'fertilizer'
   capacity_bu: number | null
+  /** Which switches it offers, and whether they are running: the pin's rings. */
+  has_aeration: boolean
+  has_heater: boolean
+  aeration_on: boolean
+  heater_on: boolean
   lng: number | null
   lat: number | null
 }
@@ -59,6 +72,10 @@ function useLocatedBins() {
             usual:
               row.usual_contents === 'fertilizer' ? ('fertilizer' as const) : ('grain' as const),
             capacity_bu: n(row.capacity_bu),
+            has_aeration: row.has_aeration === true,
+            has_heater: row.has_heater === true,
+            aeration_on: row.aeration_on === true,
+            heater_on: row.heater_on === true,
             lng: n(row.lng),
             lat: n(row.lat),
           }
@@ -106,15 +123,17 @@ export type BinActions = {
   weighIn: (bin: BinRow) => void
   add: (bin: BinRow) => void
   move: (bin: BinRow) => void
+  ship: (bin: BinRow) => void
   record: (bin: BinRow) => void
 }
 
-export function BinMap({ canEdit, cropYear, actions }: { canEdit: boolean; cropYear: number; actions?: BinActions }) {
+export function BinMap({ canEdit, cropYear, actions, compact = false }: { canEdit: boolean; cropYear: number; actions?: BinActions; compact?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
-  const [ready, setReady] = useState(false)
+  const { map, mapRef, ready } = useFarmMap(containerRef, { zoom: 14 })
   const [placing, setPlacing] = useState<string | null>(null)
-  const [yard, setYard] = useState<string>(DEFAULT_YARD)
+  // Opens on the first shown yard in the farm's order (Bins page → Bin yards).
+  const [yard, setYard] = useState<string>('')
+  const { data: yardList } = useBinYards()
   const [opened, setOpened] = useState<string | null>(null)
   const { data: bins } = useLocatedBins()
   const { data: crops } = useCrops()
@@ -140,12 +159,15 @@ export function BinMap({ canEdit, cropYear, actions }: { canEdit: boolean; cropY
   // cannot close over the bin list — that list changes with every pin dropped.
   const nextUnplacedRef = useRef<(justPlaced: string) => string | null>(() => null)
 
+  // The yards in the farm's order, the hidden ones last: still here, so their
+  // bins' pins can be placed, but not where the map opens.
   const yards = useMemo(() => {
     const set = new Set((bins ?? []).map((b) => b.site ?? 'Unsorted'))
-    return [...set].sort((a, b) =>
-      a === DEFAULT_YARD ? -1 : b === DEFAULT_YARD ? 1 : a.localeCompare(b),
-    )
-  }, [bins])
+    const rank = yardRank(yardList)
+    const hidden = hiddenYardNames(yardList)
+    return [...set].sort((a, b) => Number(hidden.has(a)) - Number(hidden.has(b)) || rank(a) - rank(b) || a.localeCompare(b))
+  }, [bins, yardList])
+  const hiddenYards = useMemo(() => hiddenYardNames(yardList), [yardList])
 
   // A yard that has gone away — every bin in it renamed, say — must not leave
   // the sidebar showing nothing with no way back. Derived rather than corrected
@@ -209,22 +231,28 @@ export function BinMap({ canEdit, cropYear, actions }: { canEdit: boolean; cropY
       features: placed.map<Feature>((b) => {
         const colour = colourOf(b.id)
         const planned = contentsOf(b.id)?.planned ?? false
+        const running = b.aeration_on || b.heater_on
         return {
           type: 'Feature',
           id: b.id,
           properties: {
             id: b.id,
-            // "#13" reads at a glance where "Main Yard - #13" does not fit.
-            label: b.name.replace(/^.*?#\s*/, '#') || b.name,
+            // Just the number: "Main Yard - #21 (Fertilizer Bin)" spilled off
+            // the pin onto the field and could not be read (Sam, 26 Oct 2026).
+            label: binLabel(b.name),
             name: b.name,
             colour,
             // Only planned: a white pin ringed in the crop's colour, so it
             // never reads as a bin with grain in it (Sam, 8 Oct 2026).
             fill: planned ? '#ffffff' : colour,
-            ring: planned ? colour : '#ffffff',
-            ringWidth: planned ? 3.5 : 2,
+            // The pin's own ring says what is running (Sam, 27 Oct 2026):
+            // red for heat, blue for the fan, red first when both are on.
+            ring: b.heater_on ? '#dc2626' : b.aeration_on ? '#0284c7' : planned ? colour : '#ffffff',
+            ringWidth: running ? 3.5 : planned ? 3.5 : 2,
             // The number sits ON the pin, so it has to survive a pale crop.
             text: planned ? '#111827' : readableOn(colour),
+            // Outlined in the pin's own colour, so a number wider than the pin still reads.
+            halo: planned ? '#ffffff' : colour,
           },
           geometry: { type: 'Point', coordinates: [b.lng!, b.lat!] },
         }
@@ -233,33 +261,7 @@ export function BinMap({ canEdit, cropYear, actions }: { canEdit: boolean; cropY
     [placed, colourOf, contentsOf],
   )
 
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: SATELLITE_STYLE,
-      center: farmMapCenter(),
-      zoom: 14,
-      attributionControl: false,
-    })
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-    map.on('load', () => setReady(true))
-    mapRef.current = map
-    return () => {
-      map.remove()
-      mapRef.current = null
-    }
-  }, [])
-
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || !ready) return
-    const src = map.getSource(SRC) as GeoJSONSource | undefined
-    if (src) {
-      src.setData(data)
-      return
-    }
-    map.addSource(SRC, { type: 'geojson', data })
+  useGeoJsonSource(map, ready, SRC, data, (map) => {
     map.addLayer({
       id: DOT,
       type: 'circle',
@@ -278,12 +280,12 @@ export function BinMap({ canEdit, cropYear, actions }: { canEdit: boolean; cropY
       layout: {
         'text-field': ['get', 'label'],
         'text-font': ['Noto Sans Regular'],
-        'text-size': 11,
+        'text-size': 12,
         'text-allow-overlap': true,
       },
-      paint: { 'text-color': ['get', 'text'] },
+      paint: { 'text-color': ['get', 'text'], 'text-halo-color': ['get', 'halo'], 'text-halo-width': 1.4 },
     })
-  }, [ready, data])
+  })
 
   // Frame the yard you are looking at, and reframe when you switch yards — the
   // two are far enough apart that keeping the old view would leave the map
@@ -294,7 +296,7 @@ export function BinMap({ canEdit, cropYear, actions }: { canEdit: boolean; cropY
     const b = new maplibregl.LngLatBounds()
     for (const p of placed) b.extend([p.lng!, p.lat!])
     map.fitBounds(b, { padding: 80, maxZoom: 17.5, duration: 400 })
-  }, [ready, shownYard, placed])
+  }, [mapRef, ready, shownYard, placed])
 
   useEffect(() => {
     const map = mapRef.current
@@ -312,7 +314,7 @@ export function BinMap({ canEdit, cropYear, actions }: { canEdit: boolean; cropY
     }
     map.on('click', onClick)
     return () => void map.off('click', onClick)
-  }, [ready, save])
+  }, [mapRef, ready, save])
 
   // Clicking a pin opens the bin, the same as clicking its row.
   useEffect(() => {
@@ -337,19 +339,20 @@ export function BinMap({ canEdit, cropYear, actions }: { canEdit: boolean; cropY
       map.off('mouseenter', DOT, enter)
       map.off('mouseleave', DOT, leave)
     }
-  }, [ready])
+  }, [mapRef, ready])
 
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
     map.getCanvas().style.cursor = placing ? 'crosshair' : ''
-  }, [ready, placing])
+  }, [mapRef, ready, placing])
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-3 lg:grid-cols-[19rem_1fr]">
+      {/* Compact: beside the Bins list (Sam, 23 Oct 2026), which is the list; no sidebar of its own. */}
+      <div className={cn('grid gap-3', !compact && 'lg:grid-cols-[19rem_1fr]')}>
         {/* The bin list is a desktop sidebar; on a phone the pins are the list. */}
-        <aside className="hidden overflow-hidden rounded-lg border border-gray-200 bg-white lg:block">
+        <aside className={cn('hidden overflow-hidden rounded-lg border border-gray-200 bg-white', !compact && 'lg:block')}>
           <div className="flex gap-1 border-b border-gray-200 p-2">
             {yards.map((y) => (
               <button
@@ -363,6 +366,7 @@ export function BinMap({ canEdit, cropYear, actions }: { canEdit: boolean; cropY
                 )}
               >
                 {y}
+                {hiddenYards.has(y) && <span className="ml-1 opacity-70">(hidden)</span>}
               </button>
             ))}
           </div>
@@ -432,10 +436,10 @@ export function BinMap({ canEdit, cropYear, actions }: { canEdit: boolean; cropY
         </aside>
 
         <div className="relative overflow-hidden rounded-lg border border-gray-200">
-          <div ref={containerRef} className="h-[calc(100dvh-11rem)] min-h-[20rem] w-full lg:h-[28rem]" />
+          <div ref={containerRef} className={cn('w-full', compact ? 'h-[45dvh] min-h-[16rem] lg:h-[calc(100dvh-13rem)]' : 'h-[calc(100dvh-11rem)] min-h-[20rem] lg:h-[28rem]')} />
           {/* The yard switch, over the map on a phone where the list is hidden. */}
           {yards.length > 1 && (
-            <div className="absolute left-2 top-2 flex gap-1 rounded-md bg-white/95 p-1 shadow lg:hidden">
+            <div className={cn('absolute left-2 top-2 flex gap-1 rounded-md bg-white/95 p-1 shadow', !compact && 'lg:hidden')}>
               {yards.map((y) => (
                 <button
                   key={y}
@@ -443,6 +447,7 @@ export function BinMap({ canEdit, cropYear, actions }: { canEdit: boolean; cropY
                   className={cn('rounded px-2 py-1 text-xs font-medium', y === shownYard ? 'bg-brand-700 text-white' : 'text-gray-700')}
                 >
                   {y}
+                  {hiddenYards.has(y) && <span className="ml-1 opacity-70">(hidden)</span>}
                 </button>
               ))}
             </div>
@@ -473,6 +478,12 @@ export function BinMap({ canEdit, cropYear, actions }: { canEdit: boolean; cropY
         <span className="inline-flex items-center gap-1.5">
           <span className="h-3 w-3 rounded-full border-[3px] border-amber-500 bg-white" /> Empty, only planned
         </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded-full border-2 border-sky-600 bg-amber-500" /> Fan running
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded-full border-2 border-red-600 bg-amber-500" /> Heat on
+        </span>
       </p>
 
       {save.error && <p className="text-xs text-red-700">{(save.error as Error).message}</p>}
@@ -495,24 +506,30 @@ export function BinMap({ canEdit, cropYear, actions }: { canEdit: boolean; cropY
             setOpened(null)
             actions?.move(openFull)
           }}
+          onShip={() => {
+            setOpened(null)
+            actions?.ship(openFull)
+          }}
           onRecord={() => {
             setOpened(null)
             actions?.record(openFull)
           }}
           extra={
+            openBin.lng != null ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpened(null)
+                  mapRef.current?.flyTo({ center: [openBin.lng!, openBin.lat!], zoom: 18.5 })
+                }}
+                className="rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+              >
+                Show on map
+              </button>
+            ) : undefined
+          }
+          pinControls={
             <>
-              {openBin.lng != null && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpened(null)
-                    mapRef.current?.flyTo({ center: [openBin.lng!, openBin.lat!], zoom: 18.5 })
-                  }}
-                  className="rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
-                >
-                  Show on map
-                </button>
-              )}
               {canEdit && (
                 <button
                   type="button"

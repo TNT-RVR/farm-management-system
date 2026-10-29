@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { FieldScouting } from '@/pages/ScoutingPage'
+import { waterSourceLabel } from '@/lib/water-source-names'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { MultiPolygon } from 'geojson'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -7,7 +7,6 @@ import { FieldYieldHistory } from '@/components/FieldYieldHistory'
 import { ArrowLeft, CloudHail, ExternalLink, FileText, Gauge, MapPin, PenLine, Radio } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useFieldPivots, usePumps, useWaterLicences } from '@/lib/irrigation'
-import { usePlcTurbines } from '@/lib/plc'
 import {
   fieldnetAppUrl,
   fnStatus,
@@ -17,8 +16,6 @@ import {
   FN_STATUS_LABEL,
 } from '@/lib/fieldnet'
 import { PivotStatusPanel } from '@/components/PivotStatusPanel'
-import { BoundaryEditor } from '@/components/BoundaryEditor'
-import { FieldMapSnapshot } from '@/components/FieldMapSnapshot'
 import { FieldTenure } from '@/components/FieldTenure'
 import { ReentryWarning } from '@/components/ReentryWarning'
 import { FieldGrazingRestriction } from '@/components/GrazingRestrictions'
@@ -30,6 +27,7 @@ import type { Database } from '@/lib/database.types'
 import { FieldCropCard } from '@/components/FieldCropCard'
 import { HarvestEstimateLine } from '@/components/HarvestEstimateLine'
 import { FieldFiles } from '@/components/FieldFiles'
+import { TabSuspense } from '@/components/TabSuspense'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useCropYear } from '@/lib/crop-year'
 import { labelPointOf } from '@/lib/geo/area'
@@ -59,6 +57,13 @@ import {
   useUsers,
   type FieldRow,
 } from '@/lib/queries'
+import { usePartnerView, usePartnerYears } from '@/lib/partner-view'
+import { CARD_HEAD } from '@/lib/table-style'
+
+// The maps are their own chunks: the snapshot loads beside the page, the scouting map and boundary editor when opened.
+const FieldScouting = lazy(() => import('@/pages/ScoutingPage').then((m) => ({ default: m.FieldScouting })))
+const BoundaryEditor = lazy(() => import('@/components/BoundaryEditor').then((m) => ({ default: m.BoundaryEditor })))
+const FieldMapSnapshot = lazy(() => import('@/components/FieldMapSnapshot').then((m) => ({ default: m.FieldMapSnapshot })))
 
 /** Where a boundary came from, in words rather than the database enum. */
 const BOUNDARY_SOURCE: Record<string, string> = {
@@ -74,11 +79,14 @@ function NotesEditor({
   fieldId,
   column,
   initial,
+  readOnly = false,
 }: {
   label: string
   fieldId: string
   column: 'notes_md' | 'soil_notes_md' | 'pivot_start_instructions_md'
   initial: string | null
+  /** A crop-share partner reads the field's own notes but cannot change the field. */
+  readOnly?: boolean
 }) {
   // Parent passes key={fieldId+column+initial} so state resets on data change.
   const [value, setValue] = useState(initial ?? '')
@@ -102,7 +110,7 @@ function NotesEditor({
     <div className="rounded-lg border border-gray-200 bg-white p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-700">{label}</h3>
-        {dirty && (
+        {dirty && !readOnly && (
           <button
             onClick={() => save.mutate()}
             disabled={save.isPending}
@@ -119,6 +127,7 @@ function NotesEditor({
           setDirty(true)
         }}
         rows={4}
+        readOnly={readOnly}
         placeholder="—"
         className="mt-2 w-full resize-y rounded-md border border-gray-200 p-2 text-sm focus:border-brand-600 focus:outline-none"
       />
@@ -325,14 +334,14 @@ function ActivityTimeline({ fieldId }: { fieldId: string }) {
                   ? `crop year ${a.crop_year}`
                   : ''
             return (
-              <li key={a.id} className="flex items-baseline gap-2 py-1.5 text-sm">
+              <li key={a.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-1.5 text-sm">
                 <span className="shrink-0 text-xs tabular-nums text-gray-400">
                   {new Date(a.changed_at).toLocaleString('en-CA', {
                     dateStyle: 'medium',
                     timeStyle: 'short',
                   })}
                 </span>
-                <span className="min-w-0 flex-1">
+                <span className="min-w-0 flex-1 basis-48">
                   <span className="font-medium">{TABLE_LABELS[a.table_name] ?? a.table_name}</span>{' '}
                   {a.action === 'insert'
                     ? 'created'
@@ -383,10 +392,11 @@ function FieldHailCard({ fieldId }: { fieldId: string }) {
   // the cards themselves, not by the container, so one without it sits flush
   // against what follows and adrift from what precedes it.
   return (
-    <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
-        <CloudHail className="h-4 w-4 text-gray-400" /> Hail
+    <div className="overflow-hidden mt-4 rounded-lg border border-gray-200 bg-white">
+      <h3 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <CloudHail className="h-4 w-4 text-brand-100" /> Hail
       </h3>
+      <div className="p-4">
       <ul className="mt-2 divide-y divide-gray-100">
         {events.map((e) => (
           <li
@@ -481,6 +491,8 @@ function FieldHailCard({ fieldId }: { fieldId: string }) {
           )}
         </RecordEditModal>
       )}
+
+      </div>
     </div>
   )
 }
@@ -488,7 +500,6 @@ function FieldHailCard({ fieldId }: { fieldId: string }) {
 /** The pivot / pump / licence tied to this field, with links to those tabs. */
 function FieldIrrigationCard({ fieldId }: { fieldId: string }) {
   const { data: pivots } = useFieldPivots()
-  const { data: turbines } = usePlcTurbines()
   const { data: pumps } = usePumps()
   const { data: licences } = useWaterLicences()
   const { districtName } = useFarmSettings()
@@ -497,7 +508,6 @@ function FieldIrrigationCard({ fieldId }: { fieldId: string }) {
   const pivot = pivots?.find((p) => p.field_id === fieldId)
   if (!pivot) return null
   const pump = pivot.pump_id ? pumps?.find((p) => p.id === pivot.pump_id) : null
-  const plcTurbine = turbines?.find((t) => t.pump_id === pivot.pump_id)
   const lic = pivot.water_licence_id ? licences?.find((l) => l.id === pivot.water_licence_id) : null
 
   const cap = pivot.system_capacity_ls
@@ -513,9 +523,7 @@ function FieldIrrigationCard({ fieldId }: { fieldId: string }) {
   // "Water from" and the old "Water source" (river or not) were two cells
   // answering one question. The named source wins; the river flag fills in
   // when no source is named, and is noted when the named one is not a river.
-  const sourceName = (
-    { oldman_river: 'Oldman River', south_saskatchewan_river: 'South Saskatchewan River', smrid: `${districtName} canal`, other: 'Other' } as Record<string, string>
-  )[pivot.water_source ?? '']
+  const sourceName = waterSourceLabel(pivot.water_source, districtName) ?? undefined
   const waterFrom = sourceName
     ? pivot.on_river && !sourceName.includes('River')
       ? `${sourceName} · on river`
@@ -574,14 +582,6 @@ function FieldIrrigationCard({ fieldId }: { fieldId: string }) {
           >
             Pump tab →
           </Link>
-          {/* Only for the two turbines that are actually on the PLC. A link to
-              live control from a field fed by a pump we cannot see would go to a
-              screen with nothing on it for that field. */}
-          {plcTurbine && (
-            <Link to="/turbines" className="font-medium text-brand-700 hover:underline">
-              Turbine control →
-            </Link>
-          )}
         </div>
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3 lg:grid-cols-4">
@@ -733,6 +733,11 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
     return grownTrait(crop, companyOf(cropId, variety), crops ?? []) ?? { trait: null, from: null }
   }
   const canEdit = hasManagerAccess(profile?.role)
+  // A crop-share partner: his own records in his years, the field itself read-only (lib/partner.ts).
+  const partner = usePartnerView()
+  const partnerYears = usePartnerYears(id)
+  // For him, a year's yields are his to enter only in his listed years.
+  const canEditYear = partner ? partnerYears.canWrite : undefined
 
   const [editingBoundary, setEditingBoundary] = useState(false)
   // The neighbours, so an edge can be matched to the field beside it. Current
@@ -798,11 +803,14 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
               question about a field is which one it is, and a shape answers
               that faster than a legal land description. */}
           <div className="mt-3">
-            <FieldMapSnapshot
-              boundary={(boundary?.geometry as unknown as MultiPolygon) ?? null}
-              name={field.name}
-              fieldId={field.id}
-            />
+            {/* Same height as the snapshot, so the page does not jump when it arrives. */}
+            <Suspense fallback={<div className="h-40 w-full rounded-lg border border-gray-200 bg-gray-50 sm:h-56" />}>
+              <FieldMapSnapshot
+                boundary={(boundary?.geometry as unknown as MultiPolygon) ?? null}
+                name={field.name}
+                fieldId={field.id}
+              />
+            </Suspense>
           </div>
 
           {/* Acres are in the heading above; where the boundary came from and
@@ -824,6 +832,7 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
               cropYear={cropYear}
               boundaryAcres={boundary?.acres ?? null}
               canEdit={canEdit}
+              canRecord={canEdit || (partner && partnerYears.canWrite(cropYear))}
             />
             <HarvestEstimateLine fieldId={field.id} cropYear={cropYear} />
           </div>
@@ -839,6 +848,7 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
               fieldId={field.id}
               column="notes_md"
               initial={field.notes_md}
+              readOnly={partner}
             />
           </div>
           <div className="mt-4">
@@ -862,6 +872,7 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
               fieldId={field.id}
               column="pivot_start_instructions_md"
               initial={field.pivot_start_instructions_md}
+              readOnly={partner}
             />
           </div>
         </>
@@ -886,6 +897,7 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
               fieldId={field.id}
               column="soil_notes_md"
               initial={field.soil_notes_md}
+              readOnly={partner}
             />
           </div>
         </>
@@ -894,7 +906,7 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
       {section === 'history' && (
         <>
           <SeasonWrapUpLink fieldId={field.id} cropYear={cropYear} />
-          <FieldYieldHistory fieldId={field.id} history={history ?? []} cropName={cropName} canEdit={canEdit} canolaTrait={canolaTrait} />
+          <FieldYieldHistory fieldId={field.id} history={history ?? []} cropName={cropName} canEdit={canEdit} canEditYear={canEditYear} partnerYears={partner ? partnerYears.years : undefined} canolaTrait={canolaTrait} />
 
           <div className="mt-4">
             <ActivityTimeline fieldId={field.id} />
@@ -902,7 +914,11 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
         </>
       )}
 
-      {section === 'scouting' && <FieldScouting fieldId={field.id} />}
+      {section === 'scouting' && (
+        <TabSuspense>
+          <FieldScouting fieldId={field.id} />
+        </TabSuspense>
+      )}
 
       {section === 'settings' && (
         <>
@@ -922,8 +938,9 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
           {/* Shown to everyone: the source and date used to sit on the overview
               for anyone to read. Only the redraw button is for managers. The
               acres are in the heading. */}
-          <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-            <h3 className="text-sm font-semibold text-gray-700">Boundary ({cropYear})</h3>
+          <div className="overflow-hidden mt-4 rounded-lg border border-gray-200 bg-white">
+            <h3 className={cn('font-medium', CARD_HEAD)}>Boundary ({cropYear})</h3>
+            <div className="p-4">
             <p className="mt-1 text-xs text-gray-500">
               {boundary
                 ? `From ${BOUNDARY_SOURCE[boundary.source ?? ''] ?? boundary.source ?? 'unknown'}${boundary.valid_from ? `, since ${boundary.valid_from}` : ''}.`
@@ -938,19 +955,23 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
                 {boundary ? 'Edit boundary' : 'Draw boundary'}
               </button>
             )}
+
+            </div>
           </div>
         </>
       )}
 
       {editingBoundary && (
-        <BoundaryEditor
-          fieldId={field.id}
-          fieldName={field.name}
-          existing={(boundary?.geometry as unknown as MultiPolygon) ?? null}
-          centre={boundaryCentre}
-          others={neighbours}
-          onClose={() => setEditingBoundary(false)}
-        />
+        <Suspense fallback={null}>
+          <BoundaryEditor
+            fieldId={field.id}
+            fieldName={field.name}
+            existing={(boundary?.geometry as unknown as MultiPolygon) ?? null}
+            centre={boundaryCentre}
+            others={neighbours}
+            onClose={() => setEditingBoundary(false)}
+          />
+        </Suspense>
       )}
     </div>
   )

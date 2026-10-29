@@ -139,6 +139,16 @@ export const SETUP_KEYS: SetupKey[] = [
     help: 'Shown with the keys. Leave blank for the usual https://www.soliscloud.com:13333.',
   },
   {
+    env: 'TELUS_FI_EMAIL',
+    label: 'Telus sign-in email',
+    group: 'TELUS fuel gauges',
+    secret: false,
+    shown: true,
+    help: 'The email you sign in to TELUS Farm Inventory with (farminventory.telus.com), to read the fuel gauges every 15 minutes.',
+    link: 'https://farminventory.telus.com',
+  },
+  { env: 'TELUS_FI_PASSWORD', label: 'Telus password', group: 'TELUS fuel gauges', secret: true, help: 'The password for that Telus account. Only used to read the gauges; nothing is changed on Telus.' },
+  {
     env: 'TIMEOFF_ICS_URL',
     label: 'Time-off calendar link',
     group: 'Staff time off',

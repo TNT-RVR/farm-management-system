@@ -4,7 +4,8 @@ import { Modal } from '@/components/Modal'
 import { Select } from '@/components/Select'
 import { useCrops } from '@/lib/queries'
 import { useGrainMovementMutations } from '@/lib/inventory'
-import { useBinOnHand, type BinRow } from '@/lib/bins'
+import { useBinMovements, useBinOnHand, type BinRow } from '@/lib/bins'
+import { currentFill, fieldsLeaving } from '@/lib/bin-fill'
 import { cropForVariety } from '@/lib/crop-variety-settings'
 import { useCropVarietySettings } from '@/lib/crop-variety-settings-data'
 import { useBinContents } from '@/lib/bin-contents'
@@ -69,6 +70,10 @@ export function MoveGrain({
   const [busy, setBusy] = useState(false)
 
   const source = held.find((h) => h.cropId === cropId)
+  // Whose grain is moving: the bin empties oldest first, so a move takes the
+  // earliest loads (Sam, 23 Oct 2026 — #21 to #22 carried Moreau's canola).
+  // Named on both movements when it is all one field; a mix names none.
+  const { data: fromMoves } = useBinMovements(from.id)
   const listed = (crops ?? []).find((c) => c.id === cropId)
   // At the test weight of the variety the bin's contents name, when they name one of this crop.
   const binVariety = (contents ?? []).find((c) => c.bin_id === from.id && c.crop_id === cropId)?.variety ?? null
@@ -88,6 +93,8 @@ export function MoveGrain({
     setBusy(true)
     setError(null)
     const rounded = Number(bushels.toFixed(2))
+    const fields = fieldsLeaving(currentFill(fromMoves ?? []), rounded)
+    const movedField = fields.length === 1 ? fields[0] : null
     const note =
       notes.trim() ||
       `Moved ${rounded} bu from ${from.name} to ${toBin?.name ?? 'another bin'}`
@@ -99,6 +106,7 @@ export function MoveGrain({
         movement_type: 'transfer_in',
         bushels: rounded,
         moved_at: movedAt,
+        field_id: movedField,
         notes: note,
       })
       await create.mutateAsync({
@@ -108,6 +116,7 @@ export function MoveGrain({
         movement_type: 'transfer_out',
         bushels: rounded,
         moved_at: movedAt,
+        field_id: movedField,
         notes: note,
       })
       onClose()

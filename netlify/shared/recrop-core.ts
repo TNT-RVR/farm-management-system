@@ -1,3 +1,4 @@
+import { callClaude } from './anthropic.ts'
 /**
  * Re-cropping (following crop) restrictions, read off a product's label text.
  *
@@ -91,17 +92,13 @@ Put rainfall, soil zone, pH, organic matter, irrigation or product-rate conditio
 If the passages give no following-crop information, set has_restrictions false and rules [].`
 
 export async function extractRecrop(passages: string, apiKey: string, model: string): Promise<{ has: boolean; rules: RecropRule[] }> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      max_tokens: 8192,
-      tools: [TOOL],
-      tool_choice: { type: 'tool', name: TOOL.name },
-      messages: [{ role: 'user', content: `${PROMPT}\n\n--- LABEL PASSAGES ---\n${passages}` }],
-    }),
-  })
+  const res = await callClaude({
+    model,
+    maxTokens: 8192,
+    tools: [TOOL],
+    tool_choice: { type: 'tool', name: TOOL.name },
+    messages: [{ role: 'user', content: `${PROMPT}\n\n--- LABEL PASSAGES ---\n${passages}` }],
+  }, { apiKey })
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`)
   const payload = (await res.json()) as { content?: { type: string; name?: string; input?: unknown }[]; stop_reason?: string }
   if (payload.stop_reason === 'max_tokens') throw new Error('Too many rules to record in one reply')

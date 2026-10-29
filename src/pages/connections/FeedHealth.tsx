@@ -32,7 +32,7 @@ export function FeedHealthLine({ r, isManager }: { r: HealthRow; isManager: bool
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-100 py-2.5 last:border-0">
       <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', disabled ? 'bg-gray-200' : s.dot)} />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 basis-48">
         <p className="text-sm font-medium text-gray-900">{r.label}</p>
         <p className="text-xs text-gray-500">
           {disabled ? (

@@ -125,6 +125,40 @@ describe('harvest progress on the real farm', () => {
   })
 })
 
+describe('being combined is not off', () => {
+  // Field 4 and Novak Main each carried a hand "Harvesting / Combining"
+  // record with field_finished false, and the bar read both as off. A Deere
+  // harvest operation does the same: Deere merges every visit into one, so it
+  // exists from the hour the combine arrives.
+  const going = field({ name: '4', acres: 129.4, hasHarvest: true, harvestStarted: true, harvestFinished: false })
+  const off = field({ name: 'Moreaus', acres: 140, hasHarvest: true, harvestStarted: true, harvestFinished: true })
+  const untouched = field({ name: 'East Ranch South', acres: 88.1, hasHarvest: false, harvestStarted: false, harvestFinished: false })
+  const p = progressFor('harvest', [going, off, untouched])
+
+  it('counts only the finished field as done', () => {
+    expect(Math.round(p.done.acres)).toBe(140)
+    expect(Math.round(p.remaining.acres)).toBe(218)
+  })
+
+  it('separates the acres a combine is on, inside what is still to do', () => {
+    expect(Math.round(p.going.acres)).toBe(129)
+    expect(p.going.fields).toBe(1)
+    // Not beside "still to do" — within it.
+    expect(p.going.acres).toBeLessThan(p.remaining.acres)
+  })
+
+  it('falls back to any harvest evidence for a caller that knows no better', () => {
+    // The old reading, for a row read before the view carried the finer answer.
+    const old = field({ name: 'old', acres: 100, hasHarvest: true })
+    expect(progressFor('harvest', [old]).done.acres).toBe(100)
+    expect(progressFor('harvest', [old]).going.acres).toBe(0)
+  })
+
+  it('leaves the going bucket empty on the seeding side', () => {
+    expect(progressFor('seeding', [going, off, untouched]).going.acres).toBe(0)
+  })
+})
+
 describe('summer fallow', () => {
   const fallow = field({
     name: 'Fallow quarter',

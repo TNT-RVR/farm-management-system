@@ -1,3 +1,5 @@
+import { useFiscalEndMonth } from '@/lib/farm-setup'
+import { fiscalYearEndLabel } from '@/lib/fiscal-year'
 import { Fragment, useMemo, useState } from 'react'
 import { Bar, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { RefreshCw } from 'lucide-react'
@@ -17,6 +19,7 @@ import {
   type ForecastMonth,
 } from '@/lib/cash-flow'
 import { cn } from '@/lib/utils'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const money0 = (v: number) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
 const short = (v: number) => (Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : Math.abs(v) >= 1e3 ? `${Math.round(v / 1e3)}k` : String(Math.round(v)))
@@ -31,6 +34,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('en-CA', { month: 'sh
  * before this is drawn and the database refuses anyone else.
  */
 export function CashFlowTab({ realm }: { realm: string }) {
+  const endMonth = useFiscalEndMonth()
   const today = useMemo(() => new Date().toLocaleDateString('en-CA'), [])
   const [basis, setBasis] = useState<'plan' | 'books'>('plan')
   const [more, setMore] = useState(false)
@@ -82,15 +86,15 @@ export function CashFlowTab({ realm }: { realm: string }) {
       </div>
       <HelpNote summary="Each kind's year spread over the months the books say it's paid, plus bills, invoices and loans already known.">
         <p>
-          <b>When.</b> QuickBooks&apos; Profit and Loss on the cash basis, by month, for the last three fiscal years (Sep–Aug): cash basis
+          <b>When.</b> QuickBooks&apos; Profit and Loss on the cash basis, by month, for the last three fiscal years (the year ends {fiscalYearEndLabel(endMonth ?? 12)}): cash basis
           counts a bill when it was paid and an invoice when the money came in, payroll included. Each kind&apos;s share of the year by month
           is the average of those years. A kind with under two years of history uses the lender review&apos;s stated timing and is marked
           &ldquo;assumed&rdquo;.
         </p>
         <p className="mt-1.5">
-          <b>How much.</b> Seed, fertilizer, chemical, fuel, custom work and insurance are this fiscal year&apos;s crop budgets × planned acres;
+          <b>How much.</b> Seed, fertilizer, chemical, fuel, custom work and insurance are the crop budgets of the year being planned × planned acres;
           crop sales are the crop just harvested at the plan&apos;s yield and price. Everything else, or any kind the plan has no figure for, is
-          last fiscal year&apos;s cash from the books. Depreciation and inventory changes move no money and are left out.
+          the last full fiscal year&apos;s cash from the books. Depreciation and inventory changes move no money and are left out.
         </p>
         <p className="mt-1.5">
           <b>Already known.</b> Open bills and invoices go on their due dates (overdue ones this month) and come off their kind&apos;s year so they
@@ -126,7 +130,7 @@ export function CashFlowTab({ realm }: { realm: string }) {
 
           <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs text-gray-500">
+              <thead className={TABLE_HEAD}>
                 <tr>
                   <th className="px-3 py-1.5 text-left font-medium">Month</th>
                   <th className="px-2 py-1.5 text-right font-medium">In</th>
@@ -178,7 +182,7 @@ export function CashFlowTab({ realm }: { realm: string }) {
           <Fold title="By kind" summary={`${lines.length} kinds`} storageKey="cash-flow-kinds">
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="text-gray-500">
+                <thead className={TABLE_HEAD}>
                   <tr>
                     <th className="py-1 pr-2 text-left font-medium">Kind</th>
                     <th className="py-1 pr-2 text-right font-medium">Year</th>

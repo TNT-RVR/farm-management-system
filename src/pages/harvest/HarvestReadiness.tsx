@@ -188,7 +188,7 @@ function ReadinessRow({
         {last && <span className="shrink-0 tabular-nums text-gray-600">{last.pct.toFixed(1)}%</span>}
         <span
           className={cn(
-            'w-32 shrink-0 truncate text-right text-xs',
+            'w-20 shrink-0 truncate text-right text-xs sm:w-32',
             harvested ? 'text-gray-400' : verdict === 'dry now' ? 'font-medium text-green-700' : f?.readyOn ? 'text-gray-800' : 'text-gray-500',
           )}
           title={verdict}

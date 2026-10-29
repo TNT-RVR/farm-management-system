@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
 import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import { useQuery } from '@tanstack/react-query'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { MAP_STATIONS, stationPageUrl } from '@/lib/river'
 import { useCameras, snapshotUrl, playbackProblem, type Camera } from '@/lib/cameras'
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
+import { useTicker } from '@/lib/usePageVisible'
 
 export type StationReading = {
   station: string
@@ -96,9 +96,7 @@ function pinElement(r: StationReading, colour: string, selected: boolean): HTMLE
 
 export function RiverMap() {
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
   const markersRef = useRef<maplibregl.Marker[]>([])
-  const [ready, setReady] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
 
   const { data: readings, isLoading, error } = useStationReadings()
@@ -110,26 +108,8 @@ export function RiverMap() {
     [readings],
   )
 
-  // Init once. The centre covers the Oldman–Bow reach both ranches draw from.
-  useEffect(() => {
-    if (!containerRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: SATELLITE_STYLE,
-      center: [-114.0, 52.35],
-      zoom: 7.2,
-      attributionControl: false,
-    })
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-    map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
-    mapRef.current = map
-    map.on('load', () => setReady(true))
-    return () => {
-      map.remove()
-      mapRef.current = null
-      markersRef.current = []
-    }
-  }, [])
+  // The centre covers the Oldman–Bow reach both ranches draw from.
+  const { mapRef, ready } = useFarmMap(containerRef, { center: [-114.0, 52.35], zoom: 7.2, controls: { scale: true } })
 
   // Redraw the pins whenever the readings or the selection change.
   useEffect(() => {
@@ -153,7 +133,7 @@ export function RiverMap() {
       markersRef.current.forEach((mk) => mk.remove())
       markersRef.current = []
     }
-  }, [ready, readings, selected, meta])
+  }, [mapRef, ready, readings, selected, meta])
 
   // Frame all the gauges on first load, once we know where they are.
   const framed = useRef(false)
@@ -164,7 +144,7 @@ export function RiverMap() {
     readings.forEach((r) => b.extend([r.lng, r.lat]))
     map.fitBounds(b, { padding: 70, duration: 0, maxZoom: 10 })
     framed.current = true
-  }, [ready, readings])
+  }, [mapRef, ready, readings])
 
   const chosen = selected ? byStation.get(selected) : null
   const chosenMeta = selected ? meta.get(selected) : null
@@ -288,12 +268,9 @@ export function RiverMap() {
  * on the Cameras page.
  */
 function GaugeCamera({ camera }: { camera: Camera | undefined }) {
-  // A single clock, so the picture refreshes without reading time during render.
-  const [tick, setTick] = useState(0)
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 1000)
-    return () => clearInterval(id)
-  }, [])
+  // A beat at the camera's own rate, paused while the tab is hidden, rather than
+  // a one-second clock re-rendering the panel to divide down.
+  const frame = useTicker(Math.max(1, camera?.refresh_seconds ?? 1) * 1000, camera?.kind === 'snapshot')
 
   if (!camera) {
     return (
@@ -314,9 +291,7 @@ function GaugeCamera({ camera }: { camera: Camera | undefined }) {
     )
   }
 
-  const every = Math.max(1, camera.refresh_seconds)
-  const src =
-    camera.kind === 'snapshot' ? snapshotUrl(url, Math.floor(tick / every)) : url
+  const src = camera.kind === 'snapshot' ? snapshotUrl(url, frame) : url
 
   return (
     <figure className="mt-2">

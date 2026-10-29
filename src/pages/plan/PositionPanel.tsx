@@ -1,16 +1,16 @@
 import { DateField } from '@/components/DateField'
+import { ScaleTickets } from '@/pages/contracts/ScaleTickets'
 import { useState } from 'react'
 import { Modal } from '@/components/Modal'
 import { useDeleteContract, useSaveContract, type Contract } from '@/lib/contracts'
 import { useContacts } from '@/lib/sales'
 import type { Database } from '@/lib/database.types'
+import { money as fmtMoney } from '@/lib/format'
+import { askConfirm } from '@/components/askConfirm'
 
-type ContractStatus = NonNullable<
-  Database['public']['Tables']['contracts']['Insert']['status']
->
+type ContractStatus = NonNullable<Database['public']['Tables']['contracts']['Insert']['status']>
 
-const money = (v: number, dp = 2) =>
-  `$${v.toLocaleString('en-CA', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`
+const money = (v: number, dp = 2) => fmtMoney(v, dp, { neg: 'inside' })
 const input = 'mt-0.5 w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm text-gray-900'
 const numOrNull = (s: string) => {
   const t = s.trim()
@@ -32,6 +32,13 @@ const numOrNull = (s: string) => {
  * `deliveredFromTickets`: the delivered figure is worked out from scale
  * tickets and weighed loads once there are any, and a typed one would be
  * overwritten by the next ticket, so it is shown and not offered.
+ */
+/**
+ * One contract: its figures, and the loads delivered on it.
+ *
+ * Sam, 27 Oct 2026: "when I click on a specific contract ... it shows me the
+ * scale tickets for just that contract". The ticket camera inside it adds to
+ * this contract whatever the ticket says.
  */
 export function ContractEditor({
   cropYear,
@@ -79,7 +86,11 @@ export function ContractEditor({
   const price = numOrNull(d.price_per_unit)
 
   return (
-    <Modal title={existing ? 'Edit contract' : `New contract · ${cropYear}`} onClose={onClose}>
+    <Modal
+      title={existing ? 'Edit contract' : `New contract · ${cropYear}`}
+      onClose={onClose}
+      wide={!!existing}
+    >
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-2">
           <label className="text-xs text-gray-500">
@@ -107,10 +118,16 @@ export function ContractEditor({
           {/* The buyer could be picked only when the contract was added (7 Oct 2026). */}
           <label className="col-span-2 text-xs text-gray-500">
             Buyer
-            <select className={input} value={d.buyer_contact_id} onChange={(e) => setD({ ...d, buyer_contact_id: e.target.value })}>
+            <select
+              className={input}
+              value={d.buyer_contact_id}
+              onChange={(e) => setD({ ...d, buyer_contact_id: e.target.value })}
+            >
               <option value="">—</option>
               {(contacts ?? [])
-                .filter((c) => c.type === 'buyer' || c.type === 'other' || c.id === d.buyer_contact_id)
+                .filter(
+                  (c) => c.type === 'buyer' || c.type === 'other' || c.id === d.buyer_contact_id,
+                )
                 .map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.company || c.contact_name || '—'}
@@ -146,7 +163,11 @@ export function ContractEditor({
               inputMode="decimal"
               value={d.delivered_bu}
               readOnly={deliveredFromTickets}
-              title={deliveredFromTickets ? 'Worked out from the scale tickets and weighed loads' : undefined}
+              title={
+                deliveredFromTickets
+                  ? 'Worked out from the scale tickets and weighed loads'
+                  : undefined
+              }
               onChange={(e) => setD({ ...d, delivered_bu: e.target.value })}
             />
           </label>
@@ -163,7 +184,10 @@ export function ContractEditor({
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <label className="text-xs text-gray-500">
             Delivery from
-            <DateField value={d.delivery_start} onChange={(v) => setD({ ...d, delivery_start: v })} />
+            <DateField
+              value={d.delivery_start}
+              onChange={(v) => setD({ ...d, delivery_start: v })}
+            />
           </label>
           <label className="text-xs text-gray-500">
             to
@@ -193,11 +217,18 @@ export function ContractEditor({
           />
         </label>
 
+        {existing && (
+          <section className="border-t border-gray-100 pt-3">
+            <h3 className="mb-2 text-sm font-semibold text-gray-800">Loads on this contract</h3>
+            <ScaleTickets cropYear={cropYear} forContractId={existing.id} />
+          </section>
+        )}
+
         <div className="flex items-center justify-between gap-2">
           {existing && isManager ? (
             <button
               onClick={async () => {
-                if (!confirm('Delete this contract?')) return
+                if (!(await askConfirm('Delete this contract?'))) return
                 await del.mutateAsync(existing.id)
                 onClose()
               }}

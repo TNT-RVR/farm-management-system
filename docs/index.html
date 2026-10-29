@@ -1,0 +1,539 @@
+<!doctype html>
+<!--
+  The project's page on GitHub Pages (Settings → Pages → main /docs).
+
+  Why it exists: a repository page alone gave Google nothing to index — on
+  29 Oct 2026 an exact-name search returned no result at all. This is one
+  plain HTML page, no scripts and no outside requests, that says what the
+  project is in words a farmer would search for and shows it in use. It is
+  also an address the project's owner can verify in Google Search Console,
+  which a github.com page can never be.
+
+  The map and the bin yard are the farm's own screens, at the owner's
+  request (29 Oct 2026): the fields and the bin yard from the real app, and
+  nothing of the farm's money or production. The rest are the demo's made-up
+  farm. Nothing in the TEXT here may name the farm or anyone on it — the
+  export's scan refuses that — and the scan reads text, not pictures, so what
+  is inside a screenshot is on whoever adds it to check.
+
+  It ships in the public copy from public-export/overlay/docs/, so edit it
+  there, not in the copy.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Farm Management System — a free farm and ranch app</title>
+    <meta
+      name="description"
+      content="A free farm and ranch management app: fields and crop plans, cattle, grain bins and inventory, irrigation, equipment, spray records and farm books. Built by a working mixed farm in southern Alberta and shared as source."
+    />
+    <link rel="canonical" href="https://tnt-rvr.github.io/farm-management-system/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Farm Management System — a free farm and ranch app" />
+    <meta
+      property="og:description"
+      content="Fields, crops, cattle, grain bins, irrigation, equipment and farm books, in one app. Built by a working farm, free for farms to use."
+    />
+    <meta property="og:url" content="https://tnt-rvr.github.io/farm-management-system/" />
+    <meta property="og:image" content="https://tnt-rvr.github.io/farm-management-system/shots/map.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://tnt-rvr.github.io/farm-management-system/shots/map.jpg" />
+    <meta name="theme-color" content="#166534" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --bg-soft: #f6f8f6;
+        --ink: #111827;
+        --muted: #5b6472;
+        --line: #e3e8e3;
+        --brand: #166534;
+        --brand-soft: #e8f3ec;
+        --brand-ink: #0f4425;
+        --radius: 14px;
+        --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 12px 32px rgb(16 24 40 / 10%);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1511;
+          --bg-soft: #141c17;
+          --ink: #e8eee9;
+          --muted: #9fb0a4;
+          --line: #243029;
+          --brand: #4ade80;
+          --brand-soft: #16281d;
+          --brand-ink: #bbf7d0;
+          --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 16px 40px rgb(0 0 0 / 45%);
+        }
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      a { color: var(--brand); }
+      /* The width/height attributes reserve the space; without this the
+         height stays put while the width shrinks and the picture stretches. */
+      img { max-width: 100%; height: auto; display: block; }
+      .wrap { width: min(72rem, 100% - 2.5rem); margin-inline: auto; }
+
+      /* ---------------------------------------------------------- hero */
+      header.hero {
+        position: relative;
+        overflow: hidden;
+        padding: 4.5rem 0 3rem;
+        background:
+          radial-gradient(60rem 30rem at 15% -10%, var(--brand-soft), transparent 60%),
+          radial-gradient(50rem 26rem at 95% 0%, var(--brand-soft), transparent 55%);
+      }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.3rem 0.7rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--bg);
+        color: var(--muted);
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+      .dot { width: 0.5rem; height: 0.5rem; border-radius: 999px; background: var(--brand); }
+      h1 {
+        margin: 1rem 0 0.6rem;
+        font-size: clamp(2.1rem, 5.5vw, 3.4rem);
+        line-height: 1.08;
+        letter-spacing: -0.02em;
+      }
+      h1 span { color: var(--brand); }
+      .lead { margin: 0; max-width: 44rem; font-size: clamp(1.02rem, 2.1vw, 1.2rem); color: var(--muted); }
+      .cta { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1.6rem 0 0.75rem; }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.7rem 1.15rem;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        background: var(--brand);
+        color: #fff;
+        font-weight: 650;
+        text-decoration: none;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+      }
+      @media (prefers-color-scheme: dark) { .btn { color: #06120b; } }
+      .btn:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+      .btn.ghost { background: var(--bg); color: var(--ink); border-color: var(--line); }
+      .fineprint { color: var(--muted); font-size: 0.86rem; margin: 0; }
+
+      /* screenshot in a browser frame */
+      .frame {
+        max-width: 52rem;
+        margin-top: 2.5rem;
+        margin-inline: auto;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--bg-soft);
+        box-shadow: var(--shadow);
+      }
+      .frame .bar {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.55rem 0.8rem;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg);
+      }
+      .frame .bar i { width: 0.6rem; height: 0.6rem; border-radius: 999px; background: var(--line); }
+      .frame .bar b {
+        margin-left: 0.6rem;
+        font: 500 0.74rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--muted);
+      }
+      .frame img { width: 100%; }
+
+      /* ------------------------------------------------------- sections */
+      section { padding: 3.5rem 0; }
+      section.soft { background: var(--bg-soft); border-block: 1px solid var(--line); }
+      h2 { font-size: clamp(1.4rem, 3vw, 1.9rem); letter-spacing: -0.015em; margin: 0 0 0.4rem; }
+      .sub { color: var(--muted); margin: 0 0 1.8rem; max-width: 40rem; }
+
+      /* tabs, in CSS alone: the radios are hidden, their labels are the tabs */
+      .shots input { position: absolute; opacity: 0; pointer-events: none; }
+      .tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1.1rem; }
+      .tabs label {
+        cursor: pointer;
+        padding: 0.45rem 0.85rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--bg);
+        color: var(--muted);
+        font-size: 0.9rem;
+        font-weight: 600;
+        user-select: none;
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      }
+      .tabs label:hover { color: var(--ink); }
+      #s1:focus-visible ~ .tabs [for="s1"],
+      #s2:focus-visible ~ .tabs [for="s2"],
+      #s3:focus-visible ~ .tabs [for="s3"],
+      #s4:focus-visible ~ .tabs [for="s4"],
+      #s5:focus-visible ~ .tabs [for="s5"] {
+        outline: 2px solid var(--brand);
+        outline-offset: 2px;
+      }
+      .panel { display: none; }
+      .panel figcaption { margin-top: 0.8rem; color: var(--muted); font-size: 0.92rem; }
+      #s1:checked ~ .tabs [for="s1"],
+      #s2:checked ~ .tabs [for="s2"],
+      #s3:checked ~ .tabs [for="s3"],
+      #s4:checked ~ .tabs [for="s4"],
+      #s5:checked ~ .tabs [for="s5"] {
+        background: var(--brand);
+        border-color: var(--brand);
+        color: #fff;
+      }
+      #s1:checked ~ .panels #p1,
+      #s2:checked ~ .panels #p2,
+      #s3:checked ~ .panels #p3,
+      #s4:checked ~ .panels #p4,
+      #s5:checked ~ .panels #p5 { display: block; }
+      @media (prefers-color-scheme: dark) {
+        #s1:checked ~ .tabs [for="s1"],
+        #s2:checked ~ .tabs [for="s2"],
+        #s3:checked ~ .tabs [for="s3"],
+        #s4:checked ~ .tabs [for="s4"],
+        #s5:checked ~ .tabs [for="s5"] { color: #06120b; }
+      }
+
+      /* what it keeps track of */
+      .grid { display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+      .card {
+        padding: 1.1rem 1.2rem;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--bg);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+      }
+      .card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+      .card h3 { margin: 0 0 0.3rem; font-size: 1rem; }
+      .card p { margin: 0; color: var(--muted); font-size: 0.93rem; }
+
+      /* in the field */
+      .field { display: grid; gap: 2rem; align-items: center; grid-template-columns: 1fr; }
+      @media (min-width: 52rem) { .field { grid-template-columns: 15rem 1fr; } }
+      .phone {
+        width: 100%;
+        max-width: 15rem;
+        margin-inline: auto;
+        border: 10px solid #1b2320;
+        border-radius: 2rem;
+        overflow: hidden;
+        box-shadow: var(--shadow);
+        background: #1b2320;
+      }
+      ul.ticks { margin: 0; padding: 0; list-style: none; }
+      ul.ticks li { position: relative; padding-left: 1.6rem; margin: 0.5rem 0; }
+      ul.ticks li::before {
+        content: "";
+        position: absolute;
+        left: 0.1rem;
+        top: 0.55rem;
+        width: 0.55rem;
+        height: 0.3rem;
+        border-left: 2px solid var(--brand);
+        border-bottom: 2px solid var(--brand);
+        transform: rotate(-45deg);
+      }
+
+      .note {
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--brand);
+        border-radius: var(--radius);
+        padding: 1rem 1.2rem;
+        background: var(--bg);
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+      footer {
+        padding: 2.5rem 0 3.5rem;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      footer a { margin-right: 1rem; }
+
+      /* A gentle rise as each block comes into view, where the browser can do
+         it on its own. Nothing is hidden without it. */
+      @supports (animation-timeline: view()) {
+        @media (prefers-reduced-motion: no-preference) {
+          section > .wrap, .frame {
+            animation: rise linear both;
+            animation-timeline: view();
+            animation-range: entry 0% entry 55%;
+          }
+          @keyframes rise {
+            from { opacity: 0; transform: translateY(14px); }
+            to { opacity: 1; transform: none; }
+          }
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="hero">
+      <div class="wrap">
+        <span class="eyebrow"><span class="dot"></span> Built on a working farm · rebuilt here every week</span>
+        <h1>The whole farm, <span>in one app</span>.</h1>
+        <p class="lead">
+          Fields and crop plans, cattle, grain bins, irrigation, equipment, spray records and the
+          books — kept in one place by a mixed grain and cattle farm in southern Alberta, and shared
+          as source. Free for farms to use.
+        </p>
+        <div class="cta">
+          <a class="btn" href="https://rvr-farm-demo.netlify.app/">Try the demo farm →</a>
+          <a class="btn ghost" href="https://github.com/TNT-RVR/farm-management-system">The code on GitHub</a>
+          <a class="btn ghost" href="https://github.com/TNT-RVR/farm-management-system/blob/main/SETUP.md">Run it yourself</a>
+        </div>
+        <p class="fineprint">No sign-up. The demo's farm is made up and runs entirely in your browser.</p>
+
+        <figure class="frame" style="margin-bottom: 0">
+          <div class="bar"><i></i><i></i><i></i><b>Map — every field, pivot and quarter</b></div>
+          <img
+            src="shots/map.jpg"
+            width="1568"
+            height="698"
+            alt="The farm map: satellite imagery with pivot circles and field names, the river running through it."
+          />
+        </figure>
+      </div>
+    </header>
+
+    <section class="soft">
+      <div class="wrap shots">
+        <h2>A look around</h2>
+        <p class="sub">
+          Five screens from the app. The map and the bin yard are the farm's own; the other three
+          are the demo's made-up farm. None of them show anyone's money.
+        </p>
+
+        <input type="radio" name="shot" id="s1" checked />
+        <input type="radio" name="shot" id="s2" />
+        <input type="radio" name="shot" id="s3" />
+        <input type="radio" name="shot" id="s4" />
+        <input type="radio" name="shot" id="s5" />
+        <div class="tabs">
+          <label for="s1">Crop rotation</label>
+          <label for="s2">Grain bins</label>
+          <label for="s3">Grazing</label>
+          <label for="s4">The books</label>
+          <label for="s5">The map</label>
+        </div>
+
+        <div class="panels">
+          <figure class="panel" id="p1">
+            <div class="frame" style="margin-top: 0">
+              <div class="bar"><i></i><i></i><i></i><b>Crop rotation plan</b></div>
+              <img
+                src="shots/rotation.jpg"
+                width="1568"
+                height="698"
+                alt="The rotation planner: four years of history beside the years being planned, one year open for editing."
+              />
+            </div>
+            <figcaption>
+              Four years back and four years forward on one screen. A year is opened, filled in and
+              saved shut; the app says what may follow what, what a herbicide label still forbids,
+              and how many acres of each crop that leaves.
+            </figcaption>
+          </figure>
+
+          <figure class="panel" id="p2">
+            <div class="frame" style="margin-top: 0">
+              <div class="bar"><i></i><i></i><i></i><b>Grain bins</b></div>
+              <img
+                src="shots/bins.jpg"
+                width="1568"
+                height="698"
+                alt="The farm's own bin yard from above, every bin numbered and coloured by whether there is grain in it, whether a fan is running and whether heat is on."
+              />
+            </div>
+            <figcaption>
+              The yard as it stands, every bin numbered where it actually is, coloured by what is in
+              it and whether its fan or heater is running. Behind each one: what went in by field
+              and crop from weighed truckloads, cable readings and moisture tests.
+            </figcaption>
+          </figure>
+
+          <figure class="panel" id="p3">
+            <div class="frame" style="margin-top: 0">
+              <div class="bar"><i></i><i></i><i></i><b>Grazing</b></div>
+              <img
+                src="shots/grazing.jpg"
+                width="1568"
+                height="698"
+                alt="The grazing summary: grazeable acres, carrying capacity and herd needs in animal-unit days, the season's rain against the forage it should grow."
+              />
+            </div>
+            <figcaption>
+              What the grass will carry against what the herd needs, in animal-unit days, with the
+              season's rain against the forage it usually grows. On the map beside it, paddocks are
+              shaded by what the satellite sees growing, and cattle are kept off ground a spray
+              label has not finished with.
+            </figcaption>
+          </figure>
+
+          <figure class="panel" id="p4">
+            <div class="frame" style="margin-top: 0">
+              <div class="bar"><i></i><i></i><i></i><b>Crop money</b></div>
+              <img
+                src="shots/money.jpg"
+                width="1568"
+                height="698"
+                alt="A budget by crop: acres, yield, price, revenue, cost per acre and margin, with the year's totals above."
+              />
+            </div>
+            <figcaption>
+              Acres, yield, price, cost and margin by crop, from the farm's own records rather than
+              a guess — with the bookkeeping read in from QuickBooks where a farm uses it.
+            </figcaption>
+          </figure>
+
+          <figure class="panel" id="p5">
+            <div class="frame" style="margin-top: 0">
+              <div class="bar"><i></i><i></i><i></i><b>The map</b></div>
+              <img
+                src="shots/map.jpg"
+                width="1568"
+                height="698"
+                alt="The farm map with pivots and field names on satellite imagery."
+              />
+            </div>
+            <figcaption>
+              Every boundary, pivot and gate, with the legal land description, and your own
+              position on it while you are out there. This one is the real farm. Water lines, soil
+              survey, satellite growth and the rest are layers you turn on when you want them.
+            </figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>What it keeps track of</h2>
+        <p class="sub">One app, because a farm is one business.</p>
+        <div class="grid">
+          <div class="card">
+            <h3>Fields and crops</h3>
+            <p>Crop plans and rotation rules, seeding and harvest progress, yields by field, soil tests and fertility.</p>
+          </div>
+          <div class="card">
+            <h3>Grain</h3>
+            <p>Bins and what is in them, weigh-in by truckload, scale tickets, contracts, deliveries and drying.</p>
+          </div>
+          <div class="card">
+            <h3>Cattle</h3>
+            <p>Herds and pastures, grazing days, water, winter feed budgets by energy, and the paperwork.</p>
+          </div>
+          <div class="card">
+            <h3>Irrigation</h3>
+            <p>Pivots, water licences and allotments, soil moisture, and what the season's water will stretch to.</p>
+          </div>
+          <div class="card">
+            <h3>Equipment</h3>
+            <p>Service due, work orders, warranties, fuel and trucking costs, and the field operations machines report.</p>
+          </div>
+          <div class="card">
+            <h3>Spraying and inputs</h3>
+            <p>What went on each field, the product labels behind it, re-cropping and grazing restrictions, invoices.</p>
+          </div>
+          <div class="card">
+            <h3>The books</h3>
+            <p>Field costs, budgets, break-even, cash flow and lender reports, read in from QuickBooks.</p>
+          </div>
+          <div class="card">
+            <h3>Reports and records</h3>
+            <p>The forms a farm actually has to file, filled from its own records and downloaded as PDF or a spreadsheet.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="soft">
+      <div class="wrap field">
+        <div class="phone">
+          <img
+            src="shots/phone.jpg"
+            width="750"
+            height="1624"
+            alt="The app on a phone: large tiles for pivots, soil moisture, the to-do list, the map, scouting and weighing a load."
+          />
+        </div>
+        <div>
+          <h2>Made for a phone, out in the field</h2>
+          <p class="sub">
+            Most of this gets used standing in a field or beside a bin, often with one bar of signal
+            and a glove on.
+          </p>
+          <ul class="ticks">
+            <li>Installs to the home screen like an app, on iPhone or Android.</li>
+            <li>Keeps working with no signal, and catches up when it finds some.</li>
+            <li>Photograph a scale ticket and the weight fills itself in.</li>
+            <li>Pin a weed, a bug or a broken gate with a photo, where you are standing.</li>
+            <li>Big buttons, few words, and the day's work first.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>How to try it</h2>
+        <p class="sub">
+          The <a href="https://rvr-farm-demo.netlify.app/">demo</a> runs a made-up farm entirely in
+          your browser: nothing to install, nothing to sign up for, and nothing you type leaves your
+          machine. To run it for your own farm, follow
+          <a href="https://github.com/TNT-RVR/farm-management-system/blob/main/SETUP.md">SETUP.md</a>
+          — it needs a free Supabase project and a free Netlify account, and the whole thing fits in
+          their free tiers for one farm.
+        </p>
+        <div class="cta">
+          <a class="btn" href="https://rvr-farm-demo.netlify.app/">Open the demo</a>
+          <a class="btn ghost" href="https://github.com/TNT-RVR/farm-management-system/releases">This week's release</a>
+          <a class="btn ghost" href="https://github.com/TNT-RVR/farm-management-system/discussions">Ask a question</a>
+        </div>
+
+        <p class="note" style="margin-top: 2rem">
+          <strong>A prototype, shared as-is.</strong> There is no warranty and no support. Formulas,
+          figures and advice in it may be wrong — check anything that matters against your own
+          records and your own agronomist, accountant or vet. The licence is
+          <a href="https://github.com/TNT-RVR/farm-management-system/blob/main/LICENSE.md"
+            >PolyForm Noncommercial with an added permission for farms</a
+          >: free for a farm to run its own operation on, not for resale. It is rebuilt and
+          republished here every week, so what is here is what the farm is using.
+        </p>
+      </div>
+    </section>
+
+    <footer>
+      <div class="wrap">
+        <a href="https://github.com/TNT-RVR/farm-management-system">Source</a>
+        <a href="https://github.com/TNT-RVR/farm-management-system/blob/main/SETUP.md">Setup</a>
+        <a href="https://github.com/TNT-RVR/farm-management-system/discussions">Questions</a>
+        <a href="https://github.com/TNT-RVR/farm-management-system/releases">Releases</a>
+        <p style="margin-top: 1rem">
+          The map and the bin yard are the farm's own screens. The rotation, pasture and budget
+          screens are the demo's made-up farm — the names and figures in those are invented.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

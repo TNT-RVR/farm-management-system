@@ -12,9 +12,10 @@ import { Fold } from '@/components/Fold'
 import { HelpNote } from '@/components/HelpNote'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
 import { useRanches } from '@/lib/ranches'
+import { money as fmtMoney } from '@/lib/format'
+import { CARD_HEAD } from '@/lib/table-style'
 
-const money = (v: number, dp = 2) =>
-  `$${v.toLocaleString('en-CA', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`
+const money = (v: number, dp = 2) => fmtMoney(v, dp, { neg: 'inside' })
 
 /**
  * The farm's own economics: break-even, what another hundred pounds is worth,
@@ -162,8 +163,9 @@ export function CattleEconomics({
       </section>
 
       {/* C9 */}
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-gray-800">Should we lock in?</h3>
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <h3 className={cn('font-medium', CARD_HEAD)}>Should we lock in?</h3>
+        <div className="p-4">
         <HelpNote className="mt-0.5 text-xs" summary="Four readings, not a verdict." title="What these readings are">
           <p>
             Four readings, not a verdict. The app knows where the price sits and what basis is doing;
@@ -181,6 +183,8 @@ export function CattleEconomics({
             ))}
           </ul>
         )}
+
+        </div>
       </section>
 
       <Fold
@@ -191,10 +195,11 @@ export function CattleEconomics({
       >
         {/* C12 */}
         {vog && (
-          <section className="rounded-lg border border-gray-200 bg-white p-4">
-            <h3 className="text-sm font-semibold text-gray-800">
+          <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+            <h3 className={cn('font-medium', CARD_HEAD)}>
               What another {vog.toLb - vog.fromLb} lb is worth
             </h3>
+            <div className="p-4">
             <HelpNote className="mt-0.5 text-xs" summary="The heavier cheque minus the lighter one." title="Why not just weight × price">
               <p>
                 A heavier calf sells for LESS per pound, so the extra is never simply the added weight
@@ -230,12 +235,15 @@ export function CattleEconomics({
                 }
               />
             </div>
+
+            </div>
           </section>
         )}
 
         {/* C14 */}
-        <section className="rounded-lg border border-gray-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-gray-800">Three ways to sell them</h3>
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <h3 className={cn('font-medium', CARD_HEAD)}>Three ways to sell them</h3>
+          <div className="p-4">
           <div className="mt-2 grid gap-3 sm:grid-cols-3">
             {strategies.map((s) => (
               <div key={s.name} className="rounded-md border border-gray-200 p-3">
@@ -250,6 +258,8 @@ export function CattleEconomics({
                 </p>
               </div>
             ))}
+          </div>
+
           </div>
         </section>
       </Fold>

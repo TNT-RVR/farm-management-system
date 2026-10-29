@@ -4,6 +4,7 @@ import { useInvoiceUrl, useProductPurchases, type ProductPurchase } from '@/lib/
 import { fmtMoney } from '@/lib/applied'
 import { cn } from '@/lib/utils'
 import { ImportHint } from '@/components/ImportHint'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * The invoice a price came from.
@@ -97,7 +98,7 @@ export function InvoiceViewer({
               <p className="text-sm text-gray-500">Nothing recorded against this invoice number.</p>
             ) : (
               <table className="w-full text-sm">
-                <thead className="border-b border-gray-200 text-left text-xs text-gray-500">
+                <thead className={TABLE_HEAD}>
                   <tr>
                     <th className="py-2 pr-3 font-medium">Qty</th>
                     <th className="py-2 pr-3 font-medium">Unit</th>

@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { advisorModel, alwaysThinks, type MessagesReply } from './anthropic-reply.ts'
+import { callClaude } from './anthropic.ts'
+import { farmTz } from '../../src/lib/farm-context.ts'
 
 /**
  * What changed in the app last week, written for the Monday meeting (Sam,
@@ -14,8 +16,7 @@ import { advisorModel, alwaysThinks, type MessagesReply } from './anthropic-repl
 
 export type ChangeItem = { title: string; detail: string; area: string; link: string | null; commits: string[] }
 
-const TZ = 'America/Edmonton'
-const dayIn = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: TZ })
+const dayIn = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: farmTz() })
 const addDays = (iso: string, n: number) => {
   const d = new Date(`${iso}T12:00:00Z`)
   d.setUTCDate(d.getUTCDate() + n)
@@ -33,7 +34,7 @@ export function lastWeekStart(now = new Date()): string {
 /** The instant a farm-time day starts, as UTC (Mountain time is 6 or 7 hours behind). */
 function startOfDay(iso: string): string {
   const noon = new Date(`${iso}T12:00:00Z`)
-  const hour = Number(noon.toLocaleString('en-US', { timeZone: TZ, hour: '2-digit', hour12: false }))
+  const hour = Number(noon.toLocaleString('en-US', { timeZone: farmTz(), hour: '2-digit', hour12: false }))
   const offset = 12 - hour
   return new Date(Date.parse(`${iso}T00:00:00Z`) + offset * 3_600_000).toISOString()
 }
@@ -99,19 +100,14 @@ export async function writeWeek(sb: SupabaseClient, weekStart: string, apiKey: s
   const prompt = [`Week: ${weekStart} to ${weekEnd}. ${list.length} commits.`, '', 'PAGES (to | label):', ...routes.map((r) => `${r.to} | ${r.label}`), '', 'COMMITS (id | date | subject | body | folders):', ...lines].join('\n')
 
   const model = advisorModel()
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    signal: AbortSignal.timeout(10 * 60_000),
-    body: JSON.stringify({
-      model,
-      max_tokens: 16000,
-      ...(alwaysThinks(model) ? { output_config: { effort: 'medium' } } : { thinking: { type: 'disabled' }, tool_choice: { type: 'tool', name: TOOL.name } }),
-      system: SYSTEM,
-      tools: [TOOL],
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  })
+  const res = await callClaude({
+    model,
+    maxTokens: 16000,
+    ...(alwaysThinks(model) ? { output_config: { effort: 'medium' } } : { thinking: { type: 'disabled' }, tool_choice: { type: 'tool', name: TOOL.name } }),
+    system: SYSTEM,
+    tools: [TOOL],
+    messages: [{ role: 'user', content: prompt }],
+  }, { apiKey, signal: AbortSignal.timeout(10 * 60_000) })
   if (!res.ok) throw new Error(`The model could not write it (${res.status}): ${(await res.text()).slice(0, 300)}`)
   const out = (await res.json()) as Omit<MessagesReply, 'content'> & { content: { type: string; name?: string; input?: { items?: ChangeItem[] } }[] }
   const call = out.content.find((c) => c.type === 'tool_use' && c.name === TOOL.name)

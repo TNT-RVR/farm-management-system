@@ -57,7 +57,10 @@ export function InfoPopover({
         onMouseEnter={hoverIn}
         onMouseLeave={hoverOut}
         className={cn(
-          'inline-flex shrink-0 items-center gap-1 align-middle text-gray-400 hover:text-brand-700',
+          // A 14 px icon is under a thumb on a phone, so an invisible pad
+          // widens the tap target without moving anything on the page.
+          'relative inline-flex shrink-0 items-center gap-1 align-middle text-gray-400 hover:text-brand-700',
+          "after:absolute after:-inset-2.5 after:content-[''] sm:after:content-none",
           className,
         )}
         aria-label={title}

@@ -21,6 +21,8 @@ import {
 import { cn } from '@/lib/utils'
 import { useFarmSettings } from '@/lib/farm-setup'
 import { STRAIGHTS, straightKeyOf } from '@/lib/fert-savings/straights'
+import { money as fmtMoney } from '@/lib/format'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * What ICI has charged this farm for fertilizer, product by product.
@@ -36,8 +38,7 @@ import { STRAIGHTS, straightKeyOf } from '@/lib/fert-savings/straights'
  * are compared year to year. Blends are a table by season, since each one
  * is a recipe for one field and one spring.
  */
-const money = (v: number | null | undefined, digits = 0) =>
-  v == null ? '—' : `$${v.toLocaleString('en-CA', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`
+const money = (v: number | null | undefined, digits = 0) => fmtMoney(v, digits, { neg: 'inside' })
 
 /** $/tonne for a dry product priced per kg; $/L for a liquid. */
 function displayPrice(p: JdProduct): { value: number | null; unit: string; perTonne: boolean } {
@@ -311,7 +312,7 @@ export function IciPrices({ isManager }: { isManager: boolean }) {
             {blendsOpen && (
               <div className="overflow-x-auto border-t border-gray-100">
                 <table className="w-full text-xs">
-                  <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+                  <thead className={TABLE_HEAD}>
                     <tr>
                       <th className="px-2 py-1 font-medium">Blend</th>
                       <th className="px-2 py-1 text-right font-medium">$/tonne</th>
@@ -379,10 +380,10 @@ export function IciPrices({ isManager }: { isManager: boolean }) {
         >
         <section className="w-full max-w-lg rounded-lg border border-gray-200 bg-white p-3 shadow-xl" onClick={(e) => e.stopPropagation()}>
           <h3 className="text-sm font-semibold text-gray-800">Record a quote</h3>
-          <p className="mt-0.5 text-xs text-gray-500">
+          <HelpNote className="mt-0.5 text-xs" summary="A quote becomes the product's price until the next invoice.">
             What {retailerName} or anyone else has quoted for a product this farm buys. It becomes that
             product’s price until the next invoice, and the card above says “quote” while it is.
-          </p>
+          </HelpNote>
           <div className="mt-2 flex flex-wrap items-end gap-2">
             <label className="text-[11px] font-medium text-gray-500">
               Product

@@ -6,9 +6,10 @@ import { feedValues, groupInput, rationLines, useFeedTests, useFeedTypesFull, us
 import { useFeedPlan } from '@/lib/feed'
 import { CattleInfo } from './CattleInfo'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
+import { money as fmtMoney } from '@/lib/format'
 
 const numOrNull = (s: string) => (s.trim() === '' || !Number.isFinite(Number(s)) ? null : Number(s))
-const money = (v: number) => `$${Math.round(v).toLocaleString('en-CA')}`
+const money = (v: number) => fmtMoney(v, 0, { neg: 'inside' })
 
 /**
  * Cost of gain, worked out from the farm's own numbers: the calves' ration on

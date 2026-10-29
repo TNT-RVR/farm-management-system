@@ -22,6 +22,8 @@ import { useFarmFeatures, useFarmLayers } from '@/lib/farm-layers'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { PhotoStrip } from './PhotoStrip'
+import { askConfirm } from '@/components/askConfirm'
+import { HelpNote } from '@/components/HelpNote'
 
 const btn = 'flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50'
 const btnOn = 'border-brand-700 bg-brand-700 text-white hover:bg-brand-800'
@@ -121,7 +123,7 @@ export function TemplatePlaces({ templateId, readonly }: { templateId: string; r
           ))}
         </div>
       )}
-      <p className="mt-1 text-xs text-gray-500">Colours are the kind of job; set a place&apos;s job type and colour when you open it. A place with no jobs shows one &ldquo;Done&rdquo; on the year&apos;s checklist.</p>
+      <HelpNote className="mt-1 text-xs" summary="Colours are the kind of job.">Colours are the kind of job; set a place&apos;s job type and colour when you open it. A place with no jobs shows one &ldquo;Done&rdquo; on the year&apos;s checklist.</HelpNote>
 
       {importing === 'mymap' && <FarmMapPick templateId={templateId} existing={places ?? []} nextOrder={nextOrder()} onClose={() => setImporting(null)} />}
       {importing === 'pumps' && <PumpImport templateId={templateId} existing={places ?? []} nextOrder={nextOrder()} onClose={() => setImporting(null)} />}
@@ -282,8 +284,8 @@ function PlaceEditor({
           )}
           <button
             className="flex items-center gap-1.5 rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
-            onClick={() => {
-              if (window.confirm(`Remove “${place.name}” and its jobs from the template? Past years keep their copy.`)) {
+            onClick={async () => {
+              if (await askConfirm(`Remove “${place.name}” and its jobs from the template? Past years keep their copy.`, { confirmLabel: 'Remove' })) {
                 del.mutate(place.id)
                 onClose()
               }

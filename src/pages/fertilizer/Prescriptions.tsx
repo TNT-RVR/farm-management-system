@@ -25,11 +25,9 @@ import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
 import { AdminOnly } from '@/components/TechnicalDetails'
 import { ImportHint } from '@/components/ImportHint'
-
-const n0 = (v: number | null | undefined) =>
-  v == null ? '—' : Math.round(v).toLocaleString('en-CA')
-const n1 = (v: number | null | undefined) =>
-  v == null ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 1 })
+import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
+import { n0, n1 } from '@/lib/format'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * Variable rate or blanket, said plainly.
@@ -100,9 +98,9 @@ function ZoneTable({ rx }: { rx: Prescription }) {
   )
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-gray-200 text-left text-xs uppercase text-gray-500">
+      <table className="w-full min-w-[640px] text-sm">
+        <thead className={TABLE_HEAD}>
+          <tr>
             <th className="py-2 pr-3 font-medium">Zone</th>
             <th className="py-2 pr-3 font-medium">Fertility index</th>
             <th className="py-2 pr-3 text-right font-medium">Acres</th>
@@ -264,8 +262,8 @@ function AgainstActual({ rx, season }: { rx: Prescription; season: number }) {
     <div className="space-y-3">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-xs uppercase text-gray-500">
+          <thead className={TABLE_HEAD}>
+            <tr>
               <th className="py-2 pr-3 font-medium">lbs/ac</th>
               {NUTRIENTS.map((n) => (
                 <th key={n.key} className="py-2 pr-3 text-right font-medium">
@@ -480,9 +478,9 @@ export function Prescriptions() {
         <>
           {view === 'all' && (
           <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase text-gray-500">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className={TABLE_HEAD}>
+                <tr>
                   <th className="px-3 py-2 font-medium">Field</th>
                   <th className="px-3 py-2 font-medium">Crop</th>
                   <th className="px-3 py-2 text-right font-medium">Acres</th>
@@ -593,6 +591,8 @@ export function Prescriptions() {
         year={effectiveYear}
         covered={new Set(list.map((r) => r.field_id).filter((id): id is string => Boolean(id)))}
       />
+      {/* Savings tool, kept with this tab since 26 Oct 2026 (lib/fert-savings/homes.ts). */}
+      <SavingsHere ids={[17]} />
     </div>
   )
 }

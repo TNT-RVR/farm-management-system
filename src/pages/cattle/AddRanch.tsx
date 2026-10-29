@@ -1,33 +1,33 @@
 import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useAddRanch } from '@/lib/ranches'
+import { LatLngInput } from '@/components/LatLngInput'
+import { readLatLng } from '@/lib/latlng-text'
+import { CARD_HEAD } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 /**
  * Name (and optionally place) a new ranch.
  *
- * Latitude and longitude are optional because a ranch is usable without them —
- * they only feed the weather lookups, and can be filled in later. A blank or
+ * The location is optional because a ranch is usable without it — it only
+ * feeds the weather lookups, and can be filled in later. A blank or
  * unparseable box is stored as no value rather than blocking the add.
  */
 export function AddRanchForm({ onDone }: { onDone?: () => void }) {
   const add = useAddRanch()
   const [name, setName] = useState('')
-  const [lat, setLat] = useState('')
-  const [lon, setLon] = useState('')
-  const num = (s: string) => {
-    const n = Number(s.trim())
-    return s.trim() === '' || !Number.isFinite(n) ? null : n
-  }
+  const [place, setPlace] = useState('')
   const submit = () => {
     const n = name.trim()
     if (!n) return
+    const p = readLatLng(place)
+    const at = p && p !== 'bad' ? p : null
     add.mutate(
-      { name: n, latitude: num(lat), longitude: num(lon) },
+      { name: n, latitude: at?.lat ?? null, longitude: at?.lng ?? null },
       {
         onSuccess: () => {
           setName('')
-          setLat('')
-          setLon('')
+          setPlace('')
           onDone?.()
         },
       },
@@ -51,25 +51,9 @@ export function AddRanchForm({ onDone }: { onDone?: () => void }) {
             className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
           />
         </label>
-        <label className="text-[11px] font-medium text-gray-500">
-          Latitude (optional)
-          <input
-            value={lat}
-            onChange={(e) => setLat(e.target.value)}
-            inputMode="decimal"
-            placeholder="49.7"
-            className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
-          />
-        </label>
-        <label className="text-[11px] font-medium text-gray-500">
-          Longitude (optional)
-          <input
-            value={lon}
-            onChange={(e) => setLon(e.target.value)}
-            inputMode="decimal"
-            placeholder="-112.1"
-            className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
-          />
+        <label className="text-[11px] font-medium text-gray-500 sm:col-span-2">
+          Location (optional)
+          <LatLngInput value={place} onChange={setPlace} placeholder="52.2, -113.9 or a Google Maps link" className="mt-0.5 py-1" />
         </label>
       </div>
       <button
@@ -95,13 +79,16 @@ export function AddRanchForm({ onDone }: { onDone?: () => void }) {
 export function FirstRanchCard({ isManager }: { isManager: boolean }) {
   return (
     <div className="p-4 md:p-6">
-      <div className="max-w-xl rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-gray-900">Add your first ranch</h2>
+      <div className="overflow-hidden max-w-xl rounded-lg border border-gray-200 bg-white">
+        <h2 className={cn('font-medium', CARD_HEAD)}>Add your first ranch</h2>
+        <div className="p-4">
         {isManager ? (
           <AddRanchForm />
         ) : (
           <p className="text-sm text-gray-500">A manager needs to add a ranch first.</p>
         )}
+
+        </div>
       </div>
     </div>
   )

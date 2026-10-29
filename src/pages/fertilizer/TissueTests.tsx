@@ -22,6 +22,8 @@ import {
   type NutrientKey,
   type Verdict,
 } from '@/lib/tissue'
+import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 type TissueRow = Database['public']['Tables']['tissue_tests']['Row']
 
@@ -334,8 +336,8 @@ export function TissueTests({ cropYear, canEdit }: { cropYear: number; canEdit: 
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
+                    <thead className={TABLE_HEAD}>
+                      <tr>
                         <th className="py-1 pr-3 font-medium">Nutrient</th>
                         <th className="py-1 pr-3 text-right font-medium">Reading</th>
                         <th className="py-1 pr-3 text-right font-medium">Sufficient</th>
@@ -408,6 +410,8 @@ export function TissueTests({ cropYear, canEdit }: { cropYear: number; canEdit: 
           onClose={() => setConfirmDelete(null)}
         />
       )}
+      {/* Savings tool, kept with this tab since 26 Oct 2026 (lib/fert-savings/homes.ts). */}
+      <SavingsHere ids={[15]} />
     </div>
   )
 }

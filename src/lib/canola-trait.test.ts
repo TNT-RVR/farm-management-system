@@ -60,3 +60,14 @@ describe('volunteerConflicts', () => {
     expect(w[0]).toMatch(/2025/)
   })
 })
+
+describe('traits beyond Liberty and Roundup', () => {
+  it('knows Clearfield and conventional, and reads nothing else as a trait', async () => {
+    const { asTrait, TRAIT_SHORT } = await import('./canola-trait')
+    expect(asTrait('clearfield')).toBe('clearfield')
+    expect(asTrait('conventional')).toBe('conventional')
+    expect(asTrait('both')).toBeNull()
+    expect(asTrait('enlist')).toBeNull()
+    expect(TRAIT_SHORT.clearfield).toBe('Clearfield')
+  })
+})

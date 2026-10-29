@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl, { type GeoJSONSource } from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Feature, FeatureCollection } from 'geojson'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { PillTabs } from '@/components/PillTabs'
 import type { RxMapPolygon } from '@/lib/fertility-rx'
-import { farmMapCenter } from '@/lib/farm-setup'
 
 const SRC = 'rx-zones'
 const FILL = 'rx-zone-fill'
@@ -80,8 +78,7 @@ function boundsOf(polys: RxMapPolygon[]): maplibregl.LngLatBounds | null {
  */
 export function RxZoneMap({ polygons: all }: { polygons: RxMapPolygon[] }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
-  const [ready, setReady] = useState(false)
+  const { mapRef, ready } = useFarmMap(containerRef, { zoom: 12 })
   const [hover, setHover] = useState<{ rate: number | null; acres: number | null } | null>(null)
 
   // One field can carry several prescriptions in a season — Ray Daltons was
@@ -103,24 +100,6 @@ export function RxZoneMap({ polygons: all }: { polygons: RxMapPolygon[] }) {
   const min = rates.length ? Math.min(...rates) : 0
   const max = rates.length ? Math.max(...rates) : 0
   const data = useMemo(() => toFeatures(polygons, min, max), [polygons, min, max])
-
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: SATELLITE_STYLE,
-      center: farmMapCenter(),
-      zoom: 12,
-      attributionControl: false,
-    })
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-    map.on('load', () => setReady(true))
-    mapRef.current = map
-    return () => {
-      map.remove()
-      mapRef.current = null
-    }
-  }, [])
 
   useEffect(() => {
     const map = mapRef.current
@@ -161,7 +140,7 @@ export function RxZoneMap({ polygons: all }: { polygons: RxMapPolygon[] }) {
     }
     const bounds = boundsOf(polygons)
     if (bounds) map.fitBounds(bounds, { padding: 24, duration: 0 })
-  }, [ready, data, polygons])
+  }, [mapRef, ready, data, polygons])
 
   if (all.length === 0) return null
 

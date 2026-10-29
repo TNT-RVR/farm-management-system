@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js'
 import { MANAGER_ROLES } from './_jd.mts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import {
@@ -32,15 +31,19 @@ import {
 import { acisFileUrl, AcisFormatError, parseAcisClimateCsv } from '../../src/lib/acis.ts'
 import {
   effectiveHarvestDate,
+  farmDay,
   harvestEvidenceByField,
   HARVEST_SOURCE_LABEL,
   type HarvestOpRow,
   type LastLoadRow,
 } from '../../src/lib/harvest-date.ts'
+import { decideWateringDone } from '../../src/lib/watering-done.ts'
 import { farmTz } from '../../src/lib/farm-context.ts'
+import { farmToday } from '../shared/dates.ts'
 import { finishedDays, finishedFor, handDayByField, handWorkDays, type FinishRow, type HandWorkRow } from '../../src/lib/field-work.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
 import { fetchHourly, saveHourly } from '../shared/weather-hourly.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 // Daily irrigation pipeline (spec §11): ingest weather (Open-Meteo tier-3, the
 // keyless fallback that works today; ACIS is a future primary), compute/cache
@@ -92,7 +95,7 @@ type Station = { lat: number; elevation_m: number; acis_file_name: string | null
  */
 async function fetchEccc(climateId: string, startDate: string): Promise<Map<string, DailyRow>> {
   const out = new Map<string, DailyRow>()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = farmToday()
   const url =
     `https://api.weather.gc.ca/collections/climate-daily/items?f=json&limit=1000` +
     `&CLIMATE_IDENTIFIER=${climateId}&datetime=${startDate}T00:00:00Z/${today}T00:00:00Z&sortby=LOCAL_DATE`
@@ -254,15 +257,10 @@ async function fetchOpenMeteo(
   return out
 }
 
-/**
- * Today's date on the farm, not in UTC. The function runs in UTC, so after
- * ~18:00 local the UTC date has already rolled over — using it would mark
- * tomorrow's forecast as an actual day and let a to-do be raised off projected
- * depletion. Southern Alberta is America/Edmonton; 'en-CA' formats YYYY-MM-DD.
- */
-function farmToday(): string {
-  return new Date().toLocaleDateString('en-CA', { timeZone: farmTz() })
-}
+// Today is the farm's date (farmToday), not UTC's. The function runs in UTC,
+// so after ~18:00 local the UTC date has already rolled over — using it would
+// mark tomorrow's forecast as an actual day and let a to-do be raised off
+// projected depletion.
 
 /** Forecast days with thunderstorm-and-hail (WMO weather codes 96/99). */
 async function fetchHailForecast(lat: number, lon: number): Promise<string[]> {
@@ -314,7 +312,7 @@ async function fetchRiverFlow(
  */
 async function handle(req: Request | null) {
   if (!url || !serviceKey) return json({ error: 'Not configured' }, 500)
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
 
   // Every HTTP caller must prove it is an active manager. This used to be
   // conditional on an Authorization header being PRESENT, which was only safe
@@ -344,6 +342,8 @@ async function handle(req: Request | null) {
     tasks: 0,
     // Harvest dates taken from loads or Deere for fields with none typed.
     harvestDates: [] as string[],
+    // Seasons the app finished or un-finished for watering, and why.
+    wateringDone: [] as string[],
     errors: [] as string[],
   }
   const year = new Date().getFullYear()
@@ -414,6 +414,39 @@ async function handle(req: Request | null) {
       if (!page || page.length < 1000) break
     }
     const harvestEvidence = harvestEvidenceByField(year, lastLoads, harvestOps)
+
+    // The newest FieldNET pass that actually applied water, per field. It is
+    // what says a pivot is still going round, and so what corrects a season
+    // marked finished too early (src/lib/watering-done.ts).
+    // Paged like the harvest passes above, and for the same reason: a season
+    // runs to roughly a thousand passes across a dozen pivots, which is where
+    // PostgREST stops. An unpaged read would quietly return an arbitrary
+    // thousand of them and the newest pass — the only one this needs — could
+    // be the one left out.
+    const lastPassByField = new Map<string, string>()
+    for (let from = 0; ; from += 1000) {
+      const { data: page, error: passErr } = await sb
+        .from('fieldnet_passes')
+        .select('field_id, started_at, ended_at, depth_mm')
+        .gte('started_at', `${year}-01-01`)
+        .not('field_id', 'is', null)
+        .order('id')
+        .range(from, from + 999)
+      if (passErr) {
+        result.errors.push(`pivot passes: ${passErr.message}`)
+        break
+      }
+      for (const p of page ?? []) {
+        // A pass that applied nothing is a dry move, not irrigation.
+        if (p.depth_mm != null && Number(p.depth_mm) <= 0) continue
+        const at = (p.ended_at ?? p.started_at) as string | null
+        if (!p.field_id || !at) continue
+        const d = farmDay(at, farmTz())
+        const seen = lastPassByField.get(p.field_id as string)
+        if (!seen || d > seen) lastPassByField.set(p.field_id as string, d)
+      }
+      if (!page || page.length < 1000) break
+    }
     // Harvests entered by hand (field work Deere never saw). A database
     // without the table yet reads as none.
     const { data: handRows } = await sb
@@ -995,6 +1028,9 @@ async function handle(req: Request | null) {
             .eq('id', season.id)
       }
 
+      // The day the crop matured, kept for the done-watering decision below.
+      let seasonMaturedOn: string | null = null
+
       // 7. The rest of the season on normal weather, for the whole field.
       if (!season.zone_id && balRows.length) {
         const st = stationById.get(field.assigned_station_id) as { lat: number; elevation_m: number; ltn_file?: string | null } | undefined
@@ -1056,6 +1092,7 @@ async function handle(req: Request | null) {
             }
           }
         }
+        seasonMaturedOn = maturedOn ?? outlook.maturityOn
         await sb.from('field_season_outlook').upsert(
           {
             field_id: field.id,
@@ -1063,7 +1100,7 @@ async function handle(req: Request | null) {
             computed_on: today,
             gdd_to_date: Math.round(gddToDate),
             maturity_gdd: aimmCrop?.maturity_gdd ?? null,
-            maturity_on: maturedOn ?? outlook.maturityOn,
+            maturity_on: seasonMaturedOn,
             last_irrigation_by: outlook.lastIrrigationBy,
             need_more_mm: outlook.needMoreMm,
             passes_left: outlook.passesLeft,
@@ -1104,14 +1141,54 @@ async function handle(req: Request | null) {
           .eq('source_ref', field.id)
           .eq('status', 'open')
           .maybeSingle()
-        // A field somebody has marked finished for the season raises nothing,
-        // whatever the balance says. The model does not know the pivot has been
-        // shut off and drained, and by late August most of the farm is in that
-        // state at once — which is how the alerts that DO matter end up being
-        // read with the same eye as the ones that do not.
-        const doneForYear = Boolean(
+        // A field finished for the season raises nothing, whatever the balance
+        // says. The model does not know the pivot has been shut off and
+        // drained, and by late August most of the farm is in that state at
+        // once — which is how the alerts that DO matter end up being read
+        // with the same eye as the ones that do not.
+        //
+        // The flag used to be a tick box and nothing else. Now the app works
+        // it out and corrects itself (src/lib/watering-done.ts): harvest
+        // recorded finishes the season, a week of pivot silence past maturity
+        // finishes it, and a pivot pass after the flag unfinishes it. In 2026
+        // five fields were ticked done on 31 Aug and then watered into
+        // October with the to-dos muted.
+        let doneForYear = Boolean(
           (season as { irrigation_done_at?: string | null })?.irrigation_done_at,
         )
+        const decision = decideWateringDone({
+          today,
+          doneAt: (season as { irrigation_done_at?: string | null })?.irrigation_done_at ?? null,
+          doneSource: (season as { irrigation_done_source?: 'person' | 'auto' | null })?.irrigation_done_source ?? null,
+          harvestFinished: Boolean(finishedOn),
+          maturityOn: seasonMaturedOn,
+          lastPassOn: lastPassByField.get(field.id) ?? null,
+        })
+        if (decision) {
+          const { error: doneErr } = await sb
+            .from('field_crop_seasons')
+            .update(
+              decision.action === 'set'
+                ? {
+                    irrigation_done_at: new Date().toISOString(),
+                    irrigation_done_by: null,
+                    irrigation_done_source: 'auto',
+                    irrigation_done_note: decision.note,
+                  }
+                : {
+                    irrigation_done_at: null,
+                    irrigation_done_by: null,
+                    irrigation_done_source: null,
+                    irrigation_done_note: null,
+                  },
+            )
+            .eq('id', season.id)
+          if (doneErr) result.errors.push(`${field.name} done watering: ${doneErr.message}`)
+          else {
+            doneForYear = decision.action === 'set'
+            result.wateringDone.push(`${field.name}: ${decision.action === 'set' ? 'finished' : 'back on'} — ${decision.note}`)
+          }
+        }
         const needsAction =
           !doneForYear &&
           (last.status === 'now' || last.status === 'soon' || last.status === 'stress')
@@ -1166,7 +1243,7 @@ async function handle(req: Request | null) {
       if (hailDays.length) {
         const first = hailDays[0]
         const title = `Possible hail forecast — ${first}${hailDays.length > 1 ? ` (+${hailDays.length - 1} more)` : ''}`
-        const description = `Forecast shows thunderstorms with hail on: ${hailDays.join(', ')}. Scout fields after any storm and check the Hail box on affected fields.`
+        const description = `Forecast shows thunderstorms with hail on: ${hailDays.join(', ')}. Scout fields after any storm, and record the day it hailed on each field it hit (Fields, the Hail column).`
         const due = new Date(first + 'T12:00:00Z').toISOString()
         if (openHail) await sb.from('tasks').update({ title, description_md: description, due_at: due }).eq('id', openHail.id)
         else {

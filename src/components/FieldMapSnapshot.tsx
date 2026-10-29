@@ -1,11 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Maximize2 } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import type { MultiPolygon, Polygon } from 'geojson'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
-import { farmMapCenter } from '@/lib/farm-setup'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 
 /**
  * The field, at the top of its own page.
@@ -32,58 +30,48 @@ export function FieldMapSnapshot({
   className?: string
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
 
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current || !boundary) return
-
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: SATELLITE_STYLE,
-      center: farmMapCenter(),
+  // The container is only there once there is a boundary to draw.
+  useFarmMap(
+    containerRef,
+    {
       zoom: 11,
-      attributionControl: false,
+      controls: { nav: false },
       // A map that eats the page scroll is a map people fight with on a phone.
-      scrollZoom: false,
-      dragRotate: false,
-      pitchWithRotate: false,
-      touchZoomRotate: false,
-    })
-    map.dragPan.disable()
-    map.doubleClickZoom.disable()
-    map.keyboard.disable()
+      mapOptions: { scrollZoom: false, dragRotate: false, pitchWithRotate: false, touchZoomRotate: false },
+      onCreate: (map) => {
+        map.dragPan.disable()
+        map.doubleClickZoom.disable()
+        map.keyboard.disable()
+      },
+      onReady: (map) => {
+        if (!boundary) return
+        map.addSource('field', { type: 'geojson', data: boundary })
+        map.addLayer({
+          id: 'field-fill',
+          type: 'fill',
+          source: 'field',
+          paint: { 'fill-color': '#facc15', 'fill-opacity': 0.12 },
+        })
+        map.addLayer({
+          id: 'field-line',
+          type: 'line',
+          source: 'field',
+          paint: { 'line-color': '#facc15', 'line-width': 2.5 },
+        })
 
-    map.on('load', () => {
-      map.addSource('field', { type: 'geojson', data: boundary })
-      map.addLayer({
-        id: 'field-fill',
-        type: 'fill',
-        source: 'field',
-        paint: { 'fill-color': '#facc15', 'fill-opacity': 0.12 },
-      })
-      map.addLayer({
-        id: 'field-line',
-        type: 'line',
-        source: 'field',
-        paint: { 'line-color': '#facc15', 'line-width': 2.5 },
-      })
-
-      // Frame the field itself rather than guessing a zoom: fields here run
-      // from a few acres to a whole section.
-      const bounds = new maplibregl.LngLatBounds()
-      const rings =
-        boundary.type === 'Polygon' ? boundary.coordinates : boundary.coordinates.flat()
-      for (const ring of rings)
-        for (const [lng, lat] of ring) bounds.extend([lng, lat] as [number, number])
-      if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 24, duration: 0 })
-    })
-
-    mapRef.current = map
-    return () => {
-      map.remove()
-      mapRef.current = null
-    }
-  }, [boundary])
+        // Frame the field itself rather than guessing a zoom: fields here run
+        // from a few acres to a whole section.
+        const bounds = new maplibregl.LngLatBounds()
+        const rings =
+          boundary.type === 'Polygon' ? boundary.coordinates : boundary.coordinates.flat()
+        for (const ring of rings)
+          for (const [lng, lat] of ring) bounds.extend([lng, lat] as [number, number])
+        if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 24, duration: 0 })
+      },
+    },
+    [boundary],
+  )
 
   if (!boundary)
     return (

@@ -32,14 +32,15 @@ import { useTaskMutations, useTasks, uploadTaskFiles } from '@/lib/tasks'
 import { TaskForm, fromLocalDateInput, fromLocalInput } from '@/components/TaskForm'
 import { useUsers } from '@/lib/queries'
 import { useFields } from '@/lib/queries'
-import { useCalendarEvents, useMonthlyInstances, useMonthlyTemplates } from '@/lib/calendar'
+import { useCalendarEvents } from '@/lib/calendar'
+import { MonthlySection, TasksByPerson } from '@/pages/meeting/MonthlySection'
+import { ymOf } from '@/lib/monthly'
 import { useRuns } from '@/lib/checklists'
 import { useFieldSeasons, useForecastCrossings } from '@/lib/irrigation'
 import {
   carriedOver,
   dueInWeek,
   MEETING_WEATHER_MODEL,
-  monthlyOutstanding,
   shiftWeek,
   toISO,
   unassignedTasks,
@@ -59,6 +60,7 @@ import { useWeatherSites } from '@/lib/weatherSites'
 import { cn } from '@/lib/utils'
 import { InfoPopover } from '@/components/InfoPopover'
 import { alertGuide } from '@/lib/alert-guides'
+import { CARD_HEAD } from '@/lib/table-style'
 
 
 /**
@@ -114,8 +116,6 @@ export function MeetingPage() {
   const { data: users } = useUsers()
   const { data: fields } = useFields()
   const { data: runs } = useRuns(cropYear)
-  const { data: monthlyTemplates } = useMonthlyTemplates()
-  const { data: monthlyInstances } = useMonthlyInstances(cropYear)
   const { data: crossings } = useForecastCrossings()
   const { data: seasons } = useFieldSeasons(cropYear)
   const { data: note } = useMeetingNote(monday)
@@ -146,10 +146,6 @@ export function MeetingPage() {
   const dueThisWeek = useMemo(() => dueInWeek(tasks ?? [], monday), [tasks, monday])
   const unassigned = useMemo(() => unassignedTasks(tasks ?? []), [tasks])
   const weekEvents = useMemo(() => weekEventsOf(events ?? [], monday), [events, monday])
-  const monthly = useMemo(
-    () => monthlyOutstanding(monthlyTemplates ?? [], monthlyInstances ?? [], monday),
-    [monthlyTemplates, monthlyInstances, monday],
-  )
 
   const openRuns = (runs ?? []).filter((r) => r.status === 'open')
   const { data: alerts } = useMeetingAlerts(monday)
@@ -376,30 +372,27 @@ export function MeetingPage() {
           ))}
         </Section>
 
-        <Section
-          icon={ClipboardCheck}
-          title={`${days[0].toLocaleDateString('en-CA', { month: 'long' })} checklist`}
-          count={monthly.length + openRuns.length}
-          empty="Nothing outstanding for the month."
-          hint="Monthly jobs not yet ticked off, and any checklist run still open."
-        >
-          {monthly.map((m) => (
-            <Row
-              key={m.template.id}
-              to="/monthly"
-              title={m.template.title}
-              meta={[nameOf(m.template.default_assignee)]}
-            />
-          ))}
-          {openRuns.map((r) => (
-            <Row
-              key={r.id}
-              to={`/checklists/runs/${r.id}`}
-              title={r.name}
-              meta={['run in progress']}
-            />
-          ))}
-        </Section>
+        {/* Who has how much on, before the monthly jobs get handed out (Sam, 24 Oct 2026). */}
+        <TasksByPerson tasks={tasks ?? []} />
+
+        {/* Monthly jobs: leftovers, this month, next month on the switch — assign
+            and tick from here. The current week goes by today, so a meeting run
+            on the 1st is on the new month; another week goes by its Monday. */}
+        <MonthlySection now={thisWeek ? ymOf(new Date()) : ymOf(days[0])} />
+
+        {openRuns.length > 0 && (
+          <Section
+            icon={ClipboardCheck}
+            title="Checklists in progress"
+            count={openRuns.length}
+            empty=""
+            more={{ to: '/checklists?tab=runs', label: 'Checklists' }}
+          >
+            {openRuns.map((r) => (
+              <Row key={r.id} to={`/checklists/runs/${r.id}`} title={r.name} meta={['run in progress']} />
+            ))}
+          </Section>
+        )}
 
         {/* What the ground is asking for. Only when a field reaches its
             trigger this week — the full picture is on the irrigation page. */}
@@ -570,8 +563,8 @@ export function MeetingPage() {
 
         {/* What we are going to do about it. The only part the app cannot
             assemble, and the reason the meeting happens. */}
-        <section className="rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
             The plan
             <InfoPopover title="The plan">
               <p>
@@ -580,6 +573,7 @@ export function MeetingPage() {
               </p>
             </InfoPopover>
           </h2>
+          <div className="p-4">
           {isManager ? (
             <>
               <textarea
@@ -619,6 +613,8 @@ export function MeetingPage() {
           ) : (
             <p className="mt-2 text-sm text-gray-400">Nothing written down for this week yet.</p>
           )}
+
+          </div>
         </section>
       </div>
 

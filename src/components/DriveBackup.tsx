@@ -7,9 +7,9 @@ import { useVisibleReports } from '@/lib/reports/visible'
 import { REPORT_SECTIONS } from '@/lib/reports/catalogue'
 import { isFile, reportCsv, reportTable, rowCount, type GatherContext, type Made, initialParams } from '@/lib/reports/framework'
 import { tableReportToPdf } from '@/lib/table-report'
-import { DriveWriter, finishRun, tokenSource } from '@/lib/drive-backup'
+import { DriveWriter, finishRun, tokenSource, whenIdle } from '@/lib/drive-backup'
 import { backupJobs, jobPaths, type BackupJob, type BackupSkip } from '@/lib/drive-backup-jobs'
-import { GATHERERS } from '@/pages/reports/gatherers'
+import { loadGatherer, type HookRun } from '@/pages/reports/gatherers'
 import { HookRunner } from '@/pages/reports/ReportRow'
 import { setProgress } from '@/lib/drive-backup-progress'
 
@@ -20,8 +20,10 @@ import { setProgress } from '@/lib/drive-backup-progress'
  * them in the Drive folder, one at a time with a pause between, so it never
  * holds the screen up. "Back up now" on Farm setup starts one at once.
  *
- * Loaded only when a run starts (DriveBackupScheduler lazy-imports it): it
- * pulls in every report's code.
+ * Loaded only when a run starts (DriveBackupScheduler lazy-imports it), and
+ * each report's code is fetched as its turn comes (gatherers.ts). Between
+ * reports it waits for the browser to be idle, so a run never competes with
+ * whoever is using the app.
  */
 
 /* ── One run ───────────────────────────────────────────────────────────── */
@@ -44,7 +46,7 @@ export default function BackupRunner({ runId, onDone }: { runId: string; onDone:
   const writer = useRef<DriveWriter | null>(null)
   const tally = useRef({ made: 0, skipped: [...plan.skipped] as BackupSkip[], errors: [] as BackupSkip[] })
   const [index, setIndex] = useState(-1)
-  const [hookJob, setHookJob] = useState<BackupJob | null>(null)
+  const [hookJob, setHookJob] = useState<{ job: BackupJob; useRun: HookRun } | null>(null)
 
   // Open the Drive folder, then start.
   useEffect(() => {
@@ -99,7 +101,8 @@ export default function BackupRunner({ runId, onDone }: { runId: string; onDone:
       })
       .finally(() => {
         setHookJob(null)
-        window.setTimeout(() => setIndex((i) => i + 1), PAUSE_MS)
+        // A pause, then the next report when the browser is next idle.
+        window.setTimeout(() => whenIdle(() => setIndex((i) => i + 1)), PAUSE_MS)
       })
   }
 
@@ -119,23 +122,26 @@ export default function BackupRunner({ runId, onDone }: { runId: string; onDone:
     const job = plan.jobs[index]
     setProgress({ done: index, current: `${job.report.name} (${job.format})` })
     const params = initialParams(job.report.params, ctx.cropYear, ctx.today)
-    const g = GATHERERS[job.report.id]
-    if ('run' in g) settle(job, g.run(params, { ...ctx, format: job.format }))
-    // Mounted on the next tick: a hook-gathered report needs its own component.
-    else void Promise.resolve().then(() => setHookJob(job))
+    loadGatherer(job.report.id).then(
+      (g) => {
+        if ('run' in g) settle(job, g.run(params, { ...ctx, format: job.format }))
+        // A hook-gathered report needs its own component.
+        else setHookJob({ job, useRun: g.useRun })
+      },
+      (e: unknown) => settle(job, Promise.reject(e)),
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index])
 
   if (!hookJob) return null
-  const g = GATHERERS[hookJob.report.id]
-  if (!('useRun' in g)) return null
+  const { job } = hookJob
   return (
     <HookRunner
-      key={`${hookJob.report.id}:${hookJob.format}`}
-      useRun={g.useRun}
-      params={initialParams(hookJob.report.params, ctx.cropYear, ctx.today)}
-      ctx={{ ...ctx, format: hookJob.format }}
-      onReady={(p) => settle(hookJob, p)}
+      key={`${job.report.id}:${job.format}`}
+      useRun={hookJob.useRun}
+      params={initialParams(job.report.params, ctx.cropYear, ctx.today)}
+      ctx={{ ...ctx, format: job.format }}
+      onReady={(p) => settle(job, p)}
     />
   )
 }

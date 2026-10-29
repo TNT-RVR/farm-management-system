@@ -10,14 +10,10 @@ import { smridAllotmentFor, allottedInchesFor, type YearAllotment } from '@/lib/
 import { pivotShare, type PoolLicence, type PoolPivot } from '@/lib/licence-pools'
 import { END_TREATMENTS, endLabel, packageLabel, passEfficiency, SPRINKLER_PACKAGES, suggestEfficiency } from '@/lib/pivot-efficiency'
 import { useFarmSettings, useFeature } from '@/lib/farm-setup'
-import { PillTabs } from '@/components/PillTabs'
 import { AddButton as AddBtn, DetailList, EditButton as EditBtn, RecordEditModal as RowEditModal, rowClick, type EditField } from '@/components/RecordEditor'
 import { keepOpenOnError } from '@/lib/record-actions'
+import { NEW_SOURCE_KEY, waterSourceLabel, waterSourceOptions, withNewSource } from '@/lib/water-source-names'
 import { licenceDeleteConfirm, licenceVolumes, M3_PER_ACRE_FOOT, pumpDeleteConfirm } from '@/lib/irrigation-edits'
-import { PumpStation } from '@/pages/irrigation/PumpStation'
-import { PumpSettings } from '@/pages/irrigation/PumpSettings'
-import { PumpAlarms } from '@/pages/irrigation/PumpAlarms'
-import { PumpHistory } from '@/pages/irrigation/PumpHistory'
 import { PumpDetails, PumpFlow } from '@/pages/irrigation/PumpDetails'
 import { usePumpContext } from '@/lib/pump-context'
 import { usePumpPins } from '@/lib/farm-layers'
@@ -41,6 +37,7 @@ import {
   useSmridAreas,
   useWaterLicences,
 } from '@/lib/irrigation'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const numFmt = (v: number | null | undefined, d = 0) =>
   v == null ? '—' : Number(v).toLocaleString('en-CA', { maximumFractionDigits: d })
@@ -237,14 +234,10 @@ export function PivotTab({ isManager }: { isManager: boolean }) {
       key: 'water_source',
       label: 'Water from',
       kind: 'select',
-      options: [
-        { value: '', label: '— not set —' },
-        { value: 'oldman_river', label: 'Oldman River' },
-        { value: 'south_saskatchewan_river', label: 'South Saskatchewan River' },
-        { value: 'smrid', label: `${districtName} canal` },
-        { value: 'other', label: 'Other' },
-      ],
+      // The built-ins and every source already named on the farm (item 5).
+      options: waterSourceOptions((pivots ?? []).map((p) => p.water_source), districtName, { withDistrict: true }),
     },
+    { key: NEW_SOURCE_KEY, label: 'Or name another source', kind: 'text', placeholder: 'e.g. Bow River, North Canal, Well 2' },
     { key: 'water_licence_id', label: 'Licence', kind: 'select', options: [{ value: '', label: '—' }, ...(licences ?? []).map((l) => ({ value: l.id, label: l.licence_number ?? '(licence)' }))] },
     { key: 'licence_note', label: 'Licence note', kind: 'text' },
     { key: 'acres_irrigated', label: 'Irrigated acres', kind: 'number', step: '0.1' },
@@ -360,8 +353,8 @@ export function PivotTab({ isManager }: { isManager: boolean }) {
           with the chevron, and every field is in the Edit form. */}
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <table className="w-full min-w-[640px] text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-[11px] uppercase tracking-wide text-gray-500">
+          <thead className={TABLE_HEAD}>
+            <tr>
               <th className="w-6 px-1 py-2" />
               {(
                 [
@@ -626,7 +619,7 @@ export function PivotTab({ isManager }: { isManager: boolean }) {
           fields={editFields}
           row={editingRow.p as unknown as Record<string, unknown>}
           onClose={() => setEditing(null)}
-          onSave={(patch) => setPivot.mutate({ field_id: editingRow.p.field_id!, ...withEfficiencyBasis(editingRow.p, withFlow(editingRow.p, { ...patch, not_used: patch.not_used === 'true' })) })}
+          onSave={(patch) => setPivot.mutate({ field_id: editingRow.p.field_id!, ...withEfficiencyBasis(editingRow.p, withFlow(editingRow.p, { ...withNewSource(patch, 'water_source'), not_used: patch.not_used === 'true' })) })}
           onDelete={() => delPivot.mutate(editingRow.p.id)}
           deleteConfirm="Delete this pivot? This removes its record from the field."
         />
@@ -645,7 +638,7 @@ export function PivotTab({ isManager }: { isManager: boolean }) {
               window.alert('Choose a field for this pivot.')
               return
             }
-            setPivot.mutate({ ...patch, field_id: fieldId })
+            setPivot.mutate({ ...withNewSource(patch, 'water_source'), field_id: fieldId })
           }}
         />
       )}
@@ -715,8 +708,7 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
     },
     { key: 'legal_land', label: 'Legal land', kind: 'text' },
     // Where its pin goes on the maps (river, checklists, farm layers).
-    { key: 'lat', label: 'Latitude', kind: 'number', step: 'any', hint: 'Decimal degrees' },
-    { key: 'lon', label: 'Longitude', kind: 'number', step: 'any', hint: 'Decimal degrees; west is negative' },
+    { key: 'lat', lngKey: 'lon', label: 'Location', kind: 'latlng', hint: 'Decimal degrees, west negative, or a Google Maps link' },
     { key: 'water_priority_number', label: 'Water priority', kind: 'text' },
     { key: 'gpm', label: 'GPM, measured', kind: 'number', step: '10', hint: 'From a flow meter or FieldNET. Leave blank until measured; the estimate below stands in.' },
     { key: 'gpm_estimate', label: 'GPM, estimated', kind: 'number', step: '10', hint: 'From the pump curve at a likely head. Say how in "How the estimate was made".' },
@@ -828,13 +820,9 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
       key: 'source',
       label: 'Water from',
       kind: 'select',
-      options: [
-        { value: '', label: '— not set —' },
-        { value: 'oldman_river', label: 'Oldman River' },
-        { value: 'south_saskatchewan_river', label: 'South Saskatchewan River' },
-        { value: 'other', label: 'Other' },
-      ],
+      options: waterSourceOptions((licences ?? []).map((l) => l.source), '', { withDistrict: false }),
     },
+    { key: NEW_SOURCE_KEY, label: 'Or name another source', kind: 'text', placeholder: 'e.g. Bow River, North Canal, Well 2' },
     { key: 'holder', label: 'Holder', kind: 'text' },
     { key: 'alt_numbers', label: 'Other numbers it goes by', kind: 'text' },
     { key: 'points_of_diversion', label: 'Points of diversion', kind: 'textarea' },
@@ -854,7 +842,6 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
     }
     return m
   }, [pivots, fieldById])
-  const SOURCE_LABEL: Record<string, string> = { oldman_river: 'Oldman River', south_saskatchewan_river: 'South Saskatchewan River', other: 'Other' }
 
   return (
     <div className="space-y-6">
@@ -867,8 +854,8 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
         </div>
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
           <table className="w-full min-w-[820px] text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-left text-[11px] uppercase tracking-wide text-gray-500">
+            <thead className={TABLE_HEAD}>
+              <tr>
                 {['Pump', 'Feeds', 'HP', 'Volts', 'GPM', 'Pump model', 'Serial', 'Photos'].map((h) => (
                   <th key={h} className="px-2 py-2 font-medium">{h}</th>
                 ))}
@@ -944,8 +931,8 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
         </div>
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
           <table className="w-full min-w-[680px] text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-left text-[11px] uppercase tracking-wide text-gray-500">
+            <thead className={TABLE_HEAD}>
+              <tr>
                 {['Licence #', 'Volume', 'Rate of diversion (m³/s)', 'Priority #', 'Fields'].map((h) => (
                   <th key={h} className="px-3 py-2 font-medium">{h}</th>
                 ))}
@@ -999,7 +986,7 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
                               ['Rate of diversion', l.rate_of_diversion != null ? `${l.rate_of_diversion} m³/s` : null],
                               ['Priority', [l.priority_number, l.priority_date].filter(Boolean).join(' · ') || null],
                               ['Expiry', l.expiry],
-                              ['Water from', l.source ? (SOURCE_LABEL[l.source] ?? l.source) : null],
+                              ['Water from', waterSourceLabel(l.source, '')],
                               ['Holder', l.holder],
                               ['Also known as', l.alt_numbers],
                               ['Points of diversion', l.points_of_diversion],
@@ -1070,7 +1057,7 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
           fields={licFields}
           row={editingLic as unknown as Record<string, unknown>}
           onClose={() => setEditLic(null)}
-          onSave={(patch) => setLic.mutate({ id: editingLic.id, patch })}
+          onSave={(patch) => setLic.mutate({ id: editingLic.id, patch: withNewSource(patch, 'source') })}
           onDelete={() => keepOpenOnError(delLic.mutateAsync(editingLic.id))}
           deleteConfirm={licenceDeleteConfirm(editingLic.licence_number, fieldsByLicence.get(editingLic.id) ?? [])}
           saving={delLic.isPending}
@@ -1098,45 +1085,10 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
           fields={licFields}
           row={{}}
           onClose={() => setAddLic(false)}
-          onSave={(patch) => createLic.mutate(patch as Record<string, never>)}
+          onSave={(patch) => createLic.mutate(withNewSource(patch, 'source') as Record<string, never>)}
         />
       )}
     </div>
   )
 }
 
-/**
- * The five live turbine screens, behind one row of tabs.
- *
- * They are tabs rather than one long page because they are read at different
- * times: the station every day, alarms when something is wrong, settings almost
- * never — and putting a PID gain within an accidental thumb's reach of the
- * pressure everyone checks is how a pump ends up mistuned.
- */
-const STATION_TABS = [
-  { key: 'station', label: 'Station' },
-  { key: 'alarms', label: 'Alarms' },
-  { key: 'history', label: 'History' },
-  { key: 'settings', label: 'Settings' },
-] as const
-
-export function TurbineControlTab({ isManager }: { isManager: boolean }) {
-  const [tab, setTab] = useState<(typeof STATION_TABS)[number]['key']>('station')
-  return (
-    <section className="space-y-3">
-      {/* The shape every irrigation tab bar now takes — see PillTabs. This one
-          was the original; sharing it is what stops the other three drifting
-          back to three different looks. */}
-      <PillTabs tabs={STATION_TABS} value={tab} onChange={setTab} />
-      {tab === 'station' ? (
-        <PumpStation />
-      ) : tab === 'alarms' ? (
-        <PumpAlarms isManager={isManager} />
-      ) : tab === 'history' ? (
-        <PumpHistory />
-      ) : (
-        <PumpSettings isManager={isManager} />
-      )}
-    </section>
-  )
-}

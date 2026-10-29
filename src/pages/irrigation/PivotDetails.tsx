@@ -1,9 +1,12 @@
+import { Link } from 'react-router-dom'
 import { InfoPopover } from '@/components/InfoPopover'
 import type { FieldPivotRow, PumpRow } from '@/lib/irrigation'
 import { pivotPlateLines } from '@/lib/equipment-details'
 import { depthCosts, usePowerPrices } from '@/lib/pivot-cost'
 import { DEFAULT_APPLICATION_EFFICIENCY, pivotFlow, pivotHorsepower } from '@/lib/water-review'
 import { EquipmentPhotos, FlagList, PlateBlock } from '@/pages/irrigation/EquipmentBlocks'
+import { money as fmtMoney } from '@/lib/format'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * A pivot's nameplate, the things on its record to check, its photos, and what
@@ -42,7 +45,7 @@ export function PivotDetails({
   )
 }
 
-const money = (v: number) => `$${Math.round(v).toLocaleString('en-CA')}`
+const money = (v: number) => fmtMoney(v, 0, { neg: 'inside' })
 const DEPTH_LABEL: Record<number, string> = { 0.25: '¼ in', 0.5: '½ in', 0.75: '¾ in', 1: '1 in' }
 
 /** The power cost of a ¼, ½, ¾ and 1 inch on this pivot, at the grid price. */
@@ -92,7 +95,11 @@ function PivotWaterCost({ pivot, fieldName, pump, pivotsOnPump }: { pivot: Field
             </p>
             <p>
               Power: {Math.round(share.hp!)} hp{share.note ? ` — ${share.note}` : ''}, at 0.746 kW a horsepower over 90% motor efficiency, priced at $
-              {price}/kWh ({prices.basis === 'sell' ? 'the solar sell price' : 'the grid price'}).
+              {price}/kWh ({prices.basis === 'sell' ? 'the solar sell price' : 'the grid price'}).{' '}
+              <Link to="/utilities?tab=power" className="font-medium text-brand-700 hover:underline">
+                Power prices are set in Utilities › Power
+              </Link>
+              .
             </p>
             <p>
               Into the soil takes about {Math.round((1 / eff - 1) * 100)}% more ({Math.round(eff * 100)}% application efficiency). Demand charges on the power bill
@@ -109,7 +116,7 @@ function PivotWaterCost({ pivot, fieldName, pump, pivotsOnPump }: { pivot: Field
         </InfoPopover>
       </div>
       <table className="text-xs tabular-nums">
-        <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+        <thead className={TABLE_HEAD}>
           <tr>
             <th className="py-0.5 pr-4 font-medium">Depth</th>
             {showTimer && <th className="py-0.5 pr-4 text-right font-medium">Timer</th>}

@@ -36,6 +36,7 @@ import {
   type ColdDay,
 } from '@/lib/winter-feeding'
 import { WarningList } from '@/pages/cattle/feed/bits'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * The cattle manager's feed sheets, typed in.
@@ -564,7 +565,7 @@ function FeedRecordDetail({
         ]}
       />
       <table className="mt-3 w-full text-sm">
-        <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+        <thead className={TABLE_HEAD}>
           <tr>
             <th className="py-1 font-medium">Feed</th>
             <th className="py-1 text-right font-medium">Amount</th>

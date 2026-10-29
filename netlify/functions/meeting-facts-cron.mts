@@ -1,5 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 /**
  * The weekly nudge that keeps the fact library from running down.
@@ -32,7 +32,7 @@ export default async () => {
     // The heartbeat is what turns it into an alert a manager sees.
     const detail = `cannot start the fact top-up: ${!workerKey ? 'JOB_WORKER_KEY' : 'URL'} is not set`
     console.warn(`[facts] ${detail}`)
-    await createClient(url, serviceKey).rpc('record_integration_heartbeat', {
+    await admin().rpc('record_integration_heartbeat', {
       p_key: 'meeting_facts',
       p_detail: detail,
       p_data_at: null,

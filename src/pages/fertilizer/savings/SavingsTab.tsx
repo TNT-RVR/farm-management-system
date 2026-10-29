@@ -1,29 +1,17 @@
 import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { PiggyBank, Settings2 } from 'lucide-react'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
+import { PiggyBank } from 'lucide-react'
+import { SettingsButton } from '@/components/SettingsButton'
 import { Select } from '@/components/Select'
 import { HelpNote } from '@/components/HelpNote'
 import { useCropYear } from '@/lib/crop-year'
 import { useBrand, useFarmSettings, useFeature } from '@/lib/farm-setup'
 import { useSaveFertSetting, useWaterSCredit } from '@/lib/fert-savings/data'
-import { UPFRONT_SPLIT_DEFAULTS, WATER_S_BY_SOURCE } from '@/lib/fert-savings/alberta'
+import { UPFRONT_SPLIT_DEFAULTS, WATER_S_BY_SOURCE, waterSourceLabel, type WaterSource } from '@/lib/fert-savings/alberta'
+import { SAVINGS_HOMES, savingsToolHref } from '@/lib/fert-savings/homes'
 import { SavingsProvider, ToolFocusProvider, useSavings, useToolFocus, type ToolFocus } from './context'
-import { BlendPremiumCard, BuyWindowCard, InventoryCard, NeedVsBookedCard, NutrientCostCard, ProgramsCard, QuoteSheetCard, ServiceAuditCard } from './Buying'
-import {
-  DontApplyCard,
-  EconomicNCard,
-  EnhancedCard,
-  ManureCreditCard,
-  PriorCropCard,
-  RemovalCard,
-  SplitCard,
-  TissueGateCard,
-  VrCard,
-} from './Applying'
-import { BalanceAndStripsCard, CostPerBushelCard, OverAppliedCard } from './Proving'
-import { GrantsCard, NerpCard, PrepayCard, PriceCheckCard, SamplingPaybackCard, SpreadWindowCard, StoreCard } from './More'
 import { ghost, input, money, perLbFmt } from './ui'
-import { NerpPackCard, NRichStripCard, NTrialCard, PkBalanceCard, ProteinCard, ResampleCard, SalinityCard, YieldGoalCard } from './Research'
+import { SavingsTool } from './tools'
 
 /**
  * Ways to spend less on fertilizer, each worked out from the farm's own
@@ -38,6 +26,10 @@ import { NerpPackCard, NRichStripCard, NTrialCard, PkBalanceCard, ProteinCard, R
  * of it on, and proving afterwards that what went on paid. Every tool folds
  * to one line with what it could save, so the page reads as a list of
  * dollars before any of it is opened.
+ *
+ * Eleven tools live on the tab that owns their question since 26 Oct 2026
+ * (lib/fert-savings/homes.ts); "Where the savings live" lists them with what
+ * each could save, and an old `?tool=` link to one forwards there.
  */
 export function SavingsTab({ isManager }: { isManager: boolean }) {
   const { cropYear } = useCropYear()
@@ -48,6 +40,8 @@ export function SavingsTab({ isManager }: { isManager: boolean }) {
   const toolParam = params.get('tool')
   const [seenTool, setSeenTool] = useState<string | null>(null)
   const [focus, setFocus] = useState<ToolFocus>(null)
+  const movedTo = toolParam ? savingsToolHref(Number(toolParam)) : null
+  if (movedTo) return <Navigate to={movedTo} replace />
   if (toolParam !== seenTool) {
     setSeenTool(toolParam)
     const n = Number(toolParam)
@@ -63,12 +57,12 @@ export function SavingsTab({ isManager }: { isManager: boolean }) {
 }
 
 const GROUPS: { title: string; blurb: string; ids: number[] }[] = [
-  { title: 'Buying cheaper', blurb: 'When to book, from whom, in what form, and checking the bill.', ids: [1, 2, 3, 4, 5, 6, 7, 8, 21, 26, 27] },
-  { title: 'Money on offer', blurb: 'Programs that pay for doing it well.', ids: [22, 23] },
+  { title: 'Buying cheaper', blurb: 'When to book, from whom, in what form, and checking the bill.', ids: [1, 5, 6, 7, 8, 21, 26, 27] },
+  { title: 'Money on offer', blurb: 'Programs that pay for doing it well.', ids: [23] },
   // Manure in dollars (25) lives on the Manure tab, under What a load is
   // worth; it was a card here that only pointed there.
-  { title: 'Applying less', blurb: 'Every pound the soil, the last crop, the weather or the price says not to buy.', ids: [9, 10, 11, 12, 13, 14, 15, 16, 17, 24, 29, 30, 31, 32] },
-  { title: 'Proving it worked', blurb: 'What went on, what came off, and whether it paid.', ids: [18, 19, 20, 28, 33, 34, 35, 36] },
+  { title: 'Applying less', blurb: 'Every pound the soil, the last crop, the weather or the price says not to buy.', ids: [10, 11, 12, 14, 16, 24, 29, 30, 31, 32] },
+  { title: 'Proving it worked', blurb: 'What went on, what came off, and whether it paid.', ids: [18, 20, 28, 33, 34] },
 ]
 
 /**
@@ -91,8 +85,12 @@ function Body({ year, setYear, isManager }: { year: number; setYear: (y: number)
   const [showQuiet, setShowQuiet] = useState(false)
   const focus = useToolFocus()
   const showing = (id: number) => showQuiet || !!notable.get(id) || focus?.n === id
-  const allIds = groups.flatMap((g) => g.ids)
-  const quiet = allIds.filter((id) => !notable.get(id)).length
+  const hereIds = groups.flatMap((g) => g.ids)
+  const quiet = hereIds.filter((id) => !notable.get(id)).length
+  // The tools that moved still count in the total: they are still savings,
+  // only shown on the tab that owns their question.
+  const moved = SAVINGS_HOMES.filter((h) => retailerOn || !RETAILER_ONLY.has(h.n))
+  const allIds = [...hereIds, ...moved.map((h) => h.n)]
   const sum = (ids: number[]) => ids.reduce((s, id) => s + (NOT_A_SAVING.has(id) ? 0 : Math.max(0, totals.get(id) ?? 0)), 0)
   const all = sum(allIds)
   const counted = [...totals.entries()].filter(([id, v]) => allIds.includes(id) && !NOT_A_SAVING.has(id) && (v ?? 0) > 0).length
@@ -130,9 +128,7 @@ function Body({ year, setYear, isManager }: { year: number; setYear: (y: number)
             ariaLabel="Crop year"
           />
           {isManager && (
-            <button className={ghost} onClick={() => setSettingsOpen((o) => !o)}>
-              <Settings2 className="h-3.5 w-3.5" /> Settings
-            </button>
+            <SettingsButton label="Savings settings" open={settingsOpen} onClick={() => setSettingsOpen((o) => !o)} />
           )}
         </div>
       </div>
@@ -155,7 +151,7 @@ function Body({ year, setYear, isManager }: { year: number; setYear: (y: number)
                 unrendered card cannot. */}
             {g.ids.map((id) => (
               <div key={id} hidden={!showing(id)}>
-                <Tool id={id} isManager={isManager} />
+                <SavingsTool id={id} isManager={isManager} />
               </div>
             ))}
             {!shown.length && <p className="text-xs text-gray-400">Nothing to report here.</p>}
@@ -168,49 +164,61 @@ function Body({ year, setYear, isManager }: { year: number; setYear: (y: number)
           {showQuiet ? 'Hide the checks with nothing to report' : `${quiet} more check${quiet === 1 ? '' : 's'} with nothing to report`}
         </button>
       )}
+
+      <WhereTheSavingsLive moved={moved} totals={totals} isManager={isManager} />
     </div>
   )
 }
 
-function Tool({ id, isManager }: { id: number; isManager: boolean }) {
-  switch (id) {
-    case 1: return <BuyWindowCard />
-    case 2: return <NutrientCostCard />
-    case 3: return <BlendPremiumCard />
-    case 4: return <NeedVsBookedCard />
-    case 5: return <QuoteSheetCard />
-    case 6: return <ProgramsCard />
-    case 7: return <ServiceAuditCard />
-    case 8: return <InventoryCard />
-    case 9: return <ManureCreditCard />
-    case 10: return <PriorCropCard />
-    case 11: return <EconomicNCard />
-    case 12: return <DontApplyCard />
-    case 13: return <RemovalCard />
-    case 14: return <SplitCard />
-    case 15: return <TissueGateCard />
-    case 16: return <EnhancedCard />
-    case 17: return <VrCard />
-    case 18: return <OverAppliedCard />
-    case 19: return <CostPerBushelCard />
-    case 20: return <BalanceAndStripsCard />
-    case 21: return <PriceCheckCard />
-    case 22: return <GrantsCard />
-    case 23: return <NerpCard />
-    case 24: return <SpreadWindowCard />
-    case 26: return <PrepayCard isManager={isManager} />
-    case 27: return <StoreCard />
-    case 28: return <SamplingPaybackCard />
-    case 29: return <YieldGoalCard />
-    case 30: return <SalinityCard />
-    case 31: return <ResampleCard />
-    case 32: return <NRichStripCard />
-    case 33: return <NTrialCard />
-    case 34: return <ProteinCard />
-    case 35: return <PkBalanceCard />
-    case 36: return <NerpPackCard />
-    default: return null
-  }
+/**
+ * The tools that live on another tab now, each a line with what it could save
+ * and a link that opens its card there. The cards still render here, hidden,
+ * so the figures on these lines and in the total above are the same ones the
+ * cards show where they live.
+ */
+function WhereTheSavingsLive({
+  moved,
+  totals,
+  isManager,
+}: {
+  moved: typeof SAVINGS_HOMES
+  totals: Map<number, number | null>
+  isManager: boolean
+}) {
+  if (!moved.length) return null
+  return (
+    <div className="space-y-1">
+      <h2 className="text-sm font-semibold text-gray-900">
+        Where the savings live <span className="font-normal text-gray-500">— checks kept with the page they belong to</span>
+      </h2>
+      <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white text-sm">
+        {moved.map((h) => {
+          const v = totals.get(h.n)
+          return (
+            <li key={h.n} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-3 py-1.5">
+              <Link to={savingsToolHref(h.n)!} className="text-gray-800 hover:text-brand-800 hover:underline">
+                <span className="mr-1.5 text-[11px] text-gray-400">{h.n}</span>
+                {h.title}
+              </Link>
+              <span className="flex items-center gap-2 text-xs">
+                {!NOT_A_SAVING.has(h.n) && v != null && v > 0 && <span className="font-semibold tabular-nums text-green-800">{money(v)}</span>}
+                <Link to={savingsToolHref(h.n)!} className="text-brand-700 hover:underline">
+                  {h.label} →
+                </Link>
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+      {moved
+        .filter((h) => h.card)
+        .map((h) => (
+          <div key={h.n} hidden>
+            <SavingsTool id={h.n} isManager={isManager} />
+          </div>
+        ))}
+    </div>
+  )
 }
 
 function SettingsPanel() {
@@ -290,7 +298,7 @@ function SettingsPanel() {
           onChange={setWater}
           options={Object.entries(WATER_S_BY_SOURCE).map(([k, v]) => {
             const m = measured?.get(k)?.lb_s_per_inch
-            return { value: k, label: `${v.label} · ${m ?? v.lbPerInch} lb S/in${m != null ? ' measured' : ''}` }
+            return { value: k, label: `${waterSourceLabel(k as WaterSource)} · ${m ?? v.lbPerInch} lb S/in${m != null ? ' measured' : ''}` }
           })}
           size="sm"
           className="mt-1 w-full"

@@ -304,19 +304,50 @@ describe('trucking', () => {
         ['a', { fieldId: 'a', cropId: 'c', cropName: 'Silage', unit: 't', lbPerBu: null, acres: 100, quantity: 840, quantitySource: 'scale' as const, ownUse: true }],
         ['b', { fieldId: 'b', cropId: 'c', cropName: 'Silage', unit: 't', lbPerBu: null, acres: 100, quantity: 420, quantitySource: 'plan' as const, ownUse: true }],
       ]),
-      plans: new Map([['a', { id: 'p', field_id: 'a', crop_year: 2026, mode: 'bin_yard' as const, delivery_site_id: null, notes: null }]]),
+      plans: new Map([['a', { id: 'p', field_id: 'a', crop_year: 2026, mode: 'bin_yard' as const, delivery_site_id: null, yard_id: null, notes: null }]]),
       op: {
         sites: [],
+        yards: [],
         trip: () => ({ km: 10, minutes: 10, basis: 'road', note: null }),
         truck: { field: { payloadT: 42, lPerKm: 0.5, loadMin: 20, unloadMin: 10, timeFactor: 1 }, highway: { payloadT: 42, lPerKm: 0.5, loadMin: 20, unloadMin: 10, timeFactor: 1 } },
         basics: { dieselPerL: 2, dieselSource: '', dieselFrom: 'override', wage: 30, wageSource: '', dieselSet: true, wageSet: true },
       },
     })
-    expect(r.groups.map((g) => g.title)).toEqual(['Our bin yard (stays)', 'No haul plan set'])
+    expect(r.groups.map((g) => g.title)).toEqual(['Main yard (stays)', 'No haul plan set'])
     // 840 t ÷ 42 = 20 loads × 20 km = 400 km; 20 × (20 + 30) min = 16.7 h.
     const a = r.groups[0].rows[0]
     expect(a.slice(5, 10)).toEqual([20, 400, 50 / 3, 200, 400])
     expect(a[11]).toBeCloseTo(400 + 500)
     expect(r.groups[1].rows[0][13]).toBe('no haul plan set')
+  })
+
+  it('measures a feed field to the farm yard its plan picks, and leaves a grazed field uncosted', () => {
+    const asked: string[] = []
+    const r = truckingGroups({
+      fields: [{ id: 'a', name: '1' }, { id: 'b', name: '2' }],
+      crops: new Map([
+        ['a', { fieldId: 'a', cropId: 'c', cropName: 'Silage', unit: 't', lbPerBu: null, acres: 100, quantity: 840, quantitySource: 'scale' as const, ownUse: true }],
+        ['b', { fieldId: 'b', cropId: 'c', cropName: 'Alfalfa', unit: 't', lbPerBu: null, acres: 100, quantity: 300, quantitySource: 'plan' as const, ownUse: true }],
+      ]),
+      plans: new Map([
+        ['a', { id: 'p', field_id: 'a', crop_year: 2026, mode: 'bin_yard' as const, delivery_site_id: null, yard_id: 'y', notes: null }],
+        ['b', { id: 'q', field_id: 'b', crop_year: 2026, mode: 'grazed' as const, delivery_site_id: null, yard_id: null, notes: null }],
+      ]),
+      op: {
+        sites: [],
+        yards: [{ id: 'y', name: 'East Ranch Ranch', lat: 52.47, lng: -113.21, active: true, sort: 1, note: null }],
+        trip: (a: string, b: string) => {
+          asked.push(`${a}>${b}`)
+          return { km: 10, minutes: 10, basis: 'road', note: null }
+        },
+        truck: { field: { payloadT: 42, lPerKm: 0.5, loadMin: 20, unloadMin: 10, timeFactor: 1 }, highway: { payloadT: 42, lPerKm: 0.5, loadMin: 20, unloadMin: 10, timeFactor: 1 } },
+        basics: { dieselPerL: 2, dieselSource: '', dieselFrom: 'override', wage: 30, wageSource: '', dieselSet: true, wageSet: true },
+      },
+    })
+    expect(asked).toEqual(['yard:y>field:a'])
+    expect(r.groups.map((g) => g.title)).toEqual(['East Ranch Ranch (stays)', 'Grazed, not trucked'])
+    expect(r.groups[0].rows[0][5]).toBe(20)
+    expect(r.groups[1].rows[0][11]).toBeNull()
+    expect(r.groups[1].rows[0][13]).toBeNull()
   })
 })

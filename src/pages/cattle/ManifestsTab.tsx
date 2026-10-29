@@ -5,6 +5,7 @@ import { Select } from '@/components/Select'
 import { ConfirmDialog } from '@/components/Modal'
 import { supabase } from '@/lib/supabase'
 import { useHerdCounts } from '@/lib/cattle'
+import { ranchesQuery } from '@/lib/ranches'
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
 import {
@@ -18,6 +19,8 @@ import {
 } from '@/lib/manifests'
 import type { Database } from '@/lib/database.types'
 import { ManifestPrint } from '@/pages/cattle/ManifestPrint'
+import { useMyNamedSignature } from '@/lib/signature'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 type ManifestInsert = Database['public']['Tables']['cattle_manifests']['Insert']
 type ManifestLineInsert = Omit<
@@ -28,15 +31,9 @@ type ManifestLineInsert = Omit<
 type Draft = Record<string, string>
 type LineDraft = Partial<Record<keyof ManifestLine, string>>
 
+// The app's one ranches query: a second definition under the same key fought it for the cache.
 function useRanches() {
-  return useQuery({
-    queryKey: ['ranches'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('ranches').select('*').order('sort_order')
-      if (error) throw error
-      return data ?? []
-    },
-  })
+  return useQuery(ranchesQuery())
 }
 
 /**
@@ -122,18 +119,22 @@ export function ManifestsTab({ cropYear, canEdit }: { cropYear: number; canEdit:
    * the length of the print.
    */
   const [printing, setPrinting] = useState<ManifestWithLines | null>(null)
+  // Your signature when the manifest names you, loaded before the print dialog opens.
+  const signature = useMyNamedSignature(printing?.signed_by)
+  const signatureReady = !printing?.signed_by?.trim() || !signature.isFetching
   useEffect(() => {
-    if (!printing) return
+    if (!printing || !signatureReady) return
     // Painted before the dialog opens, otherwise the browser captures the page
     // as it was a frame ago — which is the page without the print block on it.
-    const id = requestAnimationFrame(() => window.print())
+    // Two frames: the signature picture needs one to decode.
+    let id = requestAnimationFrame(() => (id = requestAnimationFrame(() => window.print())))
     const done = () => setPrinting(null)
     window.addEventListener('afterprint', done)
     return () => {
       cancelAnimationFrame(id)
       window.removeEventListener('afterprint', done)
     }
-  }, [printing])
+  }, [printing, signatureReady])
 
   if (isLoading) return <p className="text-sm text-gray-500">Loading…</p>
 
@@ -141,7 +142,7 @@ export function ManifestsTab({ cropYear, canEdit }: { cropYear: number; canEdit:
     <div className="space-y-4">
       {printing && (
         <div className="hidden print:block">
-          <ManifestPrint manifest={printing} />
+          <ManifestPrint manifest={printing} signature={signature.data} />
         </div>
       )}
       <div className={cn('space-y-4', printing && 'print:hidden')}>
@@ -285,8 +286,8 @@ export function ManifestsTab({ cropYear, canEdit }: { cropYear: number; canEdit:
                 {m.lines.length > 0 && (
                   <div className="overflow-x-auto border-t border-gray-100 px-3 py-2">
                     <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
+                      <thead className={TABLE_HEAD}>
+                        <tr>
                           <th className="pb-1 pr-3 font-medium">Class</th>
                           <th className="pb-1 pr-3 text-right font-medium">Head</th>
                           <th className="pb-1 pr-3 font-medium">Sex</th>
@@ -506,10 +507,11 @@ function ManifestForm({
   )
 
   return (
-    <div className="rounded-lg border border-brand-200 bg-brand-50/40 p-3 print:hidden">
-      <h3 className="mb-2 text-sm font-semibold text-gray-900">
+    <div className="overflow-hidden rounded-lg border border-brand-200 bg-brand-50/40 print:hidden">
+      <h3 className={cn('font-medium', CARD_HEAD)}>
         {existing ? 'Edit manifest' : `New manifest — ${cropYear}`}
       </h3>
+      <div className="p-3">
 
       <div className="grid gap-2 sm:grid-cols-4">
         <label className="text-[11px] font-medium text-gray-500">
@@ -750,6 +752,8 @@ function ManifestForm({
         >
           Cancel
         </button>
+      </div>
+
       </div>
     </div>
   )

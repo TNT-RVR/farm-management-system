@@ -15,8 +15,8 @@
 // lazily-loaded chunk may be missing. Reloading the instant that happens meant
 // a tab open through a few deploys blanked and refreshed while somebody was
 // reading it, seemingly at random. So: a chunk that actually failed reloads at
-// once, because that page is already broken; a service worker swap waits for a
-// moment when nobody is mid-sentence.
+// once, because that page is already broken; a service worker swap reloads at
+// once too (Sam, 21 Oct 2026), unless somebody is mid-entry in a form.
 
 /**
  * How often to ASK whether there is a new build.
@@ -33,13 +33,13 @@
  * moment somebody wants current information, and it costs one conditional GET
  * of a small file.
  */
-const UPDATE_CHECK_GAP_MS = 30 * 60_000
+// One minute (was 30, then 5): a deploy should reach a phone the moment it is
+// picked up, and the update reloads straight away (reloadWhenSafe).
+const UPDATE_CHECK_GAP_MS = 60_000
 
 const RELOAD_KEY = 'app-reload-at'
 const RELOAD_WINDOW_MS = 20_000
 
-/** How long without a click or a keystroke counts as a safe moment to reload. */
-export const IDLE_BEFORE_RELOAD_MS = 60_000
 
 /**
  * Is it worth asking the browser to look for a new service worker?
@@ -80,6 +80,12 @@ export function reloadOnce(): boolean {
   return true
 }
 
+/** Fired when a new build has taken over and this page is still the old one. */
+export const UPDATE_READY_EVENT = 'rvr:update-ready'
+let updateReady = false
+/** A new build is waiting for this page to reload. */
+export const isUpdateReady = () => updateReady
+
 export function installAppUpdateHandling(): void {
   // A chunk that fails to load is the symptom, whatever the cause — catch it
   // even when the service worker swap is not what did it. This one is
@@ -106,7 +112,13 @@ export function installAppUpdateHandling(): void {
   const hadController = Boolean(navigator.serviceWorker.controller)
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController) return
-    reloadWhenQuiet()
+    // Said on screen too (UpdateReadyBanner), so somebody who opened the app
+    // and went straight to work is not left on the old build for the whole
+    // session waiting for a quiet minute (Sam, 21 Oct 2026: the photo
+    // upload button "still not" there after it shipped).
+    updateReady = true
+    window.dispatchEvent(new Event(UPDATE_READY_EVENT))
+    reloadWhenSafe()
   })
 
   // And the half that was missing: make an update actually arrive. Without
@@ -117,7 +129,12 @@ export function installAppUpdateHandling(): void {
     if (document.hidden) return
     if (!shouldCheckForUpdate(lastChecked)) return
     lastChecked = Date.now()
-    void navigator.serviceWorker.getRegistration().then((reg) => reg?.update())
+    // No signal (a phone out in a field) makes update() reject. That is not a
+    // fault — the next check tries again — so it must not surface as an error.
+    void navigator.serviceWorker
+      .getRegistration()
+      .then((reg) => reg?.update())
+      .catch(() => {})
   }
   document.addEventListener('visibilitychange', check)
   window.addEventListener('focus', check)
@@ -126,43 +143,39 @@ export function installAppUpdateHandling(): void {
 }
 
 /**
- * Reload at the next moment the person is not using the page.
- *
- * Three ways that moment arrives, whichever comes first: the tab is already in
- * the background, it goes to the background, or a minute passes with no click
- * and no keystroke. All three are cheap to detect and none of them can fire
- * while somebody is halfway through typing a number into a field.
+ * Somebody is part-way through something a reload would lose: a pop-up form
+ * open (every editor and the weigh-in are dialogs), or the cursor in a box.
  */
-function reloadWhenQuiet(): void {
-  if (document.hidden) {
+export function busyOnPage(doc: Document = document): boolean {
+  if (doc.querySelector('[role="dialog"]')) return true
+  const el = doc.activeElement as HTMLElement | null
+  if (!el) return false
+  return el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)
+}
+
+/**
+ * Reload into the new build now (Sam, 21 Oct 2026: "update immediately
+ * instead of needing to push a button"). The one thing that holds it is
+ * somebody mid-entry (busyOnPage): then it goes the moment the form is saved
+ * or closed, or the app is put away, so nothing half-typed is lost. It used to
+ * wait for a minute with no taps, which somebody who opens the app and goes
+ * straight to work never gave it, so they kept the old build all session.
+ */
+function reloadWhenSafe(): void {
+  if (document.hidden || !busyOnPage()) {
     reloadOnce()
     return
   }
-
-  let idle: ReturnType<typeof setTimeout> | null = null
-  const stop = () => {
-    if (idle) clearTimeout(idle)
-    document.removeEventListener('visibilitychange', onHide)
-    for (const ev of ACTIVITY) window.removeEventListener(ev, restart)
-  }
-  const go = () => {
-    stop()
-    reloadOnce()
-  }
-  function onHide() {
+  const timer = window.setInterval(() => {
+    if (document.hidden || !busyOnPage()) go()
+  }, 1000)
+  const onHide = () => {
     if (document.hidden) go()
   }
-  function restart() {
-    if (idle) clearTimeout(idle)
-    idle = setTimeout(go, IDLE_BEFORE_RELOAD_MS)
+  function go() {
+    window.clearInterval(timer)
+    document.removeEventListener('visibilitychange', onHide)
+    reloadOnce()
   }
-
   document.addEventListener('visibilitychange', onHide)
-  for (const ev of ACTIVITY) window.addEventListener(ev, restart, { passive: true })
-  restart()
 }
-
-/** What counts as "somebody is using this". Scrolling deliberately does not —
- *  a long page left scrolling under a thumb should not hold a reload off
- *  forever, and a reload keeps the scroll position anyway. */
-const ACTIVITY = ['pointerdown', 'keydown'] as const

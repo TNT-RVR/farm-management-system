@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useFarmSettings } from './farm-setup'
 import { supabase } from './supabase'
 import type { Database } from './database.types'
+import { REFERENCE_STALE_MS } from './stale'
 
 export type Ranch = Database['public']['Tables']['ranches']['Row']
 
@@ -15,6 +16,7 @@ export function ranchesQuery() {
       if (error) throw error
       return data
     },
+    staleTime: REFERENCE_STALE_MS,
   }
 }
 

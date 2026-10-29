@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, CheckCheck, Maximize2, Settings, X } from 'lucide-react'
+import { Bell, CheckCheck, Maximize2, Settings2, X } from 'lucide-react'
 import { NotificationItem } from '@/components/NotificationItem'
 import {
   useNotifications,
@@ -27,7 +27,8 @@ export function NotificationBell() {
   const wrapRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const { data: unreadCount } = useUnreadCount()
-  const { data: notifications, isLoading } = useNotifications()
+  // The list is read only while the dropdown is open; the badge is the count alone.
+  const { data: notifications, isLoading } = useNotifications(open)
   const setRead = useSetRead()
   const openNotification = useOpenNotification()
   const unread = unreadCount ?? 0
@@ -96,7 +97,7 @@ export function NotificationBell() {
                 <Maximize2 className="h-4 w-4" />
               </button>
               <button type="button" onClick={() => go(NOTIFICATION_SETTINGS_PATH)} className={iconButton} aria-label="Notification settings" title="Notification settings">
-                <Settings className="h-4 w-4" />
+                <Settings2 className="h-4 w-4" />
               </button>
               <button type="button" onClick={() => setOpen(false)} className={iconButton} aria-label="Close" title="Close">
                 <X className="h-4 w-4" />

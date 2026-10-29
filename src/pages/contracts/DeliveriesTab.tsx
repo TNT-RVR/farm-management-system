@@ -10,8 +10,8 @@ import { loadsFor, planDeliveries, type PlanBin, type PlanContract } from '@/lib
 import { HelpNote } from '@/components/HelpNote'
 import { useTruckSettings } from '@/lib/hauling-data'
 import { cn } from '@/lib/utils'
+import { n0 } from '@/lib/format'
 
-const n0 = (v: number) => Math.round(v).toLocaleString('en-CA')
 const fmt = (d: string | null) => (d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) : '—')
 
 /**

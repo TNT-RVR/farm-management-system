@@ -1,4 +1,5 @@
 import type { Geometry, MultiPolygon, Position } from 'geojson'
+import { pointInRing } from './geo/point-in'
 
 /**
  * How close to water Alberta lets manure go.
@@ -81,19 +82,6 @@ function segmentToSegment(
   )
 }
 
-/** Ray casting, on projected coordinates. */
-function inRing(p: [number, number], ring: [number, number][]): boolean {
-  let inside = false
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const hit =
-      ring[i][1] > p[1] !== ring[j][1] > p[1] &&
-      p[0] <
-        ((ring[j][0] - ring[i][0]) * (p[1] - ring[i][1])) / (ring[j][1] - ring[i][1]) + ring[i][0]
-    if (hit) inside = !inside
-  }
-  return inside
-}
-
 /**
  * Every ring of a geometry, as lists of positions. Lines count as one ring.
  *
@@ -137,8 +125,8 @@ export function distanceToFeature(spread: MultiPolygon, feature: Geometry): numb
 
   // Containment either way is an overlap, and a shape entirely inside another
   // never crosses an edge — so the segment test alone would miss it.
-  if (isArea(feature.type) && b.some((ring) => a.some((r) => r.some((p) => inRing(p, ring))))) return 0
-  if (a.some((ring) => b.some((r) => r.some((p) => inRing(p, ring))))) return 0
+  if (isArea(feature.type) && b.some((ring) => a.some((r) => r.some((p) => pointInRing(p, ring))))) return 0
+  if (a.some((ring) => b.some((r) => r.some((p) => pointInRing(p, ring))))) return 0
 
   let best = Number.POSITIVE_INFINITY
   for (const ra of a) {

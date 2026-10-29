@@ -20,6 +20,8 @@ import { ServiceAssignees, ServiceTemplatesPanel } from '@/components/EquipmentS
 import { HelpNote } from '@/components/HelpNote'
 import { cn } from '@/lib/utils'
 import { staleHoursDate } from '@/lib/stale-hours'
+import { askConfirm } from '@/components/askConfirm'
+import { CARD_HEAD } from '@/lib/table-style'
 
 const STATE_STYLE: Record<DueState, string> = {
   overdue: 'bg-red-100 text-red-800',
@@ -321,9 +323,9 @@ export function EquipmentMaintenance({
                           Edit
                         </button>
                         <button
-                          onClick={() => {
+                          onClick={async () => {
                             // Delete always confirms (Sam, 7 Oct 2026); the history stays, unlinked.
-                            if (window.confirm(`Delete the "${plan.name}" plan? Services already recorded stay in the history.`)) del.mutate(plan.id)
+                            if (await askConfirm(`Delete the "${plan.name}" plan? Services already recorded stay in the history.`)) del.mutate(plan.id)
                           }}
                           aria-label={`Delete ${plan.name}`}
                           className="text-gray-300 hover:text-red-600"
@@ -345,13 +347,14 @@ export function EquipmentMaintenance({
       {/* Deere's own diagnostics. Unlike the intervals above, these ARE the
           manufacturer's, and they say what the machine actually reported. */}
       {(alerts ?? []).length > 0 && (
-        <section className="rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
-            <AlertTriangle className="h-4 w-4 text-amber-600" /> Machine alerts
-            <span className="ml-1 text-xs font-normal text-gray-400">
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+            <AlertTriangle className="h-4 w-4 text-amber-200" /> Machine alerts
+            <span className="ml-1 text-xs font-normal text-brand-100">
               {openAlerts.length} unacknowledged of {alerts!.length}
             </span>
           </h2>
+          <div className="p-4">
           <p className="mt-0.5 text-xs text-gray-500">
             Reported by the machine itself, from John Deere.
           </p>
@@ -393,6 +396,8 @@ export function EquipmentMaintenance({
               </li>
             ))}
           </ul>
+
+          </div>
         </section>
       )}
       {logging && (() => {

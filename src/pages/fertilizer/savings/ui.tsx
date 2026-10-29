@@ -4,14 +4,10 @@ import { ChevronRight, ExternalLink } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { InfoPopover } from '@/components/InfoPopover'
 import { useMarkNotable, useToolFocus } from './context'
+import { money } from '@/lib/format'
+import { TABLE_HEAD } from '@/lib/table-style'
 
-export const money = (v: number | null | undefined, digits = 0) =>
-  v == null || !Number.isFinite(v)
-    ? '—'
-    : `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString('en-CA', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`
-export const n0 = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : Math.round(v).toLocaleString('en-CA'))
-export const n1 = (v: number | null | undefined) =>
-  v == null || !Number.isFinite(v) ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 1, minimumFractionDigits: 1 })
+export { money, n0, n1Fixed as n1 } from '@/lib/format'
 export const perLbFmt = (v: number | null | undefined) => (v == null ? '—' : `$${v.toFixed(2)}/lb`)
 
 /** Where a tool's numbers come from: a page in the app, or the source outside it. */
@@ -74,7 +70,7 @@ export function SourceLinks({ sources }: { sources: Source[] }) {
 /** A field's name as a link to the page its number came from. */
 export function FieldLink({ id, name, to = 'soil' }: { id: string | null | undefined; name: string; to?: 'soil' | 'history' | 'work' | 'sampling' | 'settings' }) {
   if (!id) return <>{name}</>
-  const href = to === 'sampling' ? `/fertilizer?tab=Soil%20Sampling&field=${id}` : `/fields/${id}/${to}`
+  const href = to === 'sampling' ? `/fertilizer/soil?tab=tests&field=${id}` : `/fields/${id}/${to}`
   return (
     <Link to={href} className="text-gray-800 underline decoration-gray-300 decoration-dotted hover:text-brand-800">
       {name}
@@ -203,7 +199,7 @@ export function Table({ head, children, className }: { head: ReactNode[]; childr
   return (
     <div className={cn('overflow-x-auto', className)}>
       <table className="w-full text-xs">
-        <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+        <thead className={TABLE_HEAD}>
           <tr>
             {head.map((h, i) => (
               <th key={i} className="px-2 py-1 font-medium">

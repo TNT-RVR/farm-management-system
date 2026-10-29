@@ -12,10 +12,11 @@ import { useRanches } from '@/lib/ranches'
 import { downloadBlob, tableReportToPdf } from '@/lib/table-report'
 import { initialParams, isFile, reportCsv, reportTable, rowCount, type GatherContext, type LookupKey, type Made, type ParamSpec, type ParamValues } from '@/lib/reports/framework'
 import type { BuiltReport, OpenReport, ReportFormat, SourceLink } from '@/lib/reports/catalogue'
-import { GATHERERS, type HookRun } from './gatherers'
+import { loadGatherer, type HookRun } from './gatherers'
 import { LOOKUP_LISTS } from './lookups'
 import { cn } from '@/lib/utils'
 import { useReportFavourites, useToggleFavourite } from '@/lib/reports/favourites'
+import { YearSelect } from '@/components/YearSelect'
 
 /**
  * One report as one row: a white card with a green edge, the name and one
@@ -106,20 +107,21 @@ function RanchPick({ spec, ...p }: PickProps & { spec: Extract<ParamSpec, { kind
   const { data } = useRanches()
   return <Sel {...p} label={labelOf(spec)} options={[...allOf(spec.allLabel), ...(data ?? []).map((r) => ({ value: r.id, label: r.name }))]} />
 }
-/** A bin report needs a bin: the first one, until another is chosen. */
+/** A bin report needs a bin: the first one, until another is chosen (unless it can be left at "all"). */
 function BinPick({ spec, value, onChange }: PickProps & { spec: Extract<ParamSpec, { kind: 'bin' }> }) {
   const { data } = useBins()
   const bins = useMemo(() => (data ?? []).filter((b) => b.active), [data])
+  const mustPick = spec.allLabel == null
   useEffect(() => {
-    if (!value && bins[0]) onChange(bins[0].id)
-  }, [value, bins, onChange])
+    if (mustPick && !value && bins[0]) onChange(bins[0].id)
+  }, [mustPick, value, bins, onChange])
   return (
     <Sel
       value={value}
       onChange={onChange}
       label={labelOf(spec)}
       placeholder={data ? 'No bins' : 'Loading…'}
-      options={bins.map((b) => ({ value: b.id, label: b.site ? `${b.name} · ${b.site}` : b.name }))}
+      options={[...allOf(spec.allLabel), ...bins.map((b) => ({ value: b.id, label: b.site ? `${b.name} · ${b.site}` : b.name }))]}
     />
   )
 }
@@ -143,7 +145,8 @@ function LookupPick({ spec, value, onChange }: PickProps & { spec: Extract<Param
 function YearPick({ spec, ...p }: PickProps & { spec: Extract<ParamSpec, { kind: 'year' }> }) {
   const { cropYear } = useCropYear()
   const years = Array.from({ length: 8 }, (_, i) => cropYear + 1 - i)
-  return <Sel {...p} label={labelOf(spec)} options={years.map((y) => ({ value: String(y), label: String(y) }))} />
+  const label = labelOf(spec)
+  return <YearSelect value={p.value ? Number(p.value) : null} years={years} onChange={(y) => p.onChange(String(y))} className="w-full" ariaLabel={label} placeholder={label} />
 }
 
 function Picker({ spec, value, onChange }: { spec: ParamSpec } & PickProps) {
@@ -246,7 +249,7 @@ function FavouriteStar({ id, name }: { id: string; name: string }) {
       aria-pressed={on}
       aria-label={on ? `Remove ${name} from favourites` : `Add ${name} to favourites`}
       title={on ? 'In your favourites' : 'Add to your favourites'}
-      className="-ml-1 mt-0.5 shrink-0 rounded p-0.5 text-gray-300 hover:text-amber-500"
+      className="relative -ml-1 mt-0.5 shrink-0 rounded p-0.5 text-gray-300 hover:text-amber-500 after:absolute after:-inset-2.5 after:content-[''] sm:after:content-none"
     >
       <Star className={cn('h-4 w-4', on && 'fill-amber-400 text-amber-500')} />
     </button>
@@ -304,7 +307,8 @@ export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport;
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hookRun, setHookRun] = useState(0)
-  const gatherer = GATHERERS[r.id]
+  // A hook-gathered report's hook, once its code has loaded.
+  const [hook, setHook] = useState<HookRun | null>(null)
   const setParam = useCallback((key: string, v: string) => setParams((p) => ({ ...p, [key]: v })), [])
 
   // The gather is told which file is wanted: most ignore it, a few make a
@@ -329,12 +333,21 @@ export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport;
   const start = () => {
     setError(null)
     setBusy(true)
-    if (format === 'XLSX' && 'run' in gatherer && gatherer.xlsx) {
-      void settle(gatherer.xlsx(params, ctx).then(({ blob, filename }) => downloadBlob(blob, filename)))
-      return
-    }
-    if ('run' in gatherer) void settle(gatherer.run(params, runCtx).then((g) => deliver(g, format)))
-    else setHookRun((n) => n + 1)
+    // The report's code is fetched now, on Download, rather than with the list.
+    loadGatherer(r.id).then(
+      (gatherer) => {
+        if (format === 'XLSX' && 'run' in gatherer && gatherer.xlsx) {
+          void settle(gatherer.xlsx(params, ctx).then(({ blob, filename }) => downloadBlob(blob, filename)))
+          return
+        }
+        if ('run' in gatherer) void settle(gatherer.run(params, runCtx).then((g) => deliver(g, format)))
+        else {
+          setHook(() => gatherer.useRun)
+          setHookRun((n) => n + 1)
+        }
+      },
+      (e: unknown) => void settle(Promise.reject(e)),
+    )
   }
 
   return (
@@ -379,8 +392,8 @@ export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport;
           </div>
         </Modal>
       )}
-      {hookRun > 0 && 'useRun' in gatherer && (
-        <HookRunner key={hookRun} useRun={gatherer.useRun} params={params} ctx={runCtx} onReady={(j) => void settle(j.then((g) => deliver(g, format)))} />
+      {hookRun > 0 && hook && (
+        <HookRunner key={hookRun} useRun={hook} params={params} ctx={runCtx} onReady={(j) => void settle(j.then((g) => deliver(g, format)))} />
       )}
     </RowShell>
   )

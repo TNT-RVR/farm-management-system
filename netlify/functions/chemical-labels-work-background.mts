@@ -1,6 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
 import { runLabelQueue } from '../shared/chemical-labels-core.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { admin } from '../shared/supabase-admin.ts'
+import { SONNET_5_5 } from '../shared/anthropic.ts'
 
 /**
  * Reading the label backlog, somewhere it has time to finish.
@@ -24,14 +25,14 @@ import { hydrateSecrets } from '../shared/secrets.ts'
 const url = process.env.SUPABASE_URL
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 let apiKey = process.env.ANTHROPIC_API_KEY
-let model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5'
+let model = process.env.ANTHROPIC_MODEL ?? SONNET_5_5
 let workerKey = process.env.JOB_WORKER_KEY ?? process.env.LABEL_WORKER_KEY
 
 export default async (req: Request) => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
   apiKey = process.env.ANTHROPIC_API_KEY
-  model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5'
+  model = process.env.ANTHROPIC_MODEL ?? SONNET_5_5
   workerKey = process.env.JOB_WORKER_KEY ?? process.env.LABEL_WORKER_KEY
   if (req.method !== 'POST') return new Response('POST only', { status: 405 })
   if (!url || !serviceKey) return new Response('Not configured', { status: 500 })
@@ -43,7 +44,7 @@ export default async (req: Request) => {
   if (req.headers.get('x-worker-key') !== workerKey)
     return new Response('Not authorised', { status: 401 })
 
-  const sb = createClient(url, serviceKey)
+  const sb = admin()
   // Ten minutes, inside the fifteen a background function is given, leaving
   // room for the label in flight when the budget runs out to finish.
   const result = await runLabelQueue(sb, apiKey, model, { budgetMs: 10 * 60_000 })

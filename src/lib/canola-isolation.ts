@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Geometry } from 'geojson'
 import { supabase } from './supabase'
-import { TRAIT_SHORT, asTrait } from './canola-trait'
+import { TRAIT_SHORT, asTrait, type HerbicideTrait } from './canola-trait'
 import { companyLookup } from './crop-label'
 import { seedCanolaYear, type SeedCanola } from './seed-canola-year'
 import type { QuarterOwner } from './canola-isolation-core'
@@ -277,7 +277,7 @@ export function useSaveIsolationReport() {
 export function useSetYearTrait() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ table, id, trait }: { table: 'crop_history' | 'crop_plans'; id: string; trait: 'liberty' | 'roundup' | null }) => {
+    mutationFn: async ({ table, id, trait }: { table: 'crop_history' | 'crop_plans'; id: string; trait: HerbicideTrait | null }) => {
       const { error } = await db.from(table).update({ herbicide_trait: trait }).eq('id', id)
       if (error) throw error
     },

@@ -1,7 +1,9 @@
 import { TriangleAlert } from 'lucide-react'
 import {
+  useNotificationOrder,
   useNotificationPrefs,
   useNotificationTiming,
+  useSetNotificationOrder,
   useSetNotificationTiming,
   useSetPrefs,
 } from '@/lib/notifications'
@@ -130,6 +132,30 @@ function Timing({ prefs, onSuggest, busy }: { prefs: PrefRow[] | undefined; onSu
   )
 }
 
+/** The order of my bell's list and the Notifications page: unread at the top, or newest first. */
+function ListOrder() {
+  const { data } = useNotificationOrder()
+  const save = useSetNotificationOrder()
+  const unreadFirst = data ?? true
+  return (
+    <section aria-label="Notification list order">
+      <div className="border-b border-gray-100 pb-1">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">List order</h3>
+      </div>
+      {save.isError && <p className="text-xs text-red-600">Could not save: {(save.error as Error).message}</p>}
+      <div className="flex items-center gap-3 py-2">
+        <span className="min-w-0 flex-1 text-sm text-gray-800">
+          Unread at the top
+          <span className="block text-xs text-gray-500">
+            {unreadFirst ? 'Unread first, then the rest, each newest first.' : 'Newest first, read or not.'} The bell and the Notifications page.
+          </span>
+        </span>
+        <Switch on={unreadFirst} label="Unread notifications at the top" disabled={data === undefined || save.isPending} onChange={(on) => save.mutate(on)} />
+      </div>
+    </section>
+  )
+}
+
 /** Right away or in the morning digest, next to a push switch that is on. Urgent kinds have no choice. */
 function DeliveryChoice({
   urgent,
@@ -174,6 +200,7 @@ export function NotificationSwitches() {
 
   return (
     <div className="mt-3 space-y-4">
+      <ListOrder />
       <Timing prefs={prefs} busy={save.isPending} onSuggest={(kinds) => setDelivery(kinds, 'digest')} />
       {save.isError && <p className="text-xs text-red-600">Could not save: {(save.error as Error).message}</p>}
       {NOTIFICATION_GROUPS.map((g) => {

@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { canSeeFinances, useAuth } from '@/lib/auth'
 import { useQbCompany } from '@/lib/quickbooks'
-import { fiscalYear, parseReport, useAccountCategories, useQbReport, type BooksReport, type CategoryOverride } from '@/lib/qb-books'
+import { parseReport, useAccountCategories, useQbReport, type BooksReport, type CategoryOverride } from '@/lib/qb-books'
 
 /**
  * The real books for a report on the Reports page (the lender package,
@@ -16,7 +16,7 @@ export type ReportBooks =
   | { ok: false; note: string }
   | {
       ok: true
-      fy: ReturnType<typeof fiscalYear>
+      fy: { start: string; end: string; label: string }
       pl: BooksReport
       plFetched: string
       bs: BooksReport | null
@@ -31,20 +31,26 @@ export const BOOKS_OFF = {
   disconnected: 'QuickBooks not connected: figures from the app only.',
 } as const
 
-/** `cropYear` names the fiscal year (crop year 2026 = Sep 2025 – Aug 2026); null reads nothing. */
-export function useReportBooks(cropYear: number | null, o: { balanceSheet?: boolean } = {}): { ready: boolean; books: ReportBooks } {
+/**
+ * The books for one fiscal year (fiscal-year.ts gives it): null reads nothing,
+ * undefined is not known yet (Farm setup's year-end still loading), so the
+ * report waits rather than reading the wrong months.
+ */
+export function useReportBooks(period: { start: string; end: string; label: string } | null | undefined, o: { balanceSheet?: boolean } = {}): { ready: boolean; books: ReportBooks } {
   const { profile } = useAuth()
   const finance = canSeeFinances(profile)
   const company = useQbCompany()
   const connected = finance && company.data?.status === 'connected'
-  const fy = useMemo(() => (cropYear != null ? fiscalYear(cropYear) : null), [cropYear])
+  // Keyed on the dates, so a new object with the same year reads nothing again.
+  const [start, end, label] = [period?.start, period?.end, period?.label]
+  const fy = useMemo(() => (start && end && label ? { start, end, label } : null), [start, end, label])
   const params = useMemo(() => (fy ? { start_date: fy.start, end_date: fy.end, accounting_method: 'Accrual' } : null), [fy])
   const pl = useQbReport('ProfitAndLoss', connected ? params : null)
   const bs = useQbReport('BalanceSheet', connected && o.balanceSheet ? params : null)
   const overrides = useAccountCategories(connected ? company.data?.realm_id : null)
 
   const settled = (q: { isSuccess: boolean; isError: boolean }) => q.isSuccess || q.isError
-  const ready = !finance || !fy || (settled(company) && (!connected || (settled(pl) && (!o.balanceSheet || settled(bs)) && (settled(overrides) || !company.data?.realm_id))))
+  const ready = period !== undefined && (!finance || !fy || (settled(company) && (!connected || (settled(pl) && (!o.balanceSheet || settled(bs)) && (settled(overrides) || !company.data?.realm_id)))))
   const books = useMemo((): ReportBooks => {
     if (!finance) return { ok: false, note: BOOKS_OFF.finance }
     if (!fy || !connected) return { ok: false, note: BOOKS_OFF.disconnected }

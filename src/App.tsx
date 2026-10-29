@@ -1,8 +1,8 @@
 import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/layout/AppShell'
-import { SubTabLayout } from '@/components/layout/SubTabLayout'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { SettingsRedirect } from '@/components/SettingsRedirect'
 import { LoginPage } from '@/pages/Login'
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage'
 // The dashboard is the landing page and light (tile links), so it stays eager.
@@ -17,7 +17,6 @@ import { HomePage } from '@/pages/HomePage'
 const MapSection = lazy(() => import('@/pages/MapSection').then((m) => ({ default: m.MapSection })))
 const FieldsPage = lazy(() => import('@/pages/FieldsPage').then((m) => ({ default: m.FieldsPage })))
 const FieldDetailPage = lazy(() => import('@/pages/FieldDetailPage').then((m) => ({ default: m.FieldDetailPage })))
-const GrazingRestrictionsPage = lazy(() => import('@/pages/GrazingRestrictionsPage').then((m) => ({ default: m.GrazingRestrictionsPage })))
 const DaybookPage = lazy(() => import('@/pages/DaybookPage').then((m) => ({ default: m.DaybookPage })))
 const FieldWorkPage = lazy(() => import('@/pages/FieldWorkPage').then((m) => ({ default: m.FieldWorkPage })))
 const CamerasPage = lazy(() => import('@/pages/CamerasPage').then((m) => ({ default: m.CamerasPage })))
@@ -39,6 +38,9 @@ const CalendarPage = lazy(() => import('@/pages/CalendarPage').then((m) => ({ de
 const MonthlyPage = lazy(() => import('@/pages/MonthlyPage').then((m) => ({ default: m.MonthlyPage })))
 const BinsRedirect = lazy(() => import('@/pages/HarvestPage').then((m) => ({ default: m.BinsRedirect })))
 const HarvestPage = lazy(() => import('@/pages/HarvestPage').then((m) => ({ default: m.HarvestPage })))
+const WeighScalePage = lazy(() => import('@/pages/HarvestPage').then((m) => ({ default: m.WeighScalePage })))
+const PreHarvestPage = lazy(() => import('@/pages/HarvestPage').then((m) => ({ default: m.PreHarvestPage })))
+const HarvestReportsPage = lazy(() => import('@/pages/HarvestPage').then((m) => ({ default: m.HarvestReportsPage })))
 const ContactsPage = lazy(() => import('@/pages/ContactsPage').then((m) => ({ default: m.ContactsPage })))
 const GrantsPage = lazy(() => import('@/pages/GrantsPage').then((m) => ({ default: m.GrantsPage })))
 const ScoutingPage = lazy(() => import('@/pages/ScoutingPage').then((m) => ({ default: m.ScoutingPage })))
@@ -48,8 +50,12 @@ const ContractsPage = lazy(() => import('@/pages/ContractsPage').then((m) => ({ 
 const IrrigationPage = lazy(() => import('@/pages/IrrigationPage').then((m) => ({ default: m.IrrigationPage })))
 const FieldProgressPage = lazy(() => import('@/pages/FieldProgressPage').then((m) => ({ default: m.FieldProgressPage })))
 const FertilizerPage = lazy(() => import('@/pages/FertilizerPage').then((m) => ({ default: m.FertilizerPage })))
-const HaulingPage = lazy(() => import('@/pages/HaulingPage').then((m) => ({ default: m.HaulingPage })))
+const FertilizerRedirect = lazy(() => import('@/pages/FertilizerPage').then((m) => ({ default: m.FertilizerRedirect })))
+const HaulingRedirect = lazy(() => import('@/pages/FuelPage').then((m) => ({ default: m.HaulingRedirect })))
+const TruckInspectionChecklistPage = lazy(() => import('@/pages/TruckInspectionChecklistPage').then((m) => ({ default: m.TruckInspectionChecklistPage })))
+const TruckInspectionsRedirect = lazy(() => import('@/pages/TruckInspectionChecklistPage').then((m) => ({ default: m.TruckInspectionsRedirect })))
 const CattlePage = lazy(() => import('@/pages/CattlePage').then((m) => ({ default: m.CattlePage })))
+const CattleRedirect = lazy(() => import('@/pages/CattlePage').then((m) => ({ default: m.CattleRedirect })))
 const CattleDetailPage = lazy(() => import('@/pages/CattleDetailPage').then((m) => ({ default: m.CattleDetailPage })))
 const WeatherPage = lazy(() => import('@/pages/WeatherPage').then((m) => ({ default: m.WeatherPage })))
 const HailReportsPage = lazy(() => import('@/pages/HailReportsPage').then((m) => ({ default: m.HailReportsPage })))
@@ -65,12 +71,14 @@ const FuelPage = lazy(() => import('@/pages/FuelPage').then((m) => ({ default: m
 const PrivacyPage = lazy(() => import('@/pages/LegalPage').then((m) => ({ default: m.PrivacyPage })))
 const TermsPage = lazy(() => import('@/pages/LegalPage').then((m) => ({ default: m.TermsPage })))
 const QuickBooksPage = lazy(() => import('@/pages/QuickBooksPage').then((m) => ({ default: m.QuickBooksPage })))
-const BaleChecksPage = lazy(() => import('@/pages/BaleChecksPage').then((m) => ({ default: m.BaleChecksPage })))
 const ChemicalsPage = lazy(() => import('@/pages/ChemicalsPage').then((m) => ({ default: m.ChemicalsPage })))
 const CalculatorPage = lazy(() => import('@/pages/CalculatorPage').then((m) => ({ default: m.CalculatorPage })))
+const SprayingPage = lazy(() => import('@/pages/SprayingPage').then((m) => ({ default: m.SprayingPage })))
+const SeedPlanterPage = lazy(() => import('@/pages/SeedPlanterPage').then((m) => ({ default: m.SeedPlanterPage })))
 const CanolaReportsPage = lazy(() => import('@/pages/CanolaReportsPage').then((m) => ({ default: m.CanolaReportsPage })))
 const ReportsPage = lazy(() => import('@/pages/ReportsPage').then((m) => ({ default: m.ReportsPage })))
 const MissingPage = lazy(() => import('@/pages/MissingPage').then((m) => ({ default: m.MissingPage })))
+const MenuSectionPage = lazy(() => import('@/pages/MenuSectionPage').then((m) => ({ default: m.MenuSectionPage })))
 
 export default function App() {
   return (
@@ -99,6 +107,8 @@ export default function App() {
         {/* What's new is a tab of the Monday meeting since 7 Oct 2026. */}
         <Route path="/whats-new" element={<Navigate to="/meeting?tab=whats-new" replace />} />
         <Route path="/search" element={<SearchPage />} />
+        {/* A season-menu section's own page: its views, each with a line on what it is for. */}
+        <Route path="/menu/:section" element={<MenuSectionPage />} />
         <Route path="/map" element={<MapSection />} />
         <Route path="/topography" element={<Navigate to="/map?tab=topography" replace />} />
         <Route path="/fields" element={<FieldsPage />} />
@@ -130,38 +140,20 @@ export default function App() {
         <Route path="/markets" element={<CropMarketsPage />} />
         <Route path="/contracts" element={<ContractsPage />} />
         <Route path="/crops/:id" element={<CropDetailPage />} />
-        <Route
-          element={
-            <SubTabLayout
-              tabs={[
-                { to: '/tasks', label: 'Tasks', end: true },
-                { to: '/checklists', label: 'Checklists' },
-              ]}
-            />
-          }
-        >
-          <Route path="/tasks" element={<TasksPage />} />
-          <Route path="/checklists" element={<ChecklistsPage />} />
-        </Route>
+        {/* No shared Tasks | Checklists or Calendar | Monthly bar (Sam, 24 Oct
+            2026): the menu lists each of them, so the bar said it twice, and
+            Checklists and Monthly have tabs of their own that made a second row. */}
+        <Route path="/tasks" element={<TasksPage />} />
+        <Route path="/checklists" element={<ChecklistsPage />} />
         <Route path="/tasks/:id" element={<TaskDetailPage />} />
         <Route path="/daybook" element={<DaybookPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/notifications/:id" element={<NotificationDetailPage />} />
         <Route path="/checklists/templates/:id" element={<ChecklistTemplatePage />} />
         <Route path="/checklists/runs/:id" element={<ChecklistRunPage />} />
-        <Route
-          element={
-            <SubTabLayout
-              tabs={[
-                { to: '/calendar', label: 'Calendar', end: true },
-                { to: '/monthly', label: 'Monthly' },
-              ]}
-            />
-          }
-        >
-          <Route path="/calendar" element={<CalendarPage />} />
-          <Route path="/monthly" element={<MonthlyPage />} />
-        </Route>
+        <Route path="/checklists/truck-inspection" element={<TruckInspectionChecklistPage />} />
+        <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/monthly" element={<MonthlyPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/grants" element={<GrantsPage />} />
@@ -178,15 +170,29 @@ export default function App() {
         {/* Storage is part of Harvest now; old links and tiles land on its tab. */}
         <Route path="/bins" element={<BinsRedirect />} />
         <Route path="/harvest" element={<HarvestPage />} />
+        {/* Harvest's other views (Sam, 24 Oct 2026); old /harvest?tab= links redirect to them. */}
+        <Route path="/weigh-scale" element={<WeighScalePage />} />
+        <Route path="/pre-harvest" element={<PreHarvestPage />} />
+        <Route path="/harvest-reports" element={<HarvestReportsPage />} />
         {/* Flat paths, not /irrigation/river — isViewDenied matches by prefix,
             so a nested child would be switched off the moment an admin denied
             AIMM, which is not what denying AIMM means. */}
         <Route path="/irrigation" element={<IrrigationPage section="aimm" />} />
         <Route path="/river" element={<IrrigationPage section="river" />} />
-        <Route path="/turbines" element={<IrrigationPage section="turbine" />} />
         <Route path="/irrigation-info" element={<IrrigationPage section="general" />} />
-        <Route path="/fertilizer" element={<FertilizerPage />} />
-        <Route path="/hauling" element={<HaulingPage />} />
+        {/* Fertilizer is five views since 24 Oct 2026; /fertilizer and every old
+            ?tab= link land on the view and tab the tab moved to. */}
+        <Route path="/fertilizer" element={<FertilizerRedirect />} />
+        <Route path="/fertilizer/soil" element={<FertilizerPage view="soil" />} />
+        <Route path="/fertilizer/plan" element={<FertilizerPage view="plan" />} />
+        <Route path="/fertilizer/prices" element={<FertilizerPage view="prices" />} />
+        <Route path="/fertilizer/manure" element={<FertilizerPage view="manure" />} />
+        <Route path="/fertilizer/savings" element={<FertilizerPage view="savings" />} />
+        {/* Travel & trucking is tabs of Fuel & trucking since 24 Oct 2026; old links land on the same tab. */}
+        <Route path="/hauling" element={<HaulingRedirect />} />
+        {/* Under Equipment service since 24 Oct 2026: the January reminder and old
+            links land on the trucks, an old ?inspection= link on that inspection. */}
+        <Route path="/truck-inspections" element={<TruckInspectionsRedirect />} />
         <Route path="/utilities" element={<UtilitiesPage />} />
         {/* The Solar page moved to Utilities (6 Oct 2026); old links land on its tab. */}
         <Route path="/solar" element={<Navigate to="/utilities?tab=solar" replace />} />
@@ -194,32 +200,43 @@ export default function App() {
         {/* Flat, and cattle-markets rather than markets: /markets is already
             crop prices, and /cattle/markets would be switched off the moment an
             admin denied the map. */}
-        <Route path="/cattle" element={<CattlePage section="map" />} />
-        <Route path="/herd" element={<CattlePage section="herd" />} />
-        <Route path="/grazing" element={<CattlePage section="grazing" />} />
-        <Route path="/feed" element={<CattlePage section="feed" />} />
-        <Route path="/feed-records" element={<CattlePage section="records" />} />
-        <Route path="/cattle-markets" element={<CattlePage section="markets" />} />
-        <Route path="/manifests" element={<CattlePage section="manifests" />} />
-        <Route path="/grazing-leases" element={<CattlePage section="leases" />} />
-        <Route path="/pregnancy" element={<CattlePage section="pregnancy" />} />
-        <Route path="/cattle-settings" element={<CattlePage section="settings" />} />
+        <Route path="/cattle" element={<CattlePage view="pastures" />} />
+        <Route path="/herd" element={<CattlePage view="herd" />} />
+        <Route path="/feed" element={<CattlePage view="feed" />} />
+        <Route path="/cattle-markets" element={<CattlePage view="sales" />} />
+        <Route path="/cattle-settings" element={<CattlePage view="settings" />} />
         <Route path="/cattle/:id" element={<CattleDetailPage />} />
-        <Route path="/grazing-restrictions" element={<GrazingRestrictionsPage />} />
+        {/* Cattle went from twelve menu entries to five views with tabs (Sam,
+            24 Oct 2026). The old addresses land on their tab, query kept. */}
+        <Route path="/grazing" element={<CattleRedirect />} />
+        <Route path="/grazing-restrictions" element={<CattleRedirect />} />
+        <Route path="/pregnancy" element={<CattleRedirect />} />
+        <Route path="/feed-records" element={<CattleRedirect />} />
+        <Route path="/bale-checks" element={<CattleRedirect />} />
+        <Route path="/manifests" element={<CattleRedirect />} />
+        <Route path="/grazing-leases" element={<CattleRedirect />} />
         {/* Integrations is now Settings → Connections, but the /integrations
             route stays: the John Deere, FieldNET and QuickBooks OAuth callbacks
             redirect to /integrations?jd_connected=1 (and the health alerts link
             there), and must keep landing somewhere real. */}
         <Route path="/chemicals" element={<ChemicalsPage />} />
-        <Route path="/bale-checks" element={<BaleChecksPage />} />
+        {/* Spraying and Seed & planter split from Chemicals and Calculator (24 Oct 2026). */}
+        <Route path="/spraying" element={<SprayingPage />} />
+        <Route path="/planter" element={<SeedPlanterPage />} />
         <Route path="/quickbooks" element={<QuickBooksPage />} />
         <Route path="/fuel" element={<FuelPage />} />
         <Route path="/calculator" element={<CalculatorPage />} />
         <Route path="/reports" element={<ReportsPage />} />
         {/* What's missing: one checklist of the inputs nobody has entered (16 Oct 2026). */}
         <Route path="/missing" element={<MissingPage />} />
-        <Route path="/integrations" element={<SettingsPage initialTab="Connections" />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/integrations" element={<SettingsRedirect from="integrations" />} />
+        {/* Settings: four views since 24 Oct 2026. /settings itself only
+            forwards, mapping the old ?tab= / ?section= / ?part= links. */}
+        <Route path="/settings" element={<SettingsRedirect />} />
+        <Route path="/settings/account" element={<SettingsPage view="account" />} />
+        <Route path="/settings/people" element={<SettingsPage view="people" />} />
+        <Route path="/settings/connections" element={<SettingsPage view="connections" />} />
+        <Route path="/settings/farm" element={<SettingsPage view="farm" />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>

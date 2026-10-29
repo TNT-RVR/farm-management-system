@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl, { type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Feature, FeatureCollection, MultiPolygon } from 'geojson'
 import { MapPin, Trash2, X } from 'lucide-react'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { Select } from '@/components/Select'
 import { ConfirmDialog } from '@/components/Modal'
 import { cn } from '@/lib/utils'
@@ -18,14 +17,12 @@ import {
   useSampleSites,
   type SampleSite,
 } from '@/lib/soil-sites'
-import { farmMapCenter } from '@/lib/farm-setup'
+import { n1 } from '@/lib/format'
+import { CARD_HEAD } from '@/lib/table-style'
 
 const ZONES = 'rx-zone'
 const BOUNDS = 'field-bounds'
 const SITES = 'sample-sites'
-
-const n1 = (v: number | null | undefined) =>
-  v == null ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 1 })
 
 /**
  * Where the cores were pulled, over the ground the prescription was written for.
@@ -51,8 +48,7 @@ export function SamplingMap({
   canEdit: boolean
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
-  const [ready, setReady] = useState(false)
+  const { mapRef, ready } = useFarmMap(containerRef, { zoom: 11 })
   const [dropping, setDropping] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<SampleSite | null>(null)
@@ -130,24 +126,6 @@ export function SamplingMap({
     return null
   }
 
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: SATELLITE_STYLE,
-      center: farmMapCenter(),
-      zoom: 11,
-      attributionControl: false,
-    })
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-    map.on('load', () => setReady(true))
-    mapRef.current = map
-    return () => {
-      map.remove()
-      mapRef.current = null
-    }
-  }, [])
-
   // Zones underneath, boundaries over them, pins on top — otherwise a filled
   // zone hides the pins that explain it.
   useEffect(() => {
@@ -186,7 +164,7 @@ export function SamplingMap({
       source: ZONES,
       paint: { 'line-color': '#78350f', 'line-width': 0.6, 'line-opacity': 0.7 },
     })
-  }, [ready, zonePolys, showZones, min, max])
+  }, [mapRef, ready, zonePolys, showZones, min, max])
 
   useEffect(() => {
     const map = mapRef.current
@@ -214,7 +192,7 @@ export function SamplingMap({
       source: BOUNDS,
       paint: { 'line-color': '#fff', 'line-width': 1.5, 'line-opacity': 0.9 },
     })
-  }, [ready, fieldBounds])
+  }, [mapRef, ready, fieldBounds])
 
   useEffect(() => {
     const map = mapRef.current
@@ -259,7 +237,7 @@ export function SamplingMap({
       },
       paint: { 'text-color': '#fff' },
     })
-  }, [ready, sites])
+  }, [mapRef, ready, sites])
 
   // Fit to the field when one is picked, or to the sites when it is all fields.
   useEffect(() => {
@@ -283,7 +261,7 @@ export function SamplingMap({
       }
     }
     if (any) map.fitBounds(b, { padding: 60, maxZoom: 16, duration: 400 })
-  }, [ready, fieldId, fieldBounds, sites])
+  }, [mapRef, ready, fieldId, fieldBounds, sites])
 
   useEffect(() => {
     const map = mapRef.current
@@ -303,13 +281,13 @@ export function SamplingMap({
       map.off('click', onClick)
       map.off('click', `${SITES}-dot`, onPin)
     }
-  }, [ready])
+  }, [mapRef, ready])
 
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
     map.getCanvas().style.cursor = dropping ? 'crosshair' : ''
-  }, [ready, dropping])
+  }, [mapRef, ready, dropping])
 
   const fieldName = (id: string) => fields?.find((f) => f.id === id)?.name ?? 'Unknown field'
   const chosen = sites.find((s) => s.id === selected) ?? null
@@ -403,7 +381,7 @@ export function SamplingMap({
         </div>
 
         <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <h3 className="border-b border-gray-200 px-3 py-2 text-sm font-semibold text-gray-900">
+          <h3 className={cn('font-medium', CARD_HEAD)}>
             {sites.length} sample {sites.length === 1 ? 'site' : 'sites'}
             {fieldId ? '' : ' · all fields'}
           </h3>

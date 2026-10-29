@@ -1,6 +1,7 @@
 import { admin, fieldnetAccessToken, fieldnetGet, json, listFrom } from './_fieldnet.mts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { isStaff } from '../shared/staff.ts'
 
 // Read-only pivot activity: condenses /irrigation-controllers/{id}/history into
 // status-change events for the timeline on the field page. Any active user may
@@ -28,8 +29,8 @@ export default async (req: Request) => {
   const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
   const { data: au } = jwt ? await getUserMfa(sb, jwt) : { data: { user: null } }
   if (!au.user) return json({ error: 'auth required' }, 401)
-  const { data: prof } = await sb.from('users').select('active').eq('id', au.user.id).single()
-  if (!prof?.active) return json({ error: 'inactive user' }, 403)
+  const { data: prof } = await sb.from('users').select('active, role').eq('id', au.user.id).single()
+  if (!isStaff(prof)) return json({ error: 'inactive user' }, 403)
 
   try {
     const token = await fieldnetAccessToken(sb)

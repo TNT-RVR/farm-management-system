@@ -4,6 +4,7 @@ import { fmtMoney } from '@/lib/applied'
 import { useSaveProduct, type JdProduct } from '@/lib/products'
 import { MATCH_REASON_LABEL, findPriceMatches, type ProductMatch } from '@/lib/product-match'
 import { cn } from '@/lib/utils'
+import { CARD_HEAD } from '@/lib/table-style'
 
 /**
  * Unpriced products that a product already in the book can account for.
@@ -58,13 +59,14 @@ export function UnpricedMatches({
   }
 
   return (
-    <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-amber-900">
+    <div className="overflow-hidden mt-4 rounded-lg border border-amber-200 bg-amber-50/60">
+      <h3 className={cn('flex items-center gap-1.5 text-amber-900 font-medium', CARD_HEAD)}>
         <Link2 className="h-4 w-4" />
         {outstanding.length === 0
           ? 'Every match has been applied'
           : `${outstanding.length} unpriced ${outstanding.length === 1 ? 'product is' : 'products are'} already priced under another name`}
       </h3>
+      <div className="p-3">
       <p className="mt-0.5 text-xs text-amber-800">
         Check the two names are the same product before taking the price — anything costed against
         the unpriced copy is currently showing as free.
@@ -126,6 +128,8 @@ export function UnpricedMatches({
           )
         })}
       </ul>
+
+      </div>
     </div>
   )
 }

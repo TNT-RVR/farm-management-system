@@ -445,7 +445,7 @@ export const RULES: Rule[] = [
     fire: (c) => {
       if (PULSES.includes(c.crop) || !c.moisture.now || c.grade == null || c.grade === 'dry' || c.grade === 'too_dry') return null
       return {
-        text: `${c.grade === 'tough' ? 'Tough' : 'Damp'} grain (${fix1(c.moisture.now.pct)}%) → rotor +1 step, close the concave a step; or wait, it may thresh clean on the same settings later`,
+        text: `${c.grade === 'tough' ? 'Tough' : 'Wet'} grain (${fix1(c.moisture.now.pct)}%) → rotor +1 step, close the concave a step; or wait, it may thresh clean on the same settings later`,
         effects: { rotor_rpm: 'up', concave_mm: 'down' },
       }
     },

@@ -8,12 +8,13 @@ import { cn } from '@/lib/utils'
 import { InfoPopover } from '@/components/InfoPopover'
 import { useFarmSettings, useFeature } from '@/lib/farm-setup'
 import { WaterSupplyList } from './WaterSupply'
+import { n0 } from '@/lib/format'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 type Ctx = Extract<ReturnType<typeof useRotationContext>, { ready: true }>
 type Plan = ReturnType<typeof buildPlan>
 type Water = ReturnType<Ctx['waterFor']>
 
-const n0 = (v: number) => Math.round(v).toLocaleString('en-CA')
 const md = (iso: string | null | undefined) =>
   iso ? new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', timeZone: 'UTC' }) : '—'
 
@@ -27,6 +28,18 @@ function lean(above: number | null, below: number | null, up: string, down: stri
   if (below >= 40 && below > above) return `leaning ${down} (${Math.round(below)}% chance)`
   return `no clear lean (${Math.round(above)}% ${up}, ${Math.round(below)}% ${down})`
 }
+
+/** What a margin was built from, under the figure in the table and on its phone card. */
+const marginBasisNote = (b: ReturnType<Ctx['marginBasis']>) =>
+  b.from === 'built'
+    ? b.ownUse
+      ? 'yield × feed value − cost'
+      : 'yield × price − cost'
+    : b.from === 'budget'
+      ? 'margin typed on the crop'
+      : b.ownUse
+        ? 'own feed — set its value'
+        : 'nothing on file'
 
 /**
  * The season ahead, beside the recommendations: the water the plan has to
@@ -103,6 +116,14 @@ export function SeasonAhead({
   const noRight = water.noRight.filter((id) => fieldIds.includes(id) && fieldNames.has(id))
   const smridOwn = water.smridSetFor != null ? ctx.waterFor(year, new Map(), null).smridInches : null
 
+  /** The fields on a source are what mean something; the licence number is the reference. */
+  const sourceFields = (key: string) =>
+    [...water.byField]
+      .filter(([, v]) => v.source === key)
+      .map(([id]) => fieldNames.get(id) ?? ctx.pivotFieldNames.get(id) ?? 'unnamed field')
+      .sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
+      .join(', ')
+
   return (
     <div className="grid gap-2 lg:grid-cols-2">
       {/* Water */}
@@ -135,8 +156,53 @@ export function SeasonAhead({
           </label>
           )}
         </div>
-        <table className="mt-1.5 w-full">
-          <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+        {/*
+          Phone: one card a source. Four columns put the field list into about
+          a word, and the inches wrapped a digit at a time (Sam, 28 Oct 2026).
+        */}
+        <ul className="mt-1.5 divide-y divide-gray-100 sm:hidden">
+          {water.sources.map((s) => {
+            const need = plan.water.get(s.key) ?? 0
+            const has = s.acreInches
+            const over = has > 0 && need > has + 0.5
+            return (
+              <li key={s.key} className="py-1.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 flex-1 text-gray-800">{sourceFields(s.key) || s.label}</span>
+                  <span
+                    className={cn(
+                      'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums',
+                      over ? 'bg-red-100 text-red-800' : 'bg-sky-100 text-sky-900',
+                    )}
+                  >
+                    plan needs {s.acres > 0 ? `${(need / s.acres).toFixed(1)}"` : '—'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-400">
+                  {s.label} · {s.basis}
+                </p>
+                <dl className="mt-0.5 space-y-0.5 text-[11px] text-gray-600">
+                  <div className="flex gap-1.5">
+                    <dt className="shrink-0 text-gray-400">Has</dt>
+                    <dd className="tabular-nums text-gray-700">{s.acres > 0 && has > 0 ? `${(has / s.acres).toFixed(1)}"` : '—'}</dd>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <dt className="shrink-0 text-gray-400">Acres</dt>
+                    <dd className="tabular-nums">{n0(s.acres)}</dd>
+                  </div>
+                  {over && (
+                    <div className="flex gap-1.5">
+                      <dt className="shrink-0 text-gray-400">Short</dt>
+                      <dd className="font-semibold tabular-nums text-red-700">{n0((need - has) / 12)} ac-ft</dd>
+                    </div>
+                  )}
+                </dl>
+              </li>
+            )
+          })}
+        </ul>
+        <table className="mt-1.5 hidden w-full sm:table">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th className="py-0.5 font-medium">Source</th>
               <th className="py-0.5 pl-3 text-right font-medium">Acres</th>
@@ -152,8 +218,7 @@ export function SeasonAhead({
               return (
                 <tr key={s.key}>
                   <td className="py-1 text-gray-800">
-                    {/* The fields are what mean something; the licence number is the reference. */}
-                    {[...water.byField].filter(([, v]) => v.source === s.key).map(([id]) => fieldNames.get(id) ?? ctx.pivotFieldNames.get(id) ?? 'unnamed field').sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).join(', ') || s.label}
+                    {sourceFields(s.key) || s.label}
                     <span className="block text-[10px] text-gray-400">
                       {s.label} · {s.basis}
                     </span>
@@ -228,11 +293,50 @@ export function SeasonAhead({
             Plan for a cool summer
           </label>
         </div>
+        {/*
+          Phone: one card an area. "Frost-free" and its two frost dates took
+          four lines in a column a word wide (Sam, 28 Oct 2026).
+        */}
+        {cellList.length > 0 && (
+          <ul className="mt-1.5 divide-y divide-gray-100 sm:hidden">
+            {cellList.map((c) => (
+              <li key={c.cell_key} className="py-1.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-gray-700">
+                    {Number(c.lat).toFixed(2)}°, {Number(c.lon).toFixed(2)}°
+                  </span>
+                  <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-amber-900">
+                    {c.chu_median != null ? `${n0(Number(c.chu_median))} heat units` : 'no heat units'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-400">
+                  {c.years_from}–{c.years_to}
+                </p>
+                <dl className="mt-0.5 space-y-0.5 text-[11px] text-gray-600">
+                  {c.chu_p20 != null && (
+                    <div className="flex gap-1.5">
+                      <dt className="shrink-0 text-gray-400">Cool year</dt>
+                      <dd className="tabular-nums">{n0(Number(c.chu_p20))}</dd>
+                    </div>
+                  )}
+                  {c.ffd_median != null && (
+                    <div className="flex gap-1.5">
+                      <dt className="shrink-0 text-gray-400">Frost-free</dt>
+                      <dd className="min-w-0 flex-1 tabular-nums">
+                        {Math.round(Number(c.ffd_median))} d · {md(c.spring_frost_median)} – {md(c.fall_frost_median)}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              </li>
+            ))}
+          </ul>
+        )}
         {cellList.length === 0 ? (
           <p className="mt-2 text-gray-400">No heat-unit history yet{isManager ? ' — refresh the outlook below.' : '.'}</p>
         ) : (
-          <table className="mt-1.5 w-full">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+          <table className="mt-1.5 hidden w-full sm:table">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="py-0.5 font-medium">Area</th>
                 <th className="py-0.5 text-right font-medium">Heat units</th>
@@ -295,9 +399,90 @@ export function SeasonAhead({
             </p>
           </InfoPopover>
         </div>
-        <div className="mt-1.5 overflow-x-auto">
+        {/*
+          Phone: one card a crop. Five columns, each carrying a figure and
+          where it came from, needed a 640 px scroll box nobody found
+          (Sam, 28 Oct 2026).
+        */}
+        <ul className="mt-1.5 divide-y divide-gray-100 sm:hidden">
+          {ctx.cropInfo
+            .filter((c) => c.key !== 'other' && !c.renterOnly)
+            .map((c) => {
+              const b = ctx.marginBasis(c.id, year)
+              const k = minAcres.get(c.id)
+              const fm = feed.get(c.id)
+              const short = plan.shortOfContract.get(c.id)
+              const sister = ctx.sisterValue.get(c.id)
+              return (
+                <li key={c.id} className="py-1.5">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="min-w-0 flex-1 text-gray-800">
+                      {c.name}
+                      {b.ownUse && <span className="ml-1 rounded bg-emerald-50 px-1 text-[10px] text-emerald-800">own feed</span>}
+                    </span>
+                    <span
+                      className={cn(
+                        'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums',
+                        b.margin != null && b.margin < 0 ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-900',
+                      )}
+                    >
+                      {b.margin != null ? `${b.margin < 0 ? '−' : ''}$${n0(Math.abs(b.margin))}/ac` : '—'}
+                    </span>
+                  </div>
+                  {k && (
+                    <p className={cn('text-[10px]', short && !fm ? 'text-red-700' : 'text-gray-500')}>
+                      {n0(k.bushels)} {b.unit} contracted → {n0(k.acres)} ac{short && !fm ? `, ${n0(short)} ac short` : ''}
+                    </p>
+                  )}
+                  {fm && (
+                    <p className={cn('text-[10px]', short ? 'text-red-700' : 'text-emerald-800')}>
+                      Herd&apos;s {year}–{String(year + 1).slice(2)} winter: {n0(fm.tonnes)} t
+                      {fm.acres != null ? ` → ${n0(fm.acres)} ac` : ' — no yield to size the acres'}
+                      {short ? `, ${n0(short)} ac short` : ''}
+                    </p>
+                  )}
+                  {sister && (
+                    <p className="text-[10px] text-violet-700" title={sister.note ?? undefined}>
+                      {sister.perAcre != null ? `+ $${n0(sister.perAcre)}/ac to a sister company, not in this margin` : sister.note}
+                    </p>
+                  )}
+                  <dl className="mt-0.5 space-y-0.5 text-[11px] text-gray-600">
+                    {b.yield != null && (
+                      <div className="flex gap-1.5">
+                        <dt className="shrink-0 text-gray-400">Yield</dt>
+                        <dd className="min-w-0 flex-1 tabular-nums text-gray-700">
+                          {b.yield < 20 ? b.yield.toFixed(1) : n0(b.yield)} {b.unit} <span className="text-gray-400">{b.yieldFrom}</span>
+                        </dd>
+                      </div>
+                    )}
+                    {b.price != null && (
+                      <div className="flex gap-1.5">
+                        <dt className="shrink-0 text-gray-400">Price</dt>
+                        <dd className="min-w-0 flex-1 tabular-nums text-gray-700">
+                          ${b.price < 1 ? b.price.toFixed(3) : b.price.toFixed(2)} <span className="text-gray-400">{b.priceFrom}</span>
+                        </dd>
+                      </div>
+                    )}
+                    {b.cost != null && (
+                      <div className="flex gap-1.5">
+                        <dt className="shrink-0 text-gray-400">Cost / ac</dt>
+                        <dd className="min-w-0 flex-1 tabular-nums text-gray-700">
+                          ${n0(b.cost)} <span className="text-gray-400">{b.costFrom}</span>
+                        </dd>
+                      </div>
+                    )}
+                    <div className="flex gap-1.5">
+                      <dt className="shrink-0 text-gray-400">Margin from</dt>
+                      <dd className="min-w-0 flex-1">{marginBasisNote(b)}</dd>
+                    </div>
+                  </dl>
+                </li>
+              )
+            })}
+        </ul>
+        <div className="mt-1.5 hidden overflow-x-auto sm:block">
           <table className="w-full min-w-[640px]">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="py-0.5 font-medium">Crop</th>
                 <th className="py-0.5 text-right font-medium">Yield</th>
@@ -352,7 +537,7 @@ export function SeasonAhead({
                       </td>
                       <td className={cn('py-1 text-right font-semibold tabular-nums', b.margin != null && b.margin < 0 ? 'text-red-700' : 'text-gray-900')}>
                         {b.margin != null ? `${b.margin < 0 ? '−' : ''}$${n0(Math.abs(b.margin))}` : '—'}
-                        <span className="block text-[10px] font-normal text-gray-400">{b.from === 'built' ? (b.ownUse ? 'yield × feed value − cost' : 'yield × price − cost') : b.from === 'budget' ? 'margin typed on the crop' : b.ownUse ? 'own feed — set its value' : 'nothing on file'}</span>
+                        <span className="block text-[10px] font-normal text-gray-400">{marginBasisNote(b)}</span>
                       </td>
                     </tr>
                   )

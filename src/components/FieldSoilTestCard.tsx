@@ -78,7 +78,7 @@ export function FieldSoilTestCard({ fieldId }: { fieldId: string }) {
           </span>
         </h3>
         <Link
-          to={`/fertilizer?tab=Soil+Sampling&field=${fieldId}`}
+          to={`/fertilizer/soil?tab=tests&field=${fieldId}`}
           className="flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
         >
           Full results <ExternalLink className="h-3 w-3" />

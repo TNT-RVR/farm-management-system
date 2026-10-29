@@ -8,6 +8,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { cn } from '@/lib/utils'
 import { Card, SettingsGroup, type NumberField } from './ui'
 import { FieldLink, money, n1 } from '../fertilizer/savings/ui'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const FIELDS: NumberField<keyof SpreaderInputs>[] = [
   { key: 'widthFt', label: 'Spread width', unit: 'ft', hint: 'the bout, not the spinner throw' },
@@ -107,7 +108,7 @@ export function SpreadingTab({ isManager }: { isManager: boolean }) {
       <Card title="By field, with the drive there and back">
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+            <thead className={TABLE_HEAD}>
               <tr>
                 <th className="px-2 py-1 font-medium">Field</th>
                 <th className="px-2 py-1 text-right font-medium">Acres</th>
@@ -146,7 +147,7 @@ export function SpreadingTab({ isManager }: { isManager: boolean }) {
 function Row({ k, v, strong }: { k: string; v: React.ReactNode; strong?: boolean }) {
   return (
     <div className="flex gap-2">
-      <dt className="w-44 shrink-0 text-xs text-gray-500">{k}</dt>
+      <dt className="w-28 shrink-0 text-xs text-gray-500 sm:w-44">{k}</dt>
       <dd className={cn('min-w-0 flex-1 text-gray-900', strong && 'font-semibold')}>{v}</dd>
     </div>
   )

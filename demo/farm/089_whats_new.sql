@@ -23,7 +23,7 @@ values (
      "detail": "Nameplate photos show as small pictures on each pump; tap one to step through them, rename or remove.",
      "link": "/irrigation", "commits": ["0de3a14"]},
     {"area": "Reports", "title": "Every report backed up to Google Drive",
-     "detail": "Once Google Drive is connected in Farm setup, each report is kept there as a CSV and a PDF, updated every few hours.",
+     "detail": "Once Google Drive is connected in Settings → Connections, each report is kept there as a CSV and a PDF, updated every few hours.",
      "link": "/reports", "commits": ["0de3a15", "0de3a16"]}
   ]'::jsonb,
   '[

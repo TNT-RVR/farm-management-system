@@ -1,6 +1,7 @@
 import { admin, json, requireManager } from './_jd.mts'
 import { extractPendingGrazingRules } from '../shared/grazing-rules-core.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { SONNET_5 } from '../shared/anthropic.ts'
 
 // Reads every label's grazing / feeding / slaughter / dairy restrictions into
 // chemical_grazing_rules (netlify/shared/grazing-rules-core.ts).
@@ -10,14 +11,14 @@ import { hydrateSecrets } from '../shared/secrets.ts'
 // itself again if any are left. Started with the worker key, or by a manager.
 // The daily grazing watch reads new labels itself; this is the bulk run.
 let apiKey = process.env.ANTHROPIC_API_KEY
-let model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5'
+let model = process.env.ANTHROPIC_MODEL ?? SONNET_5
 let workerKey = process.env.JOB_WORKER_KEY
 
 export default async (req: Request) => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
   apiKey = process.env.ANTHROPIC_API_KEY
-  model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5'
+  model = process.env.ANTHROPIC_MODEL ?? SONNET_5
   workerKey = process.env.JOB_WORKER_KEY
   if (!apiKey) return json({ error: 'ANTHROPIC_API_KEY is not set' }, 500)
   const sb = admin()

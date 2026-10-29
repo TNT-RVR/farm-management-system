@@ -46,6 +46,7 @@ import { AdminOnly } from '@/components/TechnicalDetails'
 import { HandWorkCard, QueuedWorkCard, RecordWorkBar } from '@/components/FieldWorkRecords'
 import { useFieldWork, useFieldWorkOutbox, useFillMissingWeather } from '@/lib/field-work-data'
 import { possibleDuplicates, type FieldWorkRecord } from '@/lib/field-work'
+import { HelpNote } from '@/components/HelpNote'
 
 const TYPE_LABEL: Record<string, string> = {
   application: 'Application',
@@ -506,7 +507,7 @@ function PassCard({
               )}
             </div>
             {op.conditions_source === 'ecmwf' && (
-              <p className="mt-0.5 text-[11px] text-gray-400" title="ECMWF weather model">
+              <HelpNote className="mt-0.5" summary="Weather modelled over the field." title="ECMWF weather model">
                 Weather is modelled over the field
                 {/* Deere rolls several days of spraying into one operation often
                     enough that the hour has to be stated, or the reading looks
@@ -515,7 +516,7 @@ function PassCard({
                   ? ` at ${dt(op.weather_at)}, when this ${dur} operation started`
                   : ' for that hour'}
                 . Ground speed is measured by the machine.
-              </p>
+              </HelpNote>
             )}
           </Section>
         )}
@@ -902,10 +903,10 @@ export function FieldWorkPage() {
           <summary className="cursor-pointer font-medium text-gray-800">
             {duplicates!.length} pass{duplicates!.length === 1 ? '' : 'es'} hidden as copies of another job
           </summary>
-          <p className="mt-1 text-xs text-gray-500">
+          <HelpNote className="mt-1 text-xs" summary="Left out of costs, pass counts, inventory and the spray checks." title="Why these are left out">
             Left out of costs, pass counts, inventory and the spray checks. Usually a job typed into Operations Center by hand
             as well as logged by the sprayer — Deere fills a hand-entered job with the whole field.
-          </p>
+          </HelpNote>
           <ul className="mt-2 divide-y divide-gray-100 text-xs">
             {duplicates!.map((d) => {
               const of = (ops ?? []).find((o) => o.id === d.duplicate_of)

@@ -16,7 +16,7 @@ import { SPREADER_DEFAULTS, type SpreaderInputs } from './spreading'
 import { SILAGE_HAUL_DEFAULTS, type SilageCompare, type SilageHaulInputs } from './silage-haul'
 import { costingDiesel, type CostingSource } from './fuel-market'
 import { typedDefaultOf, useFuelCostingInputs, type FuelCostingInputs } from './fuel-data'
-import { binsKey, fieldKey, pitKey, roadLineUrl, routeBetween, shopKey, siteKey, tripFor, type LatLng, type PitChoice, type RouteRow, type StartKey, type Trip } from './road-routes'
+import { binsKey, fieldKey, pitKey, roadLineUrl, routeBetween, shopKey, siteKey, tripFor, yardKey, type LatLng, type PitChoice, type RouteRow, type StartKey, type Trip } from './road-routes'
 import { TRAIL_KMH_DEFAULT, type Coord } from './trail-router'
 import { yieldsWithCrops } from '@/lib/crop-yields'
 import { applyVarietyToCrop, varietyLookup } from '@/lib/crop-variety-settings'
@@ -408,6 +408,41 @@ export function useSaveSite() {
   })
 }
 
+/**
+ * The farm's own unloading yards besides the main one (the bins): the hay
+ * yard below the hill, the East Ranch Ranch. Feed is trucked to one of them
+ * and stays. Each has a pin the router measures every field to.
+ */
+export type FarmYard = { id: string; name: string; lat: number | null; lng: number | null; active: boolean; sort: number; note: string | null }
+
+export function farmYardsQuery() {
+  return {
+    queryKey: ['farm_yards'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('farm_yards').select('id, name, lat, lng, active, sort, note').order('sort').order('name')
+      if (error) throw error
+      return (data ?? []) as FarmYard[]
+    },
+  }
+}
+
+export function useFarmYards() {
+  return useQuery(farmYardsQuery())
+}
+
+export function useSaveFarmYard() {
+  const qc = useQueryClient()
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: async (v: { id?: string; name: string; lat: number | null; lng: number | null; note?: string | null; active?: boolean }) => {
+      const row = { name: v.name.trim(), lat: v.lat, lng: v.lng, note: v.note ?? null, ...(v.active != null ? { active: v.active } : {}), updated_at: new Date().toISOString() }
+      const { error } = v.id ? await supabase.from('farm_yards').update(row).eq('id', v.id) : await supabase.from('farm_yards').insert(row)
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['farm_yards'] }),
+  })
+}
+
 export type FarmPlace = { lat: number; lng: number; label: string; note?: string | null }
 
 function placeOf(v: unknown, fallback: string): FarmPlace | null {
@@ -589,7 +624,7 @@ export type TripFn = (a: string, b: string) => Trip | null
 
 /**
  * The trip between any two places, by key (shopKey, binsKey, fieldKey(id),
- * siteKey(id)), as the costs use it: hand-entered, the router's (road, road +
+ * siteKey(id), yardKey(id)), as the costs use it: hand-entered, the router's (road, road +
  * trail, or road + a flagged straight line), or the straight line with a
  * reason (road-routes.ts tripFor).
  */
@@ -597,6 +632,7 @@ export function tripsFrom(o: {
   routes: RouteRow[] | undefined
   points: Map<string, LatLng> | undefined
   sites: Site[] | undefined
+  yards?: FarmYard[] | undefined
   entries: Map<string, LatLng> | undefined
   shop: LatLng | null
   bins: LatLng | null
@@ -611,6 +647,10 @@ export function tripsFrom(o: {
       const s = o.sites?.find((x) => x.id === key.slice(5))
       return s?.lat != null && s?.lng != null ? { lat: s.lat, lng: s.lng } : null
     }
+    if (key.startsWith('yard:')) {
+      const y = o.yards?.find((x) => x.id === key.slice(5))
+      return y?.lat != null && y?.lng != null ? { lat: y.lat, lng: y.lng } : null
+    }
     return null
   }
   return (a, b) => tripFor(routeBetween(o.routes ?? [], a, b), where(a), where(b))
@@ -621,8 +661,9 @@ export function useTrips() {
   const { data: points, isLoading: l2 } = useFieldPoints()
   const { data: sites, isLoading: l3 } = useSites()
   const { data: entries } = useFieldEntries()
+  const { data: yards } = useFarmYards()
   const { shop, bins, pit } = usePlaces()
-  const trip = useMemo(() => tripsFrom({ routes, points, sites, entries, shop, bins, pit }), [routes, points, sites, entries, shop, bins, pit])
+  const trip = useMemo(() => tripsFrom({ routes, points, sites, yards, entries, shop, bins, pit }), [routes, points, sites, yards, entries, shop, bins, pit])
   return { trip, routes, isLoading: l1 || l2 || l3 }
 }
 
@@ -744,7 +785,7 @@ export function useRoadLine(from: LatLng | null, to: LatLng | null, via: LatLng[
   })
 }
 
-export { binsKey, fieldKey, shopKey, siteKey }
+export { binsKey, fieldKey, shopKey, siteKey, yardKey }
 
 /* ------------------------------------------------------------- operations */
 
@@ -825,13 +866,14 @@ export function useAllFuelOps() {
 
 /* ------------------------------------------------------------- haul plans */
 
-export type HaulPlan = { id: string; field_id: string; crop_year: number; mode: HaulMode; delivery_site_id: string | null; notes: string | null }
+/** yard_id: the farm yard a bin-yard plan unloads at; null = the main yard (the bins). */
+export type HaulPlan = { id: string; field_id: string; crop_year: number; mode: HaulMode; delivery_site_id: string | null; yard_id: string | null; notes: string | null }
 
 export function haulPlansQuery(year: number) {
   return {
     queryKey: ['field_haul_plans', year],
     queryFn: async () => {
-      const { data, error } = await supabase.from('field_haul_plans').select('id, field_id, crop_year, mode, delivery_site_id, notes').eq('crop_year', year)
+      const { data, error } = await supabase.from('field_haul_plans').select('id, field_id, crop_year, mode, delivery_site_id, yard_id, notes').eq('crop_year', year)
       if (error) throw error
       return new Map(((data ?? []) as HaulPlan[]).map((p) => [p.field_id, p]))
     },
@@ -846,7 +888,7 @@ export function useSaveHaulPlan() {
   const qc = useQueryClient()
   return useMutation({
     networkMode: 'always',
-    mutationFn: async (v: { field_id: string; crop_year: number; mode: HaulMode | null; delivery_site_id: string | null }) => {
+    mutationFn: async (v: { field_id: string; crop_year: number; mode: HaulMode | null; delivery_site_id: string | null; yard_id?: string | null }) => {
       if (!v.mode) {
         const { error } = await supabase.from('field_haul_plans').delete().eq('field_id', v.field_id).eq('crop_year', v.crop_year)
         if (error) throw error
@@ -861,6 +903,7 @@ export function useSaveHaulPlan() {
           crop_year: v.crop_year,
           mode: v.mode,
           delivery_site_id: v.delivery_site_id,
+          ...(v.yard_id !== undefined ? { yard_id: v.yard_id } : {}),
           updated_by: user?.id ?? null,
           updated_at: new Date().toISOString(),
         },

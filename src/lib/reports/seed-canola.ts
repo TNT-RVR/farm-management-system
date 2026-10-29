@@ -234,7 +234,7 @@ const asMulti = (g: Geometry): MultiPolygon | null =>
  * areas the same year (aopa.ts's measure, the one the manure setbacks use),
  * nearest first, with the ones inside the isolation distance flagged.
  */
-/** A neighbour's quarter section inside the mile, as Canola reports → Isolation labels it (quarter_crops). */
+/** A neighbour's quarter section inside the mile, as the Isolation page labels it (quarter_crops). */
 export type NeighbourQuarter = { label: string; crop: string | null; notes: string | null }
 
 /**
@@ -244,12 +244,12 @@ export type NeighbourQuarter = { label: string; crop: string | null; notes: stri
  * "fill in" line.
  */
 export function neighbourLines(quarters: NeighbourQuarter[] | null): { lines: Line[]; within: number } {
-  if (!quarters) return { lines: [fillIn('Neighbours’ canola', 'any canola within 1 mile (1,609 m): label the quarters on Canola reports → Isolation')], within: 0 }
+  if (!quarters) return { lines: [fillIn('Neighbours’ canola', 'any canola within 1 mile (1,609 m): label the quarters on the Isolation page')], within: 0 }
   const canola = quarters.filter((q) => isCanolaCrop(q.crop))
   const unknown = quarters.filter((q) => !q.crop)
   const lines: Line[] = canola.map((q) => ({ item: `Neighbour: ${q.label}`, detail: q.crop, check: 'yes', note: ['a quarter section within 1 mile', q.notes].filter(Boolean).join('; ') }))
   if (!canola.length) lines.push({ item: 'Neighbours’ canola', detail: `none on the ${quarters.length - unknown.length} labelled quarter${quarters.length - unknown.length === 1 ? '' : 's'} within 1 mile`, note: null })
-  if (unknown.length) lines.push(fillIn(`Neighbours’ quarters not labelled (${unknown.length})`, `what is planted on ${unknown.map((q) => q.label).join(', ')} — on Canola reports → Isolation`))
+  if (unknown.length) lines.push(fillIn(`Neighbours’ quarters not labelled (${unknown.length})`, `what is planted on ${unknown.map((q) => q.label).join(', ')} — on the Isolation page`))
   return { lines, within: canola.length }
 }
 
@@ -631,7 +631,7 @@ export async function gatherSeedCanola(p: ParamValues, ctx: GatherContext): Prom
   ]
 
   // The neighbours' quarters within the mile of each field, as labelled on
-  // Canola reports → Isolation (quarter_crops), for this year.
+  // The Isolation page (quarter_crops), for this year.
   const table = await loadTownshipTable()
   const neighboursOf = new Map<string, NeighbourQuarter[] | null>()
   for (const fid of ids) {
@@ -715,7 +715,7 @@ export async function gatherSeedCanola(p: ParamValues, ctx: GatherContext): Prom
     const specs: SectionSpec[] = [
       { name: 'Field', note: `${companyCropLabel(a.crop, a.company)} · crop year ${year}`, cols: SECTION_COLS.field, lines: fieldLinesList },
       { name: 'Field history', note: `The ${HISTORY_YEARS} years before. Canola is flagged inside the ${a.crop0.min_return_years || HISTORY_YEARS}-year break the crop sets; same-trait canola for its volunteers.`, cols: SECTION_COLS.history, lines: h.lines },
-      { name: 'Isolation', note: `Edge to edge from this field’s canola to our other canola in ${year}, and the neighbours’ quarter sections within 1 mile (1,609 m) as labelled on Canola reports → Isolation; the companies want 1 mile for seed production.`, cols: SECTION_COLS.isolation, lines: iso.lines },
+      { name: 'Isolation', note: `Edge to edge from this field’s canola to our other canola in ${year}, and the neighbours’ quarter sections within 1 mile (1,609 m) as labelled on the Isolation page; the companies want 1 mile for seed production.`, cols: SECTION_COLS.isolation, lines: iso.lines },
       { name: 'Seeding', cols: SECTION_COLS.seeding, lines: seed },
       {
         name: 'Pesticides',

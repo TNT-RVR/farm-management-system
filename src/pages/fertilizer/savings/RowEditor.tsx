@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react'
 import { Modal } from '@/components/Modal'
 import { DetailList, RecordEditModal, type EditField } from '@/components/RecordEditor'
 import { detailRowsOf } from '@/lib/record-detail'
+import { askConfirm } from '@/components/askConfirm'
 
 /**
  * What a savings record opens to (Sam, 7 Oct 2026): the edit form for a
@@ -63,9 +64,9 @@ export function RowDelete({ confirm, onDelete, label }: { confirm: string; onDel
   return (
     <button
       type="button"
-      onClick={(e) => {
+      onClick={async (e) => {
         e.stopPropagation()
-        if (window.confirm(confirm)) onDelete()
+        if (await askConfirm(confirm, { title: label })) onDelete()
       }}
       className="text-gray-300 hover:text-red-600"
       aria-label={label}

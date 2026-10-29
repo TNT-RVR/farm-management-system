@@ -7,11 +7,13 @@ import { Fold } from '@/components/Fold'
 import { HelpNote } from '@/components/HelpNote'
 import { useCropYear } from '@/lib/crop-year'
 import { byVendor, compareInputs, INPUT_KINDS, type InputsCompare } from '@/lib/inputs-vs-books-core'
-import { fiscalYear, parseReport, useAccountCategories, useQbReport } from '@/lib/qb-books'
+import { parseReport, useAccountCategories, useQbReport } from '@/lib/qb-books'
+import { inputSeason } from '@/lib/fiscal-year'
 import { useCropBooks } from '@/lib/reports/crop-books'
 import { ourRows } from '@/lib/reports/agristability-form'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const db = supabase as unknown as SupabaseClient
 const money0 = (v: number) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
@@ -26,7 +28,9 @@ const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / 
  */
 export function InputsTab({ realm }: { realm: string }) {
   const { cropYear: year } = useCropYear()
-  const fy = fiscalYear(year)
+  // The input season, not the fiscal year: August before the crop to July of
+  // it, so fall prepays and spring buying count with the crop they were for.
+  const fy = inputSeason(year)
   const params = useMemo(() => ({ start_date: fy.start, end_date: fy.end, accounting_method: 'Accrual' }), [fy.start, fy.end])
   const report = useQbReport('ProfitAndLoss', params)
   const { data: overrides } = useAccountCategories(realm)
@@ -95,7 +99,7 @@ export function InputsTab({ realm }: { realm: string }) {
         </div>
         <HelpNote summary="What the books paid, against what the app costs on the fields from the Deere passes." className="mt-0.5">
           <p>
-            Books: the {fy.label} Profit and Loss, the accounts filed as fertilizer, chemical, seed and fuel (change a filing on Financials → Farm costs →
+            Books: the Profit and Loss for {fy.label} (the input season, August before the crop to July of it), the accounts filed as fertilizer, chemical, seed and fuel (change a filing on Financials → Farm costs →
             From the books). Fields: our crops in the {year} plan, what the machines put on each field priced off the price book (the Profit/Loss Map&apos;s
             figures). The gap is what the field costs miss: inputs bought but not yet put on (or put on last season), a retailer&apos;s custom application
             Deere never recorded, a product with no price in the price book, the landlord&apos;s share on a shared-input deal, and fuel the pickups, yard and
@@ -109,7 +113,7 @@ export function InputsTab({ realm }: { realm: string }) {
         {cmp && (
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[480px] text-sm">
-              <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+              <thead className={TABLE_HEAD}>
                 <tr>
                   <th className="py-1 font-medium">Input</th>
                   <th className="py-1 text-right font-medium">Books</th>
@@ -145,7 +149,7 @@ export function InputsTab({ realm }: { realm: string }) {
         <Fold title="Field by field" summary={`${cmp.fields.length} fields`} storageKey="qb-inputs-fields" defaultOpen>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
-              <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+              <thead className={TABLE_HEAD}>
                 <tr>
                   <th className="py-1 font-medium">Field</th>
                   <th className="py-1 text-right font-medium">Fert</th>

@@ -10,9 +10,9 @@ import { cn } from '@/lib/utils'
 import { useFarmSettings, useFeature } from '@/lib/farm-setup'
 import { InfoPopover } from '@/components/InfoPopover'
 import { useDistrictRate } from '@/lib/irrigation'
+import { n0, n1 } from '@/lib/format'
+import { TABLE_HEAD } from '@/lib/table-style'
 
-const n0 = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : Math.round(v).toLocaleString('en-CA'))
-const n1 = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 1 }))
 const signed = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${n0(Math.abs(v))}`
 
 const sourceLabel = (source: string, district: string): string =>
@@ -289,7 +289,7 @@ export function LicenceCard({ pool, detail, thisSeason, highlight }: { pool: Poo
       {open && (
       <div className="mt-1.5 overflow-x-auto">
         <table className="w-full min-w-[640px]">
-          <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th className="px-2 py-0.5 font-medium">Field</th>
               <th className="px-2 py-0.5 text-right font-medium">Acres</th>

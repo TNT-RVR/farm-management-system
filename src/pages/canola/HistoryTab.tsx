@@ -1,16 +1,18 @@
 import { useMemo, useState } from 'react'
-import { Download, FileText } from 'lucide-react'
+
 import { HelpNote } from '@/components/HelpNote'
 import { Select } from '@/components/Select'
 import { useCropYear } from '@/lib/crop-year'
 import { useAllBoundaries, useFields } from '@/lib/queries'
 import { isCanolaCrop, useFieldYears, useSetYearTrait, type FieldYear } from '@/lib/canola-isolation'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
-import { asTrait } from '@/lib/canola-trait'
+import { asTrait, TRAITS, type HerbicideTrait } from '@/lib/canola-trait'
 import { TRAIT_SYSTEM, lastSeedCanola } from '@/lib/seed-canola-year'
 import { fieldHistoryReport, type HistoryField } from '@/lib/reports/canola-reports'
 import { downloadBlob, tableReportToCsv, tableReportToPdf } from '@/lib/table-report'
 import { cn } from '@/lib/utils'
+import { TABLE_HEAD } from '@/lib/table-style'
+import { ExportButton } from '@/components/ExportButton'
 
 /** A field as the screen shows it: the report's, plus what's needed to set a year's trait. */
 type ShownField = Omit<HistoryField, 'years'> & { id: string; years: (HistoryField['years'][number] & { row: FieldYear | null })[] }
@@ -32,7 +34,7 @@ export function HistoryTab() {
   const [toYear, setToYear] = useState(cropYear)
   const [company, setCompany] = useState('')
   const [notes, setNotes] = useState('')
-  const [busy, setBusy] = useState<'pdf' | 'csv' | null>(null)
+  const [, setBusy] = useState<'pdf' | 'csv' | null>(null)
   const years = useMemo(() => Array.from({ length: Number(span) }, (_, k) => toYear - k), [span, toYear])
   const { data: fy, isLoading } = useFieldYears(picked, years)
   // Each field's last seed canola from its whole record, not only the years shown.
@@ -129,14 +131,11 @@ export function HistoryTab() {
             Notes
             <input value={notes} onChange={(e) => setNotes(e.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900" />
           </label>
-          <span className="flex gap-2">
-            <button type="button" onClick={() => exportAs('pdf')} disabled={!history.length || busy != null || isLoading} className="flex items-center gap-1 rounded-md bg-brand-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-800 disabled:opacity-50">
-              <FileText className="h-3.5 w-3.5" /> {busy === 'pdf' ? 'Making…' : 'PDF'}
-            </button>
-            <button type="button" onClick={() => exportAs('csv')} disabled={!history.length || busy != null || isLoading} className="flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-              <Download className="h-3.5 w-3.5" /> CSV
-            </button>
-          </span>
+          {/* One button that asks which, rather than one for each format
+              (Sam, 29 Oct 2026). */}
+          {history.length > 0 && !isLoading && (
+            <ExportButton label="Export the field histories" onExport={(f) => exportAs(f === 'PDF' ? 'pdf' : 'csv')} />
+          )}
         </div>
         <HelpNote summary="Tick the fields to send; each gets its crops year by year." className="mt-2">
           <p>
@@ -150,7 +149,7 @@ export function HistoryTab() {
         ) : (
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
-              <thead className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+              <thead className={TABLE_HEAD}>
                 <tr>
                   <th className="py-1 font-medium">Field</th>
                   {years.map((y) => (
@@ -193,20 +192,23 @@ export function HistoryTab() {
  * both): pick LibertyLink or Roundup Ready for that year. Shown only where it
  * is needed, or where it was set by hand and can be changed back.
  */
-function TraitPicker({ row, onSet }: { row: FieldYear; onSet: (trait: 'liberty' | 'roundup' | null) => void }) {
+function TraitPicker({ row, onSet }: { row: FieldYear; onSet: (trait: HerbicideTrait | null) => void }) {
   if (!row.canola || !row.record) return null
   const own = asTrait(row.record.trait)
   if (row.canola.trait && !own) return null
   return (
     <select
       value={own ?? ''}
-      onChange={(e) => onSet((e.target.value || null) as 'liberty' | 'roundup' | null)}
+      onChange={(e) => onSet((e.target.value || null) as HerbicideTrait | null)}
       aria-label={`${row.year} herbicide trait`}
       className="mt-0.5 block rounded border border-amber-300 bg-white px-1 py-0.5 text-[11px] font-normal text-gray-800"
     >
       <option value="">Trait?</option>
-      <option value="liberty">{TRAIT_SYSTEM.liberty}</option>
-      <option value="roundup">{TRAIT_SYSTEM.roundup}</option>
+      {TRAITS.map((t) => (
+        <option key={t} value={t}>
+          {TRAIT_SYSTEM[t]}
+        </option>
+      ))}
     </select>
   )
 }

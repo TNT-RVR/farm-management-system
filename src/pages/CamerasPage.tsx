@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { AlertTriangle, Camera as CameraIcon, Pencil, Plus, Trash2, Video } from 'lucide-react'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import {
@@ -14,6 +14,8 @@ import { useAllFields } from '@/lib/queries'
 import { MAP_STATIONS } from '@/lib/river'
 import { InfoPopover } from '@/components/InfoPopover'
 import { cn } from '@/lib/utils'
+import { useTicker } from '@/lib/usePageVisible'
+import { askConfirm } from '@/components/askConfirm'
 
 const input = 'mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900'
 
@@ -208,9 +210,13 @@ function CameraForm({
 }
 
 /** The picture itself, or a plain statement of why there isn't one. */
-function CameraPicture({ camera, tick }: { camera: Camera; tick: number }) {
+function CameraPicture({ camera }: { camera: Camera }) {
   const [failed, setFailed] = useState(false)
   const problem = playbackProblem(camera)
+  // Each snapshot camera on its own beat, at its own rate, paused while the tab
+  // is hidden. The wall's shared one-second clock re-rendered every tile every
+  // second, and kept fetching pictures for a tab nobody was looking at.
+  const frame = useTicker(Math.max(1, camera.refresh_seconds) * 1000, camera.kind === 'snapshot' && !problem && !failed)
   const url = camera.stream_url ?? ''
   // The failed flag is reset by remounting — the caller keys this component on
   // the address and kind, so correcting a URL clears the error without a reload.
@@ -255,7 +261,7 @@ function CameraPicture({ camera, tick }: { camera: Camera; tick: number }) {
   // snapshot and mjpeg are both just an image; only the refreshing differs.
   const src =
     camera.kind === 'snapshot'
-      ? snapshotUrl(url, Math.floor(tick / Math.max(1, camera.refresh_seconds)))
+      ? snapshotUrl(url, frame)
       : url
   return (
     <img
@@ -269,12 +275,10 @@ function CameraPicture({ camera, tick }: { camera: Camera; tick: number }) {
 
 function CameraTile({
   camera,
-  tick,
   canEdit,
   onEdit,
 }: {
   camera: Camera
-  tick: number
   canEdit: boolean
   onEdit: () => void
 }) {
@@ -290,7 +294,6 @@ function CameraTile({
         <CameraPicture
           key={`${camera.stream_url ?? ''}|${camera.kind}`}
           camera={camera}
-          tick={tick}
         />
       </div>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-3 py-2">
@@ -306,8 +309,8 @@ function CameraTile({
             </button>
             {/* Deleting took one stray tap with no way back (Sam, 7 Oct 2026). */}
             <button
-              onClick={() => {
-                if (window.confirm(`Delete the camera "${camera.name}"? To keep it but stop showing it, edit it and mark it out of service instead.`)) del.mutate(camera.id)
+              onClick={async () => {
+                if (await askConfirm(`Delete the camera "${camera.name}"? To keep it but stop showing it, edit it and mark it out of service instead.`)) del.mutate(camera.id)
               }}
               aria-label={`Delete ${camera.name}`}
               className="text-gray-300 hover:text-red-600"
@@ -329,16 +332,6 @@ export function CamerasPage() {
   const { data: cameras, isLoading } = useCameras(showInactive)
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
-
-  // One clock for the whole wall. A timer per camera would drift apart and cost
-  // a render each; every snapshot camera divides this down to its own rate.
-  const [tick, setTick] = useState(0)
-  const needsClock = (cameras ?? []).some((c) => c.kind === 'snapshot')
-  useEffect(() => {
-    if (!needsClock) return
-    const t = setInterval(() => setTick((n) => n + 1), 1000)
-    return () => clearInterval(t)
-  }, [needsClock])
 
   const list = useMemo(() => cameras ?? [], [cameras])
   const editingCamera = list.find((c) => c.id === editing)
@@ -434,7 +427,6 @@ export function CamerasPage() {
             <CameraTile
               key={c.id}
               camera={c}
-              tick={tick}
               canEdit={canEdit}
               onEdit={() => {
                 setEditing(c.id)

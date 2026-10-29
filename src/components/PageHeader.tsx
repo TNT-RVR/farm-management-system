@@ -36,7 +36,7 @@ export function PageHeader({
         </h1>
         {subtitle && <p className="truncate text-xs text-gray-500">{subtitle}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">{actions}</div>}
     </div>
   )
 }

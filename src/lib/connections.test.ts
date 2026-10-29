@@ -74,7 +74,7 @@ describe('the registry', () => {
     expect(CONNECTIONS.filter((d) => d.signIn).map((d) => d.signIn).sort()).toEqual(['fieldnet', 'google_drive', 'john_deere', 'quickbooks'])
     expect(CONNECTIONS.filter((d) => d.tool).map((d) => d.id).sort()).toEqual(['binsense', 'crop_history_csv'])
     const claimed = CONNECTIONS.flatMap((d) => d.health ?? [])
-    for (const k of ['fuel_supplier_qb_invoices', 'ici_qb_invoices', 'power_bills_qb', 'gas_bills_qb', 'plc_agent']) expect(claimed).toContain(k)
+    for (const k of ['fuel_supplier_qb_invoices', 'ici_qb_invoices', 'power_bills_qb', 'gas_bills_qb']) expect(claimed).toContain(k)
   })
 })
 
@@ -139,10 +139,6 @@ describe('status', () => {
   })
 
   it('is Off when every feed has monitoring off and nothing else is connected', () => {
-    expect(connectionStatus(def('plc'), { feeds: [feed('plc_agent', { enabled: false, status: 'unknown' })], now: NOW })).toMatchObject({
-      status: 'off',
-      reason: 'Monitoring off',
-    })
     // Off feeds do not hide a working sign-in.
     expect(
       connectionStatus(def('quickbooks'), { account: account('quickbooks'), feeds: [feed('quickbooks', { enabled: false })], now: NOW }).status,
@@ -182,7 +178,7 @@ describe('buildConnections', () => {
     expect(manager.some((c) => c.id === 'site')).toBe(false)
     expect(manager.some((c) => c.id === 'resend')).toBe(false)
     // Sign-ins, tools and panels show for managers.
-    for (const id of ['john_deere', 'crop_history_csv', 'binsense', 'plc', 'quickbooks']) expect(manager.some((c) => c.id === id), id).toBe(true)
+    for (const id of ['john_deere', 'crop_history_csv', 'binsense', 'quickbooks']) expect(manager.some((c) => c.id === id), id).toBe(true)
     expect(manager.find((c) => c.id === 'john_deere')?.keys).toBeUndefined()
   })
 
@@ -211,7 +207,6 @@ describe('filter and sort', () => {
     health: [
       feed('river_flow', { status: 'stale', last_success_at: ago(80), check_kind: 'probe', data_at: ago(80), label: 'Oldman River flow' }),
       feed('quickbooks', { last_success_at: ago(3) }),
-      feed('plc_agent', { enabled: false }),
       feed('auction_mhfc', { label: 'Medicine Hat auction reports (MHFC)', last_success_at: ago(20) }),
     ],
     now: NOW,
@@ -242,8 +237,6 @@ describe('filter and sort', () => {
     // By a feed's label, a key's name, a keyword.
     expect(filterConnections(rows, { status: 'all', category: 'all', query: 'medicine hat' }).map((r) => r.id)).toEqual(['cattle_markets'])
     expect(filterConnections(rows, { status: 'all', category: 'all', query: 'JD_CLIENT_SECRET' }).map((r) => r.id)).toEqual(['john_deere'])
-    expect(filterConnections(rows, { status: 'all', category: 'all', query: 'modbus' }).map((r) => r.id)).toEqual(['plc'])
-    expect(filterConnections(rows, { status: 'working', category: 'all', query: 'modbus' })).toEqual([])
   })
 
   it('sorts problems first, by name, or by last update', () => {

@@ -6,6 +6,8 @@ import { appliedByProduct, fmtMoney, fmtQty } from '@/lib/applied'
 import { useFieldOperations } from '@/lib/fieldOps'
 import { useProductResolver } from '@/lib/products'
 import { useCropYear } from '@/lib/crop-year'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 /**
  * What went on this field and what it cost.
@@ -43,15 +45,18 @@ export function FieldInputsCard({ fieldId, acres }: { fieldId: string; acres: nu
 
   if (acres == null || acres <= 0) {
     return (
-      <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-amber-900">
+      <div className="overflow-hidden mt-4 rounded-lg border border-amber-200 bg-amber-50">
+        <h3 className={cn('flex items-center gap-1.5 text-amber-900 font-medium', CARD_HEAD)}>
           <FlaskConical className="h-4 w-4" /> Inputs applied
         </h3>
+        <div className="p-4">
         <p className="mt-1 text-xs text-amber-800">
           {applications.length} application{applications.length === 1 ? '' : 's'} recorded, but this
           field has no boundary acreage. Rates are per acre, so totals need the acres before they
           mean anything.
         </p>
+
+        </div>
       </div>
     )
   }
@@ -71,8 +76,8 @@ export function FieldInputsCard({ fieldId, acres }: { fieldId: string; acres: nu
 
       <div className="mt-3 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-xs text-gray-500">
+          <thead className={TABLE_HEAD}>
+            <tr>
               <th className="pb-1 font-medium">Product</th>
               <th className="pb-1 text-right font-medium">Passes</th>
               <th className="pb-1 text-right font-medium">Total</th>

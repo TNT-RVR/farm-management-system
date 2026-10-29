@@ -1,4 +1,4 @@
--- Cattle → Markets: example auction prices for the demo.
+-- Cattle → Sales & paperwork → Markets: example auction prices for the demo.
 -- The page only draws the four auction markets its code knows (series codes
 -- ab.<class>.<kind>.<band>.<market>), so the example rows use those codes.
 -- Every price here is MADE UP for the demo — none is a published report.

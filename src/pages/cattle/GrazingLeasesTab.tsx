@@ -23,6 +23,7 @@ import { farmTz } from '@/lib/farm-context'
 import { cn } from '@/lib/utils'
 import { downloadBlob, tableReportToCsv, tableReportToPdf } from '@/lib/table-report'
 import { stockReturnReport } from '@/lib/reports/stock-return'
+import { myNamedSignature } from '@/lib/signature'
 import {
   LIVESTOCK_CLASSES,
   copyLastYear,
@@ -44,6 +45,7 @@ import {
   useSaveStockReturn,
   useStockReturns,
 } from '@/lib/grazing-leases-data'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const LEASE_KEY = 'grazing_lease_id'
 const readLease = () => {
@@ -273,7 +275,7 @@ function ReturnEditor({
   const download = async (kind: 'pdf' | 'csv') => {
     setBusy(kind)
     try {
-      const report = stockReturnReport(form)
+      const report = stockReturnReport({ ...form, signature: await myNamedSignature(form.disposition.signer_name) })
       const blob =
         kind === 'pdf'
           ? await tableReportToPdf(report)
@@ -996,8 +998,8 @@ function RowsEditor<T extends Record<string, unknown>>({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-[11px] uppercase tracking-wide text-gray-500">
+        <thead className={TABLE_HEAD}>
+          <tr>
             {columns.map((c) => (
               <th key={c.key} className={cn('pb-1 pr-2 font-medium', c.width)}>
                 {c.label}

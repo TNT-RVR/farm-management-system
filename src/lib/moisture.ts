@@ -194,13 +194,14 @@ export function averageReading(readings: (number | null)[]): number | null {
 // ---- the grade ------------------------------------------------------------
 
 /**
- * The Canadian Grain Commission's moisture levels, driest first.
+ * The moisture levels, driest first: dry, tough, and wet over that.
  *
  * `dry` is what the trade calls a straight grade. Everything above it carries
  * the word into the grade name — "No. 1 CWRS, Tough" — and everything above it
- * also needs something done to the bin.
+ * also needs something done to the bin. The CGC's damp and moist are folded
+ * into wet (Sam, 19 Oct 2026: "just have dry up to, tough and wet over").
  */
-export const GRADES = ['dry', 'tough', 'damp', 'moist', 'wet'] as const
+export const GRADES = ['dry', 'tough', 'wet'] as const
 export type BandGrade = (typeof GRADES)[number]
 /**
  * The bands, plus the one below them. Beans can be too dry: under 14 % they
@@ -219,29 +220,25 @@ export type Grade = BandGrade | 'too_dry'
  * TWO CONVENTIONS THAT MATTER:
  *
  * A null max means the band and everything above it is folded into whatever
- * comes next: wheat has `damp_max` null because the CGC simply says "over 17.0
- * is damp", with no moist or wet for wheat. So the OVERFLOW band — what a
- * sample wetter than every recorded maximum grades as — is the one immediately
- * after the last non-null max.
+ * comes next, so the OVERFLOW band — what a sample wetter than every recorded
+ * maximum grades as — is the one immediately after the last non-null max:
+ * over tough_max is wet.
  *
- * An EMPTY band is written by repeating the previous maximum. The CGC gives
- * beans no tough range at all: dry to 18.0, damp over 18.0. That is stored as
- * dry_max 18.0 and tough_max 18.0, which makes tough unreachable (it would need
- * a value above 18.0 and at or below 18.0) and puts the overflow on damp, which
- * is exactly what the published table says.
+ * An EMPTY band is written by repeating the previous maximum. A crop with no
+ * tough range stores dry_max and tough_max the same, which makes tough
+ * unreachable (it would need a value above the one and at or below the other)
+ * and puts everything over dry on wet.
  */
 export type MoistureBands = {
   dry_max: number | null
   tough_max: number | null
-  damp_max: number | null
-  moist_max: number | null
   /** Below this it is too dry. Null for crops that have no such thing. */
   dry_min?: number | null
   /** What to do with a tough sample of THIS crop, when the general advice is wrong for it. */
   tough_advice?: string | null
 }
 
-const MAX_KEYS = ['dry_max', 'tough_max', 'damp_max', 'moist_max'] as const
+const MAX_KEYS = ['dry_max', 'tough_max'] as const
 
 /** Null when the crop has no bands recorded — hay and potatoes never will. */
 export function gradeFor(bands: MoistureBands, pct: number): Grade | null {
@@ -286,8 +283,6 @@ export const GRADE_ADVICE: Record<Grade, string> = {
   too_dry: 'Too dry. Below the floor for this crop — expect cracking and dockage; nothing to do for the bin.',
   dry: 'Safe to bin. Straight grade.',
   tough: 'Bin it, but put air on it — it will not keep as it is.',
-  damp: 'Needs drying, not just air. Do not leave it sitting.',
-  moist: 'Too wet to store. Dry it or move it straight out.',
   wet: 'Too wet to store. Dry it or move it straight out.',
 }
 
@@ -295,8 +290,6 @@ export const GRADE_STYLE: Record<Grade, string> = {
   too_dry: 'bg-sky-100 text-sky-900 ring-1 ring-sky-300',
   dry: 'bg-green-100 text-green-900 ring-1 ring-green-300',
   tough: 'bg-amber-100 text-amber-900 ring-1 ring-amber-300',
-  damp: 'bg-orange-100 text-orange-900 ring-1 ring-orange-300',
-  moist: 'bg-red-100 text-red-900 ring-1 ring-red-300',
   wet: 'bg-red-200 text-red-950 ring-1 ring-red-400',
 }
 

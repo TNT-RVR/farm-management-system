@@ -5,6 +5,7 @@ import { fmtMoney } from '@/lib/applied'
 import { fmtUnitPrice } from '@/lib/board-price'
 import { HelpNote } from '@/components/HelpNote'
 import { cn } from '@/lib/utils'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * What a bushel cost to grow.
@@ -62,8 +63,8 @@ export function BreakevenTab({ year }: { year: number }) {
   return (
     <>
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500">
+        <table className="w-max min-w-full text-sm">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th className="px-3 py-2 font-medium">Crop</th>
               <th className="px-3 py-2 text-right font-medium">Cost / acre</th>

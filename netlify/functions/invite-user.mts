@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin as serviceClient } from '../shared/supabase-admin.ts'
 
 // ADMIN-only user invites. Managers deliberately cannot invite — that is the
 // whole point of the admin/manager split. Public signup is disabled project-wide;
@@ -28,7 +28,7 @@ export default async (req: Request) => {
   const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
   if (!jwt) return json({ error: 'Not authenticated' }, 401)
 
-  const admin = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const admin = serviceClient()
 
   // Identify the caller from their JWT and require an active admin.
   const { data: caller, error: callerErr } = await getUserMfa(admin, jwt)
@@ -45,8 +45,11 @@ export default async (req: Request) => {
 
   const body = (await req.json().catch(() => ({}))) as { email?: string; role?: string }
   const email = (body.email ?? '').trim().toLowerCase()
-  const role =
-    body.role === 'admin' ? 'admin' : body.role === 'manager' ? 'manager' : 'user'
+  const ROLES = [
+    'admin',
+    'manager',
+  ]
+  const role = ROLES.includes(body.role ?? '') ? body.role! : 'user'
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return json({ error: 'A valid email is required' }, 400)
   }

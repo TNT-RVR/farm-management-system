@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Cast, Check, Loader2, Power, Tv, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 import type { Database } from '@/lib/database.types'
 
@@ -50,6 +51,7 @@ function statusText(t: Tracked): string {
 
 function useTvCommand() {
   const [tracked, setTracked] = useState<Tracked | null>(null)
+  const userId = useAuth().session?.user.id ?? null
   const id = tracked?.id ?? null
   const terminal = tracked?.status === 'done' || tracked?.status === 'failed'
 
@@ -58,13 +60,13 @@ function useTvCommand() {
     if (!id || terminal) return
     const apply = (row: Pick<TvRow, 'status' | 'error'>) =>
       setTracked((t) => (t && t.id === id ? { ...t, status: row.status, error: row.error } : t))
+    // The requester's private Broadcast topic (a trigger sends each status change).
     const channel = supabase
-      .channel(`tv-command-${id}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'tv_commands', filter: `id=eq.${id}` },
-        (payload) => apply(payload.new as TvRow),
-      )
+      .channel(`tv_command:${userId}`, { config: { private: true } })
+      .on('broadcast', { event: 'update' }, ({ payload }) => {
+        const row = payload as Pick<TvRow, 'status' | 'error'> & { id: string }
+        if (row.id === id) apply(row)
+      })
       .subscribe()
     const poll = window.setInterval(async () => {
       const { data } = await supabase.from('tv_commands').select('status, error').eq('id', id).maybeSingle()
@@ -79,7 +81,7 @@ function useTvCommand() {
       window.clearTimeout(stale)
       void supabase.removeChannel(channel)
     }
-  }, [id, terminal])
+  }, [id, terminal, userId])
 
   const send = useCallback(async (command: Command) => {
     setTracked({ id: null, command, status: 'sending', error: null, stale: false })

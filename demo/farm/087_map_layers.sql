@@ -1,4 +1,4 @@
--- Map → Layers → Farm layers, and the hauling map's field entries (made up).
+-- Map → Layers → Farm layers, and the Fuel & trucking → Distances map's field entries (made up).
 -- Everything is placed from the field boundaries in the database (021), as
 -- fractions of each field's bounding box, so it lands on the right quarters.
 

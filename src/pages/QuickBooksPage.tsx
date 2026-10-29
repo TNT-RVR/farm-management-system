@@ -21,9 +21,9 @@ import {
   type QbTxn,
 } from '@/lib/quickbooks'
 import { cn } from '@/lib/utils'
+import { money as fmtMoney } from '@/lib/format'
 
-const money = (v: number | null | undefined) =>
-  v == null ? '—' : v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 2 })
+const money = (v: number | null | undefined) => fmtMoney(v, 2, { neg: '-' })
 const input = 'rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900'
 
 type Tab = 'transactions' | 'spending' | 'cash' | 'inputs' | 'ask'

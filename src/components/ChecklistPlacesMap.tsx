@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl, { type GeoJSONSource, type MapLayerMouseEvent, type MapMouseEvent } from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import type { FeatureCollection, LineString } from 'geojson'
-import { SATELLITE_STYLE } from '@/lib/geo/map-style'
-import { farmMapCenter } from '@/lib/farm-setup'
+import { useFarmMap } from '@/lib/geo/use-farm-map'
 import type { PlaceGeometry } from '@/lib/checklist-map'
 
 /**
@@ -51,8 +49,6 @@ export function ChecklistPlacesMap({
   className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<maplibregl.Map | null>(null)
-  const [ready, setReady] = useState(false)
   // The line being drawn belongs to the mode it was started in, so leaving
   // line mode (or coming back to it) never shows a half-drawn leftover.
   const [drafting, setDrafting] = useState<{ mode: DrawMode; pts: [number, number][] }>({ mode: 'none', pts: [] })
@@ -76,13 +72,10 @@ export function ChecklistPlacesMap({
     }
   })
 
-  useEffect(() => {
-    if (!ref.current) return
-    const map = new maplibregl.Map({ container: ref.current, style: SATELLITE_STYLE, center: farmMapCenter(), zoom: 12, attributionControl: false })
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-    map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: true }), 'top-right')
-    map.doubleClickZoom.disable()
-    map.on('load', () => {
+  const { mapRef, ready } = useFarmMap(ref, {
+    controls: { geolocate: { trackUserLocation: true } },
+    onCreate: (map) => map.doubleClickZoom.disable(),
+    onReady: (map) => {
       map.addSource(SRC, { type: 'geojson', data: EMPTY })
       map.addSource(DRAFT, { type: 'geojson', data: EMPTY })
       // The outline says how far along it is; the line itself keeps its job colour.
@@ -149,11 +142,8 @@ export function ChecklistPlacesMap({
       map.on('dblclick', () => {
         if (live.current.draw === 'line') live.current.finish()
       })
-      setReady(true)
-    })
-    mapRef.current = map
-    return () => map.remove()
-  }, [])
+    },
+  })
 
   // Places, and the first time there are any, fit the view to them.
   useEffect(() => {
@@ -169,7 +159,7 @@ export function ChecklistPlacesMap({
       map.fitBounds(b, { padding: 50, maxZoom: 16, duration: 0 })
       fitted.current = true
     }
-  }, [places, selected, ready])
+  }, [mapRef, places, selected, ready])
 
   // Fly to a place picked from the list.
   useEffect(() => {
@@ -193,7 +183,7 @@ export function ChecklistPlacesMap({
     }
     ;(map.getSource(DRAFT) as GeoJSONSource).setData(fc)
     map.getCanvas().style.cursor = draw === 'none' ? '' : 'crosshair'
-  }, [draft, draw, ready])
+  }, [mapRef, draft, draw, ready])
 
   return (
     <div className={className ?? 'relative h-[60vh] min-h-[360px] w-full overflow-hidden rounded-lg border border-gray-200'}>

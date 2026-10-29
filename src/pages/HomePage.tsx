@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Settings2 } from 'lucide-react'
+import { SettingsButton } from '@/components/SettingsButton'
 import { useAuth } from '@/lib/auth'
 import { useTiles } from '@/lib/tiles'
 import { UnconfirmedSprays } from '@/components/UnconfirmedSprays'
@@ -34,12 +34,7 @@ export function HomePage() {
           </h1>
           <p className="text-xs text-gray-500">Jump to what you need.</p>
         </div>
-        <Link
-          to="/settings?section=home"
-          className="flex shrink-0 items-center gap-1.5 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-        >
-          <Settings2 className="h-3.5 w-3.5" /> Edit
-        </Link>
+        <SettingsButton to="/settings/account?tab=home" label="Which tiles show" />
       </div>
 
       <GettingStarted />
@@ -49,7 +44,7 @@ export function HomePage() {
       {visible.length === 0 ? (
         <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center">
           <p className="text-sm text-gray-600">No shortcuts chosen yet.</p>
-          <Link to="/settings?section=home" className="mt-1 inline-block text-sm font-medium text-brand-700">
+          <Link to="/settings/account?tab=home" className="mt-1 inline-block text-sm font-medium text-brand-700">
             Pick some in Settings
           </Link>
         </div>

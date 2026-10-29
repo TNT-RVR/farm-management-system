@@ -12,6 +12,7 @@ import { howFresh, useAgNews, useRefreshAgNews } from '@/lib/ag-news'
 import { cn } from '@/lib/utils'
 import { localDate } from '@/lib/date-range'
 import { AdminOnly } from '@/components/TechnicalDetails'
+import { askConfirm } from '@/components/askConfirm'
 
 /**
  * The two things at the top of the meeting that are not about this farm's week.
@@ -131,8 +132,8 @@ export function BriefingSection({ weekOf }: { weekOf: string }) {
                   </a>
                 )}
                 <button
-                  onClick={() => {
-                    if (confirm(`Drop “${fact.title}”? It will not come back.`))
+                  onClick={async () => {
+                    if (await askConfirm(`Drop “${fact.title}”? It will not come back.`, { confirmLabel: 'Drop' }))
                       retire.mutate(fact.id)
                   }}
                   disabled={retire.isPending}

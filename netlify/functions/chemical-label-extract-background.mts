@@ -1,6 +1,7 @@
 import { admin, json, requireManager } from './_jd.mts'
 import { syncOneLabel } from '../shared/chemical-labels-core.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { SONNET_5_5 } from '../shared/anthropic.ts'
 
 // Reads one product's label on demand.
 //
@@ -13,13 +14,13 @@ import { hydrateSecrets } from '../shared/secrets.ts'
 // page PDF and having Claude read it is far past the 10s a normal function gets.
 
 let apiKey = process.env.ANTHROPIC_API_KEY
-let model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5'
+let model = process.env.ANTHROPIC_MODEL ?? SONNET_5_5
 
 export default async (req: Request) => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
   apiKey = process.env.ANTHROPIC_API_KEY
-  model = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5'
+  model = process.env.ANTHROPIC_MODEL ?? SONNET_5_5
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405)
   if (!apiKey) return json({ error: 'ANTHROPIC_API_KEY not set' }, 501)
 

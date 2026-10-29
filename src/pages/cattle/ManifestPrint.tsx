@@ -1,5 +1,7 @@
 import { PURPOSES, totalHead, type ManifestWithLines } from '@/lib/manifests'
 import { farmName } from '@/lib/farm-context'
+import type { SignatureImage } from '@/lib/signature'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /** Blank rows so the rest can be written in at the chute. */
 const BLANK_ROWS = 4
@@ -11,9 +13,10 @@ const Box = ({ label, value }: { label: string; value: string | null | undefined
   </div>
 )
 
-const SignatureLine = ({ label, value }: { label: string; value?: string | null }) => (
+const SignatureLine = ({ label, value, signature }: { label: string; value?: string | null; signature?: SignatureImage | null }) => (
   <div className="flex-1">
-    <div className="h-7 border-b border-black">
+    <div className="relative flex h-12 items-end border-b border-black">
+      {signature && <img src={signature.dataUrl} alt="" className="absolute bottom-3 left-0 max-h-10 max-w-full object-contain" />}
       <span className="text-[11px]">{value || ''}</span>
     </div>
     <span className="text-[9px] uppercase tracking-wide text-gray-500">{label}</span>
@@ -33,7 +36,8 @@ const SignatureLine = ({ label, value }: { label: string; value?: string | null 
  * would be the wrong thing to hand a brand inspector, and the manifest number
  * box is there to tie this to the real one.
  */
-export function ManifestPrint({ manifest: m }: { manifest: ManifestWithLines }) {
+/** `signature`: the owner or agent's own signature, when the person printing is them. */
+export function ManifestPrint({ manifest: m, signature }: { manifest: ManifestWithLines; signature?: SignatureImage | null }) {
   const purpose = PURPOSES.find((p) => p.value === m.purpose)?.label ?? ''
   const blanks = Array.from({ length: Math.max(0, BLANK_ROWS - m.lines.length) })
 
@@ -85,8 +89,8 @@ export function ManifestPrint({ manifest: m }: { manifest: ManifestWithLines }) 
         Livestock — {totalHead(m.lines)} head
       </h2>
       <table className="w-full border-collapse text-[11px]">
-        <thead>
-          <tr className="bg-gray-100 text-left">
+        <thead className={TABLE_HEAD}>
+          <tr>
             {['Class', 'Head', 'Sex', 'Colour', 'Avg lb', 'Brand', 'Tag numbers'].map((h, i) => (
               <th
                 key={h}
@@ -160,7 +164,7 @@ export function ManifestPrint({ manifest: m }: { manifest: ManifestWithLines }) 
       </p>
 
       <div className="mt-3 flex gap-6">
-        <SignatureLine label="Owner or agent" value={m.signed_by} />
+        <SignatureLine label="Owner or agent" value={m.signed_by} signature={signature} />
         <SignatureLine label="Date" value={m.signed_on} />
         <SignatureLine label="Driver" />
       </div>

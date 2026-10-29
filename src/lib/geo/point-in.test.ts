@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MultiPolygon } from 'geojson'
-import { locate, pointInMultiPolygon, pointInRing } from './point-in'
+import { locate, pointInGeometry, pointInMultiPolygon, pointInRing } from './point-in'
 
 // A quarter section-ish square near Home Ranch, with a hole (a slough).
 const square: MultiPolygon = {
@@ -42,6 +42,20 @@ describe('pointInMultiPolygon', () => {
     // Standing in the hole is standing in water, not in the crop.
     expect(pointInMultiPolygon([-113.495, 52.304], square)).toBe(false)
     expect(pointInMultiPolygon([-113.4905, 52.3065], square)).toBe(true)
+  })
+})
+
+describe('pointInGeometry', () => {
+  it('answers for a Polygon and a MultiPolygon alike, holes respected', () => {
+    const poly = { type: 'Polygon' as const, coordinates: square.coordinates[0] }
+    expect(pointInGeometry([-113.492, 52.301], poly)).toBe(true)
+    expect(pointInGeometry([-113.495, 52.304], poly)).toBe(false)
+    expect(pointInGeometry([-113.492, 52.301], square)).toBe(true)
+  })
+
+  it('is never hit by a line, a point or nothing', () => {
+    expect(pointInGeometry([-113.492, 52.301], { type: 'LineString', coordinates: [[-113.5, 52.3], [-113.49, 52.307]] })).toBe(false)
+    expect(pointInGeometry([-113.492, 52.301], null)).toBe(false)
   })
 })
 

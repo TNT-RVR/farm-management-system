@@ -22,6 +22,9 @@ import {
   type CattleSex,
   type CattleStatus,
 } from '@/lib/cattle'
+import { askConfirm } from '@/components/askConfirm'
+import { CARD_HEAD } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 /** The fields a logged event is corrected through (managers; Sam, 7 Oct 2026). */
 const EVENT_FIELDS: EditField[] = [
@@ -70,7 +73,7 @@ export function CattleDetailPage() {
   return (
     <div className="mx-auto max-w-2xl p-4 md:p-6">
       {/* Back to the Herd page, where the animals are listed now. */}
-      <Link to="/herd" className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
+      <Link to="/herd?tab=herd" className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
         <ArrowLeft className="h-4 w-4" /> Herd
       </Link>
 
@@ -211,8 +214,9 @@ export function CattleDetailPage() {
         </label>
       </div>
 
-      <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-gray-700">Event history</h3>
+      <div className="overflow-hidden mt-4 rounded-lg border border-gray-200 bg-white">
+        <h3 className={cn('font-medium', CARD_HEAD)}>Event history</h3>
+        <div className="p-4">
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -291,8 +295,8 @@ export function CattleDetailPage() {
               )}
               {(isManager || e.created_by === profile?.id) && (
                 <button
-                  onClick={() => {
-                    if (window.confirm(`Delete this ${e.event_type.replace('_', ' ')} on ${e.event_date}?`)) evMut.remove.mutate(e.id)
+                  onClick={async () => {
+                    if (await askConfirm(`Delete this ${e.event_type.replace('_', ' ')} on ${e.event_date}?`)) evMut.remove.mutate(e.id)
                   }}
                   className="shrink-0 rounded-md p-1 text-gray-300 hover:bg-red-50 hover:text-red-600"
                   aria-label="Delete event"
@@ -304,6 +308,8 @@ export function CattleDetailPage() {
           ))}
           {events?.length === 0 && <li className="py-2 text-sm text-gray-400">No events yet.</li>}
         </ul>
+
+        </div>
       </div>
 
       {editEvent && (
@@ -335,9 +341,9 @@ export function CattleDetailPage() {
 
       {isManager && (
         <button
-          onClick={() => {
-            if (confirm('Delete this animal and its event history?'))
-              remove.mutate(animal.id, { onSuccess: () => navigate('/herd') })
+          onClick={async () => {
+            if (await askConfirm('Delete this animal and its event history?'))
+              remove.mutate(animal.id, { onSuccess: () => navigate('/herd?tab=herd') })
           }}
           className="mt-4 flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
         >

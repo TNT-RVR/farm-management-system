@@ -34,13 +34,14 @@ import {
   type RateChoice,
 } from '@/lib/operation-cost'
 import { cn } from '@/lib/utils'
+import { money as fmtMoney } from '@/lib/format'
+import { CARD_HEAD } from '@/lib/table-style'
 
 const KMH_PER_MPH = 1.609344
 
 const box = 'w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-brand-600 focus:outline-none'
 const lbl = 'mb-0.5 block text-xs text-gray-500'
-const money = (v: number | null | undefined, digits = 0) =>
-  v == null ? '—' : `$${v.toLocaleString('en-CA', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`
+const money = (v: number | null | undefined, digits = 0) => fmtMoney(v, digits, { neg: 'inside' })
 const n = (s: string): number | null => {
   if (s.trim() === '') return null
   const v = Number(s)
@@ -64,7 +65,7 @@ type Row = {
 let uidSeq = 1
 
 function priceLink(p: JdProduct) {
-  return p.category === 'fertilizer' ? '/fertilizer?tab=Pricing' : '/chemicals?tab=prices'
+  return p.category === 'fertilizer' ? '/fertilizer/prices?tab=pricing' : '/chemicals?tab=prices'
 }
 
 export function OperationCostCalculator() {
@@ -281,7 +282,7 @@ export function OperationCostCalculator() {
     return null
   })()
 
-  const linkFor: Record<string, string> = { fuel: '/fuel', labour: '/hauling?tab=trucking', travel: '/hauling?tab=distances' }
+  const linkFor: Record<string, string> = { fuel: '/fuel', labour: '/fuel?tab=trucking', travel: '/fuel?tab=distances' }
 
   const summary = () => {
     const lines = [
@@ -298,10 +299,11 @@ export function OperationCostCalculator() {
 
   return (
     <div className="grid grid-cols-1 items-start gap-4 lg:col-span-2 lg:grid-cols-2">
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-          <Tractor className="h-4 w-4 text-brand-700" /> The job
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+          <Tractor className="h-4 w-4 text-white" /> The job
         </h2>
+        <div className="p-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className={lbl}>Field</label>
@@ -498,12 +500,15 @@ export function OperationCostCalculator() {
             ))}
           </div>
         </details>
+
+        </div>
       </section>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-          <Receipt className="h-4 w-4 text-brand-700" /> Estimate
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+          <Receipt className="h-4 w-4 text-white" /> Estimate
         </h2>
+        <div className="p-4">
         {!acres ? (
           <p className="text-sm text-gray-400">Pick a field.</p>
         ) : (
@@ -556,7 +561,7 @@ export function OperationCostCalculator() {
             <div className="mt-2 text-[11px] text-gray-500">
               Time: {rate.acPerHour != null ? `${rate.acPerHour.toFixed(1)} ac/h — ${rate.note}` : rate.note}
               {hoursPerDay != null && ` · ${hoursPerDay.toFixed(1)} h a day (${hoursPerDayNote})`}
-              {!trip && fieldId && <> · no road distance to this field yet (<Link to="/hauling?tab=distances" className="underline">Distances</Link>)</>}
+              {!trip && fieldId && <> · no road distance to this field yet (<Link to="/fuel?tab=distances" className="underline">Distances</Link>)</>}
             </div>
             {result.missing.length > 0 && <p className="mt-1 text-[11px] text-amber-700">Needs {result.missing.join(', ')}.</p>}
 
@@ -591,6 +596,8 @@ export function OperationCostCalculator() {
             )}
           </>
         )}
+
+        </div>
       </section>
     </div>
   )

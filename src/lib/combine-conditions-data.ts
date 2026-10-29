@@ -4,6 +4,7 @@ import { THRESHOLDS, conditionsCropOf, peakLook, referenceOf, type NdviLook, typ
 import { cropForVariety } from './crop-variety-settings'
 import { cropVarietySettingsQuery } from './crop-variety-settings-data'
 import type { MoistureBands } from './moisture'
+import { farmTz } from './farm-context'
 
 /**
  * What the Combines page's conditions card reads, beyond the dry-down model
@@ -152,8 +153,6 @@ export function useFieldConditions(fieldId: string, cropYear: number) {
             dry_min: num(crop.moisture_dry_min),
             dry_max: num(crop.moisture_dry_max),
             tough_max: num(crop.moisture_tough_max),
-            damp_max: num(crop.moisture_damp_max),
-            moist_max: num(crop.moisture_moist_max),
             tough_advice: crop.moisture_tough_advice,
           }
         : null
@@ -191,7 +190,7 @@ export function useFieldConditions(fieldId: string, cropYear: number) {
         cropName: plan?.crops?.name ?? null,
         bands,
         swathed: plan?.harvest_method === 'swathed' || swathRows.length > 0,
-        swathedOn: swathedOn ? new Date(swathedOn).toLocaleDateString('en-CA', { timeZone: 'America/Edmonton' }) : null,
+        swathedOn: swathedOn ? new Date(swathedOn).toLocaleDateString('en-CA', { timeZone: farmTz() }) : null,
         centre: centreOf(current?.geometry),
         looks,
         reference,

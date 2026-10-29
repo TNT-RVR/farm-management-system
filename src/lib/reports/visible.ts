@@ -18,7 +18,8 @@ export function useVisibleReports() {
   const isAdmin = hasAdminAccess(profile?.role)
   const isManager = hasManagerAccess(profile?.role)
   const finances = canSeeFinances(profile)
-  const viewOff = useMemo(() => (path: string) => isPathOff(disabled, bare(path)) || isViewDenied(profile, bare(path)), [disabled, profile])
+  // isPathOff gets the whole link: a switched-off feature can be one tab of a page.
+  const viewOff = useMemo(() => (path: string) => isPathOff(disabled, path) || isViewDenied(profile, bare(path)), [disabled, profile])
   const reports = useMemo(
     () => REPORTS.filter((r) => !viewOff(r.from.to) && (!r.adminOnly || isAdmin) && (!r.managerOnly || isManager) && (!r.financeOnly || finances)),
     [viewOff, isAdmin, isManager, finances],

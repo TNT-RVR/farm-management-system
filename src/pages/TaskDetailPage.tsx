@@ -22,6 +22,8 @@ import {
 } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 import { UserAvatar } from '@/components/UserAvatar'
+import { askConfirm } from '@/components/askConfirm'
+import { CARD_HEAD } from '@/lib/table-style'
 
 export function TaskDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -59,11 +61,11 @@ export function TaskDetailPage() {
         <ArrowLeft className="h-4 w-4" /> Tasks
       </Link>
 
-      <div className="mt-3 flex items-start justify-between gap-3">
+      <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
         <h1 className={cn('text-xl font-bold text-gray-900', done && 'text-gray-400 line-through')}>
           {task.title}
         </h1>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
         <button
           onClick={() => setEditing((v) => !v)}
           className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -205,8 +207,9 @@ export function TaskDetailPage() {
         ))}
       </dl>
 
-      <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-gray-700">Subtasks</h3>
+      <div className="overflow-hidden mt-4 rounded-lg border border-gray-200 bg-white">
+        <h3 className={cn('font-medium', CARD_HEAD)}>Subtasks</h3>
+        <div className="p-4">
         {subtasks.length > 0 && (
           <ul className="mt-2 divide-y divide-gray-100">
             {subtasks.map((s) => (
@@ -272,6 +275,8 @@ export function TaskDetailPage() {
           </button>
         </form>
         {update.isError && <p className="mt-2 text-xs text-red-600">{(update.error as Error).message}</p>}
+
+        </div>
       </div>
       {renamingSub && (
         <PromptDialog
@@ -346,8 +351,8 @@ export function TaskDetailPage() {
 
       {canDelete && (
         <button
-          onClick={() => {
-            if (confirm('Delete this task (and its subtasks)?')) {
+          onClick={async () => {
+            if (await askConfirm('Delete this task (and its subtasks)?')) {
               remove.mutate(task.id, { onSuccess: () => navigate('/tasks') })
             }
           }}

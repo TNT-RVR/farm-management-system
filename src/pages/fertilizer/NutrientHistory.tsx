@@ -25,6 +25,8 @@ import {
   type DepthMode,
 } from '@/lib/nutrient-history'
 import { cn } from '@/lib/utils'
+import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
+import { YearSelect } from '@/components/YearSelect'
 
 const PALETTE = ['#0f172a', '#0284c7', '#c2410c', '#7c3aed', '#0f766e', '#b45309', '#be123c']
 
@@ -202,20 +204,20 @@ export function NutrientHistory({
         {span && (
           <div className="flex items-center gap-1 text-xs text-gray-600">
             <span>Years</span>
-            <Select
-              value={String(range?.from ?? span.from)}
-              onChange={(v) => setRange((r) => ({ from: Number(v), to: Math.max(Number(v), r?.to ?? span.to) }))}
+            <YearSelect
+              value={range?.from ?? span.from}
+              years={years}
+              onChange={(v) => setRange((r) => ({ from: v, to: Math.max(v, r?.to ?? span.to) }))}
               ariaLabel="From year"
               size="sm"
-              options={years.map((y) => ({ value: String(y), label: String(y) }))}
             />
             <span>to</span>
-            <Select
-              value={String(range?.to ?? span.to)}
-              onChange={(v) => setRange((r) => ({ from: Math.min(Number(v), r?.from ?? span.from), to: Number(v) }))}
+            <YearSelect
+              value={range?.to ?? span.to}
+              years={years}
+              onChange={(v) => setRange((r) => ({ from: Math.min(v, r?.from ?? span.from), to: v }))}
               ariaLabel="To year"
               size="sm"
-              options={years.map((y) => ({ value: String(y), label: String(y) }))}
             />
             {range && (range.from !== span.from || range.to !== span.to) && (
               <button
@@ -337,6 +339,8 @@ export function NutrientHistory({
           </HelpNote>
         </div>
       )}
+      {/* Savings tools, kept with this tab since 26 Oct 2026 (lib/fert-savings/homes.ts). */}
+      <SavingsHere ids={[13, 35]} />
     </div>
   )
 }

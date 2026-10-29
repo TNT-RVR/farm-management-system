@@ -8,7 +8,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { Minus, Plus } from 'lucide-react'
 import type { MarketPoint, MarketSeries } from '@/lib/markets'
+import { cn } from '@/lib/utils'
 
 /**
  * Several price series on one time axis.
@@ -19,12 +21,25 @@ import type { MarketPoint, MarketSeries } from '@/lib/markets'
  * genuinely do not have points on the same days, and pretending otherwise would
  * draw a straight line through four decades of missing weeks.
  *
- * Zoom: the scroll wheel over the chart, or a two-finger pinch on a phone,
- * narrows the span around the pointer; a double tap or click puts it back.
+ * Zoom: the + and − buttons, the scroll wheel over the chart, or a two-finger
+ * pinch on a phone, narrows the span around the pointer; drag sideways to move
+ * along it; a double tap or click puts it back.
+ *
+ * Each line can be switched off and on from the legend, to single one out or
+ * compare a few (Sam, 19 Oct 2026). The axis fits the lines still showing.
  * Done on the row index rather than the date so a sparse series zooms as
  * smoothly as a dense one.
  */
-export const CHART_COLOURS = ['#0f766e', '#c2410c', '#4338ca', '#b91c1c', '#0369a1', '#7c3aed', '#a16207', '#be185d']
+export const CHART_COLOURS = [
+  '#0f766e',
+  '#c2410c',
+  '#4338ca',
+  '#b91c1c',
+  '#0369a1',
+  '#7c3aed',
+  '#a16207',
+  '#be185d',
+]
 
 export function PriceChart({
   series,
@@ -89,7 +104,10 @@ export function PriceChart({
   // The visible span, as a fraction of the rows: [0, 1] is everything. Kept
   // with the row count it was set for, so new data resets the zoom without
   // an effect.
-  const [winState, setWinState] = useState<{ n: number; win: [number, number] }>({ n: rows.length, win: [0, 1] })
+  const [winState, setWinState] = useState<{ n: number; win: [number, number] }>({
+    n: rows.length,
+    win: [0, 1],
+  })
   const win: [number, number] = winState.n === rows.length ? winState.win : [0, 1]
   const setWin = (next: [number, number] | ((w: [number, number]) => [number, number])) =>
     setWinState((s) => {
@@ -97,6 +115,15 @@ export function PriceChart({
       return { n: rows.length, win: typeof next === 'function' ? next(cur) : next }
     })
   const box = useRef<HTMLDivElement>(null)
+  const drag = useRef<{ x: number; win: [number, number]; width: number } | null>(null)
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set())
+  const toggle = (id: string) =>
+    setHidden((h) => {
+      const next = new Set(h)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   const pinch = useRef<{ dist: number; win: [number, number]; mid: number } | null>(null)
 
   const zoomAt = (frac: number, factor: number) => {
@@ -172,6 +199,22 @@ export function PriceChart({
     pinch.current = null
   }
 
+  // Drag sideways with the mouse to move along a zoomed span.
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (!box.current || (win[0] === 0 && win[1] === 1)) return
+    drag.current = { x: e.clientX, win, width: box.current.getBoundingClientRect().width }
+  }
+  const onMouseMove = (e: React.MouseEvent) => {
+    const d = drag.current
+    if (!d) return
+    const span = d.win[1] - d.win[0]
+    const shift = Math.max(-d.win[0], Math.min(1 - d.win[1], (-(e.clientX - d.x) / d.width) * span))
+    setWin([d.win[0] + shift, d.win[1] + shift])
+  }
+  const endDrag = () => {
+    drag.current = null
+  }
+
   const shown = useMemo(() => {
     if (win[0] === 0 && win[1] === 1) return rows
     const a = Math.floor(win[0] * rows.length)
@@ -181,10 +224,13 @@ export function PriceChart({
   const zoomed = win[0] !== 0 || win[1] !== 1
 
   if (rows.length === 0) {
-    return <p className="py-10 text-center text-sm text-gray-400">Nothing recorded for this span.</p>
+    return (
+      <p className="py-10 text-center text-sm text-gray-400">Nothing recorded for this span.</p>
+    )
   }
 
-  const colour = (s: MarketSeries, i: number) => colourOf?.(s.id, i) ?? CHART_COLOURS[i % CHART_COLOURS.length]
+  const colour = (s: MarketSeries, i: number) =>
+    colourOf?.(s.id, i) ?? CHART_COLOURS[i % CHART_COLOURS.length]
 
   return (
     <div className="mt-3">
@@ -194,8 +240,12 @@ export function PriceChart({
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
         onDoubleClick={() => setWin([0, 1])}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={endDrag}
+        onMouseLeave={endDrag}
         style={{ touchAction: 'pan-y' }}
-        className="relative"
+        className={cn('relative select-none', zoomed && 'cursor-grab active:cursor-grabbing')}
       >
         <ResponsiveContainer width="100%" height={height}>
           <LineChart data={shown} margin={{ top: 4, right: 8, bottom: 4, left: 4 }}>
@@ -203,7 +253,9 @@ export function PriceChart({
             <XAxis
               dataKey="on"
               tick={{ fontSize: 11, fill: '#94a3b8' }}
-              tickFormatter={(v: string) => (zoomed && shown.length < 40 ? v.slice(5) : v.slice(0, 7))}
+              tickFormatter={(v: string) =>
+                zoomed && shown.length < 40 ? v.slice(5) : v.slice(0, 7)
+              }
               minTickGap={40}
             />
             <YAxis
@@ -234,19 +286,21 @@ export function PriceChart({
                 keys.find((k) => k.id === name)?.name ?? String(name),
               ]}
             />
-            {keys.map((s, i) => (
-              <Line
-                key={s.id}
-                type="monotone"
-                dataKey={s.id}
-                stroke={colour(s, i)}
-                strokeWidth={s.source === 'statcan' ? 1.6 : 2.4}
-                dot={false}
-                // Gaps stay gaps unless asked. See the note at the top of this file.
-                connectNulls={connectGaps}
-                isAnimationActive={false}
-              />
-            ))}
+            {keys.map((s, i) =>
+              hidden.has(s.id) ? null : (
+                <Line
+                  key={s.id}
+                  type="monotone"
+                  dataKey={s.id}
+                  stroke={colour(s, i)}
+                  strokeWidth={s.source === 'statcan' ? 1.6 : 2.4}
+                  dot={false}
+                  // Gaps stay gaps unless asked. See the note at the top of this file.
+                  connectNulls={connectGaps}
+                  isAnimationActive={false}
+                />
+              ),
+            )}
           </LineChart>
         </ResponsiveContainer>
         {zoomed && (
@@ -259,16 +313,64 @@ export function PriceChart({
           </button>
         )}
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-600">
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-600">
         {legend &&
-          keys.map((s, i) => (
-            <span key={s.id} className="flex items-center gap-1.5">
-              <span className="inline-block h-2 w-3 rounded-sm" style={{ background: colour(s, i) }} />
-              {s.name}
-            </span>
-          ))}
+          keys.map((s, i) => {
+            const off = hidden.has(s.id)
+            return (
+              <button
+                key={s.id}
+                type="button"
+                aria-pressed={!off}
+                title={off ? `Show ${s.name}` : `Hide ${s.name}`}
+                onClick={() => toggle(s.id)}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full border px-2 py-0.5 hover:bg-gray-50',
+                  off
+                    ? 'border-gray-200 text-gray-400 line-through'
+                    : 'border-gray-300 text-gray-700',
+                )}
+              >
+                <span
+                  className="inline-block h-2 w-3 rounded-sm"
+                  style={{ background: off ? '#d1d5db' : colour(s, i) }}
+                />
+                {s.name}
+              </button>
+            )
+          })}
+        {legend && keys.length > 1 && (
+          <button
+            type="button"
+            onClick={() => setHidden(hidden.size ? new Set() : new Set(keys.map((k) => k.id)))}
+            className="px-1 text-brand-700 underline"
+          >
+            {hidden.size ? 'Show all' : 'Hide all'}
+          </button>
+        )}
         {rows.length >= 6 && (
-          <span className="ml-auto text-[10px] text-gray-400">scroll or pinch to zoom · double-tap to reset</span>
+          <span className="ml-auto flex items-center gap-1">
+            <span className="hidden text-[10px] text-gray-400 sm:inline">
+              {zoomed ? 'drag to move · ' : ''}scroll or pinch to zoom
+            </span>
+            <button
+              type="button"
+              aria-label="Zoom out"
+              disabled={!zoomed}
+              onClick={() => zoomAt(0.5, 1.5)}
+              className="rounded border border-gray-200 p-0.5 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              aria-label="Zoom in"
+              onClick={() => zoomAt(0.5, 0.6)}
+              className="rounded border border-gray-200 p-0.5 text-gray-600 hover:bg-gray-50"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </span>
         )}
       </div>
     </div>

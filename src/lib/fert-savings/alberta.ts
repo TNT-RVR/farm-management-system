@@ -13,6 +13,7 @@
  * language model invent the programme; now these produce the numbers and the
  * model explains them.
  */
+import { farmDistrict, farmRiver } from '../farm-context'
 
 export type SoilZone = 'Brown' | 'Dark Brown'
 
@@ -265,6 +266,15 @@ export const WATER_S_BY_SOURCE = {
   alberta_default: { label: "Alberta's rule of thumb", lbPerInch: 2.5 },
 } as const
 export type WaterSource = keyof typeof WATER_S_BY_SOURCE
+
+/**
+ * The source's name for this farm: its own river and district from Farm
+ * setup ("Oldman River (pumped)", "SMRID canal" here), not this farm's built
+ * in. The figures above stay the measured Alberta ones until a farm's own
+ * samples replace them.
+ */
+export const waterSourceLabel = (k: WaterSource): string =>
+  k === 'oldman' ? `${farmRiver()} (pumped)` : k === 'smrid' ? `${farmDistrict()} canal` : WATER_S_BY_SOURCE[k].label
 
 /** The default: most irrigated ground here is on SMRID water. */
 export const WATER_S_LB_PER_INCH = WATER_S_BY_SOURCE.smrid.lbPerInch

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useFields } from '@/lib/queries'
 import { cn } from '@/lib/utils'
+import { CARD_HEAD } from '@/lib/table-style'
 
 type Row = {
   crop_year: number
@@ -98,11 +99,11 @@ export function CropFieldHistory({ cropId, cropName }: { cropId: string; cropNam
   const totalAcres = years.reduce((s, y) => s + y.acres, 0)
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-gray-200 px-4 py-3">
-        <h2 className="text-sm font-semibold text-gray-900">Where {cropName} has been grown</h2>
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div className={cn('flex flex-wrap items-baseline justify-between gap-2 px-4 py-3', CARD_HEAD)}>
+        <h2 className="font-medium">Where {cropName} has been grown</h2>
         {years.length > 0 && (
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-brand-100">
             {years.length} {years.length === 1 ? 'year' : 'years'} · {years[years.length - 1].year}–
             {years[0].year} · {Math.round(totalAcres).toLocaleString()} acres in total
           </p>

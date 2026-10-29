@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
 import { runJdEquipmentSync } from '../shared/jd-equipment-core.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 // Every two hours. Engine hours are what maintenance intervals get measured
 // against, so they should not be a day stale — but this makes one API call per
@@ -14,7 +14,7 @@ export default async () => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
   if (!url || !serviceKey) return new Response('Not configured', { status: 500 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
   try {
     const r = await runJdEquipmentSync(sb)
     return new Response(JSON.stringify(r), {

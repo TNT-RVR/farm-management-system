@@ -13,6 +13,8 @@ import { emcGroupFor, emcSourceNote, type EmcGroup } from './grain-emc'
 import { OFFSET_MIN, offsetsFrom, testerLabel, toBench, type Offsets, type Tester } from './tester-offsets'
 import { varietySettingFor } from './crop-variety-settings'
 import { cropVarietySettingsQuery } from './crop-variety-settings-data'
+import { farmTz } from './farm-context'
+import { zonedInstant } from './notification-schedule'
 
 const num = (v: unknown): number | null => {
   const n = typeof v === 'string' ? Number(v) : v
@@ -20,11 +22,11 @@ const num = (v: unknown): number | null => {
 }
 
 /** A test's date on the farm, not in UTC: a 7 pm test is still that day. */
-const farmDate = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Edmonton' })
+const farmDate = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: farmTz() })
 
 /** The hour on the farm a test was taken, fractional: 1:39 pm is 13.65. */
 const farmHour = (iso: string) => {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Edmonton', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).formatToParts(new Date(iso))
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: farmTz(), hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).formatToParts(new Date(iso))
   const h = Number(parts.find((p) => p.type === 'hour')?.value ?? 15)
   const m = Number(parts.find((p) => p.type === 'minute')?.value ?? 0)
   return h + m / 60
@@ -116,7 +118,9 @@ async function stationWeather(stationIds: string[], from: string): Promise<Map<s
 async function stationHours(stationIds: string[], from: string): Promise<Map<string, Hours>> {
   const out = new Map<string, Hours>()
   if (!stationIds.length) return out
-  const fromTs = new Date(`${from}T00:00:00-06:00`).toISOString()
+  // The farm's midnight on that date, summer or winter time (it was a fixed -06:00).
+  const [fy, fm, fd] = from.split('-').map(Number)
+  const fromTs = zonedInstant(fy, fm, fd, 0, farmTz()).toISOString()
   for (let page = 0; page < 20; page++) {
     const { data, error } = await supabase
       .from('weather_hourly')

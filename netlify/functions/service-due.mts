@@ -1,8 +1,8 @@
-import { createClient } from '@supabase/supabase-js'
 import { MANAGER_ROLES } from './_jd.mts'
 import { runServiceDue } from '../shared/service-due.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 /**
  * The same sweep as service-due-cron, on demand.
@@ -20,7 +20,7 @@ export default async (req: Request) => {
   await hydrateSecrets()
   if (req.method !== 'POST') return new Response('POST only', { status: 405 })
   if (!url || !serviceKey) return new Response('Not configured', { status: 500 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
 
   const bearer = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
   const { data: au } = bearer ? await getUserMfa(sb, bearer) : { data: { user: null } }

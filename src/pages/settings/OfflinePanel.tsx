@@ -17,6 +17,7 @@ import {
   type Tile,
 } from '@/lib/offline-tiles'
 import { cachedFileCount, clearFiles, downloadFiles } from '@/lib/offline-files'
+import { CARD_HEAD } from '@/lib/table-style'
 
 const LAST_KEY = 'rvr-offline-warmed-at'
 
@@ -130,10 +131,11 @@ export function OfflinePanel() {
   }
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-        <CloudOff className="h-4 w-4 text-gray-400" /> Offline access
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h3 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <CloudOff className="h-4 w-4 text-brand-100" /> Offline access
       </h3>
+      <div className="p-4">
       <div className="mt-1 flex items-start gap-1 text-xs text-gray-500">
         <span>Records save themselves twice a day; this saves them now.</span>
         <InfoPopover title="Offline access">
@@ -310,6 +312,8 @@ export function OfflinePanel() {
           than held and replayed hours later against records that have moved.
         </p>
       </HelpNote>
+
+      </div>
     </section>
   )
 }

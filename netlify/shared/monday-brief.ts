@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { allocationRow, pivotAllotment, smridAllotmentFor, type PivotRow, type YearAllotment } from '../../src/lib/water-allocation.ts'
 import { farmMainRanchId, farmTz } from '../../src/lib/farm-context.ts'
+import { farmToday } from './dates.ts'
 
 /**
  * The Monday brief: one push to every manager at 7 in the morning with the
@@ -11,7 +12,8 @@ import { farmMainRanchId, farmTz } from '../../src/lib/farm-context.ts'
  */
 export async function runMondayBrief(sb: SupabaseClient, opts: { send?: boolean } = {}): Promise<{ lines: string[]; sent: boolean }> {
   const today = new Date()
-  const iso = (d: Date) => d.toISOString().slice(0, 10)
+  // Farm dates: the brief's week ends at the farm's midnight, not UTC's.
+  const iso = (d: Date) => farmToday(d)
   const weekAgo = new Date(today.getTime() - 7 * 86_400_000)
   const weekOn = new Date(today.getTime() + 7 * 86_400_000)
   const year = today.getFullYear()

@@ -25,6 +25,9 @@ import { money, money2 } from '@/lib/planner'
 import { Select } from '@/components/Select'
 import { cn } from '@/lib/utils'
 import { rowClick } from '@/components/RecordEditor'
+import { CardList, RowCard } from '@/components/RowCards'
+import { askConfirm } from '@/components/askConfirm'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 const STATUS_COLORS: Record<ContractStatus, string> = {
   open: 'bg-sky-100 text-sky-800',
@@ -35,7 +38,6 @@ const STATUS_COLORS: Record<ContractStatus, string> = {
 
 const CONTRACT_TABS = [
   { key: 'contracts', label: 'Contracts' },
-  { key: 'tickets', label: 'Scale tickets' },
   { key: 'position', label: 'Position' },
   { key: 'cashflow', label: 'Cash flow' },
 ] as const
@@ -78,7 +80,11 @@ export function ContractsPage() {
     'contracts',
     CONTRACT_TABS.map((t) => t.key),
     'contracts',
-    (asked) => (asked === 'deliveries' ? 'position' : undefined),
+    // Scale tickets had a tab of its own until 27 Oct 2026; a load is read
+    // inside the contract it is on, or under the contract list when it is on
+    // none. Old ?tab=tickets links land on the contracts.
+    (asked) =>
+      asked === 'deliveries' ? 'position' : asked === 'tickets' ? 'contracts' : undefined,
   )
   const { data: tickets } = useScaleTickets(cropYear)
   const { data: loads } = useBinLoads()
@@ -121,6 +127,89 @@ export function ContractsPage() {
     }
   }, [contracts])
 
+  // Each contract's figures, built once: the card on a phone and the table from
+  // sm up are given the same nodes, so there is one place to change them.
+  const amountNode = (c: ContractRow) =>
+    c.bushels == null && c.price_per_unit == null ? null : (
+      <>
+        {c.bushels != null
+          ? `${Math.round(c.bushels).toLocaleString()} ${cropUnit(c.crop_id)}`
+          : '—'}
+        {c.price_per_unit != null && (
+          <span className="text-gray-500"> @ {money2(c.price_per_unit)}</span>
+        )}
+        {c.bushels != null && c.price_per_unit != null && (
+          <span className="block text-xs text-gray-500">{money(c.bushels * c.price_per_unit)}</span>
+        )}
+      </>
+    )
+  const deliveryWindow = (c: ContractRow) =>
+    c.delivery_start || c.delivery_end
+      ? `${shortDate(c.delivery_start, cropYear)} – ${shortDate(c.delivery_end, cropYear)}`
+      : '—'
+  const deliveredNode = (c: ContractRow) =>
+    ticketed.has(c.id) ? (
+      <span title="Worked out from the scale tickets and weighed loads for this contract">
+        <span className="tabular-nums">{Math.round(c.delivered_bu).toLocaleString()}</span>
+        <span className="block text-[10px] text-gray-400">from tickets</span>
+      </span>
+    ) : isManager && !isPast ? (
+      <input
+        type="number"
+        defaultValue={c.delivered_bu}
+        aria-label="Delivered"
+        onBlur={(e) => {
+          const v = Number(e.target.value || 0)
+          if (v !== c.delivered_bu) update.mutate({ id: c.id, patch: { delivered_bu: v } })
+        }}
+        className="w-20 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums"
+      />
+    ) : (
+      Math.round(c.delivered_bu).toLocaleString()
+    )
+  const statusNode = (c: ContractRow) =>
+    isManager && !isPast ? (
+      <select
+        value={c.status}
+        aria-label="Status"
+        onChange={(e) =>
+          update.mutate({ id: c.id, patch: { status: e.target.value as ContractStatus } })
+        }
+        className={cn('rounded-full px-2 py-0.5 text-xs', STATUS_COLORS[c.status])}
+      >
+        {CONTRACT_STATUSES.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+    ) : (
+      <span className={cn('rounded-full px-2 py-0.5 text-xs', STATUS_COLORS[c.status])}>
+        {c.status}
+      </span>
+    )
+  const rowActions = (c: ContractRow) => (
+    <>
+      <button
+        onClick={() => setEditing(c)}
+        className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+        aria-label="Edit contract"
+        title="Every field, and notes"
+      >
+        <Pencil className="h-4 w-4" />
+      </button>
+      <button
+        onClick={async () => {
+          if (await askConfirm('Delete this contract?')) remove.mutate(c.id)
+        }}
+        className="rounded-md p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
+        aria-label="Delete contract"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
+    </>
+  )
+
   return (
     <div className="p-4 md:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -137,7 +226,6 @@ export function ContractsPage() {
 
       <PillTabs tabs={CONTRACT_TABS} value={tab} onChange={setTab} className="mb-3" />
 
-      {tab === 'tickets' && <ScaleTickets cropYear={cropYear} />}
       {tab === 'position' && (
         <div className="space-y-5">
           <div>
@@ -152,248 +240,230 @@ export function ContractsPage() {
       {tab === 'cashflow' && <CashFlowTab year={cropYear} />}
 
       {tab === 'contracts' && (
-      <>
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
-          ['Contracts', String(totals.count)],
-          ['Committed', `${Math.round(totals.committed).toLocaleString()} units`],
-          ['Delivered', `${Math.round(totals.delivered).toLocaleString()} units`],
-          ['Contracted value', money(totals.contractedValue)],
-        ].map(([label, val]) => (
-          <div key={label} className="rounded-lg border border-gray-200 bg-white p-3">
-            <p className="text-xs text-gray-500">{label}</p>
-            <p className="mt-0.5 text-lg font-bold text-gray-900">{val}</p>
-          </div>
-        ))}
-      </div>
-
-      {adding && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            create.mutate(
-              {
-                crop_year: cropYear,
-                crop_id: form.crop_id || null,
-                buyer_contact_id: form.buyer_contact_id || null,
-                contract_number: form.contract_number || null,
-                bushels: form.bushels ? Number(form.bushels) : null,
-                price_per_unit: form.price_per_unit ? Number(form.price_per_unit) : null,
-                delivery_start: form.delivery_start || null,
-                delivery_end: form.delivery_end || null,
-              },
-              {
-                onSuccess: () => {
-                  setAdding(false)
-                  setForm({
-                    crop_id: '',
-                    buyer_contact_id: '',
-                    contract_number: '',
-                    bushels: '',
-                    price_per_unit: '',
-                    delivery_start: '',
-                    delivery_end: '',
-                  })
-                },
-              },
-            )
-          }}
-          className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-gray-200 bg-white p-4 sm:grid-cols-4"
-        >
-          <label className="text-xs text-gray-500">
-            Crop
-            <Select
-              value={form.crop_id}
-              onChange={(v) => setForm((f) => ({ ...f, crop_id: v }))}
-              ariaLabel="Crop"
-              className="mt-1"
-              options={[
-                { value: '', label: '—' },
-                ...(crops ?? []).map((c) => ({ value: c.id, label: c.name })),
-              ]}
-            />
-          </label>
-          <label className="text-xs text-gray-500">
-            Buyer
-            <Select
-              value={form.buyer_contact_id}
-              onChange={(v) => setForm((f) => ({ ...f, buyer_contact_id: v }))}
-              ariaLabel="Buyer"
-              className="mt-1"
-              options={[
-                { value: '', label: '—' },
-                ...(contacts ?? [])
-                  .filter((c) => c.type === 'buyer' || c.type === 'other')
-                  .map((c) => ({ value: c.id, label: c.company || c.contact_name || '—' })),
-              ]}
-            />
-          </label>
-          <label className="text-xs text-gray-500">
-            Contract #
-            <input
-              value={form.contract_number}
-              onChange={(e) => setForm((f) => ({ ...f, contract_number: e.target.value }))}
-              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
-            />
-          </label>
-          <label className="text-xs text-gray-500">
-            Units (bu/lbs/cwt)
-            <input
-              type="number"
-              value={form.bushels}
-              onChange={(e) => setForm((f) => ({ ...f, bushels: e.target.value }))}
-              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
-            />
-          </label>
-          <label className="text-xs text-gray-500">
-            Price / unit
-            <input
-              type="number"
-              step="0.01"
-              value={form.price_per_unit}
-              onChange={(e) => setForm((f) => ({ ...f, price_per_unit: e.target.value }))}
-              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
-            />
-          </label>
-          <label className="text-xs text-gray-500">
-            Delivery start
-            <DateField value={form.delivery_start} onChange={(v) => setForm((f) => ({ ...f, delivery_start: v }))} className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900" />
-          </label>
-          <label className="text-xs text-gray-500">
-            Delivery end
-            <DateField value={form.delivery_end} onChange={(v) => setForm((f) => ({ ...f, delivery_end: v }))} className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900" />
-          </label>
-          <div className="flex items-end">
-            <button
-              type="submit"
-              className="rounded-md bg-brand-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800"
-            >
-              Add
-            </button>
-          </div>
-        </form>
-      )}
-
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
-              <th className="px-3 py-2 font-medium">Crop</th>
-              <th className="px-3 py-2 font-medium">Buyer</th>
-              <th className="px-3 py-2 font-medium">Contract #</th>
-              <th className="px-3 py-2 text-right font-medium">Amount</th>
-              <th className="px-3 py-2 font-medium">Delivery</th>
-              <th className="px-3 py-2 text-right font-medium">Delivered</th>
-              <th className="px-3 py-2 font-medium">Status</th>
-              {isManager && !isPast && <th className="w-14" />}
-            </tr>
-          </thead>
-          <tbody>
-            {(contracts ?? []).map((c: ContractRow) => (
-              <tr
-                key={c.id}
-                // The whole row opens the contract (Sam, 7 Oct 2026), not only
-                // the pencil; the status and delivered boxes keep their own jobs.
-                onClick={isManager && !isPast ? rowClick(() => setEditing(c)) : undefined}
-                className={cn('border-b border-gray-100 last:border-0', isManager && !isPast && 'cursor-pointer hover:bg-gray-50')}
-              >
-                <td className="px-3 py-2 font-medium">{cropName(c.crop_id)}</td>
-                <td className="px-3 py-2">{buyerName(c.buyer_contact_id)}</td>
-                <td className="px-3 py-2 text-gray-500">{c.contract_number ?? '—'}</td>
-                {/* Units at price on one line, what it comes to under it. */}
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {c.bushels != null ? `${Math.round(c.bushels).toLocaleString()} ${cropUnit(c.crop_id)}` : '—'}
-                  {c.price_per_unit != null && (
-                    <span className="text-gray-500"> @ {money2(c.price_per_unit)}</span>
-                  )}
-                  {c.bushels != null && c.price_per_unit != null && (
-                    <span className="block text-xs text-gray-500">{money(c.bushels * c.price_per_unit)}</span>
-                  )}
-                </td>
-                <td
-                  className="whitespace-nowrap px-3 py-2 text-xs text-gray-600"
-                  title={c.delivery_start || c.delivery_end ? `${c.delivery_start ?? '?'} → ${c.delivery_end ?? '?'}` : undefined}
-                >
-                  {c.delivery_start || c.delivery_end
-                    ? `${shortDate(c.delivery_start, cropYear)} – ${shortDate(c.delivery_end, cropYear)}`
-                    : '—'}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {ticketed.has(c.id) ? (
-                    <span title="Worked out from the scale tickets and weighed loads for this contract">
-                      <span className="tabular-nums">{Math.round(c.delivered_bu).toLocaleString()}</span>
-                      <span className="block text-[10px] text-gray-400">from tickets</span>
-                    </span>
-                  ) : isManager && !isPast ? (
-                    <input
-                      type="number"
-                      defaultValue={c.delivered_bu}
-                      onBlur={(e) => {
-                        const v = Number(e.target.value || 0)
-                        if (v !== c.delivered_bu)
-                          update.mutate({ id: c.id, patch: { delivered_bu: v } })
-                      }}
-                      className="w-20 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums"
-                    />
-                  ) : (
-                    Math.round(c.delivered_bu).toLocaleString()
-                  )}
-                </td>
-                <td className="px-3 py-2">
-                  {isManager && !isPast ? (
-                    <select
-                      value={c.status}
-                      onChange={(e) =>
-                        update.mutate({ id: c.id, patch: { status: e.target.value as ContractStatus } })
-                      }
-                      className={cn('rounded-full px-2 py-0.5 text-xs', STATUS_COLORS[c.status])}
-                    >
-                      {CONTRACT_STATUSES.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className={cn('rounded-full px-2 py-0.5 text-xs', STATUS_COLORS[c.status])}>
-                      {c.status}
-                    </span>
-                  )}
-                </td>
-                {isManager && !isPast && (
-                  <td className="whitespace-nowrap px-1 text-center">
-                    <button
-                      onClick={() => setEditing(c)}
-                      className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                      aria-label="Edit contract"
-                      title="Every field, and notes"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (confirm('Delete this contract?')) remove.mutate(c.id)
-                      }}
-                      className="rounded-md p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                      aria-label="Delete contract"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </td>
-                )}
-              </tr>
+        <>
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              ['Contracts', String(totals.count)],
+              ['Committed', `${Math.round(totals.committed).toLocaleString()} units`],
+              ['Delivered', `${Math.round(totals.delivered).toLocaleString()} units`],
+              ['Contracted value', money(totals.contractedValue)],
+            ].map(([label, val]) => (
+              <div key={label} className="rounded-lg border border-gray-200 bg-white p-3">
+                <p className="text-xs text-gray-500">{label}</p>
+                <p className="mt-0.5 text-lg font-bold text-gray-900">{val}</p>
+              </div>
             ))}
-            {(contracts ?? []).length === 0 && (
-              <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-gray-400">
-                  No contracts for {cropYear}.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      </>
+          </div>
+
+          {adding && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                create.mutate(
+                  {
+                    crop_year: cropYear,
+                    crop_id: form.crop_id || null,
+                    buyer_contact_id: form.buyer_contact_id || null,
+                    contract_number: form.contract_number || null,
+                    bushels: form.bushels ? Number(form.bushels) : null,
+                    price_per_unit: form.price_per_unit ? Number(form.price_per_unit) : null,
+                    delivery_start: form.delivery_start || null,
+                    delivery_end: form.delivery_end || null,
+                  },
+                  {
+                    onSuccess: () => {
+                      setAdding(false)
+                      setForm({
+                        crop_id: '',
+                        buyer_contact_id: '',
+                        contract_number: '',
+                        bushels: '',
+                        price_per_unit: '',
+                        delivery_start: '',
+                        delivery_end: '',
+                      })
+                    },
+                  },
+                )
+              }}
+              className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-gray-200 bg-white p-4 sm:grid-cols-4"
+            >
+              <label className="text-xs text-gray-500">
+                Crop
+                <Select
+                  value={form.crop_id}
+                  onChange={(v) => setForm((f) => ({ ...f, crop_id: v }))}
+                  ariaLabel="Crop"
+                  className="mt-1"
+                  options={[
+                    { value: '', label: '—' },
+                    ...(crops ?? []).map((c) => ({ value: c.id, label: c.name })),
+                  ]}
+                />
+              </label>
+              <label className="text-xs text-gray-500">
+                Buyer
+                <Select
+                  value={form.buyer_contact_id}
+                  onChange={(v) => setForm((f) => ({ ...f, buyer_contact_id: v }))}
+                  ariaLabel="Buyer"
+                  className="mt-1"
+                  options={[
+                    { value: '', label: '—' },
+                    ...(contacts ?? [])
+                      .filter((c) => c.type === 'buyer' || c.type === 'other')
+                      .map((c) => ({ value: c.id, label: c.company || c.contact_name || '—' })),
+                  ]}
+                />
+              </label>
+              <label className="text-xs text-gray-500">
+                Contract #
+                <input
+                  value={form.contract_number}
+                  onChange={(e) => setForm((f) => ({ ...f, contract_number: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+                />
+              </label>
+              <label className="text-xs text-gray-500">
+                Units (bu/lbs/cwt)
+                <input
+                  type="number"
+                  value={form.bushels}
+                  onChange={(e) => setForm((f) => ({ ...f, bushels: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+                />
+              </label>
+              <label className="text-xs text-gray-500">
+                Price / unit
+                <input
+                  type="number"
+                  step="0.01"
+                  value={form.price_per_unit}
+                  onChange={(e) => setForm((f) => ({ ...f, price_per_unit: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+                />
+              </label>
+              <label className="text-xs text-gray-500">
+                Delivery start
+                <DateField
+                  value={form.delivery_start}
+                  onChange={(v) => setForm((f) => ({ ...f, delivery_start: v }))}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+                />
+              </label>
+              <label className="text-xs text-gray-500">
+                Delivery end
+                <DateField
+                  value={form.delivery_end}
+                  onChange={(v) => setForm((f) => ({ ...f, delivery_end: v }))}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+                />
+              </label>
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  className="rounded-md bg-brand-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800"
+                >
+                  Add
+                </button>
+              </div>
+            </form>
+          )}
+
+          <div className="rounded-lg border border-gray-200 bg-white">
+            {/* A phone reads each contract down the page; from sm up it is the table. */}
+            <CardList
+              empty={`No contracts for ${cropYear}.`}
+              isEmpty={(contracts ?? []).length === 0}
+            >
+              {(contracts ?? []).map((c: ContractRow) => (
+                <RowCard
+                  key={c.id}
+                  onClick={isManager && !isPast ? rowClick(() => setEditing(c)) : undefined}
+                  heading={`${cropName(c.crop_id)} · ${buyerName(c.buyer_contact_id)}`}
+                  actions={isManager && !isPast ? rowActions(c) : undefined}
+                  facts={[
+                    { label: 'Contract #', node: c.contract_number },
+                    { label: 'Amount', node: amountNode(c) },
+                    { label: 'Delivery', node: deliveryWindow(c) },
+                    { label: 'Delivered', node: deliveredNode(c) },
+                    { label: 'Status', node: statusNode(c) },
+                  ]}
+                />
+              ))}
+            </CardList>
+            <div className="hidden overflow-x-auto sm:block">
+              <table className="w-max min-w-full text-sm">
+                <thead className={TABLE_HEAD}>
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Crop</th>
+                    <th className="px-3 py-2 font-medium">Buyer</th>
+                    <th className="px-3 py-2 font-medium">Contract #</th>
+                    <th className="px-3 py-2 text-right font-medium">Amount</th>
+                    <th className="px-3 py-2 font-medium">Delivery</th>
+                    <th className="px-3 py-2 text-right font-medium">Delivered</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
+                    {isManager && !isPast && <th className="w-14" />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(contracts ?? []).map((c: ContractRow) => (
+                    <tr
+                      key={c.id}
+                      // The whole row opens the contract (Sam, 7 Oct 2026), not only
+                      // the pencil; the status and delivered boxes keep their own jobs.
+                      onClick={isManager && !isPast ? rowClick(() => setEditing(c)) : undefined}
+                      className={cn(
+                        'border-b border-gray-100 last:border-0',
+                        isManager && !isPast && 'cursor-pointer hover:bg-gray-50',
+                      )}
+                    >
+                      <td className="px-3 py-2 font-medium">{cropName(c.crop_id)}</td>
+                      <td className="px-3 py-2">{buyerName(c.buyer_contact_id)}</td>
+                      <td className="px-3 py-2 text-gray-500">{c.contract_number ?? '—'}</td>
+                      {/* Units at price on one line, what it comes to under it. */}
+                      <td className="px-3 py-2 text-right tabular-nums">{amountNode(c) ?? '—'}</td>
+                      <td
+                        className="whitespace-nowrap px-3 py-2 text-xs text-gray-600"
+                        title={
+                          c.delivery_start || c.delivery_end
+                            ? `${c.delivery_start ?? '?'} → ${c.delivery_end ?? '?'}`
+                            : undefined
+                        }
+                      >
+                        {deliveryWindow(c)}
+                      </td>
+                      <td className="px-3 py-2 text-right">{deliveredNode(c)}</td>
+                      <td className="px-3 py-2">{statusNode(c)}</td>
+                      {isManager && !isPast && (
+                        <td className="whitespace-nowrap px-1 text-center">{rowActions(c)}</td>
+                      )}
+                    </tr>
+                  ))}
+                  {(contracts ?? []).length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="px-3 py-8 text-center text-gray-400">
+                        No contracts for {cropYear}.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {/* The loads nobody has put on a contract yet, with the camera that
+          reads a ticket. The loads that ARE on a contract are read inside it
+          (Sam, 27 Oct 2026: "when I click on a specific contract ... the
+          scale tickets for just that contract"). */}
+          <section className="mt-5">
+            <h2 className="mb-1 text-sm font-semibold text-gray-800">Loads not on a contract</h2>
+            <p className="mb-2 text-xs text-gray-500">
+              A load is put on a contract when its ticket is read, or by opening it here. The loads
+              on a contract are shown inside that contract.
+            </p>
+            <ScaleTickets cropYear={cropYear} />
+          </section>
+        </>
       )}
 
       {editing && (

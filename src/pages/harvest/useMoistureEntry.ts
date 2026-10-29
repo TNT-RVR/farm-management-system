@@ -144,8 +144,6 @@ export function useMoistureEntry({ open = false }: { open?: boolean } = {}) {
   const bands: MoistureBands = {
     dry_max: bandsFrom?.moisture_dry_max ?? null,
     tough_max: bandsFrom?.moisture_tough_max ?? null,
-    damp_max: bandsFrom?.moisture_damp_max ?? null,
-    moist_max: bandsFrom?.moisture_moist_max ?? null,
     dry_min: bandsFrom?.moisture_dry_min ?? null,
     tough_advice: crop?.moisture_tough_advice ?? null,
   }

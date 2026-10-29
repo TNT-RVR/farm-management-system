@@ -60,6 +60,7 @@ import { useFarmSettings } from '@/lib/farm-setup'
 import { monthName, ranchSale, saleWeightSource } from '@/lib/calf-sale'
 import { useMainRanch, useRanches } from '@/lib/ranches'
 import type { CattleSale } from '@/lib/cattleMarkets'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 const money = (v: number, dp = 2) => `$${v.toFixed(dp)}`
 
@@ -367,7 +368,7 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
             </summary>
             <div className="mt-2 max-h-72 overflow-auto">
               <table className="w-full text-xs">
-                <thead className="text-left text-gray-500">
+                <thead className={TABLE_HEAD}>
                   <tr>
                     {/* pr-3 on every column but the last. Without it a
                         right-aligned figure sits flush against the next column's
@@ -437,10 +438,13 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
       >
         {/* C2: the four auction markets beside it */}
         {auctionSeries.length === 0 && (
-          <section className="rounded-lg border border-gray-200 bg-white p-4">
-            <h3 className="text-sm font-semibold text-gray-800">Auction prices</h3>
+          <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+            <h3 className={cn('font-medium', CARD_HEAD)}>Auction prices</h3>
+            <div className="p-4">
             <p className="mt-1 text-xs text-gray-500">No prices from Medicine Hat, Lethbridge, Calgary Stockyards or Team online yet. They come in each morning.</p>
             <UpdateNow />
+
+            </div>
           </section>
         )}
         {auctionSeries.length > 0 && (
@@ -472,8 +476,9 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
 
         {/* C4 */}
         {seasonal.length > 0 && (
-          <section className="rounded-lg border border-gray-200 bg-white p-4">
-            <h3 className="text-sm font-semibold text-gray-800">The shape of a normal year</h3>
+          <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+            <h3 className={cn('font-medium', CARD_HEAD)}>The shape of a normal year</h3>
+            <div className="p-4">
             <HelpNote className="mt-0.5 text-xs" summary="Each month against its own year’s average." title="The shape of a normal year">
               <p>
                 Each month against its own year&rsquo;s average. You sell in {saleMonthName} — this is what
@@ -481,6 +486,8 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
               </p>
             </HelpNote>
             <SeasonalityChart rows={seasonal} />
+
+            </div>
           </section>
         )}
 
@@ -512,10 +519,11 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
 /** C13: every forward sale, scored against the market at delivery. */
 function HindsightTable({ hindsight }: { hindsight: ReturnType<typeof scoreHindsight> }) {
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
-        <CalendarClock className="h-4 w-4 text-gray-400" /> Did locking in pay?
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h3 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
+        <CalendarClock className="h-4 w-4 text-brand-100" /> Did locking in pay?
       </h3>
+      <div className="p-4">
       <HelpNote className="mt-0.5 text-xs" summary="Every forward sale, against the market at delivery." title="How locking in is scored">
         <p>
           Every forward sale, against where the market actually was by delivery. Years we have no
@@ -524,7 +532,7 @@ function HindsightTable({ hindsight }: { hindsight: ReturnType<typeof scoreHinds
       </HelpNote>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="border-b border-gray-200 text-left text-xs text-gray-500">
+          <thead className={TABLE_HEAD}>
             <tr>
               <th className="pb-1 pr-3 font-medium">Year</th>
               <th className="pb-1 pr-3 font-medium">Sold</th>
@@ -577,6 +585,8 @@ function HindsightTable({ hindsight }: { hindsight: ReturnType<typeof scoreHinds
           </tbody>
         </table>
       </div>
+
+      </div>
     </section>
   )
 }
@@ -589,8 +599,9 @@ function CattleFutures({ series }: { series: MarketSeries[] }) {
     .filter((s): s is MarketSeries => s != null)
   if (found.length === 0) return null
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-gray-800">The forward market</h3>
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <h3 className={cn('font-medium', CARD_HEAD)}>The forward market</h3>
+      <div className="p-4">
       <HelpNote className="mt-0.5 text-xs" summary="What a feedlot bidding on your calves works from." title="Why the board matters">
         <p>
           A feedlot bidding on your calves is working from the CME board, converted at the day&rsquo;s
@@ -601,6 +612,8 @@ function CattleFutures({ series }: { series: MarketSeries[] }) {
         {found.map((s) => (
           <FuturesCurve key={s.id} series={s} />
         ))}
+      </div>
+
       </div>
     </section>
   )

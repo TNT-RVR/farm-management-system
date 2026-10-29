@@ -4,8 +4,9 @@
 //   token      https://signin.johndeere.com/oauth2/aus78tnlaysMraFhC1t7/v1/token
 //   API base   https://api.deere.com   (sandbox: https://sandboxapi.deere.com)
 //   media type application/vnd.deere.axiom.v3+json
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { mfaSatisfied } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 export { mfaSatisfied }
 
@@ -111,11 +112,7 @@ export function jdConfig(): { clientId: string; clientSecret: string } | null {
   return { clientId, clientSecret }
 }
 
-export function admin(): SupabaseClient {
-  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-    auth: { persistSession: false },
-  })
-}
+export { admin }
 
 // ---------------------------------------------------------------------------
 // Token encryption. The AES-256-GCM key lives in Netlify env (TOKEN_ENC_KEY),

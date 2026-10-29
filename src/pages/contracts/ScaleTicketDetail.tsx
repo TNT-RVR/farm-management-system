@@ -102,7 +102,7 @@ export function ScaleTicketDetail({
         <div className="space-y-3 text-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <DetailList
-              className="min-w-0 flex-1"
+              className="min-w-0 flex-1 basis-full sm:basis-64"
               rows={[
                 ['Contract', contract ? contractLabel(contract) : 'None'],
                 ['Crop', crop?.name ?? null],

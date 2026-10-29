@@ -14,7 +14,7 @@ import { asTrait, isCanola, type HerbicideTrait } from './canola-trait'
  * own canola crop when it has one (BASF is always Liberty).
  */
 
-export const TRAIT_SYSTEM: Record<HerbicideTrait, string> = { liberty: 'LibertyLink', roundup: 'Roundup Ready' }
+export const TRAIT_SYSTEM: Record<HerbicideTrait, string> = { liberty: 'LibertyLink', roundup: 'Roundup Ready', clearfield: 'Clearfield', conventional: 'Conventional' }
 
 export type CanolaCropLike = { id: string; name: string; herbicide_trait: string | null; category?: string | null }
 

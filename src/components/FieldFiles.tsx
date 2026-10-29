@@ -13,6 +13,8 @@ import {
   type FieldFileKind,
   type FieldFileRow,
 } from '@/lib/files'
+import { askConfirm } from '@/components/askConfirm'
+import { usePartnerView } from '@/lib/partner-view'
 
 function kindLabel(kind: FieldFileKind): string {
   return FILE_KINDS.find((k) => k.value === kind)?.label ?? kind
@@ -33,6 +35,9 @@ export function FieldFiles({ fieldId }: { fieldId: string }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [kind, setKind] = useState<FieldFileKind>('doc')
 
+  // A crop-share partner opens the field's files but does not add to them.
+  const partner = usePartnerView()
+
   const canDelete = (f: FieldFileRow) =>
     hasManagerAccess(profile?.role) || f.uploaded_by === profile?.id
 
@@ -40,40 +45,42 @@ export function FieldFiles({ fieldId }: { fieldId: string }) {
     <div className="rounded-lg border border-gray-200 bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-gray-700">Files</h3>
-        <div className="flex items-center gap-2">
-          <Select
-            value={kind}
-            size="sm"
-            ariaLabel="File kind"
-            className="w-32"
-            onChange={(v) => setKind(v as FieldFileKind)}
-            options={FILE_KINDS.map((k) => ({ value: k.value, label: k.label }))}
-          />
-          <button
-            onClick={() => inputRef.current?.click()}
-            disabled={upload.isPending}
-            className="flex items-center gap-1.5 rounded-md bg-brand-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
-          >
-            <Upload className="h-3.5 w-3.5" />
-            {upload.isPending ? 'Uploading…' : 'Upload'}
-          </button>
-          <input
-            ref={inputRef}
-            type="file"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) {
-                upload.mutate({
-                  file,
-                  kind,
-                  cropYear: kind === 'soil_test' || kind === 'rx' || kind === 'fertility_map' ? cropYear : null,
-                })
-              }
-              e.target.value = ''
-            }}
-          />
-        </div>
+        {!partner && (
+          <div className="flex items-center gap-2">
+            <Select
+              value={kind}
+              size="sm"
+              ariaLabel="File kind"
+              className="w-32"
+              onChange={(v) => setKind(v as FieldFileKind)}
+              options={FILE_KINDS.map((k) => ({ value: k.value, label: k.label }))}
+            />
+            <button
+              onClick={() => inputRef.current?.click()}
+              disabled={upload.isPending}
+              className="flex items-center gap-1.5 rounded-md bg-brand-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              {upload.isPending ? 'Uploading…' : 'Upload'}
+            </button>
+            <input
+              ref={inputRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) {
+                  upload.mutate({
+                    file,
+                    kind,
+                    cropYear: kind === 'soil_test' || kind === 'rx' || kind === 'fertility_map' ? cropYear : null,
+                  })
+                }
+                e.target.value = ''
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {upload.isError && (
@@ -98,8 +105,8 @@ export function FieldFiles({ fieldId }: { fieldId: string }) {
               </span>
               {canDelete(f) && (
                 <button
-                  onClick={() => {
-                    if (confirm(`Delete ${f.filename}?`)) del.mutate(f)
+                  onClick={async () => {
+                    if (await askConfirm(`Delete ${f.filename}?`)) del.mutate(f)
                   }}
                   className="shrink-0 rounded-md p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
                   aria-label={`Delete ${f.filename}`}

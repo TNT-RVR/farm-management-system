@@ -39,18 +39,19 @@ import { useConditionsFields, useFieldConditions, useNdviPicture } from '@/lib/c
 import { useCropLossHistory } from '@/lib/combine-queries'
 import { lowestLossInSimilar, SIMILAR, type LowestLoss } from '@/lib/combine-what-worked'
 import { settingsLine } from '@/lib/combine-setting-text'
+import { pct } from '@/lib/format'
+import { farmTz } from '@/lib/farm-context'
 
-const TZ = 'America/Edmonton'
 const MM_SETTINGS: AdviceSetting[] = ['concave_mm', 'chaffer_mm', 'sieve_mm']
 
 /** The farm's date and whole hour now. */
 function farmNow(d = new Date()): { date: string; hour: number } {
-  const date = d.toLocaleDateString('en-CA', { timeZone: TZ })
-  const hour = Number(new Intl.DateTimeFormat('en-CA', { timeZone: TZ, hour: 'numeric', hourCycle: 'h23' }).format(d))
+  const tz = farmTz()
+  const date = d.toLocaleDateString('en-CA', { timeZone: tz })
+  const hour = Number(new Intl.DateTimeFormat('en-CA', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' }).format(d))
   return { date, hour: Number.isFinite(hour) ? hour % 24 : 12 }
 }
 
-const pct = (v: number) => `${v.toFixed(1)}%`
 const shortDate = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 
 /**

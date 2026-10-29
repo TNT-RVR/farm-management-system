@@ -1,3 +1,6 @@
+import { useMemo } from 'react'
+import { useFiscalEndMonth } from '@/lib/farm-setup'
+import { fiscalYearEnding, fiscalYearOf, planningYear } from '@/lib/fiscal-year'
 import { supabase } from '@/lib/supabase'
 import { useAllCropInputs } from '@/lib/forecast-data'
 import { resolveCosts } from '@/lib/forecast'
@@ -608,7 +611,7 @@ export async function buildLenderReview(r: LenderReads): Promise<ReturnType<type
   const cropQSum = cropQ.reduce((a, b) => a + b, 0)
   const truckQ = cropQSum > 0 ? cropQ.map((v) => v / cropQSum) : COST_TIMING.fuel.q
   const truckTotal = trucking.ok ? n0(trucking.data.totals?.[colOf(TRUCKING_COLUMNS, 'Total')]) : null
-  if (truckTotal) flow.push(flowLine('out', 'Trucking', truckTotal, truckQ, LSTATUS.estimate, `Travel & trucking’s haul plans for ${planYear}, paid as the crop is sold.`, ''))
+  if (truckTotal) flow.push(flowLine('out', 'Trucking', truckTotal, truckQ, LSTATUS.estimate, `Fuel & trucking’s haul plans for ${planYear}, paid as the crop is sold.`, ''))
   else {
     const pa = perAcreNow('trucking')
     flow.push(flowLine('out', 'Trucking', pa * planOurAcres, truckQ, LSTATUS.estimate, `An estimate: ${booksNow.year}’s trucking on the Crop P&L, $${pa.toFixed(2)}/ac, × planned acres, paid as the crop is sold.`, 'No haul plans and no trucking on this year’s books: fill in.'))
@@ -724,15 +727,21 @@ export async function buildLenderReview(r: LenderReads): Promise<ReturnType<type
 export function useLenderReviewRun(p: ParamValues, ctx: GatherContext) {
   const asOf = /^\d{4}-\d{2}-\d{2}$/.test(p.asOf ?? '') ? p.asOf : ctx.today
   const asOfYear = Number(asOf.slice(0, 4))
-  const planYear = Number(p.planYear) > 1900 ? Number(p.planYear) : asOfYear + 1
+  const planYear = Number(p.planYear) > 1900 ? Number(p.planYear) : planningYear(asOf)
   const booksNow = useCropBooks(asOfYear)
   const booksPlan = useCropBooks(planYear)
   const planRows = usePlanRows(planYear)
   const nowRows = usePlanRows(asOfYear)
   const inputs = useAllCropInputs()
   const bounds = useAllBoundaries()
-  // The fiscal year (September to August) ended on or before the statement date.
-  const qb = useReportBooks(asOf.slice(5) >= '08-31' ? asOfYear : asOfYear - 1, { balanceSheet: true })
+  // The fiscal year (Farm setup's year-end) ended on or before the statement date.
+  const endMonth = useFiscalEndMonth()
+  const closedFy = useMemo(() => {
+    if (endMonth == null) return undefined
+    const fy = fiscalYearOf(asOf, endMonth)
+    return asOf >= fy.end ? fy : fiscalYearEnding(fy.endYear - 1, endMonth)
+  }, [asOf, endMonth])
+  const qb = useReportBooks(closedFy, { balanceSheet: true })
   const ready = booksNow.ready && booksPlan.ready && planRows.settled && nowRows.settled && !!inputs.data && !!bounds.data && qb.ready
   const error = booksNow.error ?? booksPlan.error ?? ((inputs.error ?? bounds.error) as Error | null) ?? null
   return {

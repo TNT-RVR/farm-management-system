@@ -15,8 +15,10 @@ describe('water-quality parsing', () => {
     expect(ecToMicro(0.31)).toBeCloseTo(310)
   })
   it('reads the IDWQ local timestamp as Alberta summer time', () => {
-    expect(idwqTime('2024-09-04 10:35')).toBe('2024-09-04T10:35:00-06:00')
-    expect(idwqTime('2024-01-15')).toBe('2024-01-15T12:00:00-07:00')
+    expect(idwqTime('2024-09-04 10:35')).toBe('2024-09-04T16:35:00.000Z')
+    expect(idwqTime('2024-01-15')).toBe('2024-01-15T19:00:00.000Z')
+    // Summer time began 10 March 2024; the old month guess put this an hour out.
+    expect(idwqTime('2024-03-20 09:00')).toBe('2024-03-20T15:00:00.000Z')
   })
   it('works SAR from the cations', () => {
     // Na 20, Ca 45, Mg 15 mg/L → about 0.7

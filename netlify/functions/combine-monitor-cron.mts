@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
 import { runCombineMonitorWatch } from '../shared/combine-monitor-watch.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 /**
  * Hourly: is any combine's display behind the app's fields? One notice per
@@ -16,7 +16,7 @@ export default async () => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
   if (!url || !serviceKey) return new Response('Not configured', { status: 500 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
   try {
     const r = await runCombineMonitorWatch(sb)
     if (r.alerted.length) console.log('[combine-monitor] alerted', r.alerted.join(', '))

@@ -9,6 +9,7 @@ import {
 import { cn } from '@/lib/utils'
 import { rowClick } from '@/components/RecordEditor'
 import { watchNeedsRearm } from '@/lib/record-edits'
+import { askConfirm } from '@/components/askConfirm'
 
 const input = 'rounded-md border border-gray-200 px-2 py-1 text-sm text-gray-900'
 
@@ -172,8 +173,8 @@ export function PriceAlerts({
               )}
               {isManager && (
                 <button
-                  onClick={() => {
-                    if (!confirm(`Remove the watch on ${nameOf(a.series_id)}?`)) return
+                  onClick={async () => {
+                    if (!(await askConfirm(`Remove the watch on ${nameOf(a.series_id)}?`, { confirmLabel: 'Remove' }))) return
                     if (editingId === a.id) {
                       setEditingId(null)
                       setAdding(false)

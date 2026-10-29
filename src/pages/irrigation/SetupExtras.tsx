@@ -8,6 +8,7 @@ import { Select } from '@/components/Select'
 import { ColumnHelp } from '@/components/ColumnHelp'
 import { SoilTextureGuide } from '@/components/SoilTextureGuide'
 import { SOIL_PROFILE_HELP } from '@/lib/irrigation-help'
+import { TABLE_HEAD } from '@/lib/table-style'
 
 /**
  * Where the pivot, pump and licence for each field are kept.
@@ -105,8 +106,8 @@ export function SoilProfileEditor({ isManager }: { isManager: boolean }) {
 
           <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
+            <thead className={TABLE_HEAD}>
+              <tr>
                 <th className="whitespace-nowrap px-2 py-1.5 font-medium">
                   Depth (cm) <ColumnHelp help={SOIL_PROFILE_HELP.layerDepth} />
                 </th>

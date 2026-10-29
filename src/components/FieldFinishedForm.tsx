@@ -21,6 +21,7 @@ import { useMoistureTests } from '@/lib/moisture-queries'
 import { settingsLine, valuesOf } from '@/lib/combine-setting-text'
 import { farmDay } from '@/lib/harvest-date'
 import { SettingsList } from '@/pages/combine/SettingInputs'
+import { usePartnerAccess } from '@/lib/partner-view'
 
 const inputCls = 'w-full rounded-md border border-gray-300 px-2 py-2 text-sm'
 const when = (iso: string) => new Date(iso).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -91,6 +92,8 @@ export function FieldFinishedForm({
   const finishIso = fromLocalInput(finished)
   const startIso = fromLocalInput(started)
   const year = workCropYear({ started_at: startIso, finished_at: finishIso })
+  // A crop-share partner records only in the years the field is his (lib/partner-view.ts).
+  const access = usePartnerAccess()
   const { data: plans } = useCropPlans(year)
   const { data: moisture } = useMoistureTests(year)
   const { data: lossChecks } = useLossChecks(year)
@@ -127,6 +130,10 @@ export function FieldFinishedForm({
   const submit = async () => {
     setFailed(null)
     if (missing || order || !profile) return
+    if (!access.canWrite(fieldId, year)) {
+      setFailed(`This finish falls in the ${year} crop year, which is not one of your years on this field.`)
+      return
+    }
     const id = record?.id ?? crypto.randomUUID()
     const people = [...operatorIds.map(userName), ...(otherPeople.trim() ? [otherPeople.trim()] : [])]
     try {

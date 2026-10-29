@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
+import { askConfirm } from '@/components/askConfirm'
 
 /**
  * Spray records nobody has vouched for: typed into Operations Center by hand
@@ -62,7 +63,7 @@ export function UnconfirmedSprays({ fieldId }: { fieldId?: string }) {
                 <button
                   type="button"
                   disabled={answer.isPending}
-                  onClick={() => confirm('Remove this record? It will not come back on the next Deere sync.') && answer.mutate({ id: o.id, applied: false })}
+                  onClick={async () => await askConfirm('Remove this record? It will not come back on the next Deere sync.', { confirmLabel: 'Remove' }) && answer.mutate({ id: o.id, applied: false })}
                   className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-red-700"
                 >
                   <X className="h-3.5 w-3.5" /> Not sprayed — remove

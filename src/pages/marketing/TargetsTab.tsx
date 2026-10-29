@@ -18,6 +18,7 @@ import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { fmtMoney } from '@/lib/applied'
 import { fmtUnitPrice } from '@/lib/board-price'
 import { cn } from '@/lib/utils'
+import { askConfirm } from '@/components/askConfirm'
 
 /**
  * The price you would sell at.
@@ -319,8 +320,8 @@ function AddTargetDialog({
             <button
               type="button"
               disabled={busy}
-              onClick={() => {
-                if (confirm('Delete this target?')) onDelete()
+              onClick={async () => {
+                if (await askConfirm('Delete this target?')) onDelete()
               }}
               className="mr-auto flex items-center gap-1 rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
             >

@@ -3,6 +3,8 @@ import { farmDescription, farmProvinceName } from '../../src/lib/farm-context.ts
 // The same scorer the page uses. Imported rather than copied: two rankings
 // that disagree about what matters would be worse than none.
 import { scoreEvent } from '../../src/lib/events'
+import { callClaude } from './anthropic.ts'
+import { farmToday } from './dates.ts'
 
 // Shared by the scheduled pull (events-pull.mts) and the on-demand background
 // pull (events-pull-background.mts). Asks Claude (with web search) for upcoming
@@ -71,21 +73,13 @@ export async function runEventsPull(
   model: string,
   now: Date = new Date(),
 ): Promise<{ found: number; inserted: number; skipped: number; stale: number }> {
-  const today = now.toISOString().slice(0, 10)
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 8192,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 10 }],
-      messages: [{ role: 'user', content: PROMPT(today) }],
-    }),
-  })
+  const today = farmToday(now)
+  const res = await callClaude({
+    model,
+    maxTokens: 8192,
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 10 }],
+    messages: [{ role: 'user', content: PROMPT(today) }],
+  }, { apiKey })
   if (!res.ok) {
     const detail = (await res.text()).slice(0, 300)
     // 401 and 403 mean the key is present and the API refused it — a different

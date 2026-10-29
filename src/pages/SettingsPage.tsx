@@ -1,7 +1,7 @@
 import { AuthenticatorSettings } from '@/components/Mfa'
 import { lazy, Suspense, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import {
   CalendarDays,
   Check,
@@ -10,7 +10,6 @@ import {
   Pencil,
   Plug,
   Tractor,
-  ShieldCheck,
   Trash2,
   UserCircle,
   UserPlus,
@@ -39,11 +38,29 @@ import {
 } from '@/lib/push'
 import { OfflinePanel } from '@/pages/settings/OfflinePanel'
 import { TilesPanel } from '@/pages/settings/TilesPanel'
-import { FarmSetupPanel } from '@/pages/settings/FarmSetupPanel'
+import { MenuPanel } from '@/pages/settings/MenuPanel'
+import { useTab } from '@/lib/useTab'
+import { useMenuEnabled } from '@/lib/menu-prefs'
+import {
+  ACCOUNT_TABS,
+  FARM_PARTS,
+  FARM_TABS,
+  PEOPLE_TABS,
+  SETTINGS_PATHS,
+  accountAlias,
+  type AccountTab,
+  type PeopleTab,
+  type SettingsView,
+} from '@/lib/settings-routes'
 import { AppVersionCard } from '@/components/AppVersionCard'
 import { AccessMatrix } from '@/pages/settings/AccessMatrix'
 import { AnydoCard } from '@/pages/settings/AnydoCard'
+import { TaskWidgetCard } from '@/pages/settings/TaskWidgetCard'
 import { ProfilePicture } from '@/pages/settings/ProfilePicture'
+import { SignatureCard } from '@/pages/settings/SignatureCard'
+import { askConfirm } from '@/components/askConfirm'
+import { usePartnerView } from '@/lib/partner-view'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 type ManagedUser = {
   id: string
@@ -84,6 +101,11 @@ const ROLE_HELP: Record<AppRole, string> = {
   admin: 'Everything a manager can do, plus inviting and deleting people.',
   manager: 'Full access to the farm data. Cannot invite or delete people.',
   user: 'Day-to-day use. Cannot change settings or other people.',
+}
+
+const ROLE_PILL: Partial<Record<AppRole, string>> = {
+  admin: 'bg-brand-100 text-brand-800',
+  manager: 'bg-blue-100 text-blue-800',
 }
 
 type InviteStatus = { id: string; invited_at: string | null; last_sign_in_at: string | null }
@@ -259,11 +281,7 @@ function UserRow({
           <span
             className={cn(
               'rounded-full px-2 py-0.5 text-xs font-medium capitalize',
-              u.role === 'admin'
-                ? 'bg-brand-100 text-brand-800'
-                : u.role === 'manager'
-                  ? 'bg-blue-100 text-blue-800'
-                  : 'bg-gray-100 text-gray-600',
+              ROLE_PILL[u.role] ?? 'bg-gray-100 text-gray-600',
             )}
           >
             {u.role}
@@ -441,11 +459,9 @@ function UsersAdmin() {
                     </span>
                     {isAdmin && (
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           if (
-                            window.confirm(
-                              `Cancel the invitation for ${u.email}? They will not be able to sign in with it.`,
-                            )
+                            await askConfirm(`Cancel the invitation for ${u.email}? They will not be able to sign in with it.`, { confirmLabel: 'Cancel invitation' })
                           ) {
                             setNote(null)
                             remove.mutate(u.id)
@@ -484,8 +500,8 @@ function UsersAdmin() {
 
       <div className="max-w-3xl overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
         <table className="w-full min-w-[560px] text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
+          <thead className={TABLE_HEAD}>
+            <tr>
               <Th k="name" label="Name" sort={sort} onSort={sortBy} />
               <Th k="email" label="Email" sort={sort} onSort={sortBy} />
               <Th k="role" label="Role" sort={sort} onSort={sortBy} />
@@ -505,11 +521,9 @@ function UsersAdmin() {
                 canDelete={isAdmin}
                 busy={remove.isPending}
                 onSave={(changes) => patch.mutate({ id: u.id, changes })}
-                onDelete={() => {
+                onDelete={async () => {
                   if (
-                    window.confirm(
-                      `Permanently delete ${u.full_name || u.email}? This removes their login and cannot be undone.`,
-                    )
+                    await askConfirm(`Permanently delete ${u.full_name || u.email}? This removes their login and cannot be undone.`)
                   ) {
                     setNote(null)
                     remove.mutate(u.id)
@@ -520,6 +534,7 @@ function UsersAdmin() {
           </tbody>
         </table>
       </div>
+
 
       {isAdmin && <ResetAuthenticator users={sorted} onDone={setNote} />}
       {note && <p className="mt-2 max-w-3xl text-xs text-green-700">{note}</p>}
@@ -614,10 +629,13 @@ function PushToggle() {
 
 function NotificationPrefs() {
   return (
-    <div className="max-w-lg rounded-lg border border-gray-200 bg-white p-4">
-      <h2 className="text-sm font-semibold text-gray-700">Notifications</h2>
+    <div className="overflow-hidden max-w-lg rounded-lg border border-gray-200 bg-white">
+      <h2 className={cn('font-medium', CARD_HEAD)}>Notifications</h2>
+      <div className="p-4">
       <PushToggle />
       <NotificationSwitches />
+
+      </div>
     </div>
   )
 }
@@ -647,37 +665,32 @@ function CalendarSyncLink() {
 }
 
 /**
- * My account's sections. `?section=` picks one, so the home screen's Edit
- * button can open the tiles directly (/settings?section=home).
+ * My account's tabs: /settings/account?tab=<key>. Old /settings?section=<key>
+ * links (the home screen's Edit button, the bell, the header avatar) are sent
+ * here by settingsRedirect with the same keys.
  */
 // Connected apps (Any.do) lives under This device since 15 Oct 2026 — one
 // fewer tab to look through; old ?section=apps links still land there.
-type Section = 'profile' | 'security' | 'notifications' | 'home' | 'device'
-const SECTIONS: { key: Section; label: string }[] = [
-  { key: 'profile', label: 'Profile' },
-  { key: 'security', label: 'Sign-in security' },
-  { key: 'notifications', label: 'Notifications' },
-  { key: 'home', label: 'Home screen' },
-  { key: 'device', label: 'This device & apps' },
-]
-const isSection = (v: string | null): v is Section => SECTIONS.some((x) => x.key === v)
-const sectionFrom = (v: string | null): Section => (v === 'apps' ? 'device' : isSection(v) ? v : 'profile')
+// Menu: the season menu's switch and its per-device order and hiding (Sam, 24 Oct 2026).
+const ACCOUNT_LABELS: Record<AccountTab, string> = {
+  profile: 'Profile',
+  security: 'Sign-in security',
+  notifications: 'Notifications',
+  home: 'Home screen',
+  menu: 'Menu',
+  device: 'This device & apps',
+}
+
+const PARTNER_ACCOUNT_TABS: readonly AccountTab[] = ['profile', 'security', 'notifications']
 
 /** Your own profile, how you get notified, your home screen and this device. */
-function MyAccount() {
-  const [search, setSearch] = useSearchParams()
-  const section: Section = sectionFrom(search.get('section'))
-  const pick = (k: Section) =>
-    setSearch(
-      (prev) => {
-        const next = new URLSearchParams(prev)
-        next.set('section', k)
-        return next
-      },
-      { replace: true },
-    )
-
+function MyAccount({ head }: { head: ViewHead }) {
+  const [picked, pick] = useTab('settings-account', ACCOUNT_TABS, 'profile', accountAlias)
   const { profile } = useAuth()
+  // A crop-share partner has no home screen, menu or farm apps to set up.
+  const partner = usePartnerView()
+  const tabs = partner ? ACCOUNT_TABS.filter((k) => PARTNER_ACCOUNT_TABS.includes(k)) : ACCOUNT_TABS
+  const section = tabs.includes(picked) ? picked : 'profile'
   const queryClient = useQueryClient()
   const [name, setName] = useState<string | null>(null)
 
@@ -695,166 +708,219 @@ function MyAccount() {
 
   return (
     <>
-      <PillTabs tabs={SECTIONS} value={section} onChange={pick} className="mb-4" />
-      {section === 'profile' && (
-        <div className="max-w-2xl rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="text-sm font-semibold text-gray-700">My account</h2>
-          <ProfilePicture />
-          <div className="mt-3 space-y-3 text-sm">
-            <div>
-              <label htmlFor="my-name" className="text-xs text-gray-500">
-                Name
-              </label>
-              <div className="mt-1 flex gap-2">
-                <input
-                  id="my-name"
-                  value={name ?? profile?.full_name ?? ''}
-                  onChange={(e) => setName(e.target.value)}
-                  className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm"
-                />
-                <button
-                  onClick={() => name != null && name.trim() && save.mutate(name.trim())}
-                  disabled={name == null || name.trim() === profile?.full_name || save.isPending}
-                  className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
-                >
-                  Save
-                </button>
+      {head(
+        <PillTabs
+          className="mt-3 border-b-0"
+          tabs={tabs.map((k) => ({ key: k, label: ACCOUNT_LABELS[k] }))}
+          value={section}
+          onChange={pick}
+        />,
+      )}
+      <div className="p-4 md:p-6">
+        {section === 'profile' && (
+          <div className="overflow-hidden max-w-2xl rounded-lg border border-gray-200 bg-white">
+            <h2 className={cn('font-medium', CARD_HEAD)}>Profile</h2>
+            <div className="p-4">
+            <ProfilePicture />
+            <SignatureCard />
+            <div className="mt-3 space-y-3 text-sm">
+              <div>
+                <label htmlFor="my-name" className="text-xs text-gray-500">
+                  Name
+                </label>
+                <div className="mt-1 flex gap-2">
+                  <input
+                    id="my-name"
+                    value={name ?? profile?.full_name ?? ''}
+                    onChange={(e) => setName(e.target.value)}
+                    className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+                  />
+                  <button
+                    onClick={() => name != null && name.trim() && save.mutate(name.trim())}
+                    disabled={name == null || name.trim() === profile?.full_name || save.isPending}
+                    className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
+                  >
+                    Save
+                  </button>
+                </div>
               </div>
+              <div className="flex justify-between py-1">
+                <span className="text-gray-500">Email</span>
+                <span className="font-medium text-gray-900">{profile?.email ?? '—'}</span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-gray-500">Role</span>
+                <span className="font-medium capitalize text-gray-900">{profile?.role ?? '—'}</span>
+              </div>
+              {profile?.role && <p className="text-xs text-gray-500">{ROLE_HELP[profile.role]}</p>}
+              {save.isError && (
+                <p className="text-xs text-red-600">{(save.error as Error).message}</p>
+              )}
             </div>
-            <div className="flex justify-between py-1">
-              <span className="text-gray-500">Email</span>
-              <span className="font-medium text-gray-900">{profile?.email ?? '—'}</span>
+
             </div>
-            <div className="flex justify-between py-1">
-              <span className="text-gray-500">Role</span>
-              <span className="font-medium capitalize text-gray-900">{profile?.role ?? '—'}</span>
+          </div>
+        )}
+        {section === 'security' && (
+          <div className="max-w-2xl">
+            <AuthenticatorSettings />
+          </div>
+        )}
+        {/* Two columns on a wide screen, one on a phone. */}
+        {section === 'notifications' && (
+          <div className="grid items-start gap-4 xl:grid-cols-2">
+            <NotificationPrefs />
+            {!partner && <CalendarSyncLink />}
+          </div>
+        )}
+        {section === 'home' && (
+          <div className="max-w-3xl">
+            <TilesPanel />
+          </div>
+        )}
+        {section === 'menu' && (
+          <div className="max-w-3xl">
+            <MenuPanel />
+          </div>
+        )}
+        {section === 'device' && (
+          <div className="grid items-start gap-4 lg:grid-cols-2">
+            <div className="space-y-4">
+              <OfflinePanel />
+              <AppVersionCard />
             </div>
-            {profile?.role && <p className="text-xs text-gray-500">{ROLE_HELP[profile.role]}</p>}
-            {save.isError && (
-              <p className="text-xs text-red-600">{(save.error as Error).message}</p>
-            )}
+            <div className="space-y-2">
+              <h2 className="text-sm font-semibold text-gray-700">Connected apps</h2>
+              <AnydoCard />
+              <TaskWidgetCard />
+            </div>
           </div>
-        </div>
-      )}
-      {section === 'security' && (
-        <div className="max-w-2xl">
-          <AuthenticatorSettings />
-        </div>
-      )}
-      {/* Two columns on a wide screen, one on a phone. */}
-      {section === 'notifications' && (
-        <div className="grid items-start gap-4 xl:grid-cols-2">
-          <NotificationPrefs />
-          <CalendarSyncLink />
-        </div>
-      )}
-      {section === 'home' && (
-        <div className="max-w-3xl">
-          <TilesPanel />
-        </div>
-      )}
-      {section === 'device' && (
-        <div className="grid items-start gap-4 lg:grid-cols-2">
-          <div className="space-y-4">
-            <OfflinePanel />
-            <AppVersionCard />
-          </div>
-          <div className="space-y-2">
-            <h2 className="text-sm font-semibold text-gray-700">Connected apps</h2>
-            <AnydoCard />
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </>
   )
 }
 
-// The list loads only when its tab is opened (lib/connections.ts and its panels).
+// The list loads only when its view is opened (lib/connections.ts and its panels).
+// The farm's location pin is a map, so the setup panel is its own chunk.
+const FarmSetupPanel = lazy(() => import('@/pages/settings/FarmSetupPanel').then((m) => ({ default: m.FarmSetupPanel })))
 const ConnectionsView = lazy(() => import('@/pages/connections/ConnectionsView').then((m) => ({ default: m.ConnectionsView })))
 
-// Tabbed shell — Account, Users, Access, Connections and Farm setup under one "Settings"
-// entry, mirroring the Grand Forks Concrete settings page. Pill tabs with icons;
-// RVR's brand palette rather than that app's slate.
-type Tab = 'My Account' | 'Users' | 'Access' | 'Connections' | 'Farm setup'
-const TABS: { key: Tab; icon: typeof Users; managerOnly: boolean; adminOnly?: boolean }[] = [
-  { key: 'My Account', icon: UserCircle, managerOnly: false },
-  { key: 'Users', icon: Users, managerOnly: true },
-  // Admins only: managers do not see who can open what.
-  { key: 'Access', icon: ShieldCheck, managerOnly: true, adminOnly: true },
-  // Integrations and Farm setup → Connections, merged (14 Oct 2026).
-  { key: 'Connections', icon: Plug, managerOnly: true },
-  { key: 'Farm setup', icon: Tractor, managerOnly: true, adminOnly: true },
-]
+/** Draws the view's header bar, with its one tab row (if any) inside it. */
+type ViewHead = (tabs?: React.ReactNode) => React.ReactNode
 
 /**
- * The tab an address asks for. Old links still land: ?tab=Integrations, and
- * Farm setup's old Connections part (?tab=Farm setup&part=connections, where
- * the John Deere / QuickBooks / Drive sign-ins started on Farm setup still
- * come back to), both open Connections.
+ * Settings was one page three levels deep: top tabs, then My account's
+ * sections and Farm setup's parts inside them. Since 24 Oct 2026 (Sam,
+ * season menu step 3) it is four views, each with at most one tab row:
+ * My account, Users & access, Connections (filters, no tabs) and Farm setup.
+ * The season menu lists them; old addresses are mapped in lib/settings-routes.
  */
-function tabFromUrl(tab: string | null, part: string | null): Tab | undefined {
-  const t = tab?.toLowerCase()
-  if (t === 'integrations' || (t === 'farm setup' && part === 'connections')) return 'Connections'
-  return TABS.find((x) => x.key.toLowerCase() === t)?.key
+const VIEWS: {
+  key: SettingsView
+  label: string
+  icon: typeof Users
+  /** Who may open it. Access, inside Users & access, is admins only on its own. */
+  access: 'all' | 'manager' | 'admin'
+}[] = [
+  { key: 'account', label: 'My account', icon: UserCircle, access: 'all' },
+  { key: 'people', label: 'Users & access', icon: Users, access: 'manager' },
+  // Integrations and Farm setup's keys → Connections, merged (14 Oct 2026).
+  { key: 'connections', label: 'Connections', icon: Plug, access: 'manager' },
+  { key: 'farm', label: 'Farm setup', icon: Tractor, access: 'admin' },
+]
+
+const PEOPLE_LABELS: Record<PeopleTab, string> = { users: 'Users', access: 'Access' }
+
+/** Users (managers) and Access (admins only: managers do not see who can open what). */
+function UsersAndAccess({ head, isAdmin }: { head: ViewHead; isAdmin: boolean }) {
+  // A manager's list has no Access, so an Access link or memory opens Users.
+  const tabs = PEOPLE_TABS.filter((k) => isAdmin || k !== 'access')
+  const [tab, setTab] = useTab<PeopleTab>('settings-people', tabs, 'users')
+  return (
+    <>
+      {head(
+        tabs.length > 1 && (
+          <PillTabs
+            className="mt-3 border-b-0"
+            tabs={tabs.map((k) => ({ key: k, label: PEOPLE_LABELS[k] }))}
+            value={tab}
+            onChange={setTab}
+          />
+        ),
+      )}
+      {tab === 'access' ? <AccessMatrix /> : <UsersAdmin />}
+    </>
+  )
 }
 
-export function SettingsPage({ initialTab }: { initialTab?: Tab } = {}) {
-  const { profile } = useAuth()
-  const isManager = hasManagerAccess(profile?.role)
-  // ?tab= (any case) opens a tab, so a setup link lands where it says.
-  const [search] = useSearchParams()
-  const fromUrl = tabFromUrl(search.get('tab'), search.get('part'))
-  // ?section= is a part of My account (the home screen's Edit button sends
-  // ?section=home), so it opens that tab whatever the default would have been.
-  const [tab, setTab] = useState<Tab>(
-    fromUrl ?? (search.get('section') ? 'My Account' : undefined) ?? initialTab ?? 'My Account',
+function FarmSetup({ head }: { head: ViewHead }) {
+  const [part, go] = useTab('settings-farm', FARM_TABS, 'overview')
+  return (
+    <>
+      {head(<PillTabs className="mt-3 border-b-0" tabs={FARM_PARTS} value={part} onChange={go} />)}
+      <Suspense fallback={<p className="p-6 text-sm text-gray-400">Loading…</p>}>
+        <FarmSetupPanel part={part} go={go} />
+      </Suspense>
+    </>
   )
-  // A setup link from inside Settings (Farm setup → Connections) changes
-  // ?tab= without remounting; follow it.
-  const [seenTab, setSeenTab] = useState(fromUrl)
-  if (fromUrl !== seenTab) {
-    setSeenTab(fromUrl)
-    if (fromUrl) setTab(fromUrl)
-  }
+}
+
+export function SettingsPage({ view }: { view: SettingsView }) {
+  const { profile } = useAuth()
+  const seasonMenu = useMenuEnabled()
+  const isManager = hasManagerAccess(profile?.role)
   const isAdmin = hasAdminAccess(profile?.role)
-  const visible = TABS.filter((t) => (isManager || !t.managerOnly) && (isAdmin || !t.adminOnly))
-  // A non-manager who lands on /integrations shouldn't get a blank shell.
-  const active = visible.some((t) => t.key === tab) ? tab : 'My Account'
+  const allowed = (v: (typeof VIEWS)[number]) =>
+    v.access === 'all' || (v.access === 'manager' ? isManager : isAdmin)
+  const meta = VIEWS.find((v) => v.key === view)!
+
+  // Wait for the role before turning anyone away, or a manager reloading
+  // Connections would be bounced to My account while their profile loads.
+  if (!profile) return <p className="p-6 text-sm text-gray-400">Loading…</p>
+  // Someone without the role lands on their own account, not a blank shell.
+  if (!allowed(meta)) return <Navigate to={SETTINGS_PATHS.account} replace />
+
+  // The other Settings views, for anyone on the old sidebar: Settings is one
+  // pinned link there, so without these Users, Connections and Farm setup
+  // would have no way in. The season menu lists them itself.
+  const siblings = seasonMenu ? [] : VIEWS.filter((v) => v.key !== view && allowed(v))
+
+  const head: ViewHead = (tabs) => (
+    <div className={cn('border-b border-gray-200 bg-white px-4 pt-4 md:px-6', !tabs && 'pb-3')}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h1 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+          <meta.icon className="h-5 w-5 self-center text-gray-400" /> {meta.label}
+        </h1>
+        {siblings.length > 0 && (
+          <nav aria-label="Other settings" className="flex flex-wrap gap-x-3 text-xs">
+            {siblings.map((v) => (
+              <Link key={v.key} to={SETTINGS_PATHS[v.key]} className="font-medium text-brand-700 hover:underline">
+                {v.label}
+              </Link>
+            ))}
+          </nav>
+        )}
+      </div>
+      {tabs}
+    </div>
+  )
 
   return (
     <div>
-      <div className="border-b border-gray-200 bg-white px-4 pt-4 md:px-6">
-        <h1 className="text-lg font-semibold text-gray-900">Settings</h1>
-        <p className="mt-0.5 text-xs text-gray-500">Your account, people, the farm and its connections</p>
-        <PillTabs
-          className="mt-3 border-b-0"
-          value={active}
-          onChange={setTab}
-          tabs={visible.map((t) => ({
-            key: t.key,
-            label: (
-              <span className="flex items-center gap-2">
-                <t.icon className="h-4 w-4" /> {t.key}
-              </span>
-            ),
-          }))}
-        />
-      </div>
-
-      {active === 'Farm setup' ? (
-        <FarmSetupPanel />
-      ) : active === 'Users' ? (
-        <UsersAdmin />
-      ) : active === 'Access' ? (
-        <AccessMatrix />
-      ) : active === 'Connections' ? (
-        <Suspense fallback={<p className="p-6 text-sm text-gray-400">Loading…</p>}>
-          <ConnectionsView />
-        </Suspense>
+      {view === 'account' ? (
+        <MyAccount head={head} />
+      ) : view === 'people' ? (
+        <UsersAndAccess head={head} isAdmin={isAdmin} />
+      ) : view === 'farm' ? (
+        <FarmSetup head={head} />
       ) : (
-        <div className="p-4 md:p-6">
-          <MyAccount />
-        </div>
+        <>
+          {head()}
+          <Suspense fallback={<p className="p-6 text-sm text-gray-400">Loading…</p>}>
+            <ConnectionsView />
+          </Suspense>
+        </>
       )}
 
       <BuiltOn />
@@ -924,8 +990,8 @@ function ResetAuthenticator({ users, onDone }: { users: ManagedUser[]; onDone: (
       />
       <button
         disabled={!who || reset.isPending}
-        onClick={() => {
-          if (window.confirm('Remove this person’s authenticator? Their next sign-in needs only their password.')) reset.mutate(who)
+        onClick={async () => {
+          if (await askConfirm('Remove this person’s authenticator? Their next sign-in needs only their password.', { confirmLabel: 'Remove' })) reset.mutate(who)
         }}
         className="rounded-md border border-gray-300 px-2.5 py-1 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
       >

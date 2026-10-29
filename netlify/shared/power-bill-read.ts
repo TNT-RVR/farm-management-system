@@ -1,10 +1,18 @@
 import './pdf-polyfills.ts'
 import { extractText, getDocumentProxy } from 'unpdf'
+import { callClaude, HAIKU_4_5 } from './anthropic.ts'
+
+/** Retailers named to the model as examples of who sends a bill. */
+const RETAILER_EXAMPLES = [
+  'EPCOR Energy',
+  'Hudson Energy',
+  'FortisAlberta',
+]
 
 /**
  * Reads one power bill PDF into its sites (Sam, 7 Oct 2026: power bills
- * per pump site). A retailer's bill (Epcor, Azgard/UtilNet, Hudson) or a
- * FortisAlberta one can carry many sites; each site's kWh, demand and
+ * per pump site). A retailer's bill or a distributor's (FortisAlberta) can
+ * carry many sites; each site's kWh, demand and
  * charges come out as one row, to be matched to a pump by its meter number.
  *
  * The fast model reads it; a bill with a text layer is sent as text, a scan
@@ -41,7 +49,7 @@ export type ReadBill = {
   model: string
 }
 
-const FAST_MODEL = () => process.env.ANTHROPIC_FAST_MODEL ?? 'claude-haiku-4-5-20251001'
+const FAST_MODEL = () => process.env.ANTHROPIC_FAST_MODEL ?? HAIKU_4_5
 const n = { type: ['number', 'null'] }
 const s = { type: ['string', 'null'] }
 const d = { type: ['string', 'null'], description: 'YYYY-MM-DD' }
@@ -52,7 +60,7 @@ const TOOL = {
   input_schema: {
     type: 'object',
     properties: {
-      retailer: { ...s, description: 'Who sent the bill, e.g. EPCOR Energy, Azgard Solar / UtilNet, Hudson Energy, FortisAlberta' },
+      retailer: { ...s, description: `Who sent the bill, e.g. ${RETAILER_EXAMPLES.join(', ')}` },
       account_number: s,
       bill_date: d,
       period_start: d,
@@ -95,7 +103,7 @@ const str = (v: unknown) => (typeof v === 'string' && v.trim() && !PLACEHOLDER.t
 const date = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null)
 
 export async function readPowerBill(apiKey: string, pdf: Buffer, fileName: string): Promise<ReadBill> {
-  let text = ''
+  let text: string
   try {
     text = String((await extractText(await getDocumentProxy(new Uint8Array(pdf)), { mergePages: true })).text ?? '').trim()
   } catch {
@@ -110,20 +118,15 @@ export async function readPowerBill(apiKey: string, pdf: Buffer, fileName: strin
       ]
     : [{ type: 'text', text: `Power bill ${fileName}:\n\n${text.slice(0, 150_000)}` }]
   const model = FAST_MODEL()
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    signal: AbortSignal.timeout(180_000),
-    body: JSON.stringify({
-      model,
-      max_tokens: 16000,
-      system:
-        "You read an Alberta farm's electricity bill. List every site (service point) it bills, with that site's own numbers as printed. Use the bill's own figures; never invent one, and never write a placeholder such as <UNKNOWN> — null when it is not there. A payment receipt, reminder or email notice is not a bill: give it no sites and say so in notes. A summary bill with a detail page per site: take each site from its detail page. Money in dollars, energy in kWh, demand in kW.",
-      tools: [TOOL],
-      tool_choice: { type: 'tool', name: TOOL.name },
-      messages: [{ role: 'user', content }],
-    }),
-  })
+  const res = await callClaude({
+    model,
+    maxTokens: 16000,
+    system:
+      "You read an Alberta farm's electricity bill. List every site (service point) it bills, with that site's own numbers as printed. Use the bill's own figures; never invent one, and never write a placeholder such as <UNKNOWN> — null when it is not there. A payment receipt, reminder or email notice is not a bill: give it no sites and say so in notes. A summary bill with a detail page per site: take each site from its detail page. Money in dollars, energy in kWh, demand in kW.",
+    tools: [TOOL],
+    tool_choice: { type: 'tool', name: TOOL.name },
+    messages: [{ role: 'user', content }],
+  }, { apiKey, signal: AbortSignal.timeout(180_000) })
   if (!res.ok) throw new Error(`The model could not read it (${res.status}): ${(await res.text()).slice(0, 200)}`)
   const out = (await res.json()) as { content: { type: string; input?: Record<string, unknown> }[] }
   const i = out.content.find((c) => c.type === 'tool_use')?.input ?? {}

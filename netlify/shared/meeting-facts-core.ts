@@ -8,6 +8,7 @@ import {
   type FactTopic,
   type FarmFact,
 } from '../../src/lib/farm-facts'
+import { callClaude } from './anthropic.ts'
 
 /**
  * Keeping the Monday-meeting fact library stocked, without anybody remembering to.
@@ -268,22 +269,14 @@ async function askForFacts(
   count: number,
   avoid: string[],
 ): Promise<Record<string, unknown>[]> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 4096,
-      // Grounded, not recalled. A fact read out as farm policy has to be
-      // checkable, and the search is also what produces the source link.
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 8 }],
-      messages: [{ role: 'user', content: buildPrompt(month, count, avoid) }],
-    }),
-  })
+  const res = await callClaude({
+    model,
+    maxTokens: 4096,
+    // Grounded, not recalled. A fact read out as farm policy has to be
+    // checkable, and the search is also what produces the source link.
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 8 }],
+    messages: [{ role: 'user', content: buildPrompt(month, count, avoid) }],
+  }, { apiKey })
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`)
   const body = (await res.json()) as { content?: { type: string; text?: string }[] }
   const text = (body.content ?? [])

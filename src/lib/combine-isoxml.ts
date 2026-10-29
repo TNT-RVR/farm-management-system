@@ -6,6 +6,9 @@ import type { BoundaryItem } from './combine-monitor'
  * (Sam, 19 Oct 2026). Written as TASKDATA/TASKDATA.XML at the top of the
  * stick, beside the Shapefile folder.
  *
+ * Not put on the stick for the IntelliView IV: it exports ISOXML but has no
+ * import for it (19 Oct 2026). Kept for displays that take it.
+ *
  * Modelled on what combine #2's IntelliView IV (V30.26) wrote on Export:
  * CTR = grower, FRM = farm, PFD = field, and its guidance lines as GGP/GPN
  * with an LSG of type 5 holding A (PNT 6) and B (PNT 7). Boundaries are the

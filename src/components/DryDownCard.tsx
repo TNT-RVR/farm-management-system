@@ -5,6 +5,7 @@ import { useDryDown, useSetHarvestMethod, type DryDown } from '@/lib/dry-down-da
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 import { farmTz } from '@/lib/farm-context'
+import { HelpNote } from '@/components/HelpNote'
 
 const fmt = (date: string) =>
   new Date(`${date}T12:00:00Z`).toLocaleDateString('en-CA', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
@@ -75,7 +76,7 @@ export function DryDownCard({
             )}
           </p>
           <Chart data={data} />
-          <p className="mt-1 text-[11px] leading-snug text-gray-500">
+          <HelpNote className="mt-1" summary="Modelled from the weather and this farm's meter readings." title="How the drying is modelled">
             The crop dries towards what it would settle at in each afternoon&apos;s air and takes some back overnight ({data.emcSource}).{' '}
             {data.learnedFrom === 'start'
               ? `No ${data.cropName ?? 'crop'} meter readings to tune it yet, so this is a first guess from the weather; every pair of readings makes it better.`
@@ -87,7 +88,7 @@ export function DryDownCard({
             {data.humidityEstimated ? ' Some forecast humidity estimated from the overnight low.' : ''}
             {data.handTests ? ` ${data.handTests} typed-in test${data.handTests === 1 ? '' : 's'} shown but not learned from.` : ''}
             {data.testerNotes.map((n) => ` ${n}`).join('')}
-          </p>
+          </HelpNote>
           {score && (
             <p className="mt-1.5 rounded bg-white px-2 py-1 text-[11px] text-gray-700">
               <strong>Record:</strong> predicting each {data.cropName ?? ''} reading from the one before, it has been off by{' '}

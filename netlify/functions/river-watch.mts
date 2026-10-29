@@ -1,9 +1,9 @@
-import { createClient } from '@supabase/supabase-js'
 import { MANAGER_ROLES } from './_jd.mts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { farmTz } from '../../src/lib/farm-context.ts'
 import { farmFeatureOn } from '../../src/lib/farm-context.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
+import { admin } from '../shared/supabase-admin.ts'
 
 // Dam-release watchdog. Hourly, it checks the below-dam station (Brocket) for a
 // sharp rise in flow — the signature of the Oldman Dam being opened — and alerts
@@ -21,7 +21,7 @@ export default async (req: Request) => {
   // Switched off in Farm setup (or a fresh install that has not turned it on).
   if (!farmFeatureOn('river')) return new Response('River levels is switched off in Farm setup', { status: 200 })
   if (!url || !serviceKey) return new Response('Not configured', { status: 500 })
-  const sb = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const sb = admin()
 
   const isScheduled = req.method === 'GET' || !req.headers.get('Authorization')
   if (!isScheduled) {

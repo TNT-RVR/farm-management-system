@@ -3,8 +3,12 @@ import type { Session } from '@supabase/supabase-js'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { isSupabaseConfigured, supabase } from './supabase'
 import { clearOfflineCache } from './offline'
+import type { MenuPrefs } from './nav-tree'
 
-export type AppRole = 'admin' | 'manager' | 'user'
+export type AppRole =
+  | 'admin'
+  | 'manager'
+  | 'user'
 
 /**
  * Admins are managers plus user administration, so every manager-gated screen
@@ -38,10 +42,14 @@ export type UserProfile = {
   phone: string | null
   /** Their own picture (avatars bucket). See lib/avatar.ts. */
   avatar_url: string | null
+  /** Sees the truck forecast on the weigh-in and Harvest → Stats. See lib/truck-forecast-data.ts. */
+  show_truck_forecast?: boolean
   active: boolean
   nav_prefs: { order: string[]; hidden: string[] } | null
   /** Phone home-screen shortcuts. See lib/tiles.ts. */
   tile_prefs: { order: string[]; hidden: string[] } | null
+  /** The season menu's switch, order and hiding, per device. See lib/nav-tree.ts. */
+  menu_prefs?: MenuPrefs | null
   /** Nav paths an admin has closed off for this user. Empty = full access. */
   denied_views: string[]
   /** An owner of the farm. See isOwner. */
@@ -54,6 +62,13 @@ type AuthState = {
   session: Session | null
   profile: UserProfile | null
   loading: boolean
+  /** The profile row has loaded (or failed to), so the role is known. */
+  profileReady: boolean
+  /**
+   * The signed-in person's own role. Differs from profile.role only while an
+   * admin views the app as another account sees it.
+   */
+  realRole: AppRole | null
   signOut: () => Promise<void>
 }
 
@@ -86,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const qc = useQueryClient()
   const userId = session?.user.id
-  const { data: profile } = useQuery({
+  const { data: profile, isPending: profilePending, isError: profileFailed } = useQuery({
     queryKey: ['profile', userId],
     enabled: Boolean(userId),
     queryFn: async () => {
@@ -95,6 +110,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return data as UserProfile
     },
   })
+
+  const profileReady = !userId || !profilePending || profileFailed
+
+  const own = (userId && profile) || null
+  let shown: UserProfile | null = own
 
   const signOut = async () => {
     await supabase.auth.signOut()
@@ -106,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ session, profile: (userId && profile) || null, loading, signOut }}
+      value={{ session, profile: shown, loading, profileReady, realRole: own?.role ?? null, signOut }}
     >
       {children}
     </AuthContext.Provider>

@@ -8,6 +8,7 @@ import { settingText } from '@/lib/combine-setting-text'
 import { useEquipment } from '@/lib/equipment'
 import { useFields } from '@/lib/queries'
 import { cn } from '@/lib/utils'
+import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 const SETTING_COLS: { key: SettingKey; label: string }[] = [
   { key: 'rotor_rpm', label: 'Rotor' },
@@ -54,16 +55,16 @@ export function WhatWorked({ crop }: { crop: CombineCropKey }) {
 
   return (
     <section className="rounded-lg border border-gray-200 bg-white">
-      <h2 className="border-b border-gray-200 px-3 py-2 text-sm font-semibold text-gray-900">What worked · {baseline?.label ?? crop}</h2>
+      <h2 className={cn('font-medium', CARD_HEAD)}>What worked · {baseline?.label ?? crop}</h2>
       {!rows.length ? (
         <p className="px-3 py-3 text-xs text-gray-500">No {baseline?.label.toLowerCase() ?? ''} loss check with its settings yet. Each check saved on the Loss check tab keeps them.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs tabular-nums">
-            <thead>
-              <tr className="border-b border-gray-100 text-left text-[10px] tracking-wide text-gray-500">
+            <thead className={TABLE_HEAD}>
+              <tr>
                 {head('date', 'Date', false)}
-                <th className="px-2 py-1.5 font-medium uppercase">Field · combine</th>
+                <th className="px-2 py-1.5 font-medium">Field · combine</th>
                 {SETTING_COLS.map((c) => head(c.key, c.label))}
                 {head('moisture', 'Moist')}
                 {head('temp', '°C')}
