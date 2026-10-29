@@ -97,7 +97,7 @@ insert into public.combine_settings_used (used_on, crop_key, crop_year, field_id
   presieve_mm, chaffer_mm, sieve_mm, ground_speed_mph, header_type, operator, variety, notes, work_record_id, created_by)
 select (f.finished_at at time zone 'America/Edmonton')::date, k.crop_key, f.crop_year, f.field_id, '0de30000-0000-4000-8000-000000000803',
        k.rotor + (abs(hashtext(f.field_id::text)) % 5 - 2) * 20, k.concave, k.vane, k.fan + (abs(hashtext(f.field_id::text || 'f')) % 5 - 2) * 20,
-       k.pre, k.chaff, k.sieve, k.mph, 'MacDon FD145 draper', 'Jordan Pike', p.variety, k.notes, f.id, '0de30000-0000-4000-8000-0000000000a2'
+       k.pre, k.chaff, k.sieve, k.mph, 'D45 draper header', 'Jordan Pike', p.variety, k.notes, f.id, '0de30000-0000-4000-8000-0000000000a2'
   from fin f
   join public.crops c on c.id = f.crop_id
   join public.crop_plans p on p.field_id = f.field_id and p.crop_year = f.crop_year
@@ -113,13 +113,13 @@ select (f.finished_at at time zone 'America/Edmonton')::date, k.crop_key, f.crop
 insert into public.combine_settings_used (used_on, crop_key, crop_year, field_id, equipment_id, rotor_rpm, concave_mm, vane_angle, fan_rpm,
   presieve_mm, chaffer_mm, sieve_mm, ground_speed_mph, header_type, operator, variety, notes, created_by)
 select current_date - 365 - v.ago, v.ck, extract(year from current_date)::int - 1, v.field::uuid, '0de30000-0000-4000-8000-000000000803',
-       v.rotor, v.concave, v.vane, v.fan, v.pre, v.chaff, v.sieve, v.mph, 'MacDon FD145 draper', 'Jordan Pike', v.variety, v.notes,
+       v.rotor, v.concave, v.vane, v.fan, v.pre, v.chaff, v.sieve, v.mph, 'D45 draper header', 'Jordan Pike', v.variety, v.notes,
        '0de30000-0000-4000-8000-0000000000a2'
   from (values
-    ('0de30000-0000-4000-8000-000000000101', 'canola', 52, 620, 23, 2, 500, 7, 9, 4, 3.5, 'InVigor L340PC', 'Straight cut. Clean sample.'),
-    ('0de30000-0000-4000-8000-000000000102', 'barley', 46, 1080, 14, 2, 840, 12, 12, 6, 3.6, 'CDC Austenson', null),
-    ('0de30000-0000-4000-8000-000000000106', 'beans', 60, 400, 30, 1, 1050, 14, 16, 10, 4.0, 'CDC Inca', 'Tough in the mornings; started at 11.'),
-    ('0de30000-0000-4000-8000-000000000113', 'wheat', 38, 1150, 12, 2, 860, 10, 10, 4, 3.5, 'AAC Brandon', 'Pivot wheat, heavy straw: steeper vanes.')
+    ('0de30000-0000-4000-8000-000000000101', 'canola', 52, 620, 23, 2, 500, 7, 9, 4, 3.5, 'Northfield NF340', 'Straight cut. Clean sample.'),
+    ('0de30000-0000-4000-8000-000000000102', 'barley', 46, 1080, 14, 2, 840, 12, 12, 6, 3.6, 'Northfield B305', null),
+    ('0de30000-0000-4000-8000-000000000106', 'beans', 60, 400, 30, 1, 1050, 14, 16, 10, 4.0, 'Northfield P410', 'Tough in the mornings; started at 11.'),
+    ('0de30000-0000-4000-8000-000000000113', 'wheat', 38, 1150, 12, 2, 860, 10, 10, 4, 3.5, 'Northfield W701', 'Pivot wheat, heavy straw: steeper vanes.')
   ) v(field, ck, ago, rotor, concave, vane, fan, pre, chaff, sieve, mph, variety, notes);
 
 -- ── Combine display: names, guidance lines, what it was loaded with ────────
@@ -154,7 +154,7 @@ select v.field::uuid, v.jd, v.name, v.lt, v.jdt, v.archived,
   ) v(field, jd, name, lt, jdt, archived, heading, inset, ago)
   join public.field_boundaries b on b.field_id = v.field::uuid and b.valid_to is null;
 
--- What the S780 was loaded with: once before harvest, and again a month in
+-- What the C780 was loaded with: once before harvest, and again a month in
 -- (two fields' names changed since, so the Combines page has changes to show).
 insert into public.combine_monitor_loads (equipment_id, loaded_at, loaded_by, fields, loaded_count, note, created_at)
 select '0de30000-0000-4000-8000-000000000803', ts, '0de30000-0000-4000-8000-0000000000a1', s.fields, s.n, v.note, ts
@@ -221,7 +221,7 @@ insert into public.fert_blend_products (name, n, p, k, s, zn, price_per_tonne, p
   ('11-52-0 MAP', 0.11, 0.52, 0, 0, 0, 1080, 'Fall booking price, Prairie Ag Supply (example)', 59, true, 2),
   ('21-0-0-24 AMS', 0.21, 0, 0, 0.24, 0, 620, 'Fall booking price, Prairie Ag Supply (example)', 60, true, 3),
   ('0-0-60 Potash', 0, 0, 0.60, 0, 0, 640, 'Fall booking price, Prairie Ag Supply (example)', 62, true, 4),
-  ('ESN 44-0-0', 0.44, 0, 0, 0, 0, 930, 'Quote, Sept', 45, true, 5),
+  ('Polymer-coated urea 44-0-0', 0.44, 0, 0, 0, 0, 930, 'Quote, Sept', 45, true, 5),
   ('12-40-0-10S-1Zn', 0.12, 0.40, 0, 0.10, 0.01, 1160, 'Quote, Sept', 61, true, 6),
   ('16-20-0-13', 0.16, 0.20, 0, 0.13, 0, 790, 'Last spring', 63, false, 7);
 

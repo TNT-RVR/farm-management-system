@@ -8,9 +8,10 @@ import { useMenuMatch } from '@/lib/menu-prefs'
  *
  * With views now listed in more than one section, the menu alone no longer
  * says where you are, so the header does. A shortcut names its home section,
- * the one place the view belongs. On a phone it shrinks to a back arrow to the
- * section's page and the section's name: the page's own title already says
- * which view it is.
+ * the one place the view belongs. On a phone it is a back arrow to the
+ * section's page, then the view's name with the section small above it: not
+ * every page has a title of its own, and Pastures under a header saying only
+ * "Cattle" left no way to tell where you were (Sam, 29 Oct 2026).
  *
  * Renders nothing where the menu has nothing to say (Home, a notification).
  */
@@ -30,7 +31,14 @@ export function MenuTrail() {
             <ArrowLeft className="h-4 w-4" />
           </Link>
         )}
-        <span className="truncate font-medium text-gray-800">{match.section.label}</span>
+        {onSectionPage || !match.item ? (
+          <span className="truncate font-medium text-gray-800">{match.section.label}</span>
+        ) : (
+          <span className="flex min-w-0 flex-col leading-tight">
+            <span className="truncate text-[11px] text-gray-500">{match.section.label}</span>
+            <span className="truncate font-medium text-gray-800">{match.item.view.label}</span>
+          </span>
+        )}
       </span>
       {/* Desktop */}
       <span className="hidden min-w-0 items-center gap-1 md:flex">

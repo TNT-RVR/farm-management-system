@@ -11,7 +11,7 @@ import { TRAIT_SYSTEM, lastSeedCanola } from '@/lib/seed-canola-year'
 import { fieldHistoryReport, type HistoryField } from '@/lib/reports/canola-reports'
 import { downloadBlob, tableReportToCsv, tableReportToPdf } from '@/lib/table-report'
 import { cn } from '@/lib/utils'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { ExportButton } from '@/components/ExportButton'
 
 /** A field as the screen shows it: the report's, plus what's needed to set a year's trait. */
@@ -107,8 +107,8 @@ export function HistoryTab() {
         </ul>
       </section>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-3">
-        <div className="flex flex-wrap items-end gap-3">
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div className="flex flex-wrap items-end gap-3 px-3 pt-3">
           <label className="text-xs text-gray-600">
             Years
             <Select
@@ -137,7 +137,7 @@ export function HistoryTab() {
             <ExportButton label="Export the field histories" onExport={(f) => exportAs(f === 'PDF' ? 'pdf' : 'csv')} />
           )}
         </div>
-        <HelpNote summary="Tick the fields to send; each gets its crops year by year." className="mt-2">
+        <HelpNote summary="Tick the fields to send; each gets its crops year by year." className="mx-3 mt-2">
           <p>
             Each year shows the crop history where the farm has one (what was grown, its variety and yield), else the crop plan for that year. A canola crop names its
             herbicide trait where the crop is set up with one. A year with nothing recorded says so, rather than being left out.
@@ -145,15 +145,15 @@ export function HistoryTab() {
         </HelpNote>
 
         {!history.length ? (
-          <p className="mt-6 text-center text-sm text-gray-400">Tick one or more fields on the left.</p>
+          <p className="mt-6 px-3 pb-3 text-center text-sm text-gray-400">Tick one or more fields on the left.</p>
         ) : (
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="py-1 font-medium">Field</th>
+                  <th className={TABLE_TH}>Field</th>
                   {years.map((y) => (
-                    <th key={y} className="py-1 font-medium">
+                    <th key={y} className={TABLE_TH}>
                       {y}
                     </th>
                   ))}
@@ -162,7 +162,7 @@ export function HistoryTab() {
               <tbody className="divide-y divide-gray-100">
                 {history.map((h) => (
                   <tr key={h.id}>
-                    <td className="py-1.5 pr-2 font-medium text-gray-900">
+                    <td className="px-3 py-1.5 font-medium text-gray-900">
                       {h.name}
                       {h.acres != null && <span className="block text-[11px] font-normal text-gray-500">{Math.round(h.acres)} ac</span>}
                       <span className="block text-[11px] font-normal text-amber-800">
@@ -170,7 +170,7 @@ export function HistoryTab() {
                       </span>
                     </td>
                     {h.years.map((y) => (
-                      <td key={y.year} className={cn('py-1.5 pr-2 align-top', isCanolaCrop(y.crop) ? 'font-semibold text-amber-700' : y.crop ? 'text-gray-800' : 'text-gray-300')}>
+                      <td key={y.year} className={cn('px-3 py-1.5 align-top', isCanolaCrop(y.crop) ? 'font-semibold text-amber-700' : y.crop ? 'text-gray-800' : 'text-gray-300')}>
                         {y.crop ?? '—'}
                         {y.from === 'plan' && <span className="block text-[10px] font-normal text-gray-400">planned</span>}
                         {canEdit && y.row && <TraitPicker row={y.row} onSet={(trait) => setTrait.mutate({ table: y.row!.record!.table, id: y.row!.record!.id, trait })} />}

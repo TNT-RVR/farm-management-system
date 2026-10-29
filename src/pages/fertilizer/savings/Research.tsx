@@ -46,6 +46,7 @@ import { Empty, FieldLink, Table, ToolCard, ghost, input, money, n0, n1, td, tdN
 import { RowEditor } from './RowEditor'
 import { askConfirm } from '@/components/askConfirm'
 import { fertYieldGoal } from '@/lib/yield-goal'
+import { Modal } from '@/components/Modal'
 
 const UNITS = new Set(['bu', 'lbs', 'cwt', 'ton', 'MT'])
 const asUnit = (u: string | null | undefined): YieldUnit | null => (u && UNITS.has(u) ? (u as YieldUnit) : null)
@@ -319,63 +320,67 @@ export function NRichStripCard() {
       saving={null}
       note={!rows.length ? 'no strips this season' : topUp.length ? `${topUp.length} short` : 'all keeping up'}
       actions={
-        isManager && !adding ? (
-          <button type="button" className={ghost} onClick={() => setAdding(true)}>
-            <Plus className="h-3 w-3" /> Lay a strip
-          </button>
+        isManager ? (
+          <>
+            <button type="button" className={ghost} onClick={() => setAdding(true)}>
+              <Plus className="h-3 w-3" /> Lay a strip
+            </button>
+            {adding && (
+              <Modal title="Lay an N-rich strip" onClose={() => setAdding(false)} wide>
+                <div className="mb-3 grid grid-cols-2 gap-2 rounded-md bg-gray-50 p-2 text-xs text-gray-600 sm:grid-cols-5">
+                  <label className="col-span-2">
+                    Field
+                    <Select
+                      value={fieldId}
+                      onChange={setFieldId}
+                      size="sm"
+                      className="mt-1"
+                      ariaLabel="Field"
+                      options={[{ value: '', label: 'Choose…' }, ...inputs.fields.filter((f) => f.active).map((f) => ({ value: f.id, label: f.name }))]}
+                    />
+                  </label>
+                  <label>
+                    Width (m)
+                    <input value={width} onChange={(e) => setWidth(e.target.value)} inputMode="decimal" className={cn(input, 'mt-1 w-full text-right')} />
+                  </label>
+                  <label>
+                    Off middle (m)
+                    <input value={offset} onChange={(e) => setOffset(e.target.value)} inputMode="decimal" className={cn(input, 'mt-1 w-full text-right')} />
+                  </label>
+                  <label>
+                    Extra N (lb/ac)
+                    <input value={extra} onChange={(e) => setExtra(e.target.value)} inputMode="decimal" className={cn(input, 'mt-1 w-full text-right')} />
+                  </label>
+                  <div className="col-span-2 flex gap-2 sm:col-span-5">
+                    <button
+                      type="button"
+                      disabled={!fieldId || m.create.isPending}
+                      className={cn(ghost, 'bg-brand-700 text-white hover:bg-brand-800')}
+                      onClick={() =>
+                        m.create.mutate(
+                          { fieldId, widthM: Number(width) || 18.3, offsetM: Number(offset) || 0, extraLb: Number(extra) || 50 },
+                          { onSuccess: () => setAdding(false) },
+                        )
+                      }
+                    >
+                      {m.create.isPending ? 'Laying…' : 'Save strip'}
+                    </button>
+                    <button type="button" className={ghost} onClick={() => setAdding(false)}>
+                      Cancel
+                    </button>
+                    {m.create.error && <span className="text-red-700">{(m.create.error as Error).message}</span>}
+                  </div>
+                  <p className="col-span-2 text-[11px] text-gray-500 sm:col-span-5">
+                    One pass wide (18.3 m is 60 ft), the length of the field the way it is farmed, through the middle unless moved off it. Put
+                    the extra N on that strip at seeding; the satellite scores it with the field every pass from then on.
+                  </p>
+                </div>
+              </Modal>
+            )}
+          </>
         ) : null
       }
     >
-      {adding && (
-        <div className="mb-3 grid grid-cols-2 gap-2 rounded-md bg-gray-50 p-2 text-xs text-gray-600 sm:grid-cols-5">
-          <label className="col-span-2">
-            Field
-            <Select
-              value={fieldId}
-              onChange={setFieldId}
-              size="sm"
-              className="mt-1"
-              ariaLabel="Field"
-              options={[{ value: '', label: 'Choose…' }, ...inputs.fields.filter((f) => f.active).map((f) => ({ value: f.id, label: f.name }))]}
-            />
-          </label>
-          <label>
-            Width (m)
-            <input value={width} onChange={(e) => setWidth(e.target.value)} inputMode="decimal" className={cn(input, 'mt-1 w-full text-right')} />
-          </label>
-          <label>
-            Off middle (m)
-            <input value={offset} onChange={(e) => setOffset(e.target.value)} inputMode="decimal" className={cn(input, 'mt-1 w-full text-right')} />
-          </label>
-          <label>
-            Extra N (lb/ac)
-            <input value={extra} onChange={(e) => setExtra(e.target.value)} inputMode="decimal" className={cn(input, 'mt-1 w-full text-right')} />
-          </label>
-          <div className="col-span-2 flex gap-2 sm:col-span-5">
-            <button
-              type="button"
-              disabled={!fieldId || m.create.isPending}
-              className={cn(ghost, 'bg-brand-700 text-white hover:bg-brand-800')}
-              onClick={() =>
-                m.create.mutate(
-                  { fieldId, widthM: Number(width) || 18.3, offsetM: Number(offset) || 0, extraLb: Number(extra) || 50 },
-                  { onSuccess: () => setAdding(false) },
-                )
-              }
-            >
-              {m.create.isPending ? 'Laying…' : 'Save strip'}
-            </button>
-            <button type="button" className={ghost} onClick={() => setAdding(false)}>
-              Cancel
-            </button>
-            {m.create.error && <span className="text-red-700">{(m.create.error as Error).message}</span>}
-          </div>
-          <p className="col-span-2 text-[11px] text-gray-500 sm:col-span-5">
-            One pass wide (18.3 m is 60 ft), the length of the field the way it is farmed, through the middle unless moved off it. Put
-            the extra N on that strip at seeding; the satellite scores it with the field every pass from then on.
-          </p>
-        </div>
-      )}
       {!rows.length ? (
         <Empty>No N-rich strips this season. Lay one per field you want watched, and apply it with extra N at seeding.</Empty>
       ) : (
@@ -562,7 +567,7 @@ function TrialRow({ trial }: { trial: ReturnType<typeof useNTrials>['data'] exte
                 <td className={tdNum}>{s.rep}</td>
                 <td className={tdNum}>{n0(Number(s.rate))}</td>
                 <td className={tdNum}>{n1(Number(s.acres))}</td>
-                <td className="px-2 py-0.5 text-right">
+                <td className="px-3 py-0.5 text-right">
                   <input
                     inputMode="decimal"
                     value={yields[s.strip] ?? ''}
@@ -671,76 +676,80 @@ export function NTrialCard() {
       saving={null}
       note={trials?.length ? `${trials.length} this season` : 'none this season'}
       actions={
-        isManager && !adding ? (
-          <button type="button" className={ghost} onClick={() => setAdding(true)}>
-            <Plus className="h-3 w-3" /> New trial
-          </button>
+        isManager ? (
+          <>
+            <button type="button" className={ghost} onClick={() => setAdding(true)}>
+              <Plus className="h-3 w-3" /> New trial
+            </button>
+            {adding && (
+              <Modal title="Add an N-rate trial" onClose={() => setAdding(false)} wide>
+                <div className="mb-3 grid grid-cols-2 gap-2 rounded-md bg-gray-50 p-2 text-xs text-gray-600 sm:grid-cols-5">
+                  <label className="col-span-2">
+                    Field
+                    <Select
+                      value={fieldId}
+                      onChange={pick}
+                      size="sm"
+                      className="mt-1"
+                      ariaLabel="Field"
+                      options={[{ value: '', label: 'Choose…' }, ...planned.map((p) => ({ value: p.plan.field_id!, label: `${p.field!.name} — ${p.crop!.name}` }))]}
+                    />
+                  </label>
+                  <label className="col-span-2 sm:col-span-1">
+                    Rates (lb N/ac)
+                    <input value={rates} onChange={(e) => setRates(e.target.value)} className={cn(input, 'mt-1 w-full')} />
+                  </label>
+                  <label>
+                    Reps
+                    <input value={reps} onChange={(e) => setReps(e.target.value)} inputMode="numeric" className={cn(input, 'mt-1 w-full text-right')} />
+                  </label>
+                  <label>
+                    Strip width (m)
+                    <input value={width} onChange={(e) => setWidth(e.target.value)} inputMode="decimal" className={cn(input, 'mt-1 w-full text-right')} />
+                  </label>
+                  <div className="col-span-2 flex gap-2 sm:col-span-5">
+                    <button
+                      type="button"
+                      disabled={!fieldId || rateList.length < 3 || m.save.isPending}
+                      className={cn(ghost, 'bg-brand-700 text-white hover:bg-brand-800')}
+                      onClick={() => {
+                        const n = Math.min(8, Math.max(1, Math.round(Number(reps) || 3)))
+                        const seed = Math.floor(Math.random() * 2 ** 31)
+                        m.save.mutate(
+                          {
+                            field_id: fieldId,
+                            crop_id: plan?.plan.crop_id ?? null,
+                            name: null,
+                            rates: rateList,
+                            reps: n,
+                            layout: trialLayout(rateList, n, seed),
+                            base_rate: null,
+                            strip_width_m: Number(width) || 18.3,
+                            seed,
+                          },
+                          { onSuccess: () => setAdding(false) },
+                        )
+                      }}
+                    >
+                      {m.save.isPending ? 'Laying out…' : 'Save trial'}
+                    </button>
+                    <button type="button" className={ghost} onClick={() => setAdding(false)}>
+                      Cancel
+                    </button>
+                    {m.save.error && <span className="text-red-700">{(m.save.error as Error).message}</span>}
+                  </div>
+                  <p className="col-span-2 text-[11px] text-gray-500 sm:col-span-5">
+                    Default rates are 0, half, the full and one-and-a-half times the field&apos;s recommended N. Each rep holds every rate once in a
+                    random order; strips are one pass wide across the middle of the field. Download the prescription and load it into Operations
+                    Center as a shapefile (rate column N_LB_AC, or UREA_LB for product).
+                  </p>
+                </div>
+              </Modal>
+            )}
+          </>
         ) : null
       }
     >
-      {adding && (
-        <div className="mb-3 grid grid-cols-2 gap-2 rounded-md bg-gray-50 p-2 text-xs text-gray-600 sm:grid-cols-5">
-          <label className="col-span-2">
-            Field
-            <Select
-              value={fieldId}
-              onChange={pick}
-              size="sm"
-              className="mt-1"
-              ariaLabel="Field"
-              options={[{ value: '', label: 'Choose…' }, ...planned.map((p) => ({ value: p.plan.field_id!, label: `${p.field!.name} — ${p.crop!.name}` }))]}
-            />
-          </label>
-          <label className="col-span-2 sm:col-span-1">
-            Rates (lb N/ac)
-            <input value={rates} onChange={(e) => setRates(e.target.value)} className={cn(input, 'mt-1 w-full')} />
-          </label>
-          <label>
-            Reps
-            <input value={reps} onChange={(e) => setReps(e.target.value)} inputMode="numeric" className={cn(input, 'mt-1 w-full text-right')} />
-          </label>
-          <label>
-            Strip width (m)
-            <input value={width} onChange={(e) => setWidth(e.target.value)} inputMode="decimal" className={cn(input, 'mt-1 w-full text-right')} />
-          </label>
-          <div className="col-span-2 flex gap-2 sm:col-span-5">
-            <button
-              type="button"
-              disabled={!fieldId || rateList.length < 3 || m.save.isPending}
-              className={cn(ghost, 'bg-brand-700 text-white hover:bg-brand-800')}
-              onClick={() => {
-                const n = Math.min(8, Math.max(1, Math.round(Number(reps) || 3)))
-                const seed = Math.floor(Math.random() * 2 ** 31)
-                m.save.mutate(
-                  {
-                    field_id: fieldId,
-                    crop_id: plan?.plan.crop_id ?? null,
-                    name: null,
-                    rates: rateList,
-                    reps: n,
-                    layout: trialLayout(rateList, n, seed),
-                    base_rate: null,
-                    strip_width_m: Number(width) || 18.3,
-                    seed,
-                  },
-                  { onSuccess: () => setAdding(false) },
-                )
-              }}
-            >
-              {m.save.isPending ? 'Laying out…' : 'Save trial'}
-            </button>
-            <button type="button" className={ghost} onClick={() => setAdding(false)}>
-              Cancel
-            </button>
-            {m.save.error && <span className="text-red-700">{(m.save.error as Error).message}</span>}
-          </div>
-          <p className="col-span-2 text-[11px] text-gray-500 sm:col-span-5">
-            Default rates are 0, half, the full and one-and-a-half times the field&apos;s recommended N. Each rep holds every rate once in a
-            random order; strips are one pass wide across the middle of the field. Download the prescription and load it into Operations
-            Center as a shapefile (rate column N_LB_AC, or UREA_LB for product).
-          </p>
-        </div>
-      )}
       {!trials?.length ? (
         <Empty>No trials this season. One field per crop per year is enough to start learning the farm&apos;s own N response.</Empty>
       ) : (

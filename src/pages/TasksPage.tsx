@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Mic, Plus } from 'lucide-react'
 import { DataTable, type DataTableColumn } from '@/components/DataTable'
 import { TaskForm, fromLocalDateInput, fromLocalInput } from '@/components/TaskForm'
@@ -32,6 +32,14 @@ export function TasksPage() {
   // here, and a phone in a cab should not need a second tap.
   const [params] = useSearchParams()
   const [saying, setSaying] = useState(() => params.get('say') === '1')
+  // ?new=1 opens the new-task form: the phone bar's Add → Task. Each tap is a
+  // new navigation, so it opens again even when this page is already showing.
+  const { key: navKey } = useLocation()
+  const [seenNav, setSeenNav] = useState<string | null>(null)
+  if (params.get('new') === '1' && navKey !== seenNav) {
+    setSeenNav(navKey)
+    setShowNew(true)
+  }
 
   const names = useMemo(() => taskLookups({ fields, equipment, users }), [fields, equipment, users])
 

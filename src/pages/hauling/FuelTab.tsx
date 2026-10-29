@@ -6,7 +6,8 @@ import { FUEL_DEFAULTS, MIN_LOGGED_PASSES, OP_KINDS, kindOf, sumFuel, type OpKin
 import { HelpNote } from '@/components/HelpNote'
 import { Card, SettingsGroup, type NumberField } from './ui'
 import { FieldLink, Sources, money, n0, n1 } from '../fertilizer/savings/ui'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 const KIND_FIELDS = (unit: string): NumberField<OpKind>[] => OP_KINDS.map((k) => ({ key: k.key, label: k.label, unit, hint: k.machine }))
 
@@ -72,46 +73,46 @@ export function FuelTab({ year, isManager }: { year: number; isManager: boolean 
         {isLoading ? (
           <p className="text-sm text-gray-500">Loading…</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
             <table className="w-full text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="px-2 py-1 font-medium">Field</th>
-                  <th className="px-2 py-1 text-right font-medium">Passes</th>
-                  <th className="px-2 py-1 text-right font-medium">In the field</th>
-                  <th className="px-2 py-1 text-right font-medium">Road</th>
-                  <th className="px-2 py-1 text-right font-medium">Road km</th>
-                  <th className="px-2 py-1 text-right font-medium">Road hours</th>
+                  <th className={TABLE_TH}>Field</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Passes</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>In the field</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Road</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Road km</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Road hours</th>
                   {OP_KINDS.slice(0, 4).map((k) => (
-                    <th key={k.key} className="px-2 py-1 text-right font-medium">
+                    <th key={k.key} className={cn(TABLE_TH, 'text-right')}>
                       {k.label.split(' ')[0]}
                     </th>
                   ))}
-                  <th className="px-2 py-1 text-right font-medium">Fuel $</th>
-                  <th className="px-2 py-1 text-right font-medium">$/ac</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Fuel $</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>$/ac</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {rows.map(({ f, s, passes, logged, byKind, acres }) => (
                   <tr key={f.id}>
-                    <td className="px-2 py-1 text-gray-800">
+                    <td className="px-3 py-1 text-gray-800">
                       <FieldLink id={f.id} name={f.name} to="work" />
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums text-gray-600">
+                    <td className="px-3 py-1 text-right tabular-nums text-gray-600">
                       {passes}
                       <span className="text-gray-400"> ({logged} logged)</span>
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums">{n0(s.inField)} L</td>
-                    <td className="px-2 py-1 text-right tabular-nums">{n0(s.travel)} L</td>
-                    <td className="px-2 py-1 text-right tabular-nums text-gray-600">{n0(s.travelKm)}</td>
-                    <td className="px-2 py-1 text-right tabular-nums text-gray-600">{n1(s.travelHours)}</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{n0(s.inField)} L</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{n0(s.travel)} L</td>
+                    <td className="px-3 py-1 text-right tabular-nums text-gray-600">{n0(s.travelKm)}</td>
+                    <td className="px-3 py-1 text-right tabular-nums text-gray-600">{n1(s.travelHours)}</td>
                     {OP_KINDS.slice(0, 4).map((k) => (
-                      <td key={k.key} className="px-2 py-1 text-right tabular-nums text-gray-500">
+                      <td key={k.key} className="px-3 py-1 text-right tabular-nums text-gray-500">
                         {byKind.get(k.key) ? `${n0(byKind.get(k.key)!)} L` : '—'}
                       </td>
                     ))}
-                    <td className="px-2 py-1 text-right font-semibold tabular-nums">{money(s.litres * d)}</td>
-                    <td className="px-2 py-1 text-right tabular-nums text-gray-600">{acres > 0 ? money((s.litres * d) / acres, 2) : '—'}</td>
+                    <td className="px-3 py-1 text-right font-semibold tabular-nums">{money(s.litres * d)}</td>
+                    <td className="px-3 py-1 text-right tabular-nums text-gray-600">{acres > 0 ? money((s.litres * d) / acres, 2) : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -131,13 +132,14 @@ export function FuelTab({ year, isManager }: { year: number; isManager: boolean 
       </Card>
 
       <Card title="Litres an acre">
-        <table className="mb-3 w-full max-w-xl text-xs">
+        <div className="mb-3 max-w-xl overflow-x-auto rounded-lg border border-gray-200">
+        <table className="w-full text-xs">
           <thead className={TABLE_HEAD}>
             <tr>
-              <th className="py-1 font-medium">Work</th>
-              <th className="py-1 text-right font-medium">Our machines logged</th>
-              <th className="py-1 text-right font-medium">Default</th>
-              <th className="py-1 text-right font-medium">Used for unlogged passes</th>
+              <th className={TABLE_TH}>Work</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Our machines logged</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Default</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Used for unlogged passes</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -146,15 +148,16 @@ export function FuelTab({ year, isManager }: { year: number; isManager: boolean 
               const ours = a && a.passes >= MIN_LOGGED_PASSES
               return (
                 <tr key={k.key}>
-                  <td className="py-1 text-gray-700">{k.label}</td>
-                  <td className="py-1 text-right tabular-nums">{a ? `${a.lPerAc.toFixed(2)} L/ac · ${a.passes} passes, ${n0(a.acres)} ac` : '—'}</td>
-                  <td className="py-1 text-right tabular-nums text-gray-500">{m.settings.lPerAc[k.key].toFixed(1)} L/ac</td>
-                  <td className="py-1 text-right font-medium">{ours ? 'ours' : 'default'}</td>
+                  <td className="px-3 py-1 text-gray-700">{k.label}</td>
+                  <td className="px-3 py-1 text-right tabular-nums">{a ? `${a.lPerAc.toFixed(2)} L/ac · ${a.passes} passes, ${n0(a.acres)} ac` : '—'}</td>
+                  <td className="px-3 py-1 text-right tabular-nums text-gray-500">{m.settings.lPerAc[k.key].toFixed(1)} L/ac</td>
+                  <td className={cn(TABLE_TH, 'text-right')}>{ours ? 'ours' : 'default'}</td>
                 </tr>
               )
             })}
           </tbody>
         </table>
+        </div>
         <div className="space-y-4">
           <SettingsGroup settingKey="fuel_l_per_ac" title="Default litres an acre (until our own passes say)" fields={KIND_FIELDS('L/ac')} values={m.settings.lPerAc} defaults={FUEL_DEFAULTS.lPerAc} isManager={isManager} />
           <SettingsGroup settingKey="road_l_per_km" title="Road burn, driving to the field" fields={KIND_FIELDS('L/km')} values={m.settings.roadLPerKm} defaults={FUEL_DEFAULTS.roadLPerKm} isManager={isManager} />

@@ -14,7 +14,7 @@ import { SOLAR_STATE, dateIn, summarizeSolar, type SolarSiteSummary } from '@/li
 import { useSolarDaily, useSolarHealth, useSolarLatest, useSolarRefresh, useSolarSites } from '@/lib/solar-data'
 import { cn } from '@/lib/utils'
 import { money as fmtMoney } from '@/lib/format'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const kwh = (v: number | null | undefined) => (v == null ? '—' : Math.round(v).toLocaleString('en-CA'))
 const kw = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 1 }))
@@ -191,29 +191,29 @@ export function SolarPage({ embedded = false }: { embedded?: boolean } = {}) {
 
       {s.byMonth.length > 0 && (
         <Fold title={`${cropYear} by month`} storageKey="solar.byMonth" summary={`${kwh(s.total.yearKwh)} kWh`}>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
             <table className="w-full text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="py-1 pr-2">Month</th>
+                  <th className={TABLE_TH}>Month</th>
                   {s.rows.map((r) => (
-                    <th key={r.id} className="px-2 py-1 text-right">
+                    <th key={r.id} className={cn(TABLE_TH, 'text-right')}>
                       {r.name}
                     </th>
                   ))}
-                  <th className="py-1 pl-2 text-right">All</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>All</th>
                 </tr>
               </thead>
               <tbody>
                 {s.byMonth.map((m) => (
                   <tr key={m.month} className="border-b border-gray-100 last:border-0">
-                    <td className="py-1 pr-2 text-gray-700">{MONTH(m.month)}</td>
+                    <td className="px-3 py-1 text-gray-700">{MONTH(m.month)}</td>
                     {s.rows.map((r) => (
-                      <td key={r.id} className="px-2 py-1 text-right tabular-nums">
+                      <td key={r.id} className="px-3 py-1 text-right tabular-nums">
                         {kwh(m.bySite.get(r.id))}
                       </td>
                     ))}
-                    <td className="py-1 pl-2 text-right font-medium tabular-nums">{kwh(m.total)}</td>
+                    <td className="px-3 py-1 text-right font-medium tabular-nums">{kwh(m.total)}</td>
                   </tr>
                 ))}
               </tbody>

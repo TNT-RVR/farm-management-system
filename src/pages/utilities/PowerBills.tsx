@@ -26,7 +26,7 @@ import { supabase } from '@/lib/supabase'
 import { PUBLIC_COPY } from '@/config/edition'
 import { EnergyProviderNote } from '@/pages/utilities/EnergyProviderNote'
 import { cn } from '@/lib/utils'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const money0 = (v: number) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
 const kwh0 = (v: number) => `${Math.round(v).toLocaleString('en-CA')} kWh`
@@ -158,23 +158,23 @@ export function PowerBills() {
               </span>
             )}
           </div>
-          <div className="mt-2 overflow-x-auto">
+          <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
             <table className="w-full min-w-[560px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="py-1 pr-3 font-medium">Pump</th>
-                  <th className="py-1 pr-3 text-right font-medium">Bills</th>
-                  <th className="py-1 pr-3 text-right font-medium">kWh</th>
-                  <th className="py-1 pr-3 text-right font-medium">Cost</th>
-                  <th className="py-1 pr-3 text-right font-medium">¢/kWh</th>
-                  <th className="py-1 pr-3 text-right font-medium">Demand $</th>
-                  <th className="py-1 text-right font-medium">Peak kW</th>
+                  <th className={TABLE_TH}>Pump</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Bills</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>kWh</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Cost</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>¢/kWh</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Demand $</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Peak kW</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 tabular-nums">
                 {rows.map((r) => (
                   <tr key={r.key}>
-                    <td className="py-1.5 pr-3 text-gray-900">
+                    <td className="px-3 py-1.5 text-gray-900">
                       {r.pumpId ? (
                         <span className="flex flex-wrap items-center gap-1.5">
                           <Link to={`/irrigation-info?tab=pump&pump=${r.pumpId}`} className="hover:text-brand-700 hover:underline">
@@ -220,12 +220,12 @@ export function PowerBills() {
                         </span>
                       )}
                     </td>
-                    <td className="py-1.5 pr-3 text-right text-gray-600">{r.bills}</td>
-                    <td className="py-1.5 pr-3 text-right text-gray-700">{Math.round(r.kwh).toLocaleString('en-CA')}</td>
-                    <td className="py-1.5 pr-3 text-right font-medium text-gray-900">{money0(r.cost)}</td>
-                    <td className="py-1.5 pr-3 text-right text-gray-700">{r.perKwh != null ? cents(r.perKwh) : '—'}</td>
-                    <td className="py-1.5 pr-3 text-right text-gray-600">{r.demandCharges ? money0(r.demandCharges) : '—'}</td>
-                    <td className="py-1.5 text-right text-gray-600">{r.peakKw != null ? r.peakKw.toLocaleString('en-CA', { maximumFractionDigits: 0 }) : '—'}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-600">{r.bills}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-700">{Math.round(r.kwh).toLocaleString('en-CA')}</td>
+                    <td className="px-3 py-1.5 text-right font-medium text-gray-900">{money0(r.cost)}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-700">{r.perKwh != null ? cents(r.perKwh) : '—'}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-600">{r.demandCharges ? money0(r.demandCharges) : '—'}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-600">{r.peakKw != null ? r.peakKw.toLocaleString('en-CA', { maximumFractionDigits: 0 }) : '—'}</td>
                   </tr>
                 ))}
               </tbody>

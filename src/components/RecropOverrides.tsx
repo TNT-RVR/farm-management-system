@@ -9,6 +9,7 @@ import {
   useSaveRecropOverride,
 } from '@/lib/recrop-overrides'
 import { cn } from '@/lib/utils'
+import { Modal } from '@/components/Modal'
 
 const input = 'rounded-md border border-gray-200 px-2 py-1 text-sm text-gray-900'
 
@@ -60,7 +61,7 @@ export function RecropOverrides({ isManager }: { isManager: boolean }) {
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
           <MessageSquareWarning className="h-4 w-4 text-gray-400" /> Shorter waits, on advice
         </h3>
-        {isManager && !adding && labels.length > 0 && (
+        {isManager && labels.length > 0 && (
           <button
             onClick={() => {
               setD({ registration_number: labels[0].reg, max_months: '', reason: '', told_by: '' })
@@ -91,72 +92,74 @@ export function RecropOverrides({ isManager }: { isManager: boolean }) {
       </HelpNote>
 
       {adding && (
-        <div className="mt-2 grid gap-2 rounded-md bg-gray-50 p-2 sm:grid-cols-2">
-          <label className="text-xs text-gray-500 sm:col-span-2">
-            Product
-            <select
-              className={cn(input, 'mt-0.5 block w-full')}
-              value={d.registration_number}
-              onChange={(e) => setD({ ...d, registration_number: e.target.value })}
-            >
-              {labels.map((l) => (
-                <option key={l.reg} value={l.reg}>
-                  {l.name} ({l.reg})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs text-gray-500">
-            Months, at most
-            <input
-              className={cn(input, 'mt-0.5 block w-24')}
-              inputMode="decimal"
-              value={d.max_months}
-              onChange={(e) => setD({ ...d, max_months: e.target.value })}
-            />
-          </label>
-          <label className="text-xs text-gray-500">
-            Who told us
-            <input
-              className={cn(input, 'mt-0.5 block w-full')}
-              placeholder="the chemical company, asked by Sam"
-              value={d.told_by}
-              onChange={(e) => setD({ ...d, told_by: e.target.value })}
-            />
-          </label>
-          <label className="text-xs text-gray-500 sm:col-span-2">
-            What they said
-            <input
-              className={cn(input, 'mt-0.5 block w-full')}
-              placeholder="the supplier says 6 months is enough before any rotational crop"
-              value={d.reason}
-              onChange={(e) => setD({ ...d, reason: e.target.value })}
-            />
-          </label>
-          <div className="flex items-center gap-2 sm:col-span-2">
-            <button
-              disabled={!canSave || save.isPending}
-              onClick={async () => {
-                await save.mutateAsync({
-                  registration_number: d.registration_number,
-                  max_months: Number(d.max_months),
-                  reason: d.reason.trim(),
-                  told_by: d.told_by,
-                })
-                setAdding(false)
-              }}
-              className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
-            >
-              Save
-            </button>
-            <button
-              onClick={() => setAdding(false)}
-              className="rounded-md px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
-            >
-              Cancel
-            </button>
+        <Modal title={'Add a carryover rule'} onClose={() => setAdding(false)} wide>
+          <div className="mt-2 grid gap-2 rounded-md bg-gray-50 p-2 sm:grid-cols-2">
+            <label className="text-xs text-gray-500 sm:col-span-2">
+              Product
+              <select
+                className={cn(input, 'mt-0.5 block w-full')}
+                value={d.registration_number}
+                onChange={(e) => setD({ ...d, registration_number: e.target.value })}
+              >
+                {labels.map((l) => (
+                  <option key={l.reg} value={l.reg}>
+                    {l.name} ({l.reg})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs text-gray-500">
+              Months, at most
+              <input
+                className={cn(input, 'mt-0.5 block w-24')}
+                inputMode="decimal"
+                value={d.max_months}
+                onChange={(e) => setD({ ...d, max_months: e.target.value })}
+              />
+            </label>
+            <label className="text-xs text-gray-500">
+              Who told us
+              <input
+                className={cn(input, 'mt-0.5 block w-full')}
+                placeholder="the chemical company, asked by Sam"
+                value={d.told_by}
+                onChange={(e) => setD({ ...d, told_by: e.target.value })}
+              />
+            </label>
+            <label className="text-xs text-gray-500 sm:col-span-2">
+              What they said
+              <input
+                className={cn(input, 'mt-0.5 block w-full')}
+                placeholder="the supplier says 6 months is enough before any rotational crop"
+                value={d.reason}
+                onChange={(e) => setD({ ...d, reason: e.target.value })}
+              />
+            </label>
+            <div className="flex items-center gap-2 sm:col-span-2">
+              <button
+                disabled={!canSave || save.isPending}
+                onClick={async () => {
+                  await save.mutateAsync({
+                    registration_number: d.registration_number,
+                    max_months: Number(d.max_months),
+                    reason: d.reason.trim(),
+                    told_by: d.told_by,
+                  })
+                  setAdding(false)
+                }}
+                className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setAdding(false)}
+                className="rounded-md px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {isLoading ? (

@@ -22,8 +22,8 @@ values (
     {"area": "Irrigation", "title": "Pump and pivot photos as thumbnails",
      "detail": "Nameplate photos show as small pictures on each pump; tap one to step through them, rename or remove.",
      "link": "/irrigation", "commits": ["0de3a14"]},
-    {"area": "Reports", "title": "Every report backed up to Google Drive",
-     "detail": "Once Google Drive is connected in Settings → Connections, each report is kept there as a CSV and a PDF, updated every few hours.",
+    {"area": "Reports", "title": "Every report backed up to Cloud Drive",
+     "detail": "Once Cloud Drive is connected in Settings → Connections, each report is kept there as a CSV and a PDF, updated every few hours.",
      "link": "/reports", "commits": ["0de3a15", "0de3a16"]}
   ]'::jsonb,
   '[
@@ -31,7 +31,7 @@ values (
     {"sha": "0de3a12", "date": "", "subject": "One shared record editor for click-a-row, add, edit and delete"},
     {"sha": "0de3a13", "date": "", "subject": "Bin cable readings can be corrected"},
     {"sha": "0de3a14", "date": "", "subject": "Pump and pivot photos show as thumbnails, with a viewer"},
-    {"sha": "0de3a15", "date": "", "subject": "Every report backed up to Google Drive as a CSV and a PDF"},
+    {"sha": "0de3a15", "date": "", "subject": "Every report backed up to Cloud Drive as a CSV and a PDF"},
     {"sha": "0de3a16", "date": "", "subject": "Drive backup status on the Farm setup card"}
   ]'::jsonb,
   'done', 'example (AI is off in the demo)', now() - interval '2 days'

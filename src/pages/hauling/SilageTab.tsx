@@ -9,7 +9,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { cn } from '@/lib/utils'
 import { Card, SettingsGroup, input, type NumberField } from './ui'
 import { FieldLink, Sources, money, n0, n1 } from '../fertilizer/savings/ui'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const FIELDS: NumberField<keyof SilageHaulInputs>[] = [
   { key: 'payloadT', label: 'Silage truck carries', unit: 't as fed' },
@@ -204,19 +204,19 @@ export function SilageTab({ year, isManager }: { year: number; isManager: boolea
             { label: 'Distances: the Distances tab', to: '/fuel?tab=distances' },
           ]}
         />
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full min-w-[700px] text-xs">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="px-2 py-1 font-medium">Field</th>
-                {onlySilage && <th className="px-2 py-1 text-right font-medium">Tonnes</th>}
-                <th className="px-2 py-1 text-right font-medium">One way</th>
-                <th className="hidden px-2 py-1 text-right font-medium md:table-cell">Round</th>
-                <th className="px-2 py-1 text-right font-medium">Trucks</th>
-                <th className="px-2 py-1 text-right font-medium">$/t as fed</th>
-                <th className="hidden px-2 py-1 text-right font-medium md:table-cell">$/t DM</th>
-                {onlySilage && <th className="hidden px-2 py-1 text-right font-medium md:table-cell">Haul $</th>}
-                <th className="px-2 py-1 font-medium">Pays?</th>
+                <th className={TABLE_TH}>Field</th>
+                {onlySilage && <th className={cn(TABLE_TH, 'text-right')}>Tonnes</th>}
+                <th className={cn(TABLE_TH, 'text-right')}>One way</th>
+                <th className={cn(TABLE_TH, 'hidden text-right md:table-cell')}>Round</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Trucks</th>
+                <th className={cn(TABLE_TH, 'text-right')}>$/t as fed</th>
+                <th className={cn(TABLE_TH, 'hidden text-right md:table-cell')}>$/t DM</th>
+                {onlySilage && <th className={cn(TABLE_TH, 'hidden text-right md:table-cell')}>Haul $</th>}
+                <th className={TABLE_TH}>Pays?</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -224,22 +224,22 @@ export function SilageTab({ year, isManager }: { year: number; isManager: boolea
                 const ok = c ? c.perT.total <= limit : null
                 return (
                   <tr key={f.id}>
-                    <td className="px-2 py-1 text-gray-800">
+                    <td className="px-3 py-1 text-gray-800">
                       <FieldLink id={f.id} name={f.name} to="work" />
                     </td>
-                    {onlySilage && <td className="px-2 py-1 text-right tabular-nums">{sf?.tonnes != null ? n0(sf.tonnes) : '—'}</td>}
-                    <td className="px-2 py-1 text-right tabular-nums text-gray-600">
+                    {onlySilage && <td className="px-3 py-1 text-right tabular-nums">{sf?.tonnes != null ? n0(sf.tonnes) : '—'}</td>}
+                    <td className="px-3 py-1 text-right tabular-nums text-gray-600">
                       {t ? `${n1(t.km)} km` : '—'}
                       {t?.note && <span className="block text-[10px] text-amber-700">estimate</span>}
                     </td>
-                    <td className="hidden px-2 py-1 text-right tabular-nums text-gray-600 md:table-cell">{c ? `${n0(c.cycleMin)} min` : '—'}</td>
-                    <td className={cn('px-2 py-1 text-right tabular-nums', c?.chopperWaits && 'text-amber-700')}>{c ? c.trucksNeeded : '—'}</td>
-                    <td className="px-2 py-1 text-right font-semibold tabular-nums">{c ? money(c.perT.total, 2) : '—'}</td>
-                    <td className="hidden px-2 py-1 text-right tabular-nums text-gray-600 md:table-cell">{c ? money(c.perTDm, 2) : '—'}</td>
+                    <td className="hidden px-3 py-1 text-right tabular-nums text-gray-600 md:table-cell">{c ? `${n0(c.cycleMin)} min` : '—'}</td>
+                    <td className={cn('px-3 py-1 text-right tabular-nums', c?.chopperWaits && 'text-amber-700')}>{c ? c.trucksNeeded : '—'}</td>
+                    <td className="px-3 py-1 text-right font-semibold tabular-nums">{c ? money(c.perT.total, 2) : '—'}</td>
+                    <td className="hidden px-3 py-1 text-right tabular-nums text-gray-600 md:table-cell">{c ? money(c.perTDm, 2) : '—'}</td>
                     {onlySilage && (
-                      <td className="hidden px-2 py-1 text-right tabular-nums md:table-cell">{c && sf?.tonnes != null ? money(c.perT.total * sf.tonnes) : '—'}</td>
+                      <td className="hidden px-3 py-1 text-right tabular-nums md:table-cell">{c && sf?.tonnes != null ? money(c.perT.total * sf.tonnes) : '—'}</td>
                     )}
-                    <td className={cn('px-2 py-1', ok == null ? 'text-gray-300' : ok ? 'text-green-800' : 'text-red-700')}>
+                    <td className={cn('px-3 py-1', ok == null ? 'text-gray-300' : ok ? 'text-green-800' : 'text-red-700')}>
                       {ok == null ? 'no distance' : ok ? 'yes' : 'no'}
                     </td>
                   </tr>

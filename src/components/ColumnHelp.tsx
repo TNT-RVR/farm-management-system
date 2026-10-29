@@ -50,7 +50,7 @@ export function ColumnHelp({
         ref={btnRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="relative ml-1 inline-flex shrink-0 align-middle text-gray-400 hover:text-brand-700 after:absolute after:-inset-2.5 after:content-[''] sm:after:content-none"
+        className="rvr-info relative ml-1 inline-flex shrink-0 align-middle text-gray-400 hover:text-brand-700 after:absolute after:-inset-2.5 after:content-[''] sm:after:content-none"
         aria-label={`About ${help.title}`}
         aria-expanded={open}
       >

@@ -12,7 +12,7 @@ import { DeleteButton, EditButton, RecordEditModal } from '@/components/RecordEd
 import { conv, depthToMm, type UnitSystem } from '@/lib/units'
 import { cn } from '@/lib/utils'
 import { FEEL_GUIDE, SOIL_METHODS } from '@/lib/soil-moisture'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const md = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
 
@@ -180,28 +180,29 @@ export function SoilReadingsBlock({ fieldId, year, u }: { fieldId: string; year:
   return (
     <div className="space-y-2 text-xs">
       {readings && readings.length > 0 ? (
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full">
           <thead className={TABLE_HEAD}>
             <tr>
-              <th className="py-0.5 font-medium">Date</th>
-              <th className="py-0.5 text-right font-medium">Available</th>
-              <th className="py-0.5 pl-3 font-medium">How</th>
+              <th className={TABLE_TH}>Date</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Available</th>
+              <th className={TABLE_TH}>How</th>
               <th />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {readings.map((r) => (
               <tr key={r.id}>
-                <td className="py-0.5">{md(r.read_on)}</td>
-                <td className="py-0.5 text-right tabular-nums">
+                <td className="px-3 py-0.5">{md(r.read_on)}</td>
+                <td className="px-3 py-0.5 text-right tabular-nums">
                   {conv.depth(r.avail_mm, u)} {unit}
                   {r.pct_of_fc != null && <span className="text-gray-400"> · {Math.round(r.pct_of_fc)}%</span>}
                 </td>
-                <td className="py-0.5 pl-3 text-gray-500">
+                <td className="px-3 py-0.5 text-gray-500">
                   {METHODS.find((m) => m.value === r.method)?.label ?? r.method}
                   {r.note ? ` — ${r.note}` : ''}
                 </td>
-                <td className="py-0.5 pl-2">
+                <td className="px-3 py-0.5">
                   <span className="flex justify-end gap-1">
                     <EditButton
                       onClick={() => {
@@ -220,6 +221,7 @@ export function SoilReadingsBlock({ fieldId, year, u }: { fieldId: string; year:
             ))}
           </tbody>
         </table>
+        </div>
       ) : (
         <p className="text-gray-500">No readings this season. Use &ldquo;Submit soil moisture&rdquo; at the top, or record one on a field inspection.</p>
       )}

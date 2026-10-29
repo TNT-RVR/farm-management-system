@@ -23,7 +23,7 @@ import {
   type Verdict,
 } from '@/lib/tissue'
 import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 type TissueRow = Database['public']['Tables']['tissue_tests']['Row']
 
@@ -334,20 +334,20 @@ export function TissueTests({ cropYear, canEdit }: { cropYear: number; canEdit: 
                   </p>
                 )}
 
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto rounded-lg border border-gray-200">
                   <table className="w-full text-sm">
                     <thead className={TABLE_HEAD}>
                       <tr>
-                        <th className="py-1 pr-3 font-medium">Nutrient</th>
-                        <th className="py-1 pr-3 text-right font-medium">Reading</th>
-                        <th className="py-1 pr-3 text-right font-medium">Sufficient</th>
-                        <th className="py-1 font-medium">Where it sits</th>
+                        <th className={TABLE_TH}>Nutrient</th>
+                        <th className={cn(TABLE_TH, 'text-right')}>Reading</th>
+                        <th className={cn(TABLE_TH, 'text-right')}>Sufficient</th>
+                        <th className={TABLE_TH}>Where it sits</th>
                       </tr>
                     </thead>
                     <tbody>
                       {readings.map((r) => (
                         <tr key={r.nutrient.key} className="border-b border-gray-100 last:border-0">
-                          <td className="py-1 pr-3">
+                          <td className="px-3 py-1">
                             {r.nutrient.label}
                             {r.nutrient.group === 'micro' && (
                               <span className="ml-1 text-[10px] uppercase text-gray-400">
@@ -357,7 +357,7 @@ export function TissueTests({ cropYear, canEdit }: { cropYear: number; canEdit: 
                           </td>
                           <td
                             className={cn(
-                              'py-1 pr-3 text-right tabular-nums',
+                              'px-3 py-1 text-right tabular-nums',
                               VERDICT_STYLE[r.verdict],
                             )}
                           >
@@ -366,10 +366,10 @@ export function TissueTests({ cropYear, canEdit }: { cropYear: number; canEdit: 
                               {r.nutrient.unit}
                             </span>
                           </td>
-                          <td className="py-1 pr-3 text-right tabular-nums text-gray-500">
+                          <td className="px-3 py-1 text-right tabular-nums text-gray-500">
                             {r.band ? `${r.band[0]}–${r.band[1]}` : '—'}
                           </td>
-                          <td className="py-1 text-xs">
+                          <td className="px-3 py-1 text-xs">
                             {r.verdict === 'low' && (
                               <span className="text-red-700">below band</span>
                             )}

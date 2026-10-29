@@ -39,6 +39,7 @@ import {
 import { OfflinePanel } from '@/pages/settings/OfflinePanel'
 import { TilesPanel } from '@/pages/settings/TilesPanel'
 import { MenuPanel } from '@/pages/settings/MenuPanel'
+import { VoiceReplyCard } from '@/pages/settings/VoiceReplyCard'
 import { useTab } from '@/lib/useTab'
 import { useMenuEnabled } from '@/lib/menu-prefs'
 import {
@@ -685,7 +686,7 @@ const PARTNER_ACCOUNT_TABS: readonly AccountTab[] = ['profile', 'security', 'not
 
 /** Your own profile, how you get notified, your home screen and this device. */
 function MyAccount({ head }: { head: ViewHead }) {
-  const [picked, pick] = useTab('settings-account', ACCOUNT_TABS, 'profile', accountAlias)
+  const [picked, pick] = useTab('settings-account', ACCOUNT_TABS, accountAlias)
   const { profile } = useAuth()
   // A crop-share partner has no home screen, menu or farm apps to set up.
   const partner = usePartnerView()
@@ -781,6 +782,7 @@ function MyAccount({ head }: { head: ViewHead }) {
         {section === 'menu' && (
           <div className="max-w-3xl">
             <MenuPanel />
+            <VoiceReplyCard />
           </div>
         )}
         {section === 'device' && (
@@ -836,7 +838,7 @@ const PEOPLE_LABELS: Record<PeopleTab, string> = { users: 'Users', access: 'Acce
 function UsersAndAccess({ head, isAdmin }: { head: ViewHead; isAdmin: boolean }) {
   // A manager's list has no Access, so an Access link or memory opens Users.
   const tabs = PEOPLE_TABS.filter((k) => isAdmin || k !== 'access')
-  const [tab, setTab] = useTab<PeopleTab>('settings-people', tabs, 'users')
+  const [tab, setTab] = useTab<PeopleTab>('settings-people', tabs)
   return (
     <>
       {head(
@@ -855,7 +857,7 @@ function UsersAndAccess({ head, isAdmin }: { head: ViewHead; isAdmin: boolean })
 }
 
 function FarmSetup({ head }: { head: ViewHead }) {
-  const [part, go] = useTab('settings-farm', FARM_TABS, 'overview')
+  const [part, go] = useTab('settings-farm', FARM_TABS)
   return (
     <>
       {head(<PillTabs className="mt-3 border-b-0" tabs={FARM_PARTS} value={part} onChange={go} />)}
@@ -905,6 +907,7 @@ export function SettingsPage({ view }: { view: SettingsView }) {
       {tabs}
     </div>
   )
+
 
   return (
     <div>

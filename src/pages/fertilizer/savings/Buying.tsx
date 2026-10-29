@@ -514,7 +514,7 @@ export function NeedVsBookedCard() {
               <td className={tdNum}>{n1(Number(b.tonnes))}</td>
               <td className={tdNum}>{b.price_per_tonne == null ? '—' : money(Number(b.price_per_tonne))}</td>
               <td className={td}>{b.supplier}</td>
-              <td className="px-2 py-1 text-right">
+              <td className="px-3 py-1 text-right">
                 {isMgr && <RowDelete onDelete={() => m.remove.mutate(b.id)} confirm={`Delete the ${labelOf(b.product)} booking of ${n1(Number(b.tonnes))} t?`} label="Delete booking" />}
               </td>
             </tr>
@@ -810,7 +810,7 @@ export function ProgramsCard() {
                     ]}
                   />
                 </td>
-                <td className="px-2 py-1 text-right">
+                <td className="px-3 py-1 text-right">
                   {isMgr && <RowDelete onDelete={() => m.remove.mutate(p.id)} confirm={`Delete the ${p.name} programme?`} label="Delete programme" />}
                 </td>
               </tr>
@@ -986,7 +986,7 @@ export function InventoryCard() {
               </td>
               <td className={td}>{r.location ?? '—'}</td>
               <td className={td}>{r.counted_on}</td>
-              <td className="px-2 py-1 text-right">
+              <td className="px-3 py-1 text-right">
                 {isMgr && <RowDelete onDelete={() => m.remove.mutate(r.id)} confirm={`Delete the ${labelOf(r.product)} count of ${r.counted_on}?`} label="Delete count" />}
               </td>
             </tr>

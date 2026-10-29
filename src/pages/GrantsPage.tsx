@@ -492,7 +492,7 @@ export function GrantsPage() {
   const { add } = useGrantMutations()
   const pull = useGrantsPull()
   const [openId, setOpenId] = useState<string | null>(null)
-  const [tab, setTab] = useTab('grants', ['active', 'archived'] as const, 'active')
+  const [tab, setTab] = useTab('grants', ['active', 'archived'] as const)
   const [statusFilter, setStatusFilter] = useState<'all' | GrantStatus>('all')
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'closes', dir: 'asc' })
   const { update: rowUpdate } = useGrantMutations()

@@ -145,16 +145,18 @@ describe('who sees what', () => {
 })
 
 describe('phone bar default', () => {
-  it('is Home, Tasks, Fields, Cattle for someone with no prefs', () => {
-    const prefs = readMenuPrefs(null)
-    const menu = resolveMenu(filterSections(MENU_SECTIONS, menuAccess({ role: 'user' }, [])), prefs.phone)
-    expect(resolveBar(menu, prefs.phone?.bar).map((s) => s.key)).toEqual(['home', 'tasks', 'fields', 'cattle'])
+  it('is Search, Dashboard, Add, Tasks, Menu for someone with no prefs, or only the old four-slot bar', () => {
+    for (const raw of [null, { phone: { bar: ['home', 'tasks', 'fields', 'cattle'] } }]) {
+      const prefs = readMenuPrefs(raw)
+      const menu = resolveMenu(filterSections(MENU_SECTIONS, menuAccess({ role: 'user' }, [])), prefs.phone)
+      expect(resolveBar(menu, prefs.phone?.buttons).map((s) => s.key)).toEqual(['search', 'home', 'add', 'tasks', 'menu'])
+    }
   })
 
   it('fills the Cattle slot on a farm without cattle', () => {
     const menu = resolveMenu(filterSections(MENU_SECTIONS, menuAccess({ role: 'user' }, disabledPaths({ cattle: false }))), undefined)
-    const bar = resolveBar(menu, undefined).map((s) => s.key)
-    expect(bar).toHaveLength(4)
+    const bar = resolveBar(menu, ['home', 'tasks', 'fields', 'cattle', 'menu']).map((s) => s.key)
+    expect(bar).toHaveLength(5)
     expect(bar).not.toContain('cattle')
     expect(bar.slice(0, 3)).toEqual(['home', 'tasks', 'fields'])
   })

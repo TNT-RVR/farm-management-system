@@ -15,7 +15,7 @@ import { SeasonOutlookBlock, SoilCalibrationBlock, SoilReadingsBlock } from './F
 import { HandEventActions } from './HandEventActions'
 import { DetailList, rowClick } from '@/components/RecordEditor'
 import { n1 } from '@/lib/format'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 /** Every irrigation event on one field in a year, newest first. */
 export function useFieldEvents(fieldId: string, year: number) {
@@ -172,17 +172,18 @@ function AppliedBlock({ fieldId, w, u, year }: { fieldId: string; w: FieldWater;
         {adjustedCount > 0 && <span className="text-amber-700"> {adjustedCount} corrected by hand.</span>}
       </p>
       {w.events.length > 0 && (
-        <div className="mt-1.5 overflow-x-auto">
+        <div className="mt-1.5">
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full min-w-[320px]">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="py-0.5 font-medium">Date</th>
-                <th className="py-0.5 text-right font-medium">Gross ({unit})</th>
-                <th className="py-0.5 text-right font-medium" title={`Gross × the pivot's ${Math.round(eff * 100)}% application efficiency — what the model counts as reaching the root zone`}>
+                <th className={TABLE_TH}>Date</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Gross ({unit})</th>
+                <th className={cn(TABLE_TH, 'text-right')} title={`Gross × the pivot's ${Math.round(eff * 100)}% application efficiency — what the model counts as reaching the root zone`}>
                   Net ({unit})
                 </th>
-                <th className="py-0.5 pl-3 font-medium">From</th>
-                <th className="py-0.5 text-right font-medium" title="Degrees of the circle FieldNET recorded water on that day">Covered</th>
+                <th className={TABLE_TH}>From</th>
+                <th className={cn(TABLE_TH, 'text-right')} title="Degrees of the circle FieldNET recorded water on that day">Covered</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -192,14 +193,14 @@ function AppliedBlock({ fieldId, w, u, year }: { fieldId: string; w: FieldWater;
                   className={cn('cursor-pointer hover:bg-gray-50', e.adjusted_gross_mm != null && 'bg-amber-50/60', openEvent === e.id && 'bg-gray-50')}
                   onClick={rowClick(() => setOpenEvent(openEvent === e.id ? null : e.id))}
                 >
-                  <td className="py-0.5 text-gray-700">{md(e.date)}</td>
-                  <td className="py-0.5 text-right tabular-nums" title={e.adjusted_gross_mm != null ? `Corrected from ${conv.depth(e.source_gross_mm, u, dp)} ${unit}${e.adjusted_note ? ` — ${e.adjusted_note}` : ''}` : undefined}>
+                  <td className="px-3 py-0.5 text-gray-700">{md(e.date)}</td>
+                  <td className="px-3 py-0.5 text-right tabular-nums" title={e.adjusted_gross_mm != null ? `Corrected from ${conv.depth(e.source_gross_mm, u, dp)} ${unit}${e.adjusted_note ? ` — ${e.adjusted_note}` : ''}` : undefined}>
                     {conv.depth(e.gross_mm, u, dp)}
                     {e.adjusted_gross_mm != null && <span className="text-amber-700">*</span>}
                   </td>
-                  <td className="py-0.5 text-right tabular-nums text-gray-500">{conv.depth(netOf(e), u, dp)}</td>
-                  <td className="py-0.5 pl-3 text-gray-500">{e.source === 'fieldnet' ? 'FieldNET' : e.source === 'manual' ? 'logged by hand' : e.source}</td>
-                  <td className="py-0.5 text-right tabular-nums text-gray-500">{e.coverage_deg != null ? `${e.coverage_deg}°` : ''}</td>
+                  <td className="px-3 py-0.5 text-right tabular-nums text-gray-500">{conv.depth(netOf(e), u, dp)}</td>
+                  <td className="px-3 py-0.5 text-gray-500">{e.source === 'fieldnet' ? 'FieldNET' : e.source === 'manual' ? 'logged by hand' : e.source}</td>
+                  <td className="px-3 py-0.5 text-right tabular-nums text-gray-500">{e.coverage_deg != null ? `${e.coverage_deg}°` : ''}</td>
                 </tr>
                 {/* The pass in full, and for one logged by hand its Edit and
                     Delete (Sam, 7 Oct 2026). */}
@@ -232,6 +233,7 @@ function AppliedBlock({ fieldId, w, u, year }: { fieldId: string; w: FieldWater;
               ))}
             </tbody>
           </table>
+          </div>
           {w.events.length > 8 && (
             <button type="button" onClick={() => setShowAll((s) => !s)} className="mt-1 text-[11px] text-brand-700 underline">
               {showAll ? 'show fewer' : `show all ${w.events.length}`}

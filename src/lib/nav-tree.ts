@@ -2,7 +2,6 @@ import type { ComponentType } from 'react'
 import {
   Umbrella,
   ArrowLeftRight,
-  Ban,
   BookOpen,
   Beef,
   Bug,
@@ -15,6 +14,7 @@ import {
   Cloud,
   CloudHail,
   Container,
+  Droplets,
   FileSignature,
   FileText,
   FlaskConical,
@@ -23,6 +23,7 @@ import {
   Info,
   KeyRound,
   Landmark,
+  LandPlot,
   LayoutDashboard,
   Leaf,
   LineChart,
@@ -31,12 +32,13 @@ import {
   PiggyBank,
   Plug,
   Presentation,
+  RefreshCw,
   Repeat,
   Scale,
   Settings,
+  ShieldCheck,
   Snowflake,
   Sparkles,
-  SprayCan,
   Sprout,
   Sun,
   Thermometer,
@@ -101,8 +103,13 @@ export type MenuView = {
 
 /** A view listed in a section, optionally under another name there. */
 type Entry = string | { view: string; label: string }
-/** A non-clickable label grouping views. It never adds a click. */
-type HeadingDef = { heading: string; views: Entry[] }
+/**
+ * A run of views folded under one label. It is drawn like the views under it
+ * — same icon size, type and colour — with the same arrow a section has, so
+ * the menu reads the same the whole way down (Sam, 29 Oct 2026: the old tiny
+ * capitals "seemed out of place").
+ */
+type HeadingDef = { heading: string; icon: MenuIcon; views: Entry[] }
 type SectionDef = {
   key: string
   label: string
@@ -138,13 +145,11 @@ const VIEW_LIST: MenuView[] = [
   { key: 'next-year-plan', label: "Next year's plan", icon: Repeat, to: '/plan?tab=plan', home: 'winter', description: 'Which crop goes on which field next year.' },
 
   // Growing: crop care
-  { key: 'spraying', label: 'Spraying', icon: SprayCan, to: '/spraying', description: 'Check a spray before you go, and what was sprayed lately.' },
   // No ?tab=: every tab on /chemicals is this view, so Inventory and Prices
   // light it up too, and the page opens on the tab last used (Sam, 24 Oct 2026).
-  { key: 'chemicals', label: 'Chemicals', icon: FlaskConical, to: '/chemicals', description: 'Labels, the chemical shed and prices.' },
+  { key: 'chemicals', label: 'Chemicals', icon: FlaskConical, to: '/chemicals', description: 'Labels, the shed, prices, and the spray check.' },
   { key: 'scouting', label: 'Scouting', icon: Bug, to: '/scouting', description: 'What was found in each field, and when.' },
   { key: 'hail', label: 'Hail reports', icon: CloudHail, to: '/hail', description: 'Hail damage reports and claims.' },
-  { key: 'spray-restrictions', label: 'Spray restrictions', icon: Ban, to: '/cattle?tab=restrictions', home: 'cattle', tabOf: 'pastures', description: 'Where cattle cannot graze or be fed after a spray.' },
   // Growing: irrigation
   { key: 'soil-moisture', label: 'Soil moisture', icon: Waves, to: '/irrigation', description: 'Soil moisture by field, and when to water.' },
   { key: 'river', label: 'River', icon: Waves, to: '/river', description: 'Oldman River levels and dam releases.' },
@@ -254,7 +259,7 @@ const SECTION_DEFS: SectionDef[] = [
       'seed-planter',
       // The fertilizer views under one heading, "Fertility" (Sam, 26 Oct 2026). Tissue
       // tests moved to Growing; Manure's home is Winter, listed here too.
-      { heading: 'Fertility', views: ['soil-tests', 'fertility-plan', 'fertilizer-prices', 'fertilizer-savings', 'manure'] },
+      { heading: 'Fertility', icon: LandPlot, views: ['soil-tests', 'fertility-plan', 'fertilizer-prices', 'fertilizer-savings', 'manure'] },
       'canola-isolation',
       'next-year-plan',
       'rotation',
@@ -268,9 +273,10 @@ const SECTION_DEFS: SectionDef[] = [
     items: [
       // Spray restrictions are not here (Sam, 29 Oct 2026): they are about
       // where cattle may go, and they are listed under Cattle only.
-      { heading: 'Crop care', views: ['spraying', 'chemicals', 'scouting', 'tissue-tests', 'hail'] },
+      { heading: 'Crop care', icon: ShieldCheck, views: ['chemicals', 'scouting', 'tissue-tests', 'hail'] },
       {
         heading: 'Irrigation',
+        icon: Droplets,
         views: [
           'soil-moisture',
           'river',
@@ -291,7 +297,7 @@ const SECTION_DEFS: SectionDef[] = [
     icon: Snowflake,
     items: [
       'next-year-plan',
-      { heading: 'Rotation', views: ['rotation', 'rotation-advice', 'rotation-rules'] },
+      { heading: 'Rotation', icon: RefreshCw, views: ['rotation', 'rotation-advice', 'rotation-rules'] },
       'manure',
       { view: 'crop-money', label: 'Budget' },
       'equipment-service',
@@ -323,12 +329,9 @@ const SECTION_DEFS: SectionDef[] = [
     label: 'Cattle',
     icon: Beef,
     items: [
+      // Spray restrictions is a tab of Pastures only (Sam, 29 Oct 2026: "we
+      // already have spray restrictions as a sub tab under pastures").
       'pastures',
-      // Its own line rather than only a tab of Pastures (Sam, 29 Oct 2026),
-      // because this is where it is looked for. The other tab shortcuts stay
-      // inside their parent; this one came out of Growing season to here, and
-      // listing it nowhere would have dropped it out of "All views" too.
-      'spray-restrictions',
       'herd',
       'feed',
       'cattle-sales',
@@ -371,7 +374,7 @@ export type MenuItem = {
 }
 
 /** A run of views under one heading, or under none (`heading: null`). */
-export type MenuGroup = { key: string; heading: string | null; items: MenuItem[] }
+export type MenuGroup = { key: string; heading: string | null; icon: MenuIcon | null; items: MenuItem[] }
 
 export type MenuSection = {
   key: string
@@ -418,13 +421,14 @@ function buildSection(def: SectionDef): MenuSection {
       groups.push({
         key: `${def.key}:${x.heading}`,
         heading: x.heading,
+        icon: x.icon,
         items: x.views.map(item).filter((i): i is MenuItem => !!i),
       })
     } else {
       const i = item(x)
       if (!i) continue
       if (!loose) {
-        loose = { key: `${def.key}:${groups.length}`, heading: null, items: [] }
+        loose = { key: `${def.key}:${groups.length}`, heading: null, icon: null, items: [] }
         groups.push(loose)
       }
       loose.items.push(i)
@@ -491,7 +495,14 @@ export function filterSections(
 
 export type MenuDevice = 'desktop' | 'phone'
 
-export type MenuDevicePrefs = { order?: string[]; hidden?: string[]; bar?: string[] }
+export type MenuDevicePrefs = {
+  order?: string[]
+  hidden?: string[]
+  /** The old four-slot bar (before 29 Oct 2026). Read, never used: everyone moved to `buttons`. */
+  bar?: string[]
+  /** The phone bar's five buttons, left to right. */
+  buttons?: string[]
+}
 
 /** users.menu_prefs. Everything optional: an empty object is "never touched it". */
 export type MenuPrefs = {
@@ -504,11 +515,24 @@ export type MenuPrefs = {
   phone?: MenuDevicePrefs
 }
 
-/** How many slots the phone bar has before More. */
-export const PHONE_BAR_SLOTS = 4
+/** How many buttons the phone bar has. */
+export const PHONE_BAR_SLOTS = 5
 
-/** Home, the Tasks view (not the section), Fields, Cattle. */
-export const DEFAULT_PHONE_BAR = ['home', 'tasks', 'fields', 'cattle']
+/**
+ * Buttons that are not a place: Search (the search and ask sheet), Add (the
+ * quick forms) and Menu (the whole menu, once called More).
+ */
+export const BAR_TOOLS = ['search', 'add', 'menu'] as const
+export type BarTool = (typeof BAR_TOOLS)[number]
+export const BAR_TOOL_LABEL: Record<BarTool, string> = { search: 'Search', add: 'Add', menu: 'Menu' }
+const isTool = (k: string): k is BarTool => (BAR_TOOLS as readonly string[]).includes(k)
+
+/**
+ * Search, Dashboard, Add in the middle, Tasks, Menu (Sam, 29 Oct 2026:
+ * "have that as the default"; Menu and Tasks swapped later that day). Saved as `buttons`, so the four-slot bars
+ * saved before it do not hold anyone on the old layout.
+ */
+export const DEFAULT_PHONE_BAR = ['search', 'home', 'add', 'tasks', 'menu']
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -529,7 +553,10 @@ export function readMenuPrefs(raw: unknown): MenuPrefs {
     ...(Array.isArray(d.hidden) ? { hidden: strings(d.hidden) } : {}),
   })
   if (isObject(raw.desktop)) out.desktop = device(raw.desktop)
-  if (isObject(raw.phone)) out.phone = { ...device(raw.phone), bar: strings(raw.phone.bar) }
+  if (isObject(raw.phone)) {
+    out.phone = { ...device(raw.phone), bar: strings(raw.phone.bar) }
+    if (Array.isArray(raw.phone.buttons)) out.phone.buttons = strings(raw.phone.buttons)
+  }
   return out
 }
 
@@ -587,12 +614,12 @@ export const OLD_NAV_VIEWS: Readonly<Record<string, readonly string[]>> = {
   '/irrigation-info': ['pivots-pumps'],
   '/inputs': [],
   '/chemicals': ['chemicals'],
-  '/spraying': ['spraying'],
+  '/spraying': ['chemicals'],
   '/fertilizer': ['soil-tests', 'fertility-plan', 'tissue-tests', 'fertilizer-prices', 'manure', 'fertilizer-savings'],
   '/fuel': ['fuel-trucking'],
   '/utilities': ['utilities'],
   '/livestock': [],
-  '/cattle': ['pastures', 'spray-restrictions'],
+  '/cattle': ['pastures'],
   '/herd': ['herd'],
   '/feed': ['feed', 'bale-checks'],
   '/cattle-markets': ['cattle-sales', 'cattle-markets', 'pasture-insurance'],
@@ -722,11 +749,14 @@ export function moveSection(fullOrder: string[], visible: string[], key: string,
 export type BarSlot =
   | { kind: 'section'; key: string; section: MenuSection }
   | { kind: 'view'; key: string; item: MenuItem }
+  | { kind: 'tool'; key: BarTool }
 
 /**
- * The four phone bar slots.
+ * The phone bar's five buttons.
  *
- * A slot is a section key or a view key. One that cannot be shown (Cattle
+ * A slot is a tool (BAR_TOOLS), a section key or a view key. Menu is always
+ * on the bar, in the last slot if they left it off: without it a phone has no
+ * way to the rest of the app. A place that cannot be shown (Cattle
  * switched off for the farm, a view the person hid from their phone) is filled
  * with the next section in their order not already on the bar, so the bar
  * never has a hole and never shows the same thing twice.
@@ -745,6 +775,11 @@ export function resolveBar(menu: ResolvedMenu, saved: string[] | undefined): Bar
   const used = new Set<string>()
   const slots: (BarSlot | null)[] = []
   for (const key of wanted.slice(0, PHONE_BAR_SLOTS)) {
+    if (isTool(key) && !used.has(key)) {
+      used.add(key)
+      slots.push({ kind: 'tool', key })
+      continue
+    }
     const sec = secByKey.get(key)
     const item = itemByKey.get(key)
     if (used.has(key) || (!sec && !item)) {
@@ -764,6 +799,7 @@ export function resolveBar(menu: ResolvedMenu, saved: string[] | undefined): Bar
       if (next) out.push({ kind: 'section', key: next.key, section: next })
     }
   }
+  if (!out.some((s) => s.key === 'menu')) out.splice(Math.min(out.length, PHONE_BAR_SLOTS - 1), 1, { kind: 'tool', key: 'menu' })
   return out
 }
 

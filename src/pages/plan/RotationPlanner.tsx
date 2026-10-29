@@ -37,7 +37,6 @@ import {
   useCropHistoryByYear,
   useCropPlans,
   useCrops,
-  useFields,
 } from '@/lib/queries'
 import {
   buildSuccessionMap,
@@ -70,6 +69,7 @@ import {
 import { cn } from '@/lib/utils'
 import { RotationAdvisor } from '@/pages/plan/RotationAdvisor'
 import { useRotationContext } from '@/lib/rotation-context'
+import { usePartnerAccess, useRotationFields } from '@/lib/partner-view'
 import { carryover, cropKey, groupOf, LIMIT_GROUPS, scoutHits } from '@/lib/rotation-engine'
 import { volunteerConflicts } from '@/lib/canola-trait'
 import {
@@ -446,7 +446,12 @@ export function RotationPlanner({
 }) {
   const { cropYear, setCropYear } = useCropYear()
   const navigate = useNavigate()
-  const { data: fields } = useFields()
+  // A crop-share partner reads every one of our fields here and plans only
+  // his own field-years (lib/partner-view.ts); staff get the usual list.
+  const { data: fields } = useRotationFields()
+  const { partner, canWrite } = usePartnerAccess()
+  const canPlan = isManager || partner
+  const canCell = (fieldId: string, year: number) => isManager || canWrite(fieldId, year)
   const { data: crops } = useCrops()
   const { data: allBoundaries } = useAllBoundaries()
   const { data: rules } = useSuccessionRules()
@@ -919,7 +924,7 @@ export function RotationPlanner({
       */}
           {/* The same one-year-at-a-time rule on a phone, where the column
               headers are not there to carry it. */}
-          {isManager && (
+          {canPlan && (
             <div className="flex flex-wrap items-center gap-1.5 sm:hidden">
               {editYear == null ? (
                 <>
@@ -1054,7 +1059,7 @@ export function RotationPlanner({
                           ) : (
                             <button
                               type="button"
-                              disabled={!isManager || locked || editYear !== y}
+                              disabled={!canCell(f.id, y) || locked || editYear !== y}
                               title={
                                 locked
                                   ? `Planted in ${y}`
@@ -1133,7 +1138,7 @@ export function RotationPlanner({
                           <span className="ml-1 normal-case">(planning now)</span>
                         )}
                       </span>
-                      {isManager && y >= planFrom && (
+                      {canPlan && y >= planFrom && (
                         <ColumnEdit
                           year={y}
                           editing={editYear === y}
@@ -1492,7 +1497,7 @@ export function RotationPlanner({
                                 <CheckSelect
                                   values={pickedIds}
                                   size="sm"
-                                  disabled={!isManager}
+                                  disabled={!canCell(f.id, y)}
                                   ariaLabel={`${f.name} ${y} crops`}
                                   placeholder="Pick a crop"
                                   className="min-w-[7rem] flex-1"
@@ -1527,7 +1532,7 @@ export function RotationPlanner({
                                         setPicked([id, ...pickedIds.filter((x) => x !== id)])
                                       }
                                       onAnswer={answer}
-                                      canPick={isManager}
+                                      canPick={canCell(f.id, y)}
                                     />
                                   }
                                 />
@@ -1543,7 +1548,7 @@ export function RotationPlanner({
                                       setPicked([id, ...pickedIds.filter((x) => x !== id)])
                                     }
                                     onAnswer={answer}
-                                    canPick={isManager}
+                                    canPick={canCell(f.id, y)}
                                   />
                                 </InfoPopover>
                                 {(bad || warn) && (
@@ -1567,7 +1572,7 @@ export function RotationPlanner({
                                   </button>
                                 )}
                                 {cid && inspBadge(f.id, f.name, y, cid)}
-                                {!cid && isManager && (
+                                {!cid && canCell(f.id, y) && (
                                   <button
                                     title="Suggest a valid crop"
                                     onClick={() => {
@@ -1778,7 +1783,7 @@ export function RotationPlanner({
       )}
       {editing && (
         <PlanChoices
-          isManager={isManager}
+          isManager={canCell(editing.fieldId, editing.year)}
           fieldName={(fields ?? []).find((f) => f.id === editing.fieldId)?.name ?? ''}
           year={editing.year}
           crops={activeCrops}

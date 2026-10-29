@@ -40,7 +40,7 @@ insert into public.contracts (id, crop_year, crop_id, buyer_contact_id, contract
   ('0de30000-0000-4000-8000-000000000562', extract(year from current_date)::int, (select id from public.crops where name = 'Peas'),
    '0de30000-0000-4000-8000-000000000303', 'PPP-0917', 8000, 9.40, current_date - 45, current_date + 25, 'partial', 'No. 2 yellow or better. Off the combine.'),
   ('0de30000-0000-4000-8000-000000000563', extract(year from current_date)::int, (select id from public.crops where name = 'Barley'),
-   '0de30000-0000-4000-8000-000000000304', 'AVM-3391', 10000, 6.90, current_date - 20, current_date + 115, 'partial', 'Malt, AAC Synergy. Protein 10.5–13%, germination 95%+.'),
+   '0de30000-0000-4000-8000-000000000304', 'AVM-3391', 10000, 6.90, current_date - 20, current_date + 115, 'partial', 'Malt, Ridgeline B210. Protein 10.5–13%, germination 95%+.'),
   ('0de30000-0000-4000-8000-000000000564', extract(year from current_date)::int, (select id from public.crops where name = 'Wheat'),
    '0de30000-0000-4000-8000-000000000302', 'CGT-24602', 15000, 8.05, current_date + 90, current_date + 175, 'open', 'Deferred delivery, 1 CWRS 13.5% protein.'),
   ('0de30000-0000-4000-8000-000000000565', extract(year from current_date)::int + 1, (select id from public.crops where name = 'Canola'),
@@ -102,8 +102,8 @@ select case when d.i <= d.direct_loads then null else
        end,
        d.crop_id, d.variety, extract(year from current_date)::int, d.field_id, d.loaded_on,
        round(d.tare + d.net_kg), d.tare, d.lb_per_bu,
-       case when d.truck = 'semi' then 'Kenworth T800' else (array['Truck 2 (IH tandem)', 'Truck 3 (Freightliner tandem)'])[1 + d.i % 2] end,
-       case when d.truck = 'semi' then 'Doepker tridem' end,
+       case when d.truck = 'semi' then 'Roadline H800' else (array['Truck 2 (tandem)', 'Truck 3 (tandem)'])[1 + d.i % 2] end,
+       case when d.truck = 'semi' then 'Tridem trailer' end,
        case when d.truck = 'semi' then 'Jordan Pike' else (array['Casey Moore', 'Alex Rivers'])[1 + d.i % 2] end,
        case when d.truck = 'semi' then '0de30000-0000-4000-8000-0000000000a2'::uuid else (array['0de30000-0000-4000-8000-0000000000a3', '0de30000-0000-4000-8000-0000000000a1'])[1 + d.i % 2]::uuid end,
        case when d.i <= d.direct_loads then 'Straight to the buyer off the combine.' end,
@@ -139,7 +139,7 @@ insert into public.scale_tickets (crop_year, crop_id, contract_id, bin_id, buyer
 select extract(year from current_date)::int, (select id from public.crops where name = 'Canola'), '0de30000-0000-4000-8000-000000000561',
        '0de30000-0000-4000-8000-000000000506', 'Creekside Grain Terminal', t.tk, current_date - t.ago,
        round(t.bu * 50 / 0.988) + 33950, 33950, round(t.bu * 50 / 0.988), t.m, 1.2, t.bu, 'bu', '1 CAN', '0de30000-0000-4000-8000-0000000000a1',
-       'Jordan Pike', 'Kenworth T800', 'R-' || t.tk
+       'Jordan Pike', 'Roadline H800', 'R-' || t.tk
 from (values (1061.4, 9, '88412', 8.4), (1052.8, 8, '88437', 8.7), (1066.0, 6, '88502', 8.3), (1049.5, 3, '88590', 8.9)) as t(bu, ago, tk, m);
 
 -- Last year's carry-over still in the yard.

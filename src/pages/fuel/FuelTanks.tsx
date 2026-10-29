@@ -7,7 +7,7 @@ import { FUEL_PRODUCT_LABEL, type FuelProduct } from '@/lib/fuel-supplier-invoic
 import { cn } from '@/lib/utils'
 import { MapPin, RefreshCw } from 'lucide-react'
 import { FUEL_COLOUR, FuelTankMap } from './FuelTankMap'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const L = (v: number) => `${Math.round(v).toLocaleString('en-CA')} L`
 
@@ -160,17 +160,17 @@ export function FuelTanks({ isManager }: { isManager: boolean }) {
             {sync.error && <span className="text-red-600">{(sync.error as Error).message}</span>}
             {sync.data && !sync.isPending && <span className="text-emerald-700">{sync.data}</span>}
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
             <table className="w-full min-w-[640px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="py-1 pr-2 font-medium">Tank</th>
-                  <th className="py-1 pr-2 font-medium">Where</th>
-                  <th className="py-1 pr-2 font-medium">Holds</th>
-                  <th className="py-1 pr-2 text-right font-medium">Capacity</th>
-                  <th className="py-1 pr-2 text-right font-medium">In it</th>
-                  <th className="py-1 text-right font-medium">Room</th>
-                  {isManager && <th className="w-px py-1" />}
+                  <th className={TABLE_TH}>Tank</th>
+                  <th className={TABLE_TH}>Where</th>
+                  <th className={TABLE_TH}>Holds</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Capacity</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>In it</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Room</th>
+                  {isManager && <th className={cn(TABLE_TH, 'w-px')} />}
                 </tr>
               </thead>
               <tbody>
@@ -183,17 +183,17 @@ export function FuelTanks({ isManager }: { isManager: boolean }) {
                       onClick={isManager ? rowClick(() => setOpen(t)) : undefined}
                       className={cn('border-b border-gray-100', isManager && 'cursor-pointer hover:bg-gray-50')}
                     >
-                      <td className="py-1.5 pr-2 font-medium text-gray-900">
+                      <td className="px-3 py-1.5 font-medium text-gray-900">
                         {t.name}
                         {t.notes && <p className="text-[11px] font-normal text-gray-500">{t.notes}</p>}
                       </td>
-                      <td className="py-1.5 pr-2 text-gray-700">{t.location ?? '—'}</td>
-                      <td className="py-1.5 pr-2 text-gray-700">
+                      <td className="px-3 py-1.5 text-gray-700">{t.location ?? '—'}</td>
+                      <td className="px-3 py-1.5 text-gray-700">
                         <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: FUEL_COLOUR[t.product] }} />
                         {FUEL_PRODUCT_LABEL[t.product]}
                       </td>
-                      <td className="py-1.5 pr-2 text-right tabular-nums">{L(t.capacity_l)}</td>
-                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                      <td className="px-3 py-1.5 text-right tabular-nums">{L(t.capacity_l)}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">
                         {t.level_l == null ? (
                           '—'
                         ) : (
@@ -214,9 +214,9 @@ export function FuelTanks({ isManager }: { isManager: boolean }) {
                           </>
                         )}
                       </td>
-                      <td className="py-1.5 text-right tabular-nums">{room == null ? '—' : L(room)}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{room == null ? '—' : L(room)}</td>
                       {isManager && (
-                        <td className="py-1.5 pl-2 text-right">
+                        <td className="px-3 py-1.5 text-right">
                           <button
                             type="button"
                             onClick={() => setPlacingId(placingId === t.id ? null : t.id)}

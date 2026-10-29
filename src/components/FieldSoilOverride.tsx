@@ -5,6 +5,7 @@ import { useFieldSoilUnits } from '@/lib/soil-landscape'
 import { SoilTermInfo } from '@/components/SoilTerms'
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
+import { Modal } from '@/components/Modal'
 
 const pct = (v: number | string | null | undefined) => {
   const n = Number(v)
@@ -107,7 +108,7 @@ export function FieldSoilOverride({
         >
           {source === 'manual' ? 'set by hand' : source === 'survey' ? 'from the survey' : 'not set'}
         </span>
-        {canEdit && !editing && (
+        {canEdit && (
           <button
             onClick={open}
             className="ml-auto rounded-md border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
@@ -117,7 +118,7 @@ export function FieldSoilOverride({
         )}
       </div>
 
-      {!editing && source === 'survey' && (
+      {source === 'survey' && (
         <HelpNote className="mt-1" summary="From the soil survey — set your own if it doesn't match." title="Where these come from">
           The survey looks these up from the soil&rsquo;s name, so every field on the same soil gets
           the same number. If this one runs out sooner or later than that suggests, set your own.
@@ -125,94 +126,96 @@ export function FieldSoilOverride({
       )}
 
       {editing && (
-        <div className="mt-2 space-y-2">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="text-xs text-gray-600">
-              Field capacity %
-              <input
-                type="number"
-                step="0.1"
-                value={fcInput}
-                onChange={(e) => setFcInput(e.target.value)}
-                className="mt-1 w-24 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
-              />
-            </label>
-            <label className="text-xs text-gray-600">
-              Wilting point %
-              <input
-                type="number"
-                step="0.1"
-                value={wpInput}
-                onChange={(e) => setWpInput(e.target.value)}
-                className="mt-1 w-24 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
-              />
-            </label>
-            <p className="pb-1 text-xs text-gray-600">
-              {valid ? (
-                <>
-                  <strong>{previewInches}″</strong> of water a crop can reach per metre
-                </>
-              ) : (
-                <span className="text-amber-700">
-                  Both by volume, and the wilting point must be below the field capacity.
-                </span>
-              )}
-            </p>
-          </div>
-          {survey && (
-            <p className="text-[11px] text-gray-500">
-              The survey says {survey.fc}% and {survey.wp}% for this field.
-            </p>
-          )}
-          {save.error && (
-            <p className="text-xs text-red-700">{(save.error as Error).message}</p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <button
-              disabled={!valid || save.isPending}
-              onClick={() =>
-                save.mutate(
-                  {
-                    id: fieldId,
-                    soil_fc: Math.round((fcNum / 100) * 1000) / 1000,
-                    soil_wp: Math.round((wpNum / 100) * 1000) / 1000,
-                    soil_source: 'manual',
-                  },
-                  { onSuccess: () => setEditing(false) },
-                )
-              }
-              className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
-            >
-              {save.isPending ? 'Saving…' : 'Save'}
-            </button>
+        <Modal title={'Soil for this field'} onClose={() => setEditing(false)} wide>
+          <div className="mt-2 space-y-2">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-xs text-gray-600">
+                Field capacity %
+                <input
+                  type="number"
+                  step="0.1"
+                  value={fcInput}
+                  onChange={(e) => setFcInput(e.target.value)}
+                  className="mt-1 w-24 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
+                />
+              </label>
+              <label className="text-xs text-gray-600">
+                Wilting point %
+                <input
+                  type="number"
+                  step="0.1"
+                  value={wpInput}
+                  onChange={(e) => setWpInput(e.target.value)}
+                  className="mt-1 w-24 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
+                />
+              </label>
+              <p className="pb-1 text-xs text-gray-600">
+                {valid ? (
+                  <>
+                    <strong>{previewInches}″</strong> of water a crop can reach per metre
+                  </>
+                ) : (
+                  <span className="text-amber-700">
+                    Both by volume, and the wilting point must be below the field capacity.
+                  </span>
+                )}
+              </p>
+            </div>
             {survey && (
+              <p className="text-[11px] text-gray-500">
+                The survey says {survey.fc}% and {survey.wp}% for this field.
+              </p>
+            )}
+            {save.error && (
+              <p className="text-xs text-red-700">{(save.error as Error).message}</p>
+            )}
+            <div className="flex flex-wrap gap-2">
               <button
-                disabled={save.isPending}
+                disabled={!valid || save.isPending}
                 onClick={() =>
                   save.mutate(
                     {
                       id: fieldId,
-                      soil_fc: Math.round((survey.fc / 100) * 1000) / 1000,
-                      soil_wp: Math.round((survey.wp / 100) * 1000) / 1000,
-                      soil_source: 'survey',
+                      soil_fc: Math.round((fcNum / 100) * 1000) / 1000,
+                      soil_wp: Math.round((wpNum / 100) * 1000) / 1000,
+                      soil_source: 'manual',
                     },
                     { onSuccess: () => setEditing(false) },
                   )
                 }
-                className="flex items-center gap-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
               >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Back to the survey
+                {save.isPending ? 'Saving…' : 'Save'}
               </button>
-            )}
-            <button
-              onClick={() => setEditing(false)}
-              className="rounded-md px-3 py-1.5 text-sm text-gray-600"
-            >
-              Cancel
-            </button>
+              {survey && (
+                <button
+                  disabled={save.isPending}
+                  onClick={() =>
+                    save.mutate(
+                      {
+                        id: fieldId,
+                        soil_fc: Math.round((survey.fc / 100) * 1000) / 1000,
+                        soil_wp: Math.round((survey.wp / 100) * 1000) / 1000,
+                        soil_source: 'survey',
+                      },
+                      { onSuccess: () => setEditing(false) },
+                    )
+                  }
+                  className="flex items-center gap-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Back to the survey
+                </button>
+              )}
+              <button
+                onClick={() => setEditing(false)}
+                className="rounded-md px-3 py-1.5 text-sm text-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

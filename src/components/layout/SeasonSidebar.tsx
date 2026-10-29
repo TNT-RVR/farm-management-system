@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowUpRight, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowUpRight, ChevronRight } from 'lucide-react'
 import { MENU_SECTION_BY_KEY, isLeaf, type MenuItem, type MenuMatch, type MenuSection } from '@/lib/nav-tree'
 import { useMenu, useMenuMatch } from '@/lib/menu-prefs'
 import { cn } from '@/lib/utils'
@@ -53,8 +53,14 @@ export function MenuItemLink({
 }
 
 /**
- * The views of one section, under their headings. Headings are small labels
- * that fold; they are not links, so they never add a click on the way to a view.
+ * The views of one section, under their headings.
+ *
+ * A heading is drawn as a row of its own kind: the same arrow a section has,
+ * an icon, and the type, size and colour of the views under it (Sam,
+ * 29 Oct 2026 — as tiny grey capitals, Fertility "seemed out of place").
+ * It is still not a link, so it never adds a click on the way to a view; its
+ * views sit one step in, their icons under its own. Folded with the page you
+ * are on inside it, it goes green with a dot, exactly as a folded section does.
  */
 export function SectionGroups({
   section,
@@ -73,6 +79,8 @@ export function SectionGroups({
     <>
       {section.groups.map((g) => {
         const isFolded = !!g.heading && folded[g.key] === true
+        const Icon = g.icon
+        const here = g.items.some((i) => i.view.key === match?.item?.view.key)
         return (
           <div key={g.key}>
             {g.heading && (
@@ -80,13 +88,28 @@ export function SectionGroups({
                 type="button"
                 onClick={() => onFold(g.key)}
                 aria-expanded={!isFolded}
-                className="flex w-full items-center gap-1 px-2 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400 hover:text-gray-600"
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-gray-100',
+                  here && isFolded ? 'font-medium text-brand-800' : 'text-gray-600',
+                )}
               >
-                {isFolded ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                {g.heading}
+                <ChevronRight
+                  className={cn('h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform', !isFolded && 'rotate-90')}
+                />
+                {Icon && <Icon className="h-3.5 w-3.5 shrink-0" />}
+                <span className="min-w-0 truncate">{g.heading}</span>
+                {here && isFolded && (
+                  <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-brand-700" aria-label="You are in this group" />
+                )}
               </button>
             )}
-            {!isFolded && g.items.map((i) => <MenuItemLink key={i.view.key} item={i} match={match} onNavigate={onNavigate} />)}
+            {!isFolded && (
+              <div className={cn(g.heading && 'ml-3 border-l border-gray-200 pl-2')}>
+                {g.items.map((i) => (
+                  <MenuItemLink key={i.view.key} item={i} match={match} onNavigate={onNavigate} />
+                ))}
+              </div>
+            )}
           </div>
         )
       })}

@@ -8,7 +8,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { cn } from '@/lib/utils'
 import { Card, SettingsGroup, type NumberField } from './ui'
 import { FieldLink, money, n1 } from '../fertilizer/savings/ui'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const FIELDS: NumberField<keyof SpreaderInputs>[] = [
   { key: 'widthFt', label: 'Spread width', unit: 'ft', hint: 'the bout, not the spinner throw' },
@@ -106,33 +106,33 @@ export function SpreadingTab({ isManager }: { isManager: boolean }) {
       </Card>
 
       <Card title="By field, with the drive there and back">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full text-xs">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="px-2 py-1 font-medium">Field</th>
-                <th className="px-2 py-1 text-right font-medium">Acres</th>
-                <th className="px-2 py-1 text-right font-medium">Round trip</th>
-                <th className="px-2 py-1 text-right font-medium">Hours</th>
-                <th className="px-2 py-1 text-right font-medium">Drive $/ac</th>
-                <th className="px-2 py-1 text-right font-medium">Total $/ac</th>
-                <th className="px-2 py-1 text-right font-medium">Field</th>
-                <th className="px-2 py-1 text-right font-medium">vs custom</th>
+                <th className={TABLE_TH}>Field</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Acres</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Round trip</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Hours</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Drive $/ac</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Total $/ac</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Field</th>
+                <th className={cn(TABLE_TH, 'text-right')}>vs custom</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {rows.map(({ f, acres, km, c }) => (
                 <tr key={f.id}>
-                  <td className="px-2 py-1 text-gray-800">
+                  <td className="px-3 py-1 text-gray-800">
                     <FieldLink id={f.id} name={f.name} to="work" />
                   </td>
-                  <td className="px-2 py-1 text-right tabular-nums">{n1(acres)}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-gray-600">{n1(km)} km</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-gray-600">{n1(c.hoursPerAcre * acres)}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-gray-600">{money(c.perAcre.travel, 2)}</td>
-                  <td className="px-2 py-1 text-right font-semibold tabular-nums">{money(c.perAcre.total, 2)}</td>
-                  <td className="px-2 py-1 text-right tabular-nums">{money(c.perAcre.total * acres)}</td>
-                  <td className={cn('px-2 py-1 text-right tabular-nums', c.vsCustom < 0 ? 'text-green-800' : 'text-red-700')}>{money(c.vsCustom, 2)}</td>
+                  <td className="px-3 py-1 text-right tabular-nums">{n1(acres)}</td>
+                  <td className="px-3 py-1 text-right tabular-nums text-gray-600">{n1(km)} km</td>
+                  <td className="px-3 py-1 text-right tabular-nums text-gray-600">{n1(c.hoursPerAcre * acres)}</td>
+                  <td className="px-3 py-1 text-right tabular-nums text-gray-600">{money(c.perAcre.travel, 2)}</td>
+                  <td className="px-3 py-1 text-right font-semibold tabular-nums">{money(c.perAcre.total, 2)}</td>
+                  <td className="px-3 py-1 text-right tabular-nums">{money(c.perAcre.total * acres)}</td>
+                  <td className={cn('px-3 py-1 text-right tabular-nums', c.vsCustom < 0 ? 'text-green-800' : 'text-red-700')}>{money(c.vsCustom, 2)}</td>
                 </tr>
               ))}
             </tbody>

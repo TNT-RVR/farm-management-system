@@ -9,6 +9,7 @@ import { Select } from '@/components/Select'
 const YIELD_UNITS = ['bu', 'lbs', 'cwt', 'ton', 'MT', 'ac'] as const
 import { ConfirmDialog, Modal } from '@/components/Modal'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
+import { usePartnerCrops, usePartnerFarmId } from '@/lib/partner-view'
 import { useCropYear } from '@/lib/crop-year'
 import { useCropMutations, useCropVarieties, useCrops, type CropRow } from '@/lib/queries'
 import { useAllCropInputs, useAllCropPrices, useYieldHistory } from '@/lib/forecast-data'
@@ -57,6 +58,13 @@ export function CropsPage() {
   const setWeighed = useSetCropWeighed()
   const setColour = useSetCropColour()
   const isManager = hasManagerAccess(profile?.role)
+  // A crop-share partner lists and edits only the crops he grows: his
+  // company's own, and ours on his fields, whose price and rules are then ours
+  // too (one row each). Null for staff (lib/partner-view.ts).
+  const partnerCrops = usePartnerCrops()
+  const partnerFarm = usePartnerFarmId()
+  const canEditCrop = (id: string) => isManager || Boolean(partnerCrops?.has(id))
+  const canAdd = isManager || partnerCrops != null
   const { data: varietyList } = useCropVarieties()
   const { data: recorded } = useRecordedVarieties()
   const { data: varietySettings } = useCropVarietySettings()
@@ -82,8 +90,9 @@ export function CropsPage() {
   const [deleting, setDeleting] = useState<CropRow | null>(null)
   const [adding, setAdding] = useState<{ name: string; unit: CropRow['yield_unit'] } | null>(null)
 
-  const active = useMemo(() => (crops ?? []).filter((c) => c.active), [crops])
-  const archived = useMemo(() => (crops ?? []).filter((c) => !c.active), [crops])
+  const shown = useMemo(() => (crops ?? []).filter((c) => !partnerCrops || partnerCrops.has(c.id)), [crops, partnerCrops])
+  const active = useMemo(() => shown.filter((c) => c.active), [shown])
+  const archived = useMemo(() => shown.filter((c) => !c.active), [shown])
 
   // The same price, cost and yield the plan and budget use for this year.
   const rows = useMemo<Row[]>(
@@ -107,7 +116,7 @@ export function CropsPage() {
     colour: {
       render: (r) => (
         <span onClick={(e) => e.stopPropagation()} className="inline-block">
-          {isManager ? (
+          {canEditCrop(r.id) ? (
             <ColourPicker
               value={cropColour(r)}
               ariaLabel={`Colour for ${r.name}`}
@@ -126,7 +135,7 @@ export function CropsPage() {
       className: 'font-medium',
       render: (r) => {
         const count = varietiesOf(r.id).length
-        const canOpen = count > 0 || isManager
+        const canOpen = count > 0 || canEditCrop(r.id)
         return (
           <span className="inline-flex items-center">
             {canOpen ? (
@@ -190,7 +199,7 @@ export function CropsPage() {
     // override this for one year without changing the crop itself.
     binned: {
       render: (r) =>
-        isManager ? (
+        canEditCrop(r.id) ? (
           <label className="flex min-h-10 items-center gap-1.5 sm:min-h-0" onClick={(e) => e.stopPropagation()}>
             <input
               type="checkbox"
@@ -210,7 +219,7 @@ export function CropsPage() {
     // feed never see the combines.
     combines: {
       render: (r) =>
-        isManager ? (
+        canEditCrop(r.id) ? (
           <label className="flex min-h-10 items-center gap-1.5 sm:min-h-0" onClick={(e) => e.stopPropagation()}>
             <input
               type="checkbox"
@@ -229,7 +238,7 @@ export function CropsPage() {
     // offer the crop, nor fields growing only crops like it (potatoes, hay).
     weighed: {
       render: (r) =>
-        isManager ? (
+        canEditCrop(r.id) ? (
           <label className="flex min-h-10 items-center gap-1.5 sm:min-h-0" onClick={(e) => e.stopPropagation()}>
             <input
               type="checkbox"
@@ -257,13 +266,14 @@ export function CropsPage() {
       className: 'text-right tabular-nums',
     },
   })
-  if (isManager) {
+  if (canAdd) {
     columns.push({
       key: 'actions',
       label: '',
       value: () => '',
       className: 'text-right',
-      render: (r) => (
+      // A partner archives and deletes his company's own crops, never ours.
+      render: (r) => partnerCrops && crops?.find((c) => c.id === r.id)?.farm_id !== partnerFarm ? null : (
         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => navigate(`/crops/${r.id}`)}
@@ -314,7 +324,7 @@ export function CropsPage() {
           ))}
         </div>
 
-        {isManager && (
+        {canAdd && (
           <button
             onClick={() => setAdding({ name: '', unit: 'bu' })}
             className="ml-auto flex items-center gap-1.5 rounded-md bg-brand-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-800"
@@ -344,7 +354,7 @@ export function CropsPage() {
                 names={varietiesOf(r.id)}
                 rows={varietyRowsOf(r.id)}
                 colSpan={columns.length}
-                isManager={isManager}
+                isManager={canEditCrop(r.id)}
                 onOpen={(variety) => setVarietyEdit({ cropId: r.id, variety })}
                 onAdd={() => setVarietyEdit({ cropId: r.id, variety: null })}
               />

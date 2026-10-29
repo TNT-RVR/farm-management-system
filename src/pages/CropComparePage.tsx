@@ -19,7 +19,7 @@ import { Fold } from '@/components/Fold'
 import { cn } from '@/lib/utils'
 import { money, n0 } from '@/lib/format'
 import { YearSelect } from '@/components/YearSelect'
-import { CARD_HEAD, TABLE_HEAD, TABLE_TH_MUTED } from '@/lib/table-style'
+import { CARD_HEAD, TABLE_HEAD, TABLE_TH, TABLE_TH_MUTED } from '@/lib/table-style'
 
 const unitPrice = (v: number) => (v < 1 ? v.toFixed(3) : v.toFixed(2))
 const fmtYield = (v: number, unit: string) => `${unit === 'bu' ? n0(v) : v.toFixed(unit === 'MT' || unit === 'ton' ? 2 : 1)} ${unit}`
@@ -669,36 +669,38 @@ function FarmCheck({
         </p>
       )}
       <Fold title="By crop" storageKey="crop-compare-farm-crops" className="mt-2">
-        <table className="w-full text-xs tabular-nums">
-          <thead className={TABLE_HEAD}>
-            <tr>
-              <th className="p-1 text-left font-medium">Crop</th>
-              <th className="p-1 text-right font-medium">Acres</th>
-              <th className="p-1 text-right font-medium">Over inputs /ac</th>
-              <th className="p-1 text-right font-medium">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.list.map((c) => {
-              const pa = c.total / c.acres
-              return (
-                <tr key={c.name} className="border-t border-gray-100">
-                  <td className="p-1">
-                    {c.name}
-                    {c.estimated && (
-                      <span className="ml-1 text-gray-400" title="Some fields have no harvest on record, so the expected yield stands in">
-                        est.
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-1 text-right">{n0(c.acres)}</td>
-                  <td className={cn('p-1 text-right', fixed != null && pa < fixed ? 'text-amber-700' : 'text-green-700')}>{money(pa)}</td>
-                  <td className="p-1 text-right">{money(c.total)}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
+          <table className="w-full text-xs tabular-nums">
+            <thead className={TABLE_HEAD}>
+              <tr>
+                <th className={TABLE_TH}>Crop</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Acres</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Over inputs /ac</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.list.map((c) => {
+                const pa = c.total / c.acres
+                return (
+                  <tr key={c.name} className="border-t border-gray-100">
+                    <td className="px-3 py-1">
+                      {c.name}
+                      {c.estimated && (
+                        <span className="ml-1 text-gray-400" title="Some fields have no harvest on record, so the expected yield stands in">
+                          est.
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-1 text-right">{n0(c.acres)}</td>
+                    <td className={cn('px-3 py-1 text-right', fixed != null && pa < fixed ? 'text-amber-700' : 'text-green-700')}>{money(pa)}</td>
+                    <td className="px-3 py-1 text-right">{money(c.total)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
         <p className="mt-1 text-[11px] text-gray-500">
           Amber: doesn't cover the fixed costs on its own. Yields are that year's harvest where recorded.
           {result.rentedOut > 0 && ` ${n0(result.rentedOut)} ac rented out not counted.`}

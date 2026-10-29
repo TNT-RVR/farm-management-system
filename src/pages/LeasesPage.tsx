@@ -125,7 +125,7 @@ export function LeasesPage() {
         <button
           type="button"
           onClick={() => setEditing('new')}
-          className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
+          className="inline-flex items-center gap-1 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800"
         >
           <Plus className="h-4 w-4" /> Add lease
         </button>
@@ -579,7 +579,7 @@ function LeaseForm({ lease, onClose }: { lease: Lease | null; onClose: () => voi
           type="button"
           disabled={!f.landlord.trim() || save.isPending}
           onClick={() => save.mutate()}
-          className="rounded-md bg-brand-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+          className="rounded-md bg-brand-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
         >
           {save.isPending ? 'Saving…' : 'Save lease'}
         </button>

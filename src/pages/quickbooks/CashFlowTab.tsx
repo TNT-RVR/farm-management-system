@@ -19,7 +19,7 @@ import {
   type ForecastMonth,
 } from '@/lib/cash-flow'
 import { cn } from '@/lib/utils'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const money0 = (v: number) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
 const short = (v: number) => (Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : Math.abs(v) >= 1e3 ? `${Math.round(v / 1e3)}k` : String(Math.round(v)))
@@ -179,32 +179,32 @@ export function CashFlowTab({ realm }: { realm: string }) {
             </button>
           </div>
 
-          <Fold title="By kind" summary={`${lines.length} kinds`} storageKey="cash-flow-kinds">
+          <Fold title="By kind" summary={`${lines.length} kinds`} storageKey="cash-flow-kinds" className="overflow-hidden" bodyClassName="p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className={TABLE_HEAD}>
                   <tr>
-                    <th className="py-1 pr-2 text-left font-medium">Kind</th>
-                    <th className="py-1 pr-2 text-right font-medium">Year</th>
-                    <th className="py-1 pr-2 text-right font-medium">Last year</th>
-                    <th className="py-1 pr-2 text-left font-medium">Amount from</th>
-                    <th className="py-1 text-left font-medium">Paid in</th>
+                    <th className={cn(TABLE_TH, 'text-left')}>Kind</th>
+                    <th className={cn(TABLE_TH, 'text-right')}>Year</th>
+                    <th className={cn(TABLE_TH, 'text-right')}>Last year</th>
+                    <th className={cn(TABLE_TH, 'text-left')}>Amount from</th>
+                    <th className={cn(TABLE_TH, 'text-left')}>Paid in</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {lines.map((l) => (
                     <tr key={l.key} className="align-top">
-                      <td className="py-1 pr-2 text-gray-800">
+                      <td className="px-3 py-1 text-gray-800">
                         {l.label}
                         <span className="text-gray-400"> · {l.side}</span>
                       </td>
-                      <td className="py-1 pr-2 text-right tabular-nums text-gray-900">{money0(l.annual)}</td>
-                      <td className="py-1 pr-2 text-right tabular-nums text-gray-500">{money0(l.lastYear)}</td>
-                      <td className="py-1 pr-2 text-gray-600">
+                      <td className="px-3 py-1 text-right tabular-nums text-gray-900">{money0(l.annual)}</td>
+                      <td className="px-3 py-1 text-right tabular-nums text-gray-500">{money0(l.lastYear)}</td>
+                      <td className="px-3 py-1 text-gray-600">
                         {l.from}
                         {forecast.takenOff[l.key] ? <span className="text-gray-400"> · less {money0(forecast.takenOff[l.key])} open</span> : null}
                       </td>
-                      <td className="py-1 text-gray-600">
+                      <td className="px-3 py-1 text-gray-600">
                         {peakMonths(l.timing.shares) || 'spread through the year'}
                         <span className={cn(l.timing.from === 'assumed' ? 'text-amber-700' : 'text-gray-400')}>
                           {' '}

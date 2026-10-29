@@ -11,7 +11,7 @@ import { useFarmSettings, useFeature } from '@/lib/farm-setup'
 import { InfoPopover } from '@/components/InfoPopover'
 import { useDistrictRate } from '@/lib/irrigation'
 import { n0, n1 } from '@/lib/format'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const signed = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${n0(Math.abs(v))}`
 
@@ -287,18 +287,18 @@ export function LicenceCard({ pool, detail, thisSeason, highlight }: { pool: Poo
           own Used / Allowed are already on the card above, and the room line
           below says whether the licence as a whole is short. */}
       {open && (
-      <div className="mt-1.5 overflow-x-auto">
+      <div className="mt-1.5 overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full min-w-[640px]">
           <thead className={TABLE_HEAD}>
             <tr>
-              <th className="px-2 py-0.5 font-medium">Field</th>
-              <th className="px-2 py-0.5 text-right font-medium">Acres</th>
-              <th className="px-2 py-0.5 text-right font-medium">Even share</th>
-              <th className="px-2 py-0.5 font-medium">Crop</th>
-              <th className="px-2 py-0.5 text-right font-medium">Needs</th>
-              <th className="px-2 py-0.5 text-right font-medium">vs share</th>
-              {thisSeason && <th className="px-2 py-0.5 text-right font-medium">Used</th>}
-              <th className="px-2 py-0.5 text-right font-medium" title="The most this field can take if every other field on the licence gets exactly its need">
+              <th className={TABLE_TH}>Field</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Acres</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Even share</th>
+              <th className={TABLE_TH}>Crop</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Needs</th>
+              <th className={cn(TABLE_TH, 'text-right')}>vs share</th>
+              {thisSeason && <th className={cn(TABLE_TH, 'text-right')}>Used</th>}
+              <th className={cn(TABLE_TH, 'text-right')} title="The most this field can take if every other field on the licence gets exactly its need">
                 Can take up to
               </th>
             </tr>
@@ -306,27 +306,27 @@ export function LicenceCard({ pool, detail, thisSeason, highlight }: { pool: Poo
           <tbody className="divide-y divide-gray-100">
             {pool.fields.map((f) => (
               <tr key={f.fieldId} className={cn(f.fieldId === highlight && 'bg-sky-50 font-medium')}>
-                <td className="px-2 py-1 text-gray-800">
+                <td className="px-3 py-1 text-gray-800">
                   <Link to={`/fields/${f.fieldId}/work`} className="hover:underline">
                     {f.name}
                   </Link>
                   {f.pending && <span className="ml-1 rounded bg-amber-50 px-1 text-[10px] text-amber-800">pending amendment</span>}
                 </td>
-                <td className="px-2 py-1 text-right tabular-nums text-gray-600">{n0(f.acres)}</td>
-                <td className="px-2 py-1 text-right tabular-nums text-gray-700">
+                <td className="px-3 py-1 text-right tabular-nums text-gray-600">{n0(f.acres)}</td>
+                <td className="px-3 py-1 text-right tabular-nums text-gray-700">
                   {f.shareAf != null ? `${n0(f.shareAf)} ac-ft` : '—'}
                   {f.shareIn != null && <span className="block text-[10px] text-gray-400">{n1(f.shareIn)}&quot;</span>}
                 </td>
-                <td className="px-2 py-1 text-gray-600">{f.crop ?? '—'}</td>
-                <td className="px-2 py-1 text-right tabular-nums text-gray-700" title={f.needWhy ?? undefined}>
+                <td className="px-3 py-1 text-gray-600">{f.crop ?? '—'}</td>
+                <td className="px-3 py-1 text-right tabular-nums text-gray-700" title={f.needWhy ?? undefined}>
                   {f.needAf != null ? `${n0(f.needAf)} ac-ft` : '—'}
                   {f.needIn != null && <span className="block text-[10px] text-gray-400">{n1(f.needIn)}&quot;</span>}
                 </td>
-                <td className={cn('px-2 py-1 text-right tabular-nums', (f.overShareAf ?? 0) > 0.5 ? 'text-amber-700' : (f.overShareAf ?? 0) < -0.5 ? 'text-green-700' : 'text-gray-500')}>
+                <td className={cn('px-3 py-1 text-right tabular-nums', (f.overShareAf ?? 0) > 0.5 ? 'text-amber-700' : (f.overShareAf ?? 0) < -0.5 ? 'text-green-700' : 'text-gray-500')}>
                   {f.overShareAf != null ? signed(f.overShareAf) : f.pending && f.needAf != null ? signed(f.needAf) : '—'}
                 </td>
-                {thisSeason && <td className="px-2 py-1 text-right tabular-nums text-gray-700">{n0(f.usedAf)}</td>}
-                <td className="px-2 py-1 text-right tabular-nums font-medium text-gray-900">
+                {thisSeason && <td className="px-3 py-1 text-right tabular-nums text-gray-700">{n0(f.usedAf)}</td>}
+                <td className="px-3 py-1 text-right tabular-nums font-medium text-gray-900">
                   {f.ceilingAf != null ? `${n0(f.ceilingAf)} ac-ft` : '—'}
                   {f.ceilingAf != null && f.acres > 0 && <span className="block text-[10px] font-normal text-gray-400">{n1((f.ceilingAf * 12) / f.acres)}&quot;</span>}
                 </td>

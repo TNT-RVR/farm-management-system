@@ -8,7 +8,8 @@ import { Select } from '@/components/Select'
 import { ColumnHelp } from '@/components/ColumnHelp'
 import { SoilTextureGuide } from '@/components/SoilTextureGuide'
 import { SOIL_PROFILE_HELP } from '@/lib/irrigation-help'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 /**
  * Where the pivot, pump and licence for each field are kept.
@@ -104,23 +105,23 @@ export function SoilProfileEditor({ isManager }: { isManager: boolean }) {
             </label>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="whitespace-nowrap px-2 py-1.5 font-medium">
+                <th className={cn(TABLE_TH, 'whitespace-nowrap')}>
                   Depth (cm) <ColumnHelp help={SOIL_PROFILE_HELP.layerDepth} />
                 </th>
-                <th className="whitespace-nowrap px-2 py-1.5 font-medium">
+                <th className={cn(TABLE_TH, 'whitespace-nowrap')}>
                   Soil type{' '}
                   <ColumnHelp help={SOIL_PROFILE_HELP.layerSoil} width={560}>
                     <SoilTextureGuide />
                   </ColumnHelp>
                 </th>
-                <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">
+                <th className={cn(TABLE_TH, 'whitespace-nowrap text-right')}>
                   Avail. water @ FC (mm) <ColumnHelp help={SOIL_PROFILE_HELP.layerFc} />
                 </th>
-                <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium">
+                <th className={cn(TABLE_TH, 'whitespace-nowrap text-right')}>
                   Water @ WP (mm) <ColumnHelp help={SOIL_PROFILE_HELP.layerWp} />
                 </th>
                 {isManager && <th className="w-8" />}
@@ -129,22 +130,22 @@ export function SoilProfileEditor({ isManager }: { isManager: boolean }) {
             <tbody>
               {layers.map((l, i) => (
                 <tr key={i} className="border-b border-gray-100 last:border-0">
-                  <td className="px-2 py-1">
+                  <td className="px-3 py-1">
                     <input type="number" disabled={!isManager} defaultValue={l.depth_cm}
                       onBlur={(e) => setLayer(i, 'depth_cm', Number(e.target.value))}
                       className="w-20 rounded border border-gray-200 px-1.5 py-1 text-right tabular-nums disabled:opacity-50" />
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-3 py-1">
                     <Select value={l.soil_type} disabled={!isManager} size="sm"
                       onChange={(v) => setLayer(i, 'soil_type', v)} ariaLabel="Soil type"
                       options={SOIL_TYPES.map((t) => ({ value: t, label: t }))} />
                   </td>
-                  <td className="px-2 py-1 text-right">
+                  <td className="px-3 py-1 text-right">
                     <input type="number" disabled={!isManager} defaultValue={l.aw_fc_mm}
                       onBlur={(e) => setLayer(i, 'aw_fc_mm', Number(e.target.value))}
                       className="w-24 rounded border border-gray-200 px-1.5 py-1 text-right tabular-nums disabled:opacity-50" />
                   </td>
-                  <td className="px-2 py-1 text-right">
+                  <td className="px-3 py-1 text-right">
                     <input type="number" disabled={!isManager} defaultValue={l.wp_mm}
                       onBlur={(e) => setLayer(i, 'wp_mm', Number(e.target.value))}
                       className="w-24 rounded border border-gray-200 px-1.5 py-1 text-right tabular-nums disabled:opacity-50" />

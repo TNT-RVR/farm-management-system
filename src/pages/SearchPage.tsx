@@ -3,96 +3,13 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { FileText, LayoutGrid, PanelTop, Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { RECORD_HOME, runSearch, type RecordHit } from '@/lib/search/records'
 import { useVisibleReports } from '@/lib/reports/visible'
 import { buildAppIndex, searchApp, type AppHitKind } from '@/lib/search/app-index'
 import { TAB_ENTRIES } from '@/lib/search/tabs'
 import { cn } from '@/lib/utils'
 
-type Hit = { group: string; label: string; sub?: string; to: string; kind?: AppHitKind }
-
-/** The page each kind of record lives on, so a switched-off page hides its records too. */
-const RECORD_HOME: Record<string, string> = {
-  Fields: '/fields',
-  Contacts: '/contacts',
-  Tasks: '/tasks',
-  Cattle: '/cattle',
-  Checklists: '/checklists',
-  Crops: '/crops',
-  Calendar: '/calendar',
-  Equipment: '/equipment',
-  Bins: '/harvest',
-  Contracts: '/contracts',
-  Grants: '/grants',
-}
-
-/**
- * The farm's records: a keyword (ILIKE) search over the small single-farm
- * dataset, no AI key needed.
- */
-async function runSearch(q: string): Promise<Hit[]> {
-  const like = `%${q}%`
-  const hits: Hit[] = []
-
-  const [fields, contacts, tasks, cattle, templates, crops, events, equipment, bins, contracts, grants] = await Promise.all([
-    supabase
-      .from('fields')
-      .select('id, name, legal_land_description, notes_md')
-      .or(`name.ilike.${like},legal_land_description.ilike.${like},notes_md.ilike.${like}`)
-      .limit(8),
-    supabase
-      .from('contacts')
-      .select('id, company, contact_name, email, notes_md')
-      .or(`company.ilike.${like},contact_name.ilike.${like},email.ilike.${like},notes_md.ilike.${like}`)
-      .limit(8),
-    supabase
-      .from('tasks')
-      .select('id, title, description_md')
-      .or(`title.ilike.${like},description_md.ilike.${like}`)
-      .limit(8),
-    supabase
-      .from('cattle')
-      .select('id, tag, name, breed, notes_md')
-      .or(`tag.ilike.${like},name.ilike.${like},breed.ilike.${like},notes_md.ilike.${like}`)
-      .limit(8),
-    supabase
-      .from('checklist_templates')
-      .select('id, name, description_md')
-      .or(`name.ilike.${like},description_md.ilike.${like}`)
-      .limit(6),
-    supabase
-      .from('crops')
-      .select('id, name, cheatsheet_md')
-      .or(`name.ilike.${like},cheatsheet_md.ilike.${like}`)
-      .limit(6),
-    supabase.from('calendar_events').select('id, title, notes_md').or(`title.ilike.${like},notes_md.ilike.${like}`).limit(6),
-    supabase
-      .from('equipment')
-      .select('id, name, make, model, year, serial')
-      .or(`name.ilike.${like},make.ilike.${like},model.ilike.${like},serial.ilike.${like},notes_md.ilike.${like}`)
-      .limit(6),
-    supabase.from('bins').select('id, name, site').or(`name.ilike.${like},site.ilike.${like},notes_md.ilike.${like}`).limit(6),
-    supabase.from('contracts').select('id, contract_number, crop_year, notes_md').or(`contract_number.ilike.${like},notes_md.ilike.${like}`).limit(6),
-    supabase.from('grants').select('id, title, funder').or(`title.ilike.${like},funder.ilike.${like},summary.ilike.${like}`).limit(6),
-  ])
-
-  fields.data?.forEach((f) => hits.push({ group: 'Fields', label: f.name, sub: f.legal_land_description ?? undefined, to: `/fields/${f.id}` }))
-  contacts.data?.forEach((c) => hits.push({ group: 'Contacts', label: c.company || c.contact_name || 'Contact', sub: c.email ?? undefined, to: '/contacts' }))
-  tasks.data?.forEach((t) => hits.push({ group: 'Tasks', label: t.title, to: `/tasks/${t.id}` }))
-  cattle.data?.forEach((c) =>
-    hits.push({ group: 'Cattle', label: `${c.tag ? `#${c.tag} ` : ''}${c.name ?? ''}`.trim() || 'Animal', sub: c.breed ?? undefined, to: `/cattle/${c.id}` }),
-  )
-  templates.data?.forEach((t) => hits.push({ group: 'Checklists', label: t.name, to: '/checklists' }))
-  crops.data?.forEach((c) => hits.push({ group: 'Crops', label: c.name, to: `/crops/${c.id}` }))
-  events.data?.forEach((e) => hits.push({ group: 'Calendar', label: e.title, to: '/calendar' }))
-  equipment.data?.forEach((e) =>
-    hits.push({ group: 'Equipment', label: e.name, sub: [e.year, e.make, e.model].filter(Boolean).join(' ') || undefined, to: `/equipment/${e.id}` }),
-  )
-  bins.data?.forEach((b) => hits.push({ group: 'Bins', label: b.name, sub: b.site ?? undefined, to: '/harvest?tab=bins' }))
-  contracts.data?.forEach((c) => hits.push({ group: 'Contracts', label: c.contract_number || 'Contract', sub: c.crop_year ? String(c.crop_year) : undefined, to: '/contracts' }))
-  grants.data?.forEach((g) => hits.push({ group: 'Grants', label: g.title, sub: g.funder ?? undefined, to: '/grants' }))
-
-  return hits
-}
+type Hit = RecordHit & { kind?: AppHitKind }
 
 const KIND_GROUP: Record<AppHitKind, string> = { page: 'Pages', tab: 'Tabs', report: 'Reports' }
 const KIND_ICON = { page: LayoutGrid, tab: PanelTop, report: FileText }
@@ -101,7 +18,8 @@ const KIND_ICON = { page: LayoutGrid, tab: PanelTop, report: FileText }
  * One search for the whole app: its pages, the tabs inside them and its
  * reports (matched in the browser as you type), then the farm's records
  * (fields, contacts, tasks, cattle…) from the database. Arrow keys move,
- * Enter opens; Ctrl+K or / from anywhere comes here.
+ * Enter opens. Ctrl+K, / and the header's search icon open the search window
+ * instead (PhoneSearchSheet); this page stays for the Search tile and old links.
  */
 export function SearchPage() {
   const [params, setParams] = useSearchParams()
@@ -133,7 +51,7 @@ export function SearchPage() {
   const { data: records, isFetching } = useQuery({
     queryKey: ['search', q],
     enabled: q.trim().length >= 2,
-    queryFn: () => runSearch(q.trim()),
+    queryFn: () => runSearch(supabase, q.trim()),
   })
   const recordHits = useMemo(() => (records ?? []).filter((h) => !viewOff(RECORD_HOME[h.group] ?? h.to)), [records, viewOff])
 

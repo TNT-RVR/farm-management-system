@@ -87,11 +87,11 @@ values ('0de30000-0000-4000-8000-000000000201', (select id from public.farms lim
 
 insert into public.pumps (id, farm_id, name, legal_land, lat, lon, horse_power, voltage, brand, model, gpm, kind, phase, hz, notes, purpose)
 values ('0de30000-0000-4000-8000-000000000211', (select id from public.farms limit 1), 'Creek pump station', 'SE-6-43-24-W4',
-        52.5012, -113.4930, 125, 600, 'Cornell', '6RB', 2100, 'pump', 3, 60,
+        52.5012, -113.4930, 125, 600, 'Prairieline', '6RB', 2100, 'pump', 3, 60,
         'Vertical turbine on the creek intake. Screens cleaned every spring before start-up.', 'irrigation');
 
 insert into public.field_pivots (field_id, pump_id, water_licence_id, acres_irrigated, length_m, towers, brand, model, gpm, pivot_year, system_type, end_gun, sprinkler_package, application_efficiency, time_to_full_circle_h, water_source, operated_by)
 values
-  ('0de30000-0000-4000-8000-000000000112', '0de30000-0000-4000-8000-000000000211', '0de30000-0000-4000-8000-000000000201', 130, 400, 7, 'Valley', '8000', 700, extract(year from current_date)::int - 14, 'pivot', false, 'Nelson R3000 on drops', 0.85, 42, 'other', 'Alex Rivers'),
-  ('0de30000-0000-4000-8000-000000000113', '0de30000-0000-4000-8000-000000000211', '0de30000-0000-4000-8000-000000000201', 130, 400, 7, 'Valley', '8000', 700, extract(year from current_date)::int - 11, 'pivot', false, 'Nelson R3000 on drops', 0.85, 40, 'other', 'Alex Rivers'),
-  ('0de30000-0000-4000-8000-000000000114', '0de30000-0000-4000-8000-000000000211', '0de30000-0000-4000-8000-000000000201', 131, 402, 7, 'Zimmatic', '9500P', 720, extract(year from current_date)::int - 3, 'pivot', false, 'Senninger UP3 on drops', 0.88, 38, 'other', 'Jordan Pike');
+  ('0de30000-0000-4000-8000-000000000112', '0de30000-0000-4000-8000-000000000211', '0de30000-0000-4000-8000-000000000201', 130, 400, 7, 'Prairieline', 'P800', 700, extract(year from current_date)::int - 14, 'pivot', false, 'Rotator sprinklers on drops', 0.85, 42, 'other', 'Alex Rivers'),
+  ('0de30000-0000-4000-8000-000000000113', '0de30000-0000-4000-8000-000000000211', '0de30000-0000-4000-8000-000000000201', 130, 400, 7, 'Prairieline', 'P800', 700, extract(year from current_date)::int - 11, 'pivot', false, 'Rotator sprinklers on drops', 0.85, 40, 'other', 'Alex Rivers'),
+  ('0de30000-0000-4000-8000-000000000114', '0de30000-0000-4000-8000-000000000211', '0de30000-0000-4000-8000-000000000201', 131, 402, 7, 'Prairieline', 'P950', 720, extract(year from current_date)::int - 3, 'pivot', false, 'Spray plates on drops', 0.88, 38, 'other', 'Jordan Pike');

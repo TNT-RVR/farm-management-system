@@ -524,15 +524,6 @@ function TempBarKey({ lo, hi }: { lo: number | null; hi: number | null }) {
  */
 const WEATHER_VIEWS = ['day', 'week'] as const
 
-/** The view the page remembered before it kept its tab in the address (26 Oct 2026). */
-function oldWeatherView(): 'day' | 'week' {
-  try {
-    return localStorage.getItem('weather_view') === 'day' ? 'day' : 'week'
-  } catch {
-    return 'week'
-  }
-}
-
 export function WeatherPage() {
   const { sites, main } = useWeatherSites()
   const [siteName, setSiteName] = useState(() => {
@@ -542,9 +533,8 @@ export function WeatherPage() {
       return main.name
     }
   })
-  // ?tab=day|week, so a link can open the 24 hours. With none, the view last
-  // used; the old 'weather_view' memory seeds that for anyone who set it before.
-  const [view, pickView] = useTab('weather', WEATHER_VIEWS, oldWeatherView())
+  // ?tab=day|week, so a link can open either; with none, the first (the 24 hours).
+  const [view, pickView] = useTab('weather', WEATHER_VIEWS)
   const [settings, setSettings, shown] = useWeatherSettings()
   const [dialog, setDialog] = useState<'settings' | 'legend' | null>(null)
   const site = sites.find((s) => s.name === siteName) ?? main

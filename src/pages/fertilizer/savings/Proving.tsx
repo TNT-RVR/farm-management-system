@@ -354,7 +354,7 @@ export function BalanceAndStripsCard() {
               <td className={cn(td, res?.paid != null && (res.paid >= 0 ? 'text-green-800' : 'text-red-700'))}>
                 {res?.paid == null ? 'waiting for harvest' : res.paid >= 0 ? `yes, ${money(res.paid, 2)}/ac` : `no, lost ${money(-res.paid, 2)}/ac`}
               </td>
-              <td className="px-2 py-1 text-right">
+              <td className="px-3 py-1 text-right">
                 {isMgr && <RowDelete onDelete={() => m.remove.mutate(s.id)} confirm={`Delete the ${s.nutrient} check strip on ${inputs.fieldName(s.field_id)}?`} label="Delete strip" />}
               </td>
             </tr>

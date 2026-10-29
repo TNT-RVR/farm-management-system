@@ -59,6 +59,7 @@ import { supabase } from './supabase'
 import { useAuth } from './auth'
 import { NAV_ITEMS, isViewDenied } from './nav'
 import { isPathOff, useDisabledPaths } from './farm-setup'
+import { isPartner, isPartnerPath } from './partner'
 
 /**
  * The phone home screen.
@@ -385,14 +386,15 @@ export const TILES: Tile[] = [
     section: '/fuel',
   },
   {
-    // Split from Chemicals, 24 Oct 2026: the spray check and re-entry times.
+    // A tab of Chemicals again (Sam, 29 Oct 2026); its own tile either way,
+    // because checking a spray is its own errand.
     key: 'spraying',
     label: 'Spraying',
     hint: 'Check a spray, and when fields are safe to enter',
-    to: '/spraying',
+    to: '/chemicals?tab=spraycheck',
     icon: SprayCan,
     group: 'Fields & crop',
-    section: '/spraying',
+    section: '/chemicals',
   },
   {
     key: 'chem-inventory',
@@ -917,7 +919,10 @@ export function useTiles() {
   const off = useDisabledPaths()
   // A tile goes with its section, and with the page it opens: the combine tile
   // sits under Equipment but opens /combine, which can be switched off alone.
-  const allowed = (t: Tile) => !isViewDenied(profile, t.section) && !isPathOff(off, t.section) && !isPathOff(off, t.to)
+  // A crop-share partner's home holds only the pages he can open (lib/partner.ts).
+  const partner = isPartner(profile?.role)
+  const allowed = (t: Tile) =>
+    !isViewDenied(profile, t.section) && !isPathOff(off, t.section) && !isPathOff(off, t.to) && (!partner || isPartnerPath(t.to))
   return { visible: visible.filter(allowed), hidden: hidden.filter(allowed) }
 }
 

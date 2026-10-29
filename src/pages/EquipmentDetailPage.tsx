@@ -80,7 +80,7 @@ export function EquipmentDetailPage() {
   // Every tab is valid to useTab, so a ?tab=inspections link is not rewritten
   // while the machine is still loading; a machine without inspections shows
   // its overview instead.
-  const [asked, setTab] = useTab('equipment-machine', TABS, 'overview')
+  const [asked, setTab] = useTab('equipment-machine', TABS)
   const inspected = isInspected(e?.equipment_type)
   const tab: MachineTab = asked === 'inspections' && !inspected ? 'overview' : asked
 

@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Sprout, TrendingUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { HelpNote } from '@/components/HelpNote'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
 import { useHerdCounts } from '@/lib/cattle'
-import { ownGrassBenchmarkTotalPerCow as benchmarkTotalPerCow, useCattleCosts } from '@/lib/cattleEconomics'
+import { abCowCashCostPerYear, abCowCostPerYear, useCattleCosts } from '@/lib/cattleEconomics'
 import { cwtToLb, derivePrice, useCattleSales, weightSlide } from '@/lib/cattleMarkets'
 import { parseSeriesCode } from '@/lib/auction-markets'
 import { computeHerd, computePasture, grazingRain, useGrazingHerd, useGrazingPastures, useRanchPrecip } from '@/lib/grazing'
@@ -26,6 +26,7 @@ import { money, n0 } from '@/lib/format'
 import { TABLE_HEAD } from '@/lib/table-style'
 
 type Quote = { lo: number; hi: number; perCwt: number }
+
 
 /** This week's feeder quotes from the four auction markets, every weight class, by sex. */
 function useFeederQuotes() {
@@ -109,6 +110,7 @@ function Num({
   hint,
   step = 1,
   info,
+  inputRef,
 }: {
   label: string
   value: number | null
@@ -117,6 +119,8 @@ function Num({
   hint?: string
   step?: number
   info?: CattleHelpKey
+  /** So a link elsewhere on the page can open the fold and land in this box. */
+  inputRef?: React.Ref<HTMLInputElement>
 }) {
   return (
     <label className="text-xs text-gray-600">
@@ -126,6 +130,7 @@ function Num({
       </span>
       <span className="mt-0.5 flex items-center gap-1">
         <input
+          ref={inputRef}
           type="number"
           step={step}
           value={value ?? ''}
@@ -147,6 +152,21 @@ function Num({
 export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
   // Read once: a clock read during render is impure.
   const [year] = useState(() => new Date().getFullYear())
+  // The assumptions fold, and the one box inside it the table links to. A row
+  // that reads "over the grass — set its cost" has no total until that cost is
+  // set, and the box was folded away where nobody found it (Sam, 29 Oct 2026:
+  // "How do I set the over the grass cost?").
+  const [assumptionsOpen, setAssumptionsOpen] = useState(false)
+  const overstockRef = useRef<HTMLInputElement>(null)
+  const setOverstock = () => {
+    setAssumptionsOpen(true)
+    // After the fold has painted, or there is nothing to scroll to yet.
+    requestAnimationFrame(() => {
+      overstockRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      overstockRef.current?.focus()
+      overstockRef.current?.select()
+    })
+  }
   const { data: counts } = useHerdCounts(ranch.id)
   const { data: costs } = useCattleCosts(ranch.name, year)
   const { data: sales } = useCattleSales()
@@ -185,8 +205,14 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
         0,
       )
     : 0
-  // The ranch's own figure only when it looks complete; the Manitoba benchmark otherwise.
-  const costLooksComplete = farmCost >= benchmarkTotalPerCow * 0.5
+  // What a cow costs for a year where no figure of the ranch's own is usable:
+  // the Alberta cow-calf benchmark, carried forward to this year. There is no
+  // southern Alberta benchmark published (Sam, 29 Oct 2026 asked for one);
+  // AB_COW_CALF_COP says why.
+  const abCowCost = abCowCostPerYear(year)
+  const abCowCash = abCowCashCostPerYear(year)
+  // The ranch's own figure only when it looks complete; the benchmark otherwise.
+  const costLooksComplete = farmCost >= abCowCost * 0.5
 
   // Typed-over assumptions, kept per ranch in this browser so they survive a
   // reload. Tagged with the ranch they belong to: switching ranch without a
@@ -242,7 +268,7 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
       ],
       v('death', costs?.death_loss_pct ?? 2)!,
     )
-    const annualCowCost = v('cowCost', costLooksComplete ? farmCost : benchmarkTotalPerCow)!
+    const annualCowCost = v('cowCost', costLooksComplete ? farmCost : abCowCost)!
     return {
       cows: v('cows', cows)!,
       heiferCalves: v('heiferCalves', Math.round((cows * (costs?.weaning_rate_pct ?? 92)) / 100 / 2))!,
@@ -363,11 +389,21 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
         <table className="w-full text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
-              <th className="px-3 py-2 font-medium">Keep</th>
-              <th className="px-3 py-2 text-right font-medium">Cows next year</th>
-              <th className="px-3 py-2 font-medium">Grass</th>
-              <th className="px-3 py-2 text-right font-medium">Heifer sales now</th>
-              <th className="px-3 py-2 text-right font-medium">Gain / loss vs selling all</th>
+              <th className="px-3 py-2 font-medium">
+                Keep <CattleInfo k="keepColumn" hover />
+              </th>
+              <th className="px-3 py-2 text-right font-medium">
+                Cows next year <CattleInfo k="cowsNextYearColumn" hover />
+              </th>
+              <th className="px-3 py-2 font-medium">
+                Grass <CattleInfo k="grassColumn" hover />
+              </th>
+              <th className="px-3 py-2 text-right font-medium">
+                Heifer sales now <CattleInfo k="heiferSalesColumn" hover />
+              </th>
+              <th className="px-3 py-2 text-right font-medium">
+                Gain / loss vs selling all <CattleInfo k="gainVsSellingAllColumn" hover />
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -384,7 +420,13 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
                 </td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{money(r.saleCash)}</td>
                 <td className={cn('px-3 py-1.5 text-right tabular-nums', r.netVsSellAll == null ? 'text-gray-400' : r.netVsSellAll >= 0 ? 'text-green-800' : 'text-red-700')}>
-                  {r.netVsSellAll == null ? 'over the grass — set its cost' : `${r.netVsSellAll >= 0 ? '+' : ''}${money(r.netVsSellAll)}`}
+                  {r.netVsSellAll == null ? (
+                    <button type="button" onClick={setOverstock} className="font-medium text-brand-700 underline decoration-dotted underline-offset-2 hover:text-brand-900">
+                      over the grass — set its cost
+                    </button>
+                  ) : (
+                    `${r.netVsSellAll >= 0 ? '+' : ''}${money(r.netVsSellAll)}`
+                  )}
                 </td>
               </tr>
             ))}
@@ -392,7 +434,11 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
         </table>
       </div>
 
-      <details className="rounded-xl border border-gray-200 bg-white p-3">
+      <details
+        open={assumptionsOpen}
+        onToggle={(e) => setAssumptionsOpen(e.currentTarget.open)}
+        className="rounded-xl border border-gray-200 bg-white p-3"
+      >
         <summary className="cursor-pointer text-sm font-semibold text-gray-800">Assumptions — change any of them</summary>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Num label="Cows" value={inputs.cows} onChange={set('cows')} hint="from Herd counts" />
@@ -419,8 +465,9 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
                 ? costs?.carriedFrom != null
                   ? `from Cattle settings, carried from ${costs.carriedFrom} — review`
                   : 'from Cattle settings'
-                : `Manitoba benchmark — your settings add to ${money(farmCost)}`
+                : `Alberta benchmark — your settings add to ${money(farmCost)}`
             }
+            info="cowForAYear"
           />
           <Num label="Developing a heifer" value={inputs.devCostPerHeifer} onChange={set('dev')} suffix="$" hint="weaning to first calf; estimate" />
           <Num
@@ -439,17 +486,25 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
           />
           <Num label="Cow's working years" value={inputs.productiveYears} onChange={set('years')} info="productiveYears" />
           <Num label="Discount rate" value={inputs.discountPct} onChange={set('discount')} suffix="%" hint="the interest money costs you" info="discountRate" />
-          <Num label="A cow over the grass" value={inputs.overstockCostPerCow} onChange={set('overstock')} suffix="$/yr" hint="extra feed, or grass found elsewhere" />
+          <Num
+            label="A cow over the grass"
+            value={inputs.overstockCostPerCow}
+            onChange={set('overstock')}
+            suffix="$/yr"
+            hint="extra feed, or grass found elsewhere"
+            inputRef={overstockRef}
+          />
         </div>
         {!costLooksComplete && (
           <HelpNote
             className="mt-2 text-amber-700"
-            summary={`Cattle settings look incomplete (${money(farmCost)} a cow), so a benchmark of ${money(benchmarkTotalPerCow)} is used.`}
+            summary={`Cattle settings look incomplete (${money(farmCost)} a cow), so the Alberta benchmark of ${money(abCowCost)} is used.`}
             title="Which cow cost is used"
           >
             <p>
-              Your Cattle settings add up to {money(farmCost)} a cow a year, which looks incomplete, so the Manitoba 2026 cost-of-production benchmark (
-              {money(benchmarkTotalPerCow)}, not an Alberta figure) is used. Fill in Cattle settings or type your own figure above.{' '}
+              Your Cattle settings add up to {money(farmCost)} a cow a year, which looks incomplete, so the Alberta cow-calf benchmark is used instead:{' '}
+              {money(abCowCost)} for {year}. That is everything a cow costs — cash, depreciation, and the opportunity cost of your own land, labour and
+              money. Out-of-pocket alone is about {money(abCowCash)}. Fill in Cattle settings or type your own figure above.{' '}
               <SetupLink managerOnly to={SETUP_LINKS.cattleCosts(ranch.id)}>Cattle settings</SetupLink>
             </p>
           </HelpNote>

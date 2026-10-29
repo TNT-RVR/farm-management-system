@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import maplibregl from 'maplibre-gl'
 import { addPinImages, PIN_ICON_EXPR, withPins } from '@/lib/map-pins'
 import type { FeatureCollection, MultiPolygon, Position } from 'geojson'
-import { ChevronRight, Crosshair, Layers, MapPin, Ruler, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Crosshair, MapPin, Ruler, X } from 'lucide-react'
 import { SoilLayer } from '@/pages/map/SoilLayer'
 import { YieldZoneLayer } from '@/pages/map/YieldZoneLayer'
 import { MeasureTool } from '@/pages/map/MeasureTool'
@@ -52,9 +52,11 @@ import { useFieldPivots, useLatestBalance } from '@/lib/irrigation'
 import {
   fnStatus,
   useFieldnetSystems,
+  useFieldnetSystemsOn,
   FN_STATUS_COLOR,
   type FieldnetSystem,
 } from '@/lib/fieldnet'
+import { asOfDay } from '@/lib/map-as-of'
 import { PivotStatusPanel } from '@/components/PivotStatusPanel'
 import { bearingBetween, circleRing, destination } from '@/lib/geo/circle'
 import { haversineM } from '@/lib/geo/measure'
@@ -111,8 +113,9 @@ import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { labelPointOf } from '@/lib/geo/area'
 import { cn } from '@/lib/utils'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
-import { Fold } from '@/components/Fold'
 import { InfoPopover } from '@/components/InfoPopover'
+import { HoverTip } from '@/components/HoverTip'
+import { FIELDNET_LEGEND, IRRIGATION_LEGEND, LAYER_INFO, type LayerInfoKey } from '@/lib/map-layer-info'
 import { ndreColour, useFieldNdre } from '@/lib/ndre'
 import { SOIL_NO_DATA_COLOUR, SOIL_WATER_BANDS, AGRASID_SOURCE } from '@/lib/soil-landscape'
 import { useYieldZones, yieldBands } from '@/lib/yield-zones'
@@ -141,12 +144,6 @@ const FIELDNET_FILL: unknown = [
   'disconnected', FN_STATUS_COLOR.disconnected,
   '#94a3b8',
 ]
-const FIELDNET_LEGEND = [
-  ['Fault / alert', FN_STATUS_COLOR.fault],
-  ['Pivot on', FN_STATUS_COLOR.on],
-  ['Pivot off', FN_STATUS_COLOR.off],
-  ['Disconnected', FN_STATUS_COLOR.disconnected],
-] as const
 
 
 // Field fill: flat blue normally, or colour-coded by irrigation status when the
@@ -173,13 +170,6 @@ const IRRIGATION_FILL_ON: unknown = [
   'stress', '#b91c1c',
   '#94a3b8',
 ]
-const IRRIGATION_LEGEND = [
-  ['OK', '#22c55e'],
-  ['Irrigate soon', '#f59e0b'],
-  ['Irrigate now', '#ef4444'],
-  ['Water stress', '#b91c1c'],
-  ['Not scheduled', '#94a3b8'],
-] as const
 
 /**
  * Whether a map can still be asked about its layers.
@@ -353,6 +343,30 @@ function MyMapLayerRow({
 }
 
 /** The field-colour choices, in the order the layer panel lists them. */
+/** The map's floating controls: a slightly see-through white tile over the photo. */
+const MAP_GLASS = 'border border-white/60 bg-white/80 shadow-lg ring-1 ring-black/5 backdrop-blur-md'
+
+/** Where the satellite photo and NDVI come from: an "i" beside the layer's name. */
+function SatelliteSource({ kind }: { kind: 'satellite' | 'photo' }) {
+  return (
+    <InfoPopover hover title={kind === 'photo' ? 'Latest satellite photo' : 'Satellite (NDVI)'} width={280}>
+      <p>
+        {kind === 'photo' ? 'True-colour pictures' : 'Crop vigour worked out from the red and near-infrared light'} from the
+        European Space Agency&rsquo;s Sentinel-2 satellites, through the{' '}
+        <a href="https://dataspace.copernicus.eu/" target="_blank" rel="noreferrer" className="font-medium text-brand-700 hover:underline">
+          Copernicus Data Space
+        </a>
+        . 10 m pixels, a pass about every five days; cloudy days are skipped.
+      </p>
+    </InfoPopover>
+  )
+}
+
+/** A group name in the layer tile. */
+function LayerHeading({ children }: { children: React.ReactNode }) {
+  return <p className="mb-0.5 mt-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 first:mt-1">{children}</p>
+}
+
 const FILL_MODES = [
   ['none', 'Off'],
   ['aimm', 'Irrigation (AIMM)'],
@@ -360,7 +374,28 @@ const FILL_MODES = [
   ['satellite', 'Satellite (NDVI)'],
   ['photo', 'Latest satellite photo'],
   ['salinity', 'Salinity (soil tests)'],
+  ['yield', 'Productivity zones'],
 ] as const
+
+/** Which hover card each field-colour choice shows ("Off" has none). */
+const FILL_INFO: Partial<Record<(typeof FILL_MODES)[number][0], LayerInfoKey>> = {
+  aimm: 'aimm',
+  fieldnet: 'fieldnet',
+  satellite: 'ndvi',
+  photo: 'photo',
+  salinity: 'salinity',
+  yield: 'yield',
+}
+
+/** A layer's name with its hover card (Sam, 29 Oct 2026). */
+function LayerName({ info, children }: { info?: LayerInfoKey; children: React.ReactNode }) {
+  if (!info) return <>{children}</>
+  return (
+    <HoverTip title={LAYER_INFO[info].title} text={LAYER_INFO[info].text}>
+      {children}
+    </HoverTip>
+  )
+}
 
 export function MapPage() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -369,11 +404,15 @@ export function MapPage() {
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // The map opens the same way every time (Sam, 29 Oct 2026): the layer
+  // tile folded, no field colour, no map overlays, boundaries and labels on.
+  // Nothing of the last visit's layers is brought back.
   const [panelOpen, setPanelOpen] = useState(false)
+  const [editingMyMapUrl, setEditingMyMapUrl] = useState(false)
   const [splitOpen, setSplitOpen] = useState(false)
   const [showBoundaries, setShowBoundaries] = useState(true)
   const [showLabels, setShowLabels] = useState(true)
-  const [showMyMap, setShowMyMap] = useState(() => localStorage.getItem('map_showMyMap') === '1')
+  const [showMyMap, setShowMyMap] = useState(false)
   const [activeMyMapLayers, setActiveMyMapLayers] = useState<Set<string>>(new Set())
   const [aimmLegend, toggleAimmLegend] = useLegendOpen('aimm')
   const [fnLegend, toggleFnLegend] = useLegendOpen('fieldnet')
@@ -383,35 +422,35 @@ export function MapPage() {
   const { data: yieldZones } = useYieldZones()
   const [satLegend, toggleSatLegend] = useLegendOpen('satellite')
   const [myMapOpen, toggleMyMapOpen] = useLegendOpen('mymap')
-  const [showSoil, setShowSoil] = useState(() => localStorage.getItem('map_showSoil') === '1')
-  const [showYield, setShowYield] = useState(() => localStorage.getItem('map_showYield') === '1')
+  const [showSoil, setShowSoil] = useState(false)
   const layersSigRef = useRef('')
   const myMapPopup = useRef<maplibregl.Popup | null>(null)
   const [activeOverlays, setActiveOverlays] = useState<Set<string>>(new Set())
   const [overlayErrors, setOverlayErrors] = useState<Record<string, string>>({})
   // For the folded Overlays group's summary: how many are drawing right now.
   const [aimmMore, setAimmMore] = useState(false)
-  const overlaysOn = (showMyMap ? 1 : 0) + (showSoil ? 1 : 0) + (showYield ? 1 : 0) + activeOverlays.size
+  const overlaysOn = (showMyMap ? 1 : 0) + (showSoil ? 1 : 0) + activeOverlays.size
 
-  // Field-fill colouring: off, AIMM irrigation status, or FieldNET live pivots.
-  // NDVI is what the map opens on. A saved choice still wins — this is the
-  // default for a device that has never expressed one, not an override of
-  // somebody who deliberately turned the colour off.
-  const [fillMode, setFillMode] = useState<'none' | 'aimm' | 'fieldnet' | 'satellite' | 'photo' | 'salinity'>(
-    () =>
-      (localStorage.getItem('map_fillMode') as 'none' | 'aimm' | 'fieldnet' | 'satellite' | 'photo' | 'salinity') ||
-      'satellite',
-  )
+  // Field-fill colouring: off, AIMM irrigation status, FieldNET live pivots,
+  // the satellite layers, salinity or productivity zones. Off on opening.
+  const [fillMode, setFillMode] = useState<'none' | 'aimm' | 'fieldnet' | 'satellite' | 'photo' | 'salinity' | 'yield'>('none')
   const showIrrigation = fillMode === 'aimm'
   const showFieldnet = fillMode === 'fieldnet'
   const showSatellite = fillMode === 'satellite'
   const showPhoto = fillMode === 'photo'
   const showSalt = fillMode === 'salinity'
+  // Zones are drawn over plain fields, so the fields themselves stay uncoloured.
+  const showYield = fillMode === 'yield'
   const { data: saltRows } = useFieldSalinity(showSalt)
   const saltByField = useMemo(() => fieldSalinity(saltRows ?? []), [saltRows])
   const { data: fieldSat } = useFieldSatellite()
   const { data: zoneReadiness } = useZoneReadiness()
-  const { data: fieldImages, error: fieldImagesError } = useFieldImagery()
+  // The day the map shows: today, or a past day from the picker beside the
+  // tabs (?on=YYYY-MM-DD, see MapSection). The satellite, AIMM and FieldNET
+  // layers follow it.
+  const [dayParams] = useSearchParams()
+  const asOf = asOfDay(dayParams.get('on'), new Date().toLocaleDateString('en-CA'))
+  const { data: fieldImages, error: fieldImagesError } = useFieldImagery('truecolour', 'field', asOf)
   // The NDVI raster: per-pixel, at the sensor's real 10 m. A field mean is one
   // number for eighty acres, and the whole reason to look from space is that a
   // field is not uniform.
@@ -441,6 +480,8 @@ export function MapPage() {
   // season, which a per-field range would destroy.
   const { data: ndviRasters } = useFieldImagery(
     index === 'ndre' ? 'ndre' : ndviScale === 'field' ? 'ndvi_field' : 'ndvi',
+    'field',
+    asOf,
   )
   const ndviByField = useMemo(
     () => new Map((fieldSat ?? []).map((f) => [f.field_id, f])),
@@ -502,8 +543,11 @@ export function MapPage() {
   const { data: plans } = useCropPlans(cropYear)
   const { data: history } = useCropHistoryByYear(cropYear)
   const { data: crops } = useCrops()
-  const { data: balance } = useLatestBalance()
-  const { data: fnSystems } = useFieldnetSystems()
+  const { data: balance } = useLatestBalance(asOf)
+  const { data: liveSystems } = useFieldnetSystems()
+  // On a past day, each pivot as its recorded passes left it.
+  const systemsThen = useFieldnetSystemsOn(asOf)
+  const fnSystems = asOf ? (systemsThen ?? undefined) : liveSystems
   const { data: pivotSpecs } = useFieldPivots()
 
   // field_id → pivot radius inputs (pipe length, else irrigated acres).
@@ -824,7 +868,6 @@ export function MapPage() {
     )
   }, [mapRef, showFieldnet, showIrrigation, showSatellite, showPhoto, showSalt, mapReady, featureCollection])
 
-  useEffect(() => void localStorage.setItem('map_fillMode', fillMode), [fillMode])
   useEffect(() => void localStorage.setItem('map_ndviScale', ndviScale), [ndviScale])
 
   /**
@@ -834,11 +877,15 @@ export function MapPage() {
    * and covers the thing it exists to explain. The natural gesture at that
    * point is to touch the map, so that is what closes it; Escape does the same
    * with a keyboard. Panning counts too — you are already looking past it.
+   * Phones only: on a wide screen the panel sits beside what you are looking
+   * at, and it remembers being open (29 Oct 2026).
    */
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
-    const close = () => setPanelOpen(false)
+    const close = () => {
+      if (window.matchMedia('(max-width: 767px)').matches) setPanelOpen(false)
+    }
     map.on('click', close)
     map.on('dragstart', close)
     const onKey = (e: KeyboardEvent) => {
@@ -888,7 +935,21 @@ export function MapPage() {
       // throw here skipped every visibility change below it, and the NDVI
       // rasters stayed painted on whatever mode was picked (seen on a phone).
       try {
-      if (!map.getSource(id)) {
+      // A signed link lasts an hour. When the list is fetched again, the new
+      // link replaces an old one that may have gone dead (Sam, 29 Oct 2026).
+      const existing = map.getSource(id) as maplibregl.ImageSource | undefined
+      if (existing && existing.url !== img.url) {
+        existing.updateImage({
+          url: img.url,
+          coordinates: [
+            [img.west, img.north],
+            [img.east, img.north],
+            [img.east, img.south],
+            [img.west, img.south],
+          ],
+        })
+      }
+      if (!existing) {
         map.addSource(id, {
           type: 'image',
           url: img.url,
@@ -989,12 +1050,10 @@ export function MapPage() {
     ])
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis)
     if (map.getLayer('fieldnet-sectors-fill'))
-      map.setLayoutProperty('fieldnet-sectors-fill', 'visibility', showFieldnet && showHeatmap ? 'visible' : 'none')
-  }, [mapRef, fnLayers, showFieldnet, showHeatmap, mapReady])
+      map.setLayoutProperty('fieldnet-sectors-fill', 'visibility', showFieldnet && showHeatmap && !asOf ? 'visible' : 'none')
+  }, [mapRef, fnLayers, showFieldnet, showHeatmap, mapReady, asOf])
 
   useEffect(() => void localStorage.setItem('map_fnHeatmap', showHeatmap ? '1' : '0'), [showHeatmap])
-  useEffect(() => void localStorage.setItem('map_showSoil', showSoil ? '1' : '0'), [showSoil])
-  useEffect(() => void localStorage.setItem('map_showYield', showYield ? '1' : '0'), [showYield])
   useEffect(() => void localStorage.setItem('map_fnHeatWindow', heatWindow), [heatWindow])
 
   /**
@@ -1332,7 +1391,6 @@ export function MapPage() {
   )
 
   // Remember the map/location toggles across visits.
-  useEffect(() => void localStorage.setItem('map_showMyMap', showMyMap ? '1' : '0'), [showMyMap])
 
   // On a NEW layer set (not a refetch), restore the last-visible layers for this
   // map from localStorage, else show all.
@@ -1463,6 +1521,17 @@ export function MapPage() {
       clear()
     }
   }, [mapRef, mapReady])
+
+  // "Hide all": the field colour and every overlay off. Boundaries and labels
+  // are the map itself, so they stay.
+  const anyLayerOn = fillMode !== 'none' || overlaysOn > 0 || farmActive.size > 0
+  const hideAllLayers = () => {
+    setFillMode('none')
+    setShowMyMap(false)
+    setShowSoil(false)
+    setShowHeatmap(false)
+    setActiveOverlays(new Set())
+  }
 
   const selected = selectedId ? fieldById.get(selectedId) : null
   const summaryRef = useRef<HTMLDivElement>(null)
@@ -1633,11 +1702,11 @@ export function MapPage() {
         aria-label="Measure a distance or an area"
         title="Measure a distance or an area off the map"
         className={cn(
-          'absolute right-2 top-2 z-10 flex h-[29px] w-[29px] items-center justify-center rounded-md border shadow transition-transform',
-          measuring ? 'border-amber-500 bg-amber-500 text-white' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50',
+          'absolute right-2 top-2 z-10 flex h-11 w-11 items-center justify-center rounded-xl transition-transform',
+          measuring ? 'bg-amber-500 text-white shadow-lg' : cn(MAP_GLASS, 'text-gray-700 hover:bg-white'),
         )}
       >
-        <Ruler className="h-4 w-4" />
+        <Ruler className="h-6 w-6" />
       </button>
 
       {/* Layer panel + legal-land search */}
@@ -1646,45 +1715,496 @@ export function MapPage() {
           edge with the Measure button half under the zoom control. */}
       {/* Above the field card: on a phone the card rises from the bottom and
           must never cover the layer switch. */}
-      <div className="absolute left-2 right-12 top-2 z-10 md:right-auto">
+      <div className="absolute left-2 right-16 top-2 z-10 md:right-auto">
         <div className="flex flex-wrap items-start gap-1.5">
-          <button
-            onClick={() => setPanelOpen((o) => !o)}
-            aria-expanded={panelOpen}
-            title={panelOpen ? 'Hide the layers' : 'Show the layers'}
+          {/* One see-through tile: its header folds the list away, the
+              list sits inside it. */}
+          <div
             className={cn(
-              'flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium shadow',
-              panelOpen
-                ? 'border-brand-700 bg-brand-700 text-white'
-                : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50',
+              MAP_GLASS,
+              'rounded-xl [&_input[type=checkbox]]:accent-brand-700 [&_input[type=radio]]:accent-brand-700',
+              panelOpen && 'w-64',
             )}
           >
-            <Layers className="h-3.5 w-3.5" /> Layers
-          </button>
-          <button
-            onClick={() => {
-              setIdentifying((v) => !v)
-              setIdentified(null)
-            }}
-            aria-pressed={identifying}
-            title="Click the map to find out which quarter section a point is in"
-            className={cn(
-              'flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium shadow',
-              identifying
-                ? 'border-brand-700 bg-brand-700 text-white'
-                : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50',
-            )}
-          >
-            <Crosshair className="h-3.5 w-3.5" /> {identifying ? 'Click the map' : 'Point'}
-          </button>
+            <div className="flex items-center gap-1 px-1.5 py-1">
+              <button
+                onClick={() => setPanelOpen((o) => !o)}
+                aria-expanded={panelOpen}
+                title={panelOpen ? 'Fold the layers away' : 'Show the layers'}
+                className="flex flex-1 items-center gap-1 rounded-md px-1 py-0.5 text-sm font-semibold text-gray-800"
+              >
+                <ChevronDown className={cn('h-4 w-4 text-gray-500 transition-transform', !panelOpen && '-rotate-90')} />
+                Layers
+              </button>
+              {panelOpen && anyLayerOn && (
+                <button
+                  onClick={hideAllLayers}
+                  title="Turn off the field colour and every overlay. Boundaries and labels stay."
+                  className="rounded-full bg-black/5 px-2 py-0.5 text-[11px] font-medium text-gray-600 hover:bg-black/10"
+                >
+                  Hide all
+                </button>
+              )}
+            </div>
+          {panelOpen && (
+            <div className="max-h-[38vh] overflow-y-auto overscroll-contain border-t border-black/5 px-3 pb-2.5 pt-1.5 text-sm sm:max-h-[60vh]">
+              {/* What colours the fields first (the choice most people came
+                  for), then what is drawn over the map, then the field lines
+                  and names themselves. */}
+              <LayerHeading>Field overlays</LayerHeading>
+              <div>
+              {FILL_MODES.map(([val, label]) => (
+                <div key={val}>
+                  {/* The arrow is a sibling of the label, not inside it — inside,
+                      clicking it would also pick the radio. */}
+                  <div className="flex items-center gap-1">
+                    <label className="flex flex-1 items-center gap-2 py-0.5">
+                      <input
+                        type="radio"
+                        name="fillmode"
+                        checked={fillMode === val}
+                        onChange={() => setFillMode(val)}
+                        // Closes the panel on a narrow screen — in the BUBBLE
+                        // phase, after the change. It used to be onClickCapture:
+                        // the capture-phase close re-rendered before the click
+                        // bubbled, the radio was gone by the time React looked
+                        // for its onChange, and on a phone the field colour
+                        // could never be changed at all (stuck on NDVI). On a
+                        // desktop the panel is beside the map, and stays open
+                        // for anyone comparing two layers.
+                        onClick={() => {
+                          if (window.matchMedia('(max-width: 767px)').matches) setPanelOpen(false)
+                        }}
+                      />
+                      <LayerName info={FILL_INFO[val]}>{label}</LayerName>
+                    </label>
+                    {val === 'aimm' && showIrrigation && (
+                      <LegendArrow open={aimmLegend} onToggle={toggleAimmLegend} label="irrigation" />
+                    )}
+                    {val === 'fieldnet' && showFieldnet && (
+                      <LegendArrow open={fnLegend} onToggle={toggleFnLegend} label="pivot" />
+                    )}
+                    {(val === 'satellite' || val === 'photo') && <SatelliteSource kind={val} />}
+                    {val === 'satellite' && showSatellite && (
+                      <LegendArrow open={satLegend} onToggle={toggleSatLegend} label="NDVI" />
+                    )}
+                    {val === 'yield' && showYield && (
+                      <LegendArrow open={yieldLegend} onToggle={toggleYieldLegend} label="productivity" />
+                    )}
+                  </div>
+                  {/* Each legend sits directly under the option it belongs to. */}
+                  {val === 'yield' && showYield && yieldLegend && (
+                    <div className="ml-6 mt-0.5">
+                      <LegendList
+                        items={yieldBands(yieldZones ?? []).map(
+                          (b) => [`${b.from}–${b.to}`, b.colour] as const,
+                        )}
+                        className="space-y-0.5"
+                      />
+                      {/* The caveat belongs on the legend, not in a doc nobody
+                          opens. These are an index normalised to each field's own
+                          average, which is not obvious from a map of coloured
+                          ground and changes what the colours mean. */}
+                      <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-400">
+                        % of the field&rsquo;s own average
+                        <InfoPopover title="Productivity zones" width={280}>
+                          <p>
+                            Each zone as a percentage of its own field&rsquo;s average, from the
+                            agronomist&rsquo;s maps — so 110 is good ground for that field, not a bushel
+                            figure, and fields cannot be ranked against each other. Tap a zone.
+                          </p>
+                        </InfoPopover>
+                      </div>
+                    </div>
+                  )}
+                  {val === 'salinity' && showSalt && <SaltLegend salt={saltByField} names={fieldById} />}
+                  {val === 'aimm' && showIrrigation && aimmLegend && (
+                    <LegendList items={IRRIGATION_LEGEND} />
+                  )}
+                  {val === 'satellite' && showSatellite && (
+                    <>
+                      {satLegend && (
+                        <LegendList
+                          items={[
+                            ['Never imaged', NO_DATA_COLOUR] as const,
+                            ...NDVI_RAMP.map(([l, c]) => [`NDVI ≤ ${l}`, c] as const),
+                          ]}
+                        />
+                      )}
+                      {satLegend && (
+                        <div className="ml-6 mb-1">
+                          <InfoPopover title="About these colours" label="About these colours" width={300}>
+                            <p>
+                              {ndviScaleLabel(ndviRasters)} Every field is shaded on that one scale, so a
+                              colour means the same thing wherever it appears. Click a field for the date
+                              of the last clear look behind it.
+                            </p>
+                          </InfoPopover>
+                        </div>
+                      )}
+                      {/* Spec §7.1: say plainly that zones are waiting on history,
+                          rather than leaving their absence to be interpreted. */}
+                      {satLegend && zoneWaitingMessage(zoneReadiness) && (
+                        <p className="ml-6 mb-1 text-[11px] text-gray-500">
+                          {zoneWaitingMessage(zoneReadiness)}
+                        </p>
+                      )}
+                      {/* NDVI runs out of range once the canopy closes: from
+                          about mid-July every acre of corn reads the same, right
+                          through the weeks that set the yield. NDRE uses the red
+                          edge and keeps separating heavy growth. The two are not
+                          on the same numeric scale and never share a legend. */}
+                      <div className="ml-6 mb-1">
+                        <div className="flex gap-1">
+                          {(
+                            [
+                              ['ndvi', 'NDVI'],
+                              ['ndre', 'NDRE'],
+                            ] as const
+                          ).map(([val, label]) => (
+                            <LayerName key={val} info={val}>
+                            <button
+                              onClick={() => {
+                                setIndex(val)
+                                localStorage.setItem('map_index', val)
+                              }}
+                              className={cn(
+                                'whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium',
+                                index === val
+                                  ? 'bg-brand-700 text-white'
+                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                              )}
+                            >
+                              {label}
+                            </button>
+                            </LayerName>
+                          ))}
+                          <InfoPopover title="NDVI or NDRE" width={280} className="ml-1">
+                            <p>
+                              <b>NDVI</b> — the standard index. Sharper early, flattens once the canopy closes.
+                            </p>
+                            <p>
+                              <b>NDRE</b> — red edge. Separates a closed canopy that NDVI reads as uniform.
+                            </p>
+                          </InfoPopover>
+                        </div>
+                      </div>
+                      {/* Two jobs, two scales. Comparing fields needs one ramp
+                          across the farm; looking inside a field needs that
+                          field's own range, or a closed canopy is one flat
+                          colour. A single scale cannot do both.
+
+                          Hidden on NDRE, which renders on one fixed range: it
+                          earns its keep comparing fields late in the season, and
+                          a per-field stretch would remove exactly that. */}
+                      <div className={cn('ml-6 mb-1', index === 'ndre' && 'hidden')}>
+                        <div className="flex gap-1">
+                          {(
+                            [
+                              ['shared', 'Compare fields'],
+                              ['field', 'Inspect field'],
+                            ] as const
+                          ).map(([val, label]) => (
+                            <button
+                              key={val}
+                              onClick={() => setNdviScale(val)}
+                              className={cn(
+                                'whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium',
+                                ndviScale === val
+                                  ? 'bg-brand-700 text-white'
+                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                              )}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                          <InfoPopover title="Compare or inspect" width={280} className="ml-1">
+                            <p>
+                              <b>Compare fields</b> — one ramp across every field, so colours can be compared between them.
+                            </p>
+                            <p>
+                              <b>Inspect field</b> — each field stretched to its own range. Shows variation inside a field —
+                              colours mean nothing between fields.
+                            </p>
+                          </InfoPopover>
+                        </div>
+                      </div>
+                      <p className="ml-6 mb-1 text-[11px] text-gray-500">
+                        {asOf
+                          ? ndviRasters?.length
+                            ? `Nearest ${asOf}: ${photoDateLabel(ndviRasters.map((i) => i.sensed_on))}`
+                            : 'No images within four months of that day.'
+                          : satelliteCoverage.withImagery > 0
+                            ? `${satelliteCoverage.withImagery} of ${satelliteCoverage.total} fields imaged · newest ${satelliteCoverage.freshest}`
+                            : 'No satellite imagery yet — fields stay grey until the first pictures arrive.'}
+                      </p>
+                    </>
+                  )}
+                  {val === 'photo' && showPhoto && (
+                    <p
+                      className={`ml-6 mb-1 text-[11px] ${fieldImagesError ? 'text-red-600' : 'text-gray-500'}`}
+                      // The raw error is for whoever is fixing it; hover shows it.
+                      title={fieldImagesError ? (fieldImagesError as Error).message : undefined}
+                    >
+                      {fieldImagesError
+                        ? 'Couldn’t load the satellite photos. Try again later.'
+                        : fieldImages?.length
+                          ? photoDateLabel(fieldImages.map((i) => i.sensed_on))
+                          : 'No photo captured yet.'}
+                    </p>
+                  )}
+                  {val === 'fieldnet' && showFieldnet && (
+                    <>
+                      {fnLegend && <LegendList items={FIELDNET_LEGEND} />}
+                      {asOf && <p className="ml-6 text-[11px] text-gray-500">From the passes recorded up to {asOf}.</p>}
+                      {!asOf && <label
+                        className="ml-6 flex items-center gap-2 py-0.5 text-[13px]"
+                        title="Shade each pivot sector by applied water depth vs the pivot's own average"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={showHeatmap}
+                          onChange={(e) => setShowHeatmap(e.target.checked)}
+                        />
+                        Applied heatmap
+                      </label>}
+                      {showHeatmap && !asOf && (
+                        <>
+                          <div className="ml-10 mt-1 flex gap-1">
+                            {(['week', 'month', 'season'] as const).map((w) => (
+                              <button
+                                key={w}
+                                onClick={() => setHeatWindow(w)}
+                                className={cn(
+                                  'rounded px-1.5 py-0.5 text-[10px] font-medium',
+                                  heatWindow === w
+                                    ? 'bg-brand-700 text-white'
+                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                                )}
+                              >
+                                {w === 'season' ? 'Year' : w === 'month' ? '30 d' : '7 d'}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="ml-10 mt-1 flex items-center gap-1">
+                            <p className="flex-1 text-[10px] text-gray-400">
+                              Water applied · {WINDOW_LABEL[heatWindow].toLowerCase()}
+                            </p>
+                            <LegendArrow open={heatLegend} onToggle={toggleHeatLegend} label="heatmap" />
+                          </div>
+                          {heatLegend && (
+                            <LegendList items={heatmapLegend(heatWindow)} className="mb-1 ml-10 space-y-0.5" />
+                          )}
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+              </div>
+
+              <LayerHeading>Map overlays</LayerHeading>
+              <div>
+              <div>
+                <div className="flex items-center gap-1">
+                  <label
+                    className="flex flex-1 items-center gap-2 py-0.5"
+                    title={myMapUrl ? undefined : 'Add a Google My Maps URL below'}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={showMyMap}
+                      disabled={!myMapUrl}
+                      onChange={(e) => setShowMyMap(e.target.checked)}
+                    />
+                    <LayerName info="mymap">Google My Map</LayerName>
+                  </label>
+                  {showMyMap && ((myMapGeo && myMapGeo.layers.length > 0) || (farmLayers?.length ?? 0) > 0) && (
+                    <LegendArrow open={myMapOpen} onToggle={toggleMyMapOpen} label="My Map layer" />
+                  )}
+                </div>
+                {showMyMap && myMapLoading && <p className="ml-6 text-[11px] text-gray-400">Loading…</p>}
+                {showMyMap && myMapError && (
+                  <p className="ml-6 text-[11px] text-red-600">
+                    {(myMapError as Error).message === 'not_shared'
+                      ? 'Map isn’t shared — set it to “Anyone with the link: Viewer” in My Maps.'
+                      : 'Couldn’t load the map.'}
+                  </p>
+                )}
+                {showMyMap && myMapOpen && (
+                  <ul className="ml-6 space-y-0.5">
+                    <FarmLayersLegend layers={farmLayers ?? []} active={farmActive} onToggle={toggleFarmLayer} isManager={isManager} />
+                    {myMapGeo && cropMyMapLayers.map((layer) => (
+                      <MyMapLayerRow
+                        key={layer}
+                        layer={layer}
+                        fc={myMapGeo.fc}
+                        checked={activeMyMapLayers.has(layer)}
+                        onToggle={(on) =>
+                          setActiveMyMapLayers((prev) => {
+                            const next = new Set(prev)
+                            if (on) next.add(layer)
+                            else next.delete(layer)
+                            return next
+                          })
+                        }
+                      />
+                    ))}
+                  </ul>
+                )}
+                {isManager && (editingMyMapUrl || !myMapUrl) && (
+                  <input
+                    key={myMapUrl ?? 'none'}
+                    defaultValue={myMapUrl ?? ''}
+                    autoFocus={editingMyMapUrl}
+                    placeholder="Paste Google My Maps URL"
+                    onBlur={(e) => {
+                      setEditingMyMapUrl(false)
+                      const v = e.target.value.trim() || null
+                      if (farmMap !== undefined && v !== (myMapUrl ?? null)) setMyMapUrl.mutate({ id: farmMap?.id, mymaps_url: v })
+                    }}
+                    className="mt-1 w-full rounded-md border border-gray-200 bg-white/70 px-2 py-1 text-[11px]"
+                  />
+                )}
+                {isManager && myMapUrl && !editingMyMapUrl && showMyMap && myMapOpen && (
+                  <button onClick={() => setEditingMyMapUrl(true)} className="ml-6 mt-0.5 text-[11px] text-gray-500 underline">
+                    Change the My Map link
+                  </button>
+                )}
+              </div>
+
+              <div className="mt-0.5">
+                <div className="flex items-center gap-1">
+                  <label className="flex flex-1 items-center gap-2 py-0.5">
+                    <input type="checkbox" checked={showSoil} onChange={(e) => setShowSoil(e.target.checked)} />
+                    <LayerName info="soil">Soil survey</LayerName>
+                  </label>
+                  {showSoil && (
+                    <LegendArrow open={soilLegend} onToggle={toggleSoilLegend} label="soil" />
+                  )}
+                </div>
+                {showSoil && soilLegend && (
+                  <div className="ml-6 mt-0.5">
+                    <LegendList
+                      items={[
+                        ...SOIL_WATER_BANDS.map((b) => [b.label, b.colour] as const),
+                        ['no rating', SOIL_NO_DATA_COLOUR] as const,
+                      ]}
+                      className="space-y-0.5"
+                    />
+                    <div className="mt-1">
+                      <InfoPopover title="Soil survey" label="About this layer" width={280}>
+                        <p>
+                          Water a crop can reach in the top metre. Tap an area for the soil, what it
+                          holds and what that means.{' '}
+                          <a
+                            href={AGRASID_SOURCE.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-brand-700 hover:underline"
+                          >
+                            AGRASID 4.1
+                          </a>
+                        </p>
+                      </InfoPopover>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+
+              {overlayFiles && overlayFiles.length > 0 && (
+                <div className="mt-2 border-t border-gray-100 pt-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                    Files
+                  </p>
+                  {overlayFiles.map((f: FieldFileRow) => (
+                    <label key={f.id} className="flex items-center gap-2 py-0.5" title={f.filename}>
+                      <input
+                        type="checkbox"
+                        checked={activeOverlays.has(f.id)}
+                        onChange={(e) => {
+                          setOverlayErrors((prev) => {
+                            const next = { ...prev }
+                            delete next[f.id]
+                            return next
+                          })
+                          setActiveOverlays((prev) => {
+                            const next = new Set(prev)
+                            if (e.target.checked) next.add(f.id)
+                            else next.delete(f.id)
+                            return next
+                          })
+                        }}
+                      />
+                      <span className="truncate">{f.filename}</span>
+                    </label>
+                  ))}
+                  {Object.entries(overlayErrors).map(([id, msg]) => (
+                    <p key={id} className="mt-1 text-xs text-red-600">
+                      {overlayFiles.find((f) => f.id === id)?.filename}: {msg}
+                    </p>
+                  ))}
+                </div>
+              )}
+              </div>
+
+              <LayerHeading>Fields</LayerHeading>
+              <label className="flex items-center gap-2 py-0.5">
+                <input
+                  type="checkbox"
+                  checked={showBoundaries}
+                  onChange={(e) => setShowBoundaries(e.target.checked)}
+                />
+                <LayerName info="boundaries">Field boundaries</LayerName>
+              </label>
+              <label className="flex items-center gap-2 py-0.5">
+                <input
+                  type="checkbox"
+                  checked={showLabels}
+                  onChange={(e) => setShowLabels(e.target.checked)}
+                />
+                <LayerName info="labels">Field labels</LayerName>
+              </label>
+            </div>
+          )}
+          </div>
           <div className="w-48 sm:w-60">
-            <input
-              value={lldQuery}
-              onChange={(e) => setLldQuery(e.target.value)}
-              placeholder="Find by legal land…"
-              aria-label="Find by legal land description"
-              className="w-full rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 shadow placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
-            />
+            {/* The point tool lives at the right end of the search: both
+                answer "which quarter is this?" — one from words, one from a tap. */}
+            <div className="relative">
+              <input
+                value={lldQuery}
+                onChange={(e) => setLldQuery(e.target.value)}
+                placeholder="Find by legal land…"
+                aria-label="Find by legal land description"
+                className={cn(MAP_GLASS, 'w-full rounded-xl py-1.5 pl-2.5 pr-8 text-xs text-gray-700 placeholder:text-gray-500 focus:bg-white focus:outline-none')}
+              />
+              <button
+                onClick={() => {
+                  setIdentifying((v) => !v)
+                  setIdentified(null)
+                }}
+                aria-pressed={identifying}
+                aria-label="Find the quarter section of a point on the map"
+                title="Find the quarter section of a point on the map"
+                className={cn(
+                  'absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-lg',
+                  identifying ? 'bg-brand-700 text-white' : 'text-gray-500 hover:bg-black/5 hover:text-gray-800',
+                )}
+              >
+                <Crosshair className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {identifying && !identified && (
+              <div className={cn(MAP_GLASS, 'mt-1 flex items-start gap-1.5 rounded-xl p-2 text-xs text-gray-700')}>
+                <Crosshair className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-700" />
+                <p className="flex-1">Tap anywhere on the map to see which quarter section it&rsquo;s in.</p>
+                <button onClick={() => setIdentifying(false)} aria-label="Stop" className="text-gray-400 hover:text-gray-700">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
             {identified && (
               <div className="mt-1 rounded-md border border-brand-300 bg-white p-2 shadow">
                 <div className="flex items-start gap-1.5">
@@ -1755,449 +2275,6 @@ export function MapPage() {
             )}
           </div>
         </div>
-        {panelOpen && (
-          <div className="mt-1 max-h-[38vh] w-56 overflow-y-auto overscroll-contain rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-lg sm:max-h-[60vh]">
-            {/* Pinned to the top of the scroll, so the way out is on screen
-                wherever the reader has scrolled to. Everything below it is a
-                list that grows as layers are turned on, and it used to run off
-                the bottom of a phone. */}
-            <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-2 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-1.5">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                Layers
-              </span>
-              <button
-                onClick={() => setPanelOpen(false)}
-                aria-label="Hide the layers"
-                className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            {/* Three groups, so the panel opens on the choice most people came
-                for — what colour the fields are — and the extras wait a tap
-                away. Each fold remembers itself on this device. */}
-            <Fold
-              title="Field colour"
-              defaultOpen
-              storageKey="map-layers-colour"
-              summary={FILL_MODES.find(([v]) => v === fillMode)?.[1]}
-              className="border-gray-100"
-              bodyClassName="px-2 py-1.5"
-            >
-            <label className="flex items-center gap-2 py-0.5">
-              <input
-                type="checkbox"
-                checked={showBoundaries}
-                onChange={(e) => setShowBoundaries(e.target.checked)}
-              />
-              Field boundaries
-            </label>
-            {FILL_MODES.map(([val, label]) => (
-              <div key={val}>
-                {/* The arrow is a sibling of the label, not inside it — inside,
-                    clicking it would also pick the radio. */}
-                <div className="flex items-center gap-1">
-                  <label className="flex flex-1 items-center gap-2 py-0.5">
-                    <input
-                      type="radio"
-                      name="fillmode"
-                      checked={fillMode === val}
-                      onChange={() => setFillMode(val)}
-                      // Closes the panel on a narrow screen — in the BUBBLE
-                      // phase, after the change. It used to be onClickCapture:
-                      // the capture-phase close re-rendered before the click
-                      // bubbled, the radio was gone by the time React looked
-                      // for its onChange, and on a phone the field colour
-                      // could never be changed at all (stuck on NDVI). On a
-                      // desktop the panel is beside the map, and stays open
-                      // for anyone comparing two layers.
-                      onClick={() => {
-                        if (window.matchMedia('(max-width: 767px)').matches) setPanelOpen(false)
-                      }}
-                    />
-                    {label}
-                  </label>
-                  {val === 'aimm' && showIrrigation && (
-                    <LegendArrow open={aimmLegend} onToggle={toggleAimmLegend} label="irrigation" />
-                  )}
-                  {val === 'fieldnet' && showFieldnet && (
-                    <LegendArrow open={fnLegend} onToggle={toggleFnLegend} label="pivot" />
-                  )}
-                  {val === 'satellite' && showSatellite && (
-                    <LegendArrow open={satLegend} onToggle={toggleSatLegend} label="NDVI" />
-                  )}
-                </div>
-                {/* Each legend sits directly under the option it belongs to. */}
-                {val === 'salinity' && showSalt && <SaltLegend salt={saltByField} names={fieldById} />}
-                {val === 'aimm' && showIrrigation && aimmLegend && (
-                  <LegendList items={IRRIGATION_LEGEND} />
-                )}
-                {val === 'satellite' && showSatellite && (
-                  <>
-                    {satLegend && (
-                      <LegendList
-                        items={[
-                          ['Never imaged', NO_DATA_COLOUR] as const,
-                          ...NDVI_RAMP.map(([l, c]) => [`NDVI ≤ ${l}`, c] as const),
-                        ]}
-                      />
-                    )}
-                    {satLegend && (
-                      <div className="ml-6 mb-1">
-                        <InfoPopover title="About these colours" label="About these colours" width={300}>
-                          <p>
-                            {ndviScaleLabel(ndviRasters)} Every field is shaded on that one scale, so a
-                            colour means the same thing wherever it appears. Click a field for the date
-                            of the last clear look behind it.
-                          </p>
-                        </InfoPopover>
-                      </div>
-                    )}
-                    {/* Spec §7.1: say plainly that zones are waiting on history,
-                        rather than leaving their absence to be interpreted. */}
-                    {satLegend && zoneWaitingMessage(zoneReadiness) && (
-                      <p className="ml-6 mb-1 text-[11px] text-gray-500">
-                        {zoneWaitingMessage(zoneReadiness)}
-                      </p>
-                    )}
-                    {/* NDVI runs out of range once the canopy closes: from
-                        about mid-July every acre of corn reads the same, right
-                        through the weeks that set the yield. NDRE uses the red
-                        edge and keeps separating heavy growth. The two are not
-                        on the same numeric scale and never share a legend. */}
-                    <div className="ml-6 mb-1">
-                      <div className="flex gap-1">
-                        {(
-                          [
-                            ['ndvi', 'NDVI'],
-                            ['ndre', 'NDRE'],
-                          ] as const
-                        ).map(([val, label]) => (
-                          <button
-                            key={val}
-                            onClick={() => {
-                              setIndex(val)
-                              localStorage.setItem('map_index', val)
-                            }}
-                            className={cn(
-                              'rounded px-2 py-0.5 text-[11px] font-medium',
-                              index === val
-                                ? 'bg-brand-700 text-white'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
-                            )}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                        <InfoPopover title="NDVI or NDRE" width={280} className="ml-1">
-                          <p>
-                            <b>NDVI</b> — the standard index. Sharper early, flattens once the canopy closes.
-                          </p>
-                          <p>
-                            <b>NDRE</b> — red edge. Separates a closed canopy that NDVI reads as uniform.
-                          </p>
-                        </InfoPopover>
-                      </div>
-                    </div>
-                    {/* Two jobs, two scales. Comparing fields needs one ramp
-                        across the farm; looking inside a field needs that
-                        field's own range, or a closed canopy is one flat
-                        colour. A single scale cannot do both.
-
-                        Hidden on NDRE, which renders on one fixed range: it
-                        earns its keep comparing fields late in the season, and
-                        a per-field stretch would remove exactly that. */}
-                    <div className={cn('ml-6 mb-1', index === 'ndre' && 'hidden')}>
-                      <div className="flex gap-1">
-                        {(
-                          [
-                            ['shared', 'Compare fields'],
-                            ['field', 'Inspect field'],
-                          ] as const
-                        ).map(([val, label]) => (
-                          <button
-                            key={val}
-                            onClick={() => setNdviScale(val)}
-                            className={cn(
-                              'rounded px-2 py-0.5 text-[11px] font-medium',
-                              ndviScale === val
-                                ? 'bg-brand-700 text-white'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
-                            )}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                        <InfoPopover title="Compare or inspect" width={280} className="ml-1">
-                          <p>
-                            <b>Compare fields</b> — one ramp across every field, so colours can be compared between them.
-                          </p>
-                          <p>
-                            <b>Inspect field</b> — each field stretched to its own range. Shows variation inside a field —
-                            colours mean nothing between fields.
-                          </p>
-                        </InfoPopover>
-                      </div>
-                    </div>
-                    <p className="ml-6 mb-1 text-[11px] text-gray-500">
-                      {satelliteCoverage.withImagery > 0
-                        ? `${satelliteCoverage.withImagery} of ${satelliteCoverage.total} fields imaged · newest ${satelliteCoverage.freshest}`
-                        : 'No satellite imagery yet — fields stay grey until the first pictures arrive.'}
-                    </p>
-                  </>
-                )}
-                {val === 'photo' && showPhoto && (
-                  <p
-                    className={`ml-6 mb-1 text-[11px] ${fieldImagesError ? 'text-red-600' : 'text-gray-500'}`}
-                    // The raw error is for whoever is fixing it; hover shows it.
-                    title={fieldImagesError ? (fieldImagesError as Error).message : undefined}
-                  >
-                    {fieldImagesError
-                      ? 'Couldn’t load the satellite photos. Try again later.'
-                      : fieldImages?.length
-                        ? photoDateLabel(fieldImages.map((i) => i.sensed_on))
-                        : 'No photo captured yet.'}
-                  </p>
-                )}
-                {val === 'fieldnet' && showFieldnet && (
-                  <>
-                    {fnLegend && <LegendList items={FIELDNET_LEGEND} />}
-                    <label
-                      className="ml-6 flex items-center gap-2 py-0.5 text-[13px]"
-                      title="Shade each pivot sector by applied water depth vs the pivot's own average"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={showHeatmap}
-                        onChange={(e) => setShowHeatmap(e.target.checked)}
-                      />
-                      Applied heatmap
-                    </label>
-                    {showHeatmap && (
-                      <>
-                        <div className="ml-10 mt-1 flex gap-1">
-                          {(['week', 'month', 'season'] as const).map((w) => (
-                            <button
-                              key={w}
-                              onClick={() => setHeatWindow(w)}
-                              className={cn(
-                                'rounded px-1.5 py-0.5 text-[10px] font-medium',
-                                heatWindow === w
-                                  ? 'bg-brand-700 text-white'
-                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
-                              )}
-                            >
-                              {w === 'season' ? 'Year' : w === 'month' ? '30 d' : '7 d'}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="ml-10 mt-1 flex items-center gap-1">
-                          <p className="flex-1 text-[10px] text-gray-400">
-                            Water applied · {WINDOW_LABEL[heatWindow].toLowerCase()}
-                          </p>
-                          <LegendArrow open={heatLegend} onToggle={toggleHeatLegend} label="heatmap" />
-                        </div>
-                        {heatLegend && (
-                          <LegendList items={heatmapLegend(heatWindow)} className="mb-1 ml-10 space-y-0.5" />
-                        )}
-                      </>
-                    )}
-                  </>
-                )}
-              </div>
-            ))}
-            <label className="flex items-center gap-2 py-0.5">
-              <input
-                type="checkbox"
-                checked={showLabels}
-                onChange={(e) => setShowLabels(e.target.checked)}
-              />
-              Field labels
-            </label>
-            </Fold>
-
-            <Fold
-              title="Overlays"
-              storageKey="map-layers-overlays"
-              summary={overlaysOn > 0 ? `${overlaysOn} on` : undefined}
-              className="mt-2 border-gray-100"
-              bodyClassName="px-2 py-1.5"
-            >
-            <div>
-              <div className="flex items-center gap-1">
-                <label
-                  className="flex flex-1 items-center gap-2 py-0.5"
-                  title={myMapUrl ? undefined : 'Add a Google My Maps URL below'}
-                >
-                  <input
-                    type="checkbox"
-                    checked={showMyMap}
-                    disabled={!myMapUrl}
-                    onChange={(e) => setShowMyMap(e.target.checked)}
-                  />
-                  Google My Map
-                </label>
-                {showMyMap && ((myMapGeo && myMapGeo.layers.length > 0) || (farmLayers?.length ?? 0) > 0) && (
-                  <LegendArrow open={myMapOpen} onToggle={toggleMyMapOpen} label="My Map layer" />
-                )}
-              </div>
-              {showMyMap && myMapLoading && <p className="ml-6 text-[11px] text-gray-400">Loading…</p>}
-              {showMyMap && myMapError && (
-                <p className="ml-6 text-[11px] text-red-600">
-                  {(myMapError as Error).message === 'not_shared'
-                    ? 'Map isn’t shared — set it to “Anyone with the link: Viewer” in My Maps.'
-                    : 'Couldn’t load the map.'}
-                </p>
-              )}
-              {showMyMap && myMapOpen && (
-                <ul className="ml-6 space-y-0.5">
-                  <FarmLayersLegend layers={farmLayers ?? []} active={farmActive} onToggle={toggleFarmLayer} isManager={isManager} />
-                  {myMapGeo && cropMyMapLayers.map((layer) => (
-                    <MyMapLayerRow
-                      key={layer}
-                      layer={layer}
-                      fc={myMapGeo.fc}
-                      checked={activeMyMapLayers.has(layer)}
-                      onToggle={(on) =>
-                        setActiveMyMapLayers((prev) => {
-                          const next = new Set(prev)
-                          if (on) next.add(layer)
-                          else next.delete(layer)
-                          return next
-                        })
-                      }
-                    />
-                  ))}
-                </ul>
-              )}
-              {isManager && (
-                <input
-                  key={myMapUrl ?? 'none'}
-                  defaultValue={myMapUrl ?? ''}
-                  placeholder="Paste Google My Maps URL"
-                  onBlur={(e) => {
-                    const v = e.target.value.trim() || null
-                    if (farmMap !== undefined && v !== (myMapUrl ?? null)) setMyMapUrl.mutate({ id: farmMap?.id, mymaps_url: v })
-                  }}
-                  className="mt-1 w-full rounded-md border border-gray-200 px-2 py-1 text-[11px]"
-                />
-              )}
-            </div>
-
-            <div className="mt-2 border-t border-gray-100 pt-2">
-              <div className="flex items-center gap-1">
-                <label className="flex flex-1 items-center gap-2 py-0.5">
-                  <input type="checkbox" checked={showSoil} onChange={(e) => setShowSoil(e.target.checked)} />
-                  Soil survey
-                </label>
-                {showSoil && (
-                  <LegendArrow open={soilLegend} onToggle={toggleSoilLegend} label="soil" />
-                )}
-              </div>
-              {showSoil && soilLegend && (
-                <div className="ml-6 mt-0.5">
-                  <LegendList
-                    items={[
-                      ...SOIL_WATER_BANDS.map((b) => [b.label, b.colour] as const),
-                      ['no rating', SOIL_NO_DATA_COLOUR] as const,
-                    ]}
-                    className="space-y-0.5"
-                  />
-                  <div className="mt-1">
-                    <InfoPopover title="Soil survey" label="About this layer" width={280}>
-                      <p>
-                        Water a crop can reach in the top metre. Tap an area for the soil, what it
-                        holds and what that means.{' '}
-                        <a
-                          href={AGRASID_SOURCE.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-brand-700 hover:underline"
-                        >
-                          AGRASID 4.1
-                        </a>
-                      </p>
-                    </InfoPopover>
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-1.5 flex items-center gap-1 border-t border-gray-100 pt-1.5">
-                <label className="flex flex-1 items-center gap-2 py-0.5">
-                  <input
-                    type="checkbox"
-                    checked={showYield}
-                    onChange={(e) => setShowYield(e.target.checked)}
-                  />
-                  Productivity zones
-                </label>
-                {showYield && (
-                  <LegendArrow open={yieldLegend} onToggle={toggleYieldLegend} label="productivity" />
-                )}
-              </div>
-              {showYield && yieldLegend && (
-                <div className="ml-6 mt-0.5">
-                  <LegendList
-                    items={yieldBands(yieldZones ?? []).map(
-                      (b) => [`${b.from}–${b.to}`, b.colour] as const,
-                    )}
-                    className="space-y-0.5"
-                  />
-                  {/* The caveat belongs on the legend, not in a doc nobody
-                      opens. These are an index normalised to each field's own
-                      average, which is not obvious from a map of coloured
-                      ground and changes what the colours mean. */}
-                  <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-400">
-                    % of the field&rsquo;s own average
-                    <InfoPopover title="Productivity zones" width={280}>
-                      <p>
-                        Each zone as a percentage of its own field&rsquo;s average, from the
-                        agronomist&rsquo;s maps — so 110 is good ground for that field, not a bushel
-                        figure, and fields cannot be ranked against each other. Tap a zone.
-                      </p>
-                    </InfoPopover>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {overlayFiles && overlayFiles.length > 0 && (
-              <div className="mt-2 border-t border-gray-100 pt-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                  Files
-                </p>
-                {overlayFiles.map((f: FieldFileRow) => (
-                  <label key={f.id} className="flex items-center gap-2 py-0.5" title={f.filename}>
-                    <input
-                      type="checkbox"
-                      checked={activeOverlays.has(f.id)}
-                      onChange={(e) => {
-                        setOverlayErrors((prev) => {
-                          const next = { ...prev }
-                          delete next[f.id]
-                          return next
-                        })
-                        setActiveOverlays((prev) => {
-                          const next = new Set(prev)
-                          if (e.target.checked) next.add(f.id)
-                          else next.delete(f.id)
-                          return next
-                        })
-                      }}
-                    />
-                    <span className="truncate">{f.filename}</span>
-                  </label>
-                ))}
-                {Object.entries(overlayErrors).map(([id, msg]) => (
-                  <p key={id} className="mt-1 text-xs text-red-600">
-                    {overlayFiles.find((f) => f.id === id)?.filename}: {msg}
-                  </p>
-                ))}
-              </div>
-            )}
-            </Fold>
-          </div>
-        )}
       </div>
 
       {selected && (

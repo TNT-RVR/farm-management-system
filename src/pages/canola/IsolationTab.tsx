@@ -34,7 +34,7 @@ import { farmBrand } from '@/lib/farm-setup'
 import { cn } from '@/lib/utils'
 import { lastSeedCanola } from '@/lib/seed-canola-year'
 import { IsolationMap, type IsolationMapHandle, type MapQuarter } from './IsolationMap'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { ExportButton } from '@/components/ExportButton'
 
 /** What a neighbour's quarter is likely to be, beside the farm's own crops, for the picker. */
@@ -221,8 +221,8 @@ export function IsolationTab() {
       )}
 
       {fieldId && rows.length > 0 && (
-        <section className="rounded-lg border border-gray-200 bg-white p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 pt-3">
             <h2 className="text-sm font-semibold text-gray-900">
               {rows.length} quarters within a mile
               <span className="ml-2 text-xs font-normal text-gray-500">
@@ -239,10 +239,10 @@ export function IsolationTab() {
             <table className="w-full min-w-[640px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="py-1 font-medium">Quarter</th>
-                  <th className="py-1 font-medium">Whose</th>
+                  <th className={TABLE_TH}>Quarter</th>
+                  <th className={TABLE_TH}>Whose</th>
                   {years.map((y) => (
-                    <th key={y} className="py-1 font-medium">
+                    <th key={y} className={TABLE_TH}>
                       {y}
                     </th>
                   ))}
@@ -251,10 +251,10 @@ export function IsolationTab() {
               <tbody className="divide-y divide-gray-100">
                 {rows.map((r) => (
                   <tr key={r.parcel} onClick={() => setSelected(r.parcel)} className={cn('cursor-pointer hover:bg-gray-50', selected === r.parcel && 'bg-brand-50')}>
-                    <td className="py-1.5 pr-2 font-medium text-gray-900">{r.label}</td>
-                    <td className="py-1.5 pr-2 text-xs text-gray-600">{whoseLabel(r)}</td>
+                    <td className="px-3 py-1.5 font-medium text-gray-900">{r.label}</td>
+                    <td className="px-3 py-1.5 text-xs text-gray-600">{whoseLabel(r)}</td>
                     {r.cells.map((c, k) => (
-                      <td key={k} className={cn('py-1.5 pr-2', isCanolaCrop(c.crop) ? 'font-semibold text-amber-700' : c.crop ? 'text-gray-800' : 'text-gray-300')}>
+                      <td key={k} className={cn('px-3 py-1.5', isCanolaCrop(c.crop) ? 'font-semibold text-amber-700' : c.crop ? 'text-gray-800' : 'text-gray-300')}>
                         {c.crop ?? '—'}
                       </td>
                     ))}

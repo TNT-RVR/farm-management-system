@@ -50,7 +50,8 @@ import { HelpNote } from '@/components/HelpNote'
 import { AdminOnly } from '@/components/TechnicalDetails'
 import { useFarmSettings, useFeature } from '@/lib/farm-setup'
 import { TabSuspense } from '@/components/TabSuspense'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { usePartnerView } from '@/lib/partner-view'
 
 // Each tab is its own chunk, so opening one view does not load every view's maps and charts.
 const SavingsTab = lazy(() => import('@/pages/fertilizer/savings/SavingsTab').then((m) => ({ default: m.SavingsTab })))
@@ -87,17 +88,6 @@ const readStore = (key: string): string | null => {
 export function FertilizerRedirect() {
   const { search } = useLocation()
   return <Navigate replace to={fertilizerRedirect(search, readStore(LAST_VIEW_KEY), readStore('tab:fertilizer'))} />
-}
-
-/**
- * The tab a view opens on when it has no memory of its own yet: the one the
- * two-row version last had open in that group (`fertilizer-view:<group>`), so
- * the split does not reset where people were.
- */
-function firstVisitTab(view: FertilizerView): string {
-  const tabs = fertilizerTabs(view)
-  const saved = readStore(`fertilizer-view:${FERTILIZER_VIEWS[view].group}`)
-  return tabs.find((t) => t.old === saved)?.key ?? tabs[0]?.key ?? ''
 }
 
 const RATING_CLASS: Record<string, string> = {
@@ -630,37 +620,37 @@ function Assessment({ report }: { report: SoilReport }) {
           {/* Timing & why is prose, so five columns in 317 px wrapped to a
               word a line; it scrolls sideways on a phone instead. */}
           {recs.length > 0 && (
-            <div className="overflow-x-auto">
-            <table className="mt-2 w-full min-w-[560px] table-fixed text-[11px]">
+            <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
+            <table className="w-full min-w-[560px] table-fixed text-[11px]">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="px-1 py-1 font-medium" style={{ width: '12%' }}>
+                  <th className={TABLE_TH} style={{ width: '12%' }}>
                     Nutrient
                   </th>
-                  <th className="px-1 py-1 font-medium" style={{ width: '24%' }}>
+                  <th className={TABLE_TH} style={{ width: '24%' }}>
                     Product
                   </th>
-                  <th className="px-1 py-1 text-right font-medium" style={{ width: '13%' }}>
+                  <th className={cn(TABLE_TH, 'text-right')} style={{ width: '13%' }}>
                     lb/ac actual
                   </th>
-                  <th className="px-1 py-1 text-right font-medium" style={{ width: '13%' }}>
+                  <th className={cn(TABLE_TH, 'text-right')} style={{ width: '13%' }}>
                     lb/ac product
                   </th>
-                  <th className="px-1 py-1 font-medium">Timing &amp; why</th>
+                  <th className={TABLE_TH}>Timing &amp; why</th>
                 </tr>
               </thead>
               <tbody>
                 {recs.map((r, i) => (
                   <tr key={i} className="border-b border-gray-100 last:border-0">
-                    <td className="px-1 py-1 font-semibold text-gray-900">{r.nutrient ?? '—'}</td>
-                    <td className="px-1 py-1 text-gray-700">{r.product ?? '—'}</td>
-                    <td className="px-1 py-1 text-right tabular-nums text-gray-900">
+                    <td className="px-3 py-1 font-semibold text-gray-900">{r.nutrient ?? '—'}</td>
+                    <td className="px-3 py-1 text-gray-700">{r.product ?? '—'}</td>
+                    <td className="px-3 py-1 text-right tabular-nums text-gray-900">
                       {r.lb_per_ac ?? '—'}
                     </td>
-                    <td className="px-1 py-1 text-right tabular-nums text-gray-600">
+                    <td className="px-3 py-1 text-right tabular-nums text-gray-600">
                       {r.product_lb_per_ac ?? '—'}
                     </td>
-                    <td className="px-1 py-1 leading-relaxed text-gray-600">
+                    <td className="px-3 py-1 leading-relaxed text-gray-600">
                       {r.timing ? (
                         <span className="font-medium text-gray-700">{r.timing}. </span>
                       ) : null}
@@ -825,7 +815,7 @@ function SoilSampling({
           {canEdit && (
             <button
               onClick={() => setImporting(true)}
-              className="flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700"
+              className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800"
             >
               <Upload className="h-4 w-4" /> Upload lab results (CSV)
             </button>
@@ -847,8 +837,7 @@ function SoilSampling({
 }
 
 /**
- * A view's one row of tabs, in the URL (`?tab=`) and remembered per view
- * (`tab:fertilizer-<view>`). An old tab key on the new address ('Soil
+ * A view's one row of tabs, in the URL (`?tab=`), opening on the first. An old tab key on the new address ('Soil
  * Sampling' on /fertilizer/soil) is read as the tab it became.
  */
 function useViewTab(view: FertilizerView, hidden: readonly string[] = []) {
@@ -856,7 +845,6 @@ function useViewTab(view: FertilizerView, hidden: readonly string[] = []) {
   const [asked, setTab] = useTab<string>(
     `fertilizer-${view}`,
     all.map((t) => t.key),
-    firstVisitTab(view),
     (a) => {
       const m = oldFertilizerTab(a)
       return m?.view === view ? m.tab : undefined
@@ -941,7 +929,9 @@ function SoilView({ isManager }: { isManager: boolean }) {
 }
 
 function PlanView() {
-  const { tab, setTab, shown } = useViewTab('plan', useFeature('hauling') ? [] : ['spreading'])
+  // Spreading cost is our hauling; not a crop-share partner's.
+  const partner = usePartnerView()
+  const { tab, setTab, shown } = useViewTab('plan', useFeature('hauling') && !partner ? [] : ['spreading'])
   return (
     <ViewShell
       view="plan"
@@ -955,7 +945,9 @@ function PlanView() {
 function PricesView({ isManager }: { isManager: boolean }) {
   const { retailerName } = useFarmSettings()
   const retailerOn = useFeature('retailer_invoices')
-  const { tab, setTab, shown } = useViewTab('prices', retailerOn ? [] : ['retailer'])
+  // The retailer's invoices are our account with them.
+  const partner = usePartnerView()
+  const { tab, setTab, shown } = useViewTab('prices', retailerOn && !partner ? [] : ['retailer'])
   const tabs = shown.map((t) => (t.key === 'retailer' ? { key: t.key, label: retailerName } : t))
   return (
     <ViewShell
@@ -971,7 +963,7 @@ function PricesView({ isManager }: { isManager: boolean }) {
         // on Market, which made the farm's own prices a three-tab hunt;
         // Market is the market now and this is what we pay.
         <div className="space-y-4">
-          {retailerOn && <IciPrices isManager={isManager} />}
+          {retailerOn && !partner && <IciPrices isManager={isManager} />}
           <ProductPrices category="fertilizer" />
           <SavingsHere ids={[2]} className="space-y-2" />
         </div>

@@ -10,6 +10,7 @@ import { PillTabs } from '@/components/PillTabs'
 import { Select } from '@/components/Select'
 import { PromptDialog } from '@/components/Modal'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
+import { usePartnerAccess } from '@/lib/partner-view'
 import { useCropYear } from '@/lib/crop-year'
 import { supabase } from '@/lib/supabase'
 import { useCropVarietyMutations, useYearUnlocks, type CropVarietyRow } from '@/lib/queries'
@@ -131,6 +132,9 @@ function VarietyCell({
 // Farm costs is the fixed expense every budget here carries, so it is set here.
 const PLAN_TABS = ['plan', 'budget', 'breakeven', 'actuals', 'field work', 'farm costs'] as const
 type PlanTab = (typeof PLAN_TABS)[number]
+// A crop-share partner plans his fields; the farm's fixed costs and our
+// books (actuals) are not his.
+const PARTNER_PLAN_TABS: readonly PlanTab[] = PLAN_TABS.filter((t) => t !== 'actuals' && t !== 'farm costs')
 
 export function PlannerPage() {
   const { profile } = useAuth()
@@ -141,7 +145,9 @@ export function PlannerPage() {
   // instruction to click twice. Only the initial value: after that the tabs
   // are ordinary state, and the URL is not rewritten on every click.
   const [params, setParams] = useSearchParams()
-  const [tab, setTab] = useTab<PlanTab>('planner', PLAN_TABS, 'plan')
+  const { partner, canWrite } = usePartnerAccess()
+  const tabs = partner ? PARTNER_PLAN_TABS : PLAN_TABS
+  const [tab, setTab] = useTab<PlanTab>('planner', tabs)
 
   // A crop id in the URL narrows the plan to that crop. The bin estimator links
   // here to answer "why is this number what it is" — landing on 60 rows of
@@ -158,7 +164,9 @@ export function PlannerPage() {
   const isPastYear = cropYear < currentYear
   const isUnlocked = unlocks?.some((u) => u.crop_year === cropYear) ?? false
   const isLocked = isPastYear && !isUnlocked
-  const canEdit = hasManagerAccess(profile?.role) && !isLocked
+  // Staff edit every row; a partner the rows of his own field-years.
+  const canEditRow = (r: { field: { id: string } }) =>
+    !isLocked && (hasManagerAccess(profile?.role) || canWrite(r.field.id, cropYear))
 
   const toggleLock = useMutation({
     mutationFn: async () => {
@@ -278,7 +286,7 @@ export function PlannerPage() {
               type="number"
               step="0.01"
               min="0"
-              disabled={!canEdit || !r.zoneId}
+              disabled={!canEditRow(r) || !r.zoneId}
               key={`${r.zoneId}-${r.acres ?? ''}`}
               defaultValue={r.acres ?? ''}
               placeholder="—"
@@ -299,7 +307,7 @@ export function PlannerPage() {
             <input
               type="number"
               step="0.01"
-              disabled={!canEdit || !r.plan}
+              disabled={!canEditRow(r) || !r.plan}
               defaultValue={r.plan?.planned_acres ?? ''}
               placeholder={r.acres != null ? r.acres.toFixed(2) : '—'}
               onBlur={(e) => {
@@ -323,7 +331,7 @@ export function PlannerPage() {
               style={{ background: cropColour(r.crop) }}
             />
             <Select
-              disabled={!canEdit}
+              disabled={!canEditRow(r)}
               value={r.crop?.id ?? ''}
               size="sm"
               ariaLabel="Zone crop"
@@ -345,7 +353,7 @@ export function PlannerPage() {
           </span>
         ) : (
           <Select
-            disabled={!canEdit}
+            disabled={!canEditRow(r)}
             value={r.crop?.id ?? ''}
             size="sm"
             ariaLabel="Crop"
@@ -364,7 +372,7 @@ export function PlannerPage() {
       render: (r) => (
         <VarietyCell
           row={r}
-          canEdit={canEdit}
+          canEdit={canEditRow(r)}
           varieties={varieties ?? []}
           onSet={(v) => r.plan && patchPlan.mutate({ row: r, patch: { variety: v } })}
           onAdd={(name) => r.crop && addVariety.mutate({ crop_id: r.crop.id, name })}
@@ -382,7 +390,7 @@ export function PlannerPage() {
               <input
                 type="text"
                 inputMode="decimal"
-                disabled={!canEdit || !r.plan}
+                disabled={!canEditRow(r) || !r.plan}
                 key={`${r.plan?.id ?? r.zoneId}-${own}`}
                 defaultValue={own}
                 // The yield the estimate is using, before any cut: our own
@@ -457,7 +465,7 @@ export function PlannerPage() {
           ''
         ),
     },
-    goal: { className: 'text-right', render: (r) => <GoalCell row={r} canEdit={canEdit} /> },
+    goal: { className: 'text-right', render: (r) => <GoalCell row={r} canEdit={canEditRow(r)} /> },
     // The "not a normal year" mark is about the averages, not the plan, so a locked year can still be marked.
     vs_estimate: {
       render: (r) => (
@@ -618,7 +626,7 @@ export function PlannerPage() {
             phone it takes a line of its own (Sam, 27 Oct 2026). */}
         <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
           <PillTabs
-            tabs={PLAN_TABS.map((t) => ({ key: t, label: t[0].toUpperCase() + t.slice(1) }))}
+            tabs={tabs.map((t) => ({ key: t, label: t[0].toUpperCase() + t.slice(1) }))}
             value={tab}
             onChange={setTab}
             className="border-b-0 pb-0"

@@ -44,7 +44,12 @@ export function MenuSectionPage() {
       <div className="space-y-5">
         {section.groups.map((g) => (
           <section key={g.key}>
-            {g.heading && <h2 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">{g.heading}</h2>}
+            {g.heading && (
+              <h2 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                {g.icon && <g.icon className="h-3.5 w-3.5" />}
+                {g.heading}
+              </h2>
+            )}
             <ul className="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200 bg-white">
               {g.items.map((i) => {
                 const VIcon = i.view.icon

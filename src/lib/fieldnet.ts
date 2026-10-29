@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { supabase } from './supabase'
 import type { Database } from './database.types'
+import { systemsOn, type PivotPass } from './map-as-of'
 
 export type FieldnetSystem = Database['public']['Tables']['fieldnet_systems']['Row']
 
@@ -34,6 +36,35 @@ export function useFieldnetSystems() {
       return data
     },
   })
+}
+
+/**
+ * The pivots as they stood on a past day (YYYY-MM-DD, the farm's local day),
+ * from the passes recorded up to the end of it; null when no day is asked for.
+ * See systemsOn.
+ */
+export function useFieldnetSystemsOn(asOf: string | null) {
+  const { data: systems } = useFieldnetSystems()
+  const passes = useQuery({
+    enabled: !!asOf,
+    queryKey: ['fieldnet_passes_upto', asOf],
+    queryFn: async () => {
+      const dayEnd = new Date(`${asOf}T23:59:59.999`)
+      // Sixty days back is plenty to find where each arm was parked.
+      const from = new Date(dayEnd.getTime() - 60 * 86_400_000)
+      const { data, error } = await supabase
+        .from('fieldnet_passes')
+        .select('fieldnet_id, started_at, ended_at, start_deg, end_deg, direction')
+        .gte('started_at', from.toISOString())
+        .lte('started_at', dayEnd.toISOString())
+      if (error) throw error
+      return data as PivotPass[]
+    },
+  })
+  return useMemo(() => {
+    if (!asOf || !systems || !passes.data) return null
+    return systemsOn(systems, passes.data, new Date(`${asOf}T00:00:00`), new Date(`${asOf}T23:59:59.999`))
+  }, [asOf, systems, passes.data])
 }
 
 export type FieldnetHistoryEvent = {

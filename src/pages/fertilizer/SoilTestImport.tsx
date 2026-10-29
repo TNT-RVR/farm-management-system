@@ -244,7 +244,7 @@ export function SoilTestImport({ onClose }: { onClose: () => void }) {
       <div className="flex flex-col gap-4 text-sm">
         {/* 1. File */}
         <div className="flex flex-wrap items-center gap-2">
-          <label className="flex cursor-pointer items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700">
+          <label className="flex cursor-pointer items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800">
             <Upload className="h-4 w-4" />
             {fileName ? 'Choose another file' : 'Choose CSV file'}
             <input
@@ -429,7 +429,7 @@ export function SoilTestImport({ onClose }: { onClose: () => void }) {
               <button
                 onClick={() => void run()}
                 disabled={busy || toImport.length === 0}
-                className="flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
               >
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />}
                 Import {toImport.length} report{toImport.length === 1 ? '' : 's'}
@@ -482,7 +482,7 @@ export function SoilTestImport({ onClose }: { onClose: () => void }) {
               </button>
               <button
                 onClick={onClose}
-                className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700"
+                className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800"
               >
                 Done
               </button>

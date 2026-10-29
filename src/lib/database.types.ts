@@ -1414,6 +1414,8 @@ export type Database = {
           finance_access: boolean
           avatar_url: string | null
           show_truck_forecast: boolean
+          /** The company (farms) a person belongs to; null for the home farm's own people. */
+          farm_id: string | null
         }
         Insert: {
           id: string
@@ -1427,6 +1429,7 @@ export type Database = {
           nav_prefs?: Json | null
           tile_prefs?: Json | null
           menu_prefs?: Json | null
+          farm_id?: string | null
         }
         Update: {
           id?: string
@@ -1445,6 +1448,7 @@ export type Database = {
           finance_access?: boolean
           avatar_url?: string | null
           show_truck_forecast?: boolean
+          farm_id?: string | null
         }
         Relationships: []
       }
@@ -1519,6 +1523,8 @@ export type Database = {
           river_alert_cms: number | null
           mymaps_url: string | null
           jd_work_url: string | null
+          /** The farm this app is for; others are partner companies. */
+          is_home: boolean
         }
         Insert: {
           power_cost_kwh?: number
@@ -1531,6 +1537,7 @@ export type Database = {
           fieldnet_url?: string | null
           kc_mode?: string
           weather_source?: string
+          is_home?: boolean
         }
         Update: {
           power_cost_kwh?: number
@@ -1548,6 +1555,7 @@ export type Database = {
           river_alert_cms?: number | null
           mymaps_url?: string | null
           jd_work_url?: string | null
+          is_home?: boolean
         }
         Relationships: []
       }
@@ -2932,6 +2940,8 @@ export type Database = {
           moisture_note: string | null
           moisture_dry_min: number | null
           moisture_tough_advice: string | null
+          /** null: the farm's own catalogue; otherwise the company that owns the crop. */
+          farm_id: string | null
         }
         Insert: {
           counts_for_seeding?: boolean
@@ -2981,6 +2991,7 @@ export type Database = {
           moisture_note?: string | null
           moisture_dry_min?: number | null
           moisture_tough_advice?: string | null
+          farm_id?: string | null
         }
         Update: {
           counts_for_seeding?: boolean
@@ -3030,6 +3041,7 @@ export type Database = {
           moisture_note?: string | null
           moisture_dry_min?: number | null
           moisture_tough_advice?: string | null
+          farm_id?: string | null
         }
         Relationships: []
       }

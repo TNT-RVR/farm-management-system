@@ -1,12 +1,12 @@
-import { Suspense, useEffect, useState } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Suspense, useCallback, useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { OfflineBanner } from '@/components/OfflineBanner'
 import { UpdateReadyBanner } from '@/components/UpdateReadyBanner'
 import { InstallBanner } from '@/components/InstallBanner'
 import { useAutoOfflineSave } from '@/lib/offline-auto'
 import { useAppBadge } from '@/lib/useAppBadge'
-import { LogOut, MoreHorizontal, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, LogOut, MoreHorizontal, Search } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { usePushSync } from '@/lib/push'
 import { MOBILE_BAR_COUNT, isViewDenied, useNavLayout } from '@/lib/nav'
@@ -14,6 +14,8 @@ import { useMenuEnabled } from '@/lib/menu-prefs'
 import { SidebarNav } from './SidebarNav'
 import { SeasonSidebar } from './SeasonSidebar'
 import { SeasonPhoneNav } from './SeasonPhoneNav'
+import { PhoneSearchSheet } from './PhoneSearchSheet'
+import { useTrackViewUsage } from '@/lib/view-usage'
 import { MenuTrail, useHasTrail } from './MenuTrail'
 import { CropYearSwitcher } from './CropYearSwitcher'
 import { NotificationBell } from './NotificationBell'
@@ -24,20 +26,65 @@ import { isPathOff, useApplyFarmSetup, useBrand, useDisabledPaths, useFirstRunRe
 import { DriveBackupScheduler } from '@/components/DriveBackupScheduler'
 
 /** Ctrl+K (⌘K), or / when not typing in a box, opens the search from anywhere. */
-function useSearchShortcut() {
-  const navigate = useNavigate()
+function useSearchShortcut(open: () => void) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null
       const typing = !!el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))
       if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') || (e.key === '/' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey)) {
         e.preventDefault()
-        navigate('/search')
+        open()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [navigate])
+  }, [open])
+}
+
+/** The search window on a computer: the header's search icon, Ctrl+K or /. Escape or a click outside closes it. */
+function SearchDialog({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div className="fixed inset-0 z-50 bg-gray-900/40 px-4 pt-[12vh] print:hidden" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label="Search"
+        className="mx-auto max-w-xl overflow-hidden rounded-xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <ErrorBoundary>
+          <PhoneSearchSheet variant="dialog" onClose={onClose} />
+        </ErrorBoundary>
+      </div>
+    </div>
+  )
+}
+
+const SIDEBAR_KEY = 'rvr.sidebar-hidden'
+
+/** The desktop sidebar tucked away to the left, remembered on this device. */
+function useSidebarHidden() {
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const toggle = () =>
+    setHidden((h) => {
+      try {
+        localStorage.setItem(SIDEBAR_KEY, h ? '0' : '1')
+      } catch {
+        // Private window: it just won't be remembered.
+      }
+      return !h
+    })
+  return [hidden, toggle] as const
 }
 
 export function AppShell() {
@@ -45,11 +92,16 @@ export function AppShell() {
 }
 
 function StaffShell() {
-  useSearchShortcut()
+  const [findOpen, setFindOpen] = useState(false)
+  const openFind = useCallback(() => setFindOpen(true), [])
+  const closeFind = useCallback(() => setFindOpen(false), [])
+  useSearchShortcut(openFind)
   // Tops up the offline records in the background; see lib/offline-auto.ts.
   useAutoOfflineSave()
   // Unread count on the installed app's icon.
   useAppBadge()
+  // Most used views, for the phone's search sheet.
+  useTrackViewUsage()
   const { profile, signOut } = useAuth()
   const online = useOnlineUsers()
   // The farm's own name and logo (Farm setup), and its farm-wide settings applied.
@@ -61,6 +113,7 @@ function StaffShell() {
   usePushSync(profile?.id)
   const { pathname } = useLocation()
   const [moreOpen, setMoreOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
   /** Which bottom-bar group is showing its children, if any. */
   const [groupOpen, setGroupOpen] = useState<string | null>(null)
   const { visible } = useNavLayout()
@@ -79,75 +132,131 @@ function StaffShell() {
   // below exactly as it was, until the old menu is retired.
   const seasonMenu = useMenuEnabled()
   const trail = useHasTrail() && seasonMenu
+  const [sidebarHidden, toggleSidebar] = useSidebarHidden()
 
   return (
-    <div className="flex h-full flex-col bg-gray-50">
+    <div className="flex h-full bg-gray-50">
       {/* The Google Drive backup of every report, for the owners and the accountant; renders nothing. */}
       <DriveBackupScheduler />
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 print:hidden">
-        {/* On a phone the trail's back arrow takes the logo's place. */}
-        <img src={BRAND.logo} alt={BRAND.farmName} className={cn('h-9 w-auto', trail && 'hidden md:block')} />
-        {seasonMenu && <MenuTrail />}
-        <div className="ml-auto flex items-center gap-3">
-          <NavLink
-            to="/search"
-            className="rounded-md p-2 text-gray-500 hover:bg-gray-100"
-            aria-label="Search"
-            title="Search pages, reports and records (Ctrl+K)"
-          >
-            <Search className="h-4 w-4" />
-          </NavLink>
-          <CropYearSwitcher />
-          <NotificationBell />
-          {online.length > 0 && (
-            <span className="flex items-center" title={`Also in the app now: ${online.map((p) => p.full_name).join(', ')}`}>
-              <AvatarStack people={online} max={4} size="sm" />
-            </span>
-          )}
-          {profile && (
-            <NavLink to="/settings/account?tab=profile" className="flex items-center gap-2 rounded-full" title="Your account and picture">
-              <UserAvatar person={profile} size="sm" />
-              <span className="hidden text-sm text-gray-600 md:inline">{profile.full_name}</span>
+      {/* Desktop sidebar, full height with the farm's logo at its top (Sam,
+          29 Oct 2026). The tab halfway down its right edge tucks it away to
+          the left; hidden, the same tab sits on the screen's left edge. */}
+      {!sidebarHidden && (
+        <aside className={cn('relative hidden shrink-0 flex-col border-r border-gray-200 bg-white md:flex print:hidden', seasonMenu ? 'w-60' : 'w-52')}>
+          <div className="flex h-14 shrink-0 items-center px-3">
+            <NavLink to="/" title="Home" className="flex min-w-0 flex-1 items-center gap-3">
+              <img src={BRAND.logo} alt={BRAND.farmName} className="h-9 w-auto shrink-0" />
             </NavLink>
-          )}
+          </div>
           <button
-            onClick={() => void signOut()}
-            className="rounded-md p-2 text-gray-500 hover:bg-gray-100"
-            aria-label="Sign out"
+            onClick={toggleSidebar}
+            className="absolute right-0 top-1/2 z-10 -translate-y-1/2 translate-x-1/2 rounded-full border border-gray-200 bg-white p-1 text-gray-400 shadow-sm hover:text-gray-700"
+            aria-label="Hide menu"
+            title="Hide menu"
           >
-            <LogOut className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" />
           </button>
-        </div>
-      </header>
+          {/* Drag to reorder, drag to More (or the eye) to hide. A little wider for the season menu: "Harvest season" and "Tasks & calendar" were cut off at the old width. */}
+          <nav className="min-h-0 flex-1 overflow-y-auto p-3">
+            {/* Boundaried like the page is. The navigation sits outside the
+                routed content, so a bug in it used to take the whole screen
+                white rather than one panel — which is both worse to look at and
+                worse to diagnose, since the address bar still says you are on a
+                page that renders fine. */}
+            <ErrorBoundary>
+              {seasonMenu ? <SeasonSidebar /> : <SidebarNav />}
+            </ErrorBoundary>
+          </nav>
+        </aside>
+      )}
 
-      <div className="flex min-h-0 flex-1">
-        {/* Desktop sidebar — drag to reorder, drag to More (or the eye) to hide. */}
-        {/* A little wider for the season menu: "Harvest season" and "Tasks & calendar" were cut off at the old width. */}
-        <nav className={cn('hidden shrink-0 overflow-y-auto border-r border-gray-200 bg-white p-3 md:block print:hidden', seasonMenu ? 'w-60' : 'w-52')}>
-          {/* Boundaried like the page is. The navigation sits outside the
-              routed content, so a bug in it used to take the whole screen
-              white rather than one panel — which is both worse to look at and
-              worse to diagnose, since the address bar still says you are on a
-              page that renders fine. */}
-          <ErrorBoundary>
-            {seasonMenu ? <SeasonSidebar /> : <SidebarNav />}
-          </ErrorBoundary>
-        </nav>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 print:hidden">
+          {sidebarHidden && (
+            <button
+              onClick={toggleSidebar}
+              className="fixed left-0 top-1/2 z-30 hidden -translate-y-1/2 rounded-r-full border border-l-0 border-gray-200 bg-white py-1 pl-0.5 pr-1 text-gray-400 shadow-sm hover:text-gray-700 md:block print:hidden"
+              aria-label="Show menu"
+              title="Show menu"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          )}
+          {/* The logo lives in the sidebar on a desktop; on a phone, or with the
+              sidebar hidden, it is here. On a phone the trail's back arrow takes its place.
+              Wherever it is, it goes home, as the logo on a website does (Sam, 29 Oct 2026). */}
+          <NavLink
+            to="/dashboard"
+            title="Home"
+            aria-label="Home"
+            className={cn('shrink-0 rounded-md', trail && 'hidden', sidebarHidden ? 'md:block' : 'md:hidden')}
+          >
+            <img src={BRAND.logo} alt={BRAND.farmName} className="h-9 w-auto" />
+          </NavLink>
+          {seasonMenu && <MenuTrail />}
+          <div className="ml-auto flex items-center gap-3">
+            {/* A phone searches from the bottom bar instead (Sam, 29 Oct 2026). */}
+            <button
+              type="button"
+              onClick={openFind}
+              className="hidden rounded-md p-2 text-gray-500 hover:bg-gray-100 md:block"
+              aria-label="Search"
+              title="Search views and records, or ask a question (Ctrl+K)"
+            >
+              <Search className="h-4 w-4" />
+            </button>
+            <CropYearSwitcher />
+            <NotificationBell />
+            {online.length > 0 && (
+              <span className="flex items-center" title={`Also in the app now: ${online.map((p) => p.full_name).join(', ')}`}>
+                <AvatarStack people={online} max={4} size="sm" />
+              </span>
+            )}
+            {profile && (
+              <NavLink to="/settings/account?tab=profile" className="flex items-center gap-2 rounded-full" title="Your account and picture">
+                <UserAvatar person={profile} size="sm" />
+                <span className="hidden text-sm text-gray-600 md:inline">{profile.full_name}</span>
+              </NavLink>
+            )}
+            <button
+              onClick={() => void signOut()}
+              className="rounded-md p-2 text-gray-500 hover:bg-gray-100"
+              aria-label="Sign out"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
+        </header>
 
-        <main className="min-w-0 flex-1 overflow-auto pb-16 md:pb-0">
-          <OfflineBanner />
-          <UpdateReadyBanner />
-          <InstallBanner />
-          <ErrorBoundary key={pathname}>
-            {/* Pages load on first open (App.tsx); the shell stays put meanwhile. */}
-            <Suspense fallback={<div className="p-6 text-sm text-gray-400">Loading…</div>}>
-              <Outlet />
-            </Suspense>
-          </ErrorBoundary>
-        </main>
+          <main className="min-h-0 min-w-0 flex-1 overflow-auto pb-16 md:pb-0">
+            <OfflineBanner />
+            <UpdateReadyBanner />
+            <InstallBanner />
+            <ErrorBoundary key={pathname}>
+              {/* Pages load on first open (App.tsx); the shell stays put meanwhile. */}
+              <Suspense fallback={<div className="p-6 text-sm text-gray-400">Loading…</div>}>
+                <Outlet />
+              </Suspense>
+            </ErrorBoundary>
+          </main>
       </div>
 
       {seasonMenu && <SeasonPhoneNav />}
+
+      {findOpen && <SearchDialog onClose={closeFind} />}
+
+      {!seasonMenu && searchOpen && (
+        <div className="fixed inset-0 z-40 bg-black/20 md:hidden print:hidden" onClick={() => setSearchOpen(false)}>
+          <div
+            className="absolute inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] rounded-t-xl border-t border-gray-200 bg-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ErrorBoundary>
+              <PhoneSearchSheet onClose={() => setSearchOpen(false)} />
+            </ErrorBoundary>
+          </div>
+        </div>
+      )}
 
       {/* Mobile "More" sheet — the full, customizable menu */}
       {!seasonMenu && moreOpen && (
@@ -198,6 +307,17 @@ function StaffShell() {
       {/* Mobile bottom bar */}
       {!seasonMenu && (
         <nav className="fixed inset-x-0 bottom-0 z-40 flex h-14 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden print:hidden">
+          <button
+            onClick={() => {
+              setMoreOpen(false)
+              setGroupOpen(null)
+              setSearchOpen((o) => !o)
+            }}
+            className={cn('flex flex-1 flex-col items-center justify-center gap-1 text-xs', searchOpen ? 'text-brand-700' : 'text-gray-500')}
+          >
+            <Search className="h-5 w-5" />
+            Search
+          </button>
           {mobileBar.map((item) => {
             const { to, label, icon: Icon, children } = item
             // A parent with children opens the two above the bar rather than

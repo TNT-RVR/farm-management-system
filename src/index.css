@@ -71,6 +71,26 @@ body,
   }
 }
 
+/* An info button sitting in a green header bar.
+ *
+ * Every table and card header became solid brand green on 29 Oct 2026, and
+ * the little ⓘ buttons in them kept the grey they had worn on white, where
+ * they nearly disappeared. Rather than dress 33 files by hand, the bar is
+ * marked `rvr-head` (lib/table-style.ts) and the buttons `rvr-info`
+ * (ColumnHelp, InfoPopover), and this one rule joins them.
+ *
+ * Unlayered on purpose: Tailwind v4 puts its utilities in a cascade layer,
+ * so a plain rule here beats the button's own `text-gray-400` without
+ * needing !important or a higher specificity. It reaches only the button —
+ * the panel it opens is a sibling and keeps its own colours. */
+.rvr-head .rvr-info {
+  color: color-mix(in srgb, #fff 78%, transparent);
+}
+.rvr-head .rvr-info:hover,
+.rvr-head .rvr-info:focus-visible {
+  color: #fff;
+}
+
 /* Weather page icons. Gentle, looping, and off for anyone who has asked their
    phone for less motion. */
 @keyframes wx-spin { to { transform: rotate(360deg); } }

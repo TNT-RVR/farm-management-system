@@ -112,7 +112,7 @@ export function ManureCreditCard() {
                 {x.newer ? <span className="font-semibold text-amber-800">No — spread recorded after</span> : <span className="text-gray-500">Yes, in the write-up</span>}
               </td>
               <td className={tdNum}>{x.dollars > 0 ? money(x.dollars) : '—'}</td>
-              <td className="px-2 py-1 text-right">{x.newer && <RewriteButton reportId={x.reportId} />}</td>
+              <td className="px-3 py-1 text-right">{x.newer && <RewriteButton reportId={x.reportId} />}</td>
             </tr>
           ))}
         </Table>
@@ -194,7 +194,7 @@ export function PriorCropCard() {
                 {!x.legume ? '—' : x.mentions ? <span className="text-gray-500">named in the write-up</span> : <span className="font-semibold text-amber-800">not named</span>}
               </td>
               <td className={tdNum}>{x.dollars > 0 ? money(x.dollars) : '—'}</td>
-              <td className="px-2 py-1 text-right">{x.missed > 0 && <RewriteButton reportId={x.reportId} />}</td>
+              <td className="px-3 py-1 text-right">{x.missed > 0 && <RewriteButton reportId={x.reportId} />}</td>
             </tr>
           ))}
         </Table>
@@ -627,7 +627,7 @@ export function TissueGateCard() {
                 )}
               </td>
               <td className={tdNum}>{x.inSeasonValue != null ? money(x.inSeasonValue) : '—'}</td>
-              <td className="px-2 py-1 text-right">
+              <td className="px-3 py-1 text-right">
                 {x.gate === 'skip' && (
                   <button
                     className={ghost}

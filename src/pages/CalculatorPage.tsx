@@ -544,7 +544,6 @@ function CalculatorView() {
   const [family, setFamily] = useTab<TabKey>(
     'calculator',
     TABS.map((t) => t.key),
-    'water',
     // The old per-quantity links still work: they all lived in Water.
     (asked) =>
       asked === 'volume' || asked === 'flow' || asked === 'depth' ? 'water' : asked === 'area' ? 'general' : undefined,

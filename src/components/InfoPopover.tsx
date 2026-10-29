@@ -59,7 +59,7 @@ export function InfoPopover({
         className={cn(
           // A 14 px icon is under a thumb on a phone, so an invisible pad
           // widens the tap target without moving anything on the page.
-          'relative inline-flex shrink-0 items-center gap-1 align-middle text-gray-400 hover:text-brand-700',
+          'rvr-info relative inline-flex shrink-0 items-center gap-1 align-middle text-gray-400 hover:text-brand-700',
           "after:absolute after:-inset-2.5 after:content-[''] sm:after:content-none",
           className,
         )}

@@ -30,6 +30,7 @@ const NOT_SHORTCUTS = new Set([
   '/solar', // moved into Utilities as a tab 6 Oct 2026; redirects there
   '/whats-new', // a tab of the Monday meeting since 7 Oct 2026; redirects there
   '/hauling', // Travel & trucking, tabs of Fuel & trucking since 24 Oct 2026; redirects there
+  '/spraying', // tabs of Chemicals again since 29 Oct 2026; redirects to the tab it names
   '/truck-inspections', // under Equipment service since 24 Oct 2026; redirects to the trucks
   '/fertilizer', // five views since 24 Oct 2026, each with its own tile; redirects to one
   '/login',

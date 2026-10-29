@@ -83,13 +83,17 @@ export function useFieldSeasons(cropYear: number) {
  * Forecast rows are excluded on purpose: "irrigate now" must describe the soil
  * today, not a projection.
  */
-export function useLatestBalance() {
+export function useLatestBalance(
+  /** A past day (YYYY-MM-DD): each field's balance on it, or the last before it. */
+  asOf: string | null = null,
+) {
   return useQuery({
-    queryKey: ['water_balance_latest'],
+    queryKey: ['water_balance_latest', asOf],
     queryFn: async () => {
       // Local dates: after 6 pm here the UTC date is already tomorrow's.
-      const since = new Date(Date.now() - 30 * 86_400_000).toLocaleDateString('en-CA')
-      const today = new Date().toLocaleDateString('en-CA')
+      const end = asOf ? new Date(`${asOf}T12:00:00`) : new Date()
+      const since = new Date(end.getTime() - 30 * 86_400_000).toLocaleDateString('en-CA')
+      const today = end.toLocaleDateString('en-CA')
       const { data, error } = await supabase
         .from('water_balance_daily')
         .select('*')

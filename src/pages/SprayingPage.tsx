@@ -1,52 +1,25 @@
-import { SprayCan } from 'lucide-react'
-import { SprayCheck } from '@/components/SprayCheck'
-import { PillTabs } from '@/components/PillTabs'
-import { ReentryPanel } from '@/components/ReentryWarning'
-import { FieldEntryAlert } from '@/components/FieldEntryAlert'
-import { useTab } from '@/lib/useTab'
+import { Navigate, useLocation } from 'react-router-dom'
 
 /**
- * Spraying: the in-season half of what used to be Chemicals. Checking a
- * product before the sprayer goes out and seeing what was sprayed lately are
- * jobs done in June; the label registry, the shed and prices are looked up
- * year round, so they stay on Chemicals (Sam, 24 Oct 2026). Old
- * /chemicals?tab=spraycheck and ?tab=reentry links are sent here.
+ * Spraying is part of Chemicals again (Sam, 29 Oct 2026).
+ *
+ * It was split out on 24 Oct on the argument that checking a product and
+ * seeing what was sprayed lately are in-season jobs, while the registry, the
+ * shed and prices are looked up year round. In use that put the label you
+ * want and the check you are doing with it on two different screens, so the
+ * two tabs went back.
+ *
+ * The route stays as a redirect: /spraying is in saved links, in the old menu
+ * and on phones' home screens, and it should land on the tab it names rather
+ * than on a missing page.
  */
+const TABS: Record<string, string> = {
+  spraycheck: 'spraycheck',
+  reentry: 'reentry',
+}
+
 export function SprayingPage() {
-  const [tab, setTab] = useTab('spraying', ['spraycheck', 'reentry'] as const, 'spraycheck')
-  return (
-    <div className="p-4 md:p-6">
-      <div className="mb-3">
-        <h1 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-          <SprayCan className="h-5 w-5 text-brand-700" /> Spraying
-        </h1>
-        <p className="text-xs text-gray-500">
-          {tab === 'spraycheck'
-            ? 'Pick a product and the fields: see which planned crops its label rules out.'
-            : 'Fields sprayed lately, and when it is safe to go back in.'}
-        </p>
-      </div>
-
-      <PillTabs
-        tabs={[
-          { key: 'spraycheck', label: 'Before spraying' },
-          { key: 'reentry', label: 'Recently sprayed' },
-        ]}
-        value={tab}
-        onChange={setTab}
-        className="mb-3"
-      />
-
-      {tab === 'spraycheck' ? (
-        <SprayCheck />
-      ) : (
-        <>
-          <div className="mb-3">
-            <FieldEntryAlert />
-          </div>
-          <ReentryPanel />
-        </>
-      )}
-    </div>
-  )
+  const { search } = useLocation()
+  const asked = new URLSearchParams(search).get('tab') ?? ''
+  return <Navigate to={`/chemicals?tab=${TABS[asked] ?? 'spraycheck'}`} replace />
 }

@@ -16,7 +16,7 @@ import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
 // n1 = tonnes to one place: an order is placed in tenths of a tonne at best, and
 // the second decimal was 2 kg of false precision on a truckload.
 import { n0, n1Fixed as n1, n2 } from '@/lib/format'
-import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
 
 export function Requirements() {
@@ -190,7 +190,7 @@ export function Requirements() {
       )}
 
       {/* Per field. */}
-      <div className="rounded-lg border border-gray-200 bg-white">
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
         <p className={cn('font-medium', CARD_HEAD)}>By field</p>
         {/* Scrolls sideways on a phone rather than squeezing each cell to a
             word a line. */}
@@ -227,24 +227,25 @@ export function Requirements() {
                 {expanded === r.fieldId && r.lines && (
                   <tr className="border-b border-gray-100 bg-gray-50/60">
                     <td colSpan={4} className="px-3 py-2">
+                      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
                       <table className="w-full table-fixed text-[11px]">
                         <thead className={TABLE_HEAD}>
                           <tr>
-                            <th className="py-1 font-medium" style={{ width: '10%' }}>Nutrient</th>
-                            <th className="py-1 font-medium" style={{ width: '22%' }}>Product</th>
-                            <th className="py-1 text-right font-medium" style={{ width: '12%' }}>lb/ac actual</th>
-                            <th className="py-1 text-right font-medium" style={{ width: '12%' }}>lb/ac product</th>
-                            <th className="py-1 text-right font-medium" style={{ width: '14%' }}>lb for field</th>
-                            <th className="py-1 font-medium">Timing</th>
+                            <th className={TABLE_TH} style={{ width: '10%' }}>Nutrient</th>
+                            <th className={TABLE_TH} style={{ width: '22%' }}>Product</th>
+                            <th className={cn(TABLE_TH, 'text-right')} style={{ width: '12%' }}>lb/ac actual</th>
+                            <th className={cn(TABLE_TH, 'text-right')} style={{ width: '12%' }}>lb/ac product</th>
+                            <th className={cn(TABLE_TH, 'text-right')} style={{ width: '14%' }}>lb for field</th>
+                            <th className={TABLE_TH}>Timing</th>
                           </tr>
                         </thead>
                         <tbody>
                           {r.lines.map((l, i) => (
                             <tr key={i} className="border-t border-gray-200/70">
-                              <td className="py-1 font-semibold text-gray-900">{l.nutrient}</td>
-                              <td className="py-1 text-gray-700">{l.product}</td>
-                              <td className="py-1 text-right tabular-nums">{n2(l.lbPerAc)}</td>
-                              <td className="py-1 text-right tabular-nums text-gray-600">
+                              <td className="px-3 py-1 font-semibold text-gray-900">{l.nutrient}</td>
+                              <td className="px-3 py-1 text-gray-700">{l.product}</td>
+                              <td className="px-3 py-1 text-right tabular-nums">{n2(l.lbPerAc)}</td>
+                              <td className="px-3 py-1 text-right tabular-nums text-gray-600">
                                 {l.productLbPerAc == null ? (
                                   <span className="text-amber-700" title="No analysis in the product name to derive it from">
                                     n/a
@@ -253,14 +254,15 @@ export function Requirements() {
                                   n2(l.productLbPerAc)
                                 )}
                               </td>
-                              <td className="py-1 text-right font-medium tabular-nums text-gray-900">
+                              <td className="px-3 py-1 text-right font-medium tabular-nums text-gray-900">
                                 {n0(l.productLbTotal)}
                               </td>
-                              <td className="py-1 text-gray-500">{l.timing ?? '—'}</td>
+                              <td className="px-3 py-1 text-gray-500">{l.timing ?? '—'}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
+                      </div>
                     </td>
                   </tr>
                 )}

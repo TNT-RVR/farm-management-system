@@ -25,7 +25,7 @@ insert into public.farm_setup (
     jsonb_build_object('name', 'North pivots', 'lat', 52.505, 'lng', -113.51, 'note', 'Creek pivots, north block'),
     jsonb_build_object('name', 'Willow Ridge pasture', 'lat', 52.385, 'lng', -113.66, 'note', 'Summer pasture')
   ),
-  'Prairie Ag Supply', 'Prairie Creek water licence', 'John Deere S780',
+  'Prairie Ag Supply', 'Prairie Creek water licence', 'Prairieline C780',
   11, 575, 'Black Angus cross', 'user-106a@prairiecreek.example',
   (select id from public.users limit 1)
 );

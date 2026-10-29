@@ -13,8 +13,8 @@ select 'ab.' || s.cls || '.' || s.kind || '.' || s.band || '.' || m.market,
 from (values
   ('medicine-hat', 'Medicine Hat', 'mhfc'),
   ('lethbridge', 'Lethbridge', 'perlich'),
-  ('calgary', 'Calgary Stockyards', 'calgary-stockyards'),
-  ('team-online', 'Team online', 'team')
+  ('calgary', 'Central Stockyards', 'calgary-stockyards'),
+  ('team-online', 'Online sale', 'team')
 ) as m(market, label, source)
 cross join (
   select 'feeder' as cls, k.kind, b.lo || '-' || (b.lo + 100) as band,

@@ -27,7 +27,7 @@ import { AdminOnly } from '@/components/TechnicalDetails'
 import { ImportHint } from '@/components/ImportHint'
 import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
 import { n0, n1 } from '@/lib/format'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 /**
  * Variable rate or blanket, said plainly.
@@ -97,26 +97,26 @@ function ZoneTable({ rx }: { rx: Prescription }) {
     [rx.zones],
   )
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-lg border border-gray-200">
       <table className="w-full min-w-[640px] text-sm">
         <thead className={TABLE_HEAD}>
           <tr>
-            <th className="py-2 pr-3 font-medium">Zone</th>
-            <th className="py-2 pr-3 font-medium">Fertility index</th>
-            <th className="py-2 pr-3 text-right font-medium">Acres</th>
-            <th className="py-2 pr-3 text-right font-medium">Yield goal</th>
+            <th className={TABLE_TH}>Zone</th>
+            <th className={TABLE_TH}>Fertility index</th>
+            <th className={cn(TABLE_TH, 'text-right')}>Acres</th>
+            <th className={cn(TABLE_TH, 'text-right')}>Yield goal</th>
             {NUTRIENTS.map((n) => (
-              <th key={n.key} className="py-2 pr-3 text-right font-medium">
+              <th key={n.key} className={cn(TABLE_TH, 'text-right')}>
                 {n.label}
               </th>
             ))}
             {extraKeys.map((k) => (
-              <th key={k} className="py-2 pr-3 text-right font-medium">
+              <th key={k} className={cn(TABLE_TH, 'text-right')}>
                 {k}
               </th>
             ))}
             {productKeys.map((k) => (
-              <th key={k} className="py-2 pr-3 text-right font-medium">
+              <th key={k} className={cn(TABLE_TH, 'text-right')}>
                 {k}
               </th>
             ))}
@@ -125,38 +125,38 @@ function ZoneTable({ rx }: { rx: Prescription }) {
         <tbody>
           {rx.zones.map((z) => (
             <tr key={z.id} className="border-b border-gray-100">
-              <td className="py-1.5 pr-3 font-medium text-gray-900">{z.zone}</td>
-              <td className="py-1.5 pr-3 text-gray-600">{z.fertility_index ?? '—'}</td>
-              <td className="py-1.5 pr-3 text-right tabular-nums">{n1(z.acres)}</td>
-              <td className="py-1.5 pr-3 text-right tabular-nums text-gray-600">
+              <td className="px-3 py-1.5 font-medium text-gray-900">{z.zone}</td>
+              <td className="px-3 py-1.5 text-gray-600">{z.fertility_index ?? '—'}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums">{n1(z.acres)}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">
                 {n0(z.yield_goal)}
               </td>
               {NUTRIENTS.map((n) => (
-                <td key={n.key} className="py-1.5 pr-3 text-right tabular-nums">
+                <td key={n.key} className="px-3 py-1.5 text-right tabular-nums">
                   {n0(z[n.key])}
                 </td>
               ))}
               {extraKeys.map((k) => (
-                <td key={k} className="py-1.5 pr-3 text-right tabular-nums">
+                <td key={k} className="px-3 py-1.5 text-right tabular-nums">
                   {n1(z.extra[k] ?? null)}
                 </td>
               ))}
               {productKeys.map((k) => (
-                <td key={k} className="py-1.5 pr-3 text-right tabular-nums">
+                <td key={k} className="px-3 py-1.5 text-right tabular-nums">
                   {n0(z.products[k] ?? null)}
                 </td>
               ))}
             </tr>
           ))}
           <tr className="text-sm font-medium text-gray-900">
-            <td className="py-1.5 pr-3">Field</td>
-            <td className="py-1.5 pr-3 text-xs font-normal text-gray-500">acre-weighted</td>
-            <td className="py-1.5 pr-3 text-right tabular-nums">
+            <td className="px-3 py-1.5">Field</td>
+            <td className="px-3 py-1.5 text-xs font-normal text-gray-500">acre-weighted</td>
+            <td className="px-3 py-1.5 text-right tabular-nums">
               {n1(rx.total_acres ?? rx.zones.reduce((a, z) => a + (z.acres ?? 0), 0))}
             </td>
             <td />
             {NUTRIENTS.map((n) => (
-              <td key={n.key} className="py-1.5 pr-3 text-right tabular-nums">
+              <td key={n.key} className="px-3 py-1.5 text-right tabular-nums">
                 {n0(weightedRate(rx.zones, n.key))}
               </td>
             ))}
@@ -164,7 +164,7 @@ function ZoneTable({ rx }: { rx: Prescription }) {
               <td key={k} />
             ))}
             {productKeys.map((k) => (
-              <td key={k} className="py-1.5 pr-3 text-right tabular-nums">
+              <td key={k} className="px-3 py-1.5 text-right tabular-nums">
                 {n0(rx.products.find((p) => p.analysis === k)?.avgRate ?? null)}
               </td>
             ))}
@@ -260,13 +260,13 @@ function AgainstActual({ rx, season }: { rx: Prescription; season: number }) {
 
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
-              <th className="py-2 pr-3 font-medium">lbs/ac</th>
+              <th className={TABLE_TH}>lbs/ac</th>
               {NUTRIENTS.map((n) => (
-                <th key={n.key} className="py-2 pr-3 text-right font-medium">
+                <th key={n.key} className={cn(TABLE_TH, 'text-right')}>
                   {n.label}
                 </th>
               ))}
@@ -274,23 +274,23 @@ function AgainstActual({ rx, season }: { rx: Prescription; season: number }) {
           </thead>
           <tbody>
             <tr className="border-b border-gray-100">
-              <td className="py-1.5 pr-3 text-gray-600">Recommended</td>
+              <td className="px-3 py-1.5 text-gray-600">Recommended</td>
               {NUTRIENTS.map((n) => (
-                <td key={n.key} className="py-1.5 pr-3 text-right tabular-nums">
+                <td key={n.key} className="px-3 py-1.5 text-right tabular-nums">
                   {n0(weightedRate(rx.zones, n.key))}
                 </td>
               ))}
             </tr>
             <tr className="border-b border-gray-100">
-              <td className="py-1.5 pr-3 text-gray-600">Applied</td>
+              <td className="px-3 py-1.5 text-gray-600">Applied</td>
               {NUTRIENTS.map((n) => (
-                <td key={n.key} className="py-1.5 pr-3 text-right tabular-nums">
+                <td key={n.key} className="px-3 py-1.5 text-right tabular-nums">
                   {counted.length ? n0(applied[n.key]) : '—'}
                 </td>
               ))}
             </tr>
             <tr className="font-medium text-gray-900">
-              <td className="py-1.5 pr-3">Difference</td>
+              <td className="px-3 py-1.5">Difference</td>
               {NUTRIENTS.map((n) => {
                 const want = weightedRate(rx.zones, n.key)
                 const diff = want == null || !counted.length ? null : applied[n.key] - want
@@ -298,7 +298,7 @@ function AgainstActual({ rx, season }: { rx: Prescription; season: number }) {
                   <td
                     key={n.key}
                     className={cn(
-                      'py-1.5 pr-3 text-right tabular-nums',
+                      'px-3 py-1.5 text-right tabular-nums',
                       diff != null && Math.abs(diff) > 10
                         ? diff > 0
                           ? 'text-amber-700'

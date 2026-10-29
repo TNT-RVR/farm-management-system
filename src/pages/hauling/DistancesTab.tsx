@@ -40,7 +40,7 @@ import { cn } from '@/lib/utils'
 import { Card, SettingsGroup, input } from './ui'
 import { RouteMap } from './RouteMap'
 import { FieldLink, Sources, n1 } from '../fertilizer/savings/ui'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 /** The farm's own map centre (Farm setup), which a typed place is checked against. */
 const farmCentre = (): LatLng => {
@@ -161,22 +161,22 @@ export function DistancesTab({ isManager }: { isManager: boolean }) {
       </Card>
 
       <Card title="Distances to each field">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full text-xs">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="px-2 py-1 font-medium">Field</th>
-                <th className="px-2 py-1 text-right font-medium" title="Field work, spraying, every pass: from the shop to the field's entry">
+                <th className={TABLE_TH}>Field</th>
+                <th className={cn(TABLE_TH, 'text-right')} title="Field work, spraying, every pass: from the shop to the field's entry">
                   From the shop
                 </th>
-                <th className="px-2 py-1 font-medium" />
-                <th className="px-2 py-1 text-right font-medium" title="Grain: from the field's entry to the bins">
+                <th className={TABLE_TH} />
+                <th className={cn(TABLE_TH, 'text-right')} title="Grain: from the field's entry to the bins">
                   To the bins
                 </th>
-                <th className="px-2 py-1 font-medium" />
-                <th className="px-2 py-1 font-medium">Entry</th>
+                <th className={TABLE_TH} />
+                <th className={TABLE_TH}>Entry</th>
                 {elevators.map((s) => (
-                  <th key={s.id} className="px-2 py-1 text-right font-medium" title={`From the field's entry to ${s.name}`}>
+                  <th key={s.id} className={cn(TABLE_TH, 'text-right')} title={`From the field's entry to ${s.name}`}>
                     To {s.name}
                   </th>
                 ))}
@@ -185,7 +185,7 @@ export function DistancesTab({ isManager }: { isManager: boolean }) {
             <tbody className="divide-y divide-gray-100">
               {rows.map(({ f, shopT, binsT, end, basis }) => (
                 <tr key={f.id} className={cn(f.id === selected && 'bg-yellow-50')}>
-                  <td className="px-2 py-1 text-gray-800">
+                  <td className="px-3 py-1 text-gray-800">
                     <button type="button" onClick={() => setSelected(f.id)} className="text-left hover:underline" title="Show on the map">
                       {f.name}
                     </button>{' '}
@@ -193,27 +193,27 @@ export function DistancesTab({ isManager }: { isManager: boolean }) {
                       <FieldLink id={f.id} name="work" to="work" />
                     </span>
                   </td>
-                  <td className="px-2 py-1 text-right tabular-nums">
+                  <td className="px-3 py-1 text-right tabular-nums">
                     <span className="font-medium">{shopT ? n1(shopT.km) : '—'}</span>
                     {shopT?.minutes != null && <span className="ml-1 text-gray-500">{Math.round(shopT.minutes)} min</span>}
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-3 py-1">
                     <Method t={shopT} />
                     {isManager && shop && end && <ManualKm from={shopKey} to={fieldKey(f.id)} fromPt={shop} toPt={end} trip={shopT} />}
                   </td>
-                  <td className="px-2 py-1 text-right tabular-nums">
+                  <td className="px-3 py-1 text-right tabular-nums">
                     <span className="font-medium">{binsT ? n1(binsT.km) : '—'}</span>
                     {binsT?.minutes != null && <span className="ml-1 text-gray-500">{Math.round(binsT.minutes)} min</span>}
                   </td>
-                  <td className="px-2 py-1">
+                  <td className="px-3 py-1">
                     <Method t={binsT} />
                     {isManager && bins && end && <ManualKm from={binsKey} to={fieldKey(f.id)} fromPt={bins} toPt={end} trip={binsT} />}
                   </td>
-                  <td className={cn('px-2 py-1 text-[11px]', basis === 'pin' ? 'text-green-700' : 'text-gray-400')}>{basis ? ENTRY_LABEL[basis] ?? basis : '—'}</td>
+                  <td className={cn('px-3 py-1 text-[11px]', basis === 'pin' ? 'text-green-700' : 'text-gray-400')}>{basis ? ENTRY_LABEL[basis] ?? basis : '—'}</td>
                   {elevators.map((s) => {
                     const e = trip(fieldKey(f.id), siteKey(s.id))
                     return (
-                      <td key={s.id} className={cn('px-2 py-1 text-right tabular-nums', e?.basis === 'straight' ? 'text-amber-700' : 'text-gray-600')} title={e?.note ?? undefined}>
+                      <td key={s.id} className={cn('px-3 py-1 text-right tabular-nums', e?.basis === 'straight' ? 'text-amber-700' : 'text-gray-600')} title={e?.note ?? undefined}>
                         {e ? `${n1(e.km)} km` : '—'}
                       </td>
                     )

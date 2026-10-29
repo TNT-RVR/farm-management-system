@@ -12,7 +12,7 @@ import { useTab } from '@/lib/useTab'
  * /calculator?tab=planter links are sent here.
  */
 export function SeedPlanterPage() {
-  const [tab, setTab] = useTab('seed-planter', ['planter', 'crops'] as const, 'planter')
+  const [tab, setTab] = useTab('seed-planter', ['planter', 'crops'] as const)
   return (
     <div className="p-4 md:p-6">
       <h1 className="mb-3 flex items-center gap-1.5 text-lg font-semibold text-gray-900">

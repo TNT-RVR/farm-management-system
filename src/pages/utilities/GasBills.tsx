@@ -23,7 +23,7 @@ import {
   type PlaceKind,
 } from '@/lib/gas-bills'
 import { cn } from '@/lib/utils'
-import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const money0 = (v: number) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
 const perGj = (v: number | null) => (v == null ? '—' : `$${v.toFixed(2)}`)
@@ -102,8 +102,8 @@ export function GasBills() {
         <Stat label="Cost before GST" value={price ? money0(price.cost) : '—'} />
       </section>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-3">
-        <div className="mb-2 flex items-center gap-1">
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div className="flex items-center gap-1 px-3 pb-2 pt-3">
           <h2 className="text-sm font-semibold text-gray-900">By site</h2>
           <InfoPopover title="Gas sites">
             <p>
@@ -117,12 +117,12 @@ export function GasBills() {
             <table className="w-full min-w-[620px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="py-1 pr-3 font-medium">Site</th>
-                  <th className="py-1 pr-3 text-right font-medium">Bills</th>
-                  <th className="py-1 pr-3 text-right font-medium">GJ</th>
-                  <th className="py-1 pr-3 text-right font-medium">Cost</th>
-                  <th className="py-1 pr-3 text-right font-medium">$/GJ</th>
-                  <th className="py-1 text-right font-medium">Last bill</th>
+                  <th className={TABLE_TH}>Site</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Bills</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>GJ</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Cost</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>$/GJ</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Last bill</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 tabular-nums">
@@ -133,25 +133,24 @@ export function GasBills() {
             </table>
           </div>
         ) : (
-          <p className="text-sm text-gray-500">No gas bills read yet.</p>
+          <p className="px-3 pb-3 text-sm text-gray-500">No gas bills read yet.</p>
         )}
       </section>
 
       {byYear.length > 0 && (
         <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
           <h2 className={cn('font-medium', CARD_HEAD)}>By year</h2>
-          <div className="p-3">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="py-1 pr-3 font-medium">Year</th>
-                  <th className="py-1 pr-3 text-right font-medium">Bills</th>
-                  <th className="py-1 pr-3 text-right font-medium">GJ</th>
-                  <th className="py-1 pr-3 text-right font-medium">Cost</th>
-                  <th className="py-1 pr-3 text-right font-medium">Delivered $/GJ</th>
-                  <th className="py-1 pr-3 text-right font-medium">Gas $/GJ</th>
-                  <th className="py-1 text-right font-medium">Carbon tax</th>
+                  <th className={TABLE_TH}>Year</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Bills</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>GJ</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Cost</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Delivered $/GJ</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Gas $/GJ</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Carbon tax</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 tabular-nums">
@@ -161,23 +160,21 @@ export function GasBills() {
               </tbody>
             </table>
           </div>
-
-          </div>
         </section>
       )}
 
       {byMonth.length > 0 && (
-        <Fold title="By month" summary={`${byMonth.length} months`} storageKey="gas-by-month">
+        <Fold title="By month" summary={`${byMonth.length} months`} storageKey="gas-by-month" className="overflow-hidden" bodyClassName="p-0">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[420px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="py-1 pr-3 font-medium">Month</th>
-                  <th className="py-1 pr-3 text-right font-medium">Bills</th>
-                  <th className="py-1 pr-3 text-right font-medium">GJ</th>
-                  <th className="py-1 pr-3 text-right font-medium">Cost</th>
-                  <th className="py-1 pr-3 text-right font-medium">Delivered $/GJ</th>
-                  <th className="py-1 text-right font-medium">Gas $/GJ</th>
+                  <th className={TABLE_TH}>Month</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Bills</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>GJ</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Cost</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Delivered $/GJ</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Gas $/GJ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 tabular-nums">
@@ -216,7 +213,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 function SumRow({ label, t, carbon, note }: { label: string; t: GasSum; carbon?: boolean; note?: { n: number; total: number } }) {
   return (
     <tr>
-      <td className="py-1.5 pr-3 text-gray-900">
+      <td className="px-3 py-1.5 text-gray-900">
         {label}
         {note && (
           <span className="ml-1.5 text-xs text-gray-500" title="Emailed notices: the amount billed, with no GJ">
@@ -224,12 +221,12 @@ function SumRow({ label, t, carbon, note }: { label: string; t: GasSum; carbon?:
           </span>
         )}
       </td>
-      <td className="py-1.5 pr-3 text-right text-gray-600">{t.bills}</td>
-      <td className="py-1.5 pr-3 text-right text-gray-700">{gj0(t.gj)}</td>
-      <td className="py-1.5 pr-3 text-right font-medium text-gray-900">{money0(t.cost)}</td>
-      <td className="py-1.5 pr-3 text-right text-gray-700">{perGj(t.perGj)}</td>
-      <td className={cn('py-1.5 text-right text-gray-600', carbon && 'pr-3')}>{perGj(t.gasPerGj)}</td>
-      {carbon && <td className="py-1.5 text-right text-gray-600">{t.carbon ? money0(t.carbon) : '—'}</td>}
+      <td className="px-3 py-1.5 text-right text-gray-600">{t.bills}</td>
+      <td className="px-3 py-1.5 text-right text-gray-700">{gj0(t.gj)}</td>
+      <td className="px-3 py-1.5 text-right font-medium text-gray-900">{money0(t.cost)}</td>
+      <td className="px-3 py-1.5 text-right text-gray-700">{perGj(t.perGj)}</td>
+      <td className="px-3 py-1.5 text-right text-gray-600">{perGj(t.gasPerGj)}</td>
+      {carbon && <td className="px-3 py-1.5 text-right text-gray-600">{t.carbon ? money0(t.carbon) : '—'}</td>}
     </tr>
   )
 }
@@ -247,7 +244,7 @@ function SiteRow({ s }: { s: GasSiteSum }) {
   }
   return (
     <tr>
-      <td className="py-1.5 pr-3">
+      <td className="px-3 py-1.5">
         {s.place && !editing ? (
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="text-gray-900">{s.place}</span>
@@ -287,11 +284,11 @@ function SiteRow({ s }: { s: GasSiteSum }) {
         </span>
         {name.error && <span className="block text-xs text-red-600">{(name.error as Error).message}</span>}
       </td>
-      <td className="py-1.5 pr-3 text-right text-gray-600">{s.bills}</td>
-      <td className="py-1.5 pr-3 text-right text-gray-700">{gj0(s.gj)}</td>
-      <td className="py-1.5 pr-3 text-right font-medium text-gray-900">{money0(s.cost)}</td>
-      <td className="py-1.5 pr-3 text-right text-gray-700">{perGj(s.perGj)}</td>
-      <td className="py-1.5 text-right text-gray-600">{s.last ?? '—'}</td>
+      <td className="px-3 py-1.5 text-right text-gray-600">{s.bills}</td>
+      <td className="px-3 py-1.5 text-right text-gray-700">{gj0(s.gj)}</td>
+      <td className="px-3 py-1.5 text-right font-medium text-gray-900">{money0(s.cost)}</td>
+      <td className="px-3 py-1.5 text-right text-gray-700">{perGj(s.perGj)}</td>
+      <td className="px-3 py-1.5 text-right text-gray-600">{s.last ?? '—'}</td>
     </tr>
   )
 }

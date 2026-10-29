@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { emptyScreens, reportEmpty } from './empty-screens.mjs'
+import { realNames } from './real-names.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..', '..')
@@ -219,6 +220,14 @@ step(`demo user sees ${probe.count} field(s)`)
 
 // Screens that would open empty: tables the app reads with nothing in them.
 reportEmpty(await emptyScreens(pg, ROOT))
+
+// The demo farm is made up: no real company, variety or brand in it.
+const named = await realNames(pg)
+if (named.length) {
+  console.error(`\nReal company or brand names in the demo data (give them made-up ones in demo/farm/):\n${named.map((n) => `  - ${n}`).join('\n')}`)
+  process.exit(1)
+}
+step('no real company names')
 
 if (CHECK) {
   step('check only: nothing written')

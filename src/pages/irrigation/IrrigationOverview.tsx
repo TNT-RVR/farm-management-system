@@ -12,7 +12,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { OVERVIEW_HELP } from '@/lib/irrigation-overview-help'
 import { allocationRows, useAllocation, VERDICT } from './AllocationTab'
 import { IrrigationPlanner } from './IrrigationPlanner'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const WaterSeasonReview = lazy(() => import('./WaterSeasonReview').then((m) => ({ default: m.WaterSeasonReview })))
 
@@ -127,18 +127,18 @@ export function IrrigationOverview({ year, onOpenField }: { year: number; onOpen
           totals below are the record behind it, folded until wanted. */}
       <IrrigationPlanner year={year} onPickField={onOpenField} />
 
-      <Fold title={`Water so far, every field ${year}`} summary={foldSummary} storageKey="irr-overview-totals">
-        <p className="text-xs text-gray-500">Most in need of water first. Tap a field for its Detailed View.</p>
+      <Fold title={`Water so far, every field ${year}`} summary={foldSummary} storageKey="irr-overview-totals" className="overflow-hidden" bodyClassName="p-0">
+        <p className="px-3 pt-3 text-xs text-gray-500">Most in need of water first. Tap a field for its Detailed View.</p>
         {loading ? (
-          <p className="py-6 text-center text-xs text-gray-400">Adding up the season…</p>
+          <p className="px-3 py-6 text-center text-xs text-gray-400">Adding up the season…</p>
         ) : rows.length === 0 ? (
-          <p className="py-4 text-xs text-gray-500">No field has an irrigation season set up for {year}. <SetupLink to={SETUP_LINKS.plantingDate()}>Add planting dates</SetupLink></p>
+          <p className="px-3 py-4 text-xs text-gray-500">No field has an irrigation season set up for {year}. <SetupLink to={SETUP_LINKS.plantingDate()}>Add planting dates</SetupLink></p>
         ) : (
           <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[860px] text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="py-1 pr-2 font-medium">Field</th>
+                  <th className={TABLE_TH}>Field</th>
                   <Th help="status">Status</Th>
                   <Th help="total" right>
                     Total water
@@ -160,11 +160,11 @@ export function IrrigationOverview({ year, onOpenField }: { year: number; onOpen
               <tbody className="divide-y divide-gray-100">
                 {rows.map((r) => (
                   <tr key={r.id} onClick={() => onOpenField(r.id)} className="cursor-pointer align-top hover:bg-gray-50">
-                    <td className="py-1.5 pr-2">
+                    <td className="px-3 py-1.5">
                       <span className="font-medium text-brand-700">{r.name}</span>
                       <span className="block text-gray-500">{r.crop ?? 'no crop planned'}</span>
                     </td>
-                    <td className="py-1.5 pr-2">
+                    <td className="px-3 py-1.5">
                       {r.done ? (
                         <span className="whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-600">Done for the season</span>
                       ) : r.status ? (
@@ -175,13 +175,13 @@ export function IrrigationOverview({ year, onOpenField }: { year: number; onOpen
                       {r.done && r.status && <span className="mt-0.5 block text-[10px] text-gray-400">model: {STATUS_LABEL[r.status] ?? r.status}</span>}
                       {r.statusAsOf && <span className="mt-0.5 block text-[10px] text-gray-400">as of {md(r.statusAsOf)}</span>}
                     </td>
-                    <td className="py-1.5 pr-2 text-right">
+                    <td className="px-3 py-1.5 text-right">
                       <Depth mm={r.totalMm} u={u} strong />
                     </td>
-                    <td className="py-1.5 pr-2 text-right">
+                    <td className="px-3 py-1.5 text-right">
                       <Depth mm={r.rainMm} u={u} />
                     </td>
-                    <td className="py-1.5 pr-2 text-right">
+                    <td className="px-3 py-1.5 text-right">
                       <Depth mm={r.grossMm} u={u} />
                       {r.unlogged && <span className="block text-[10px] text-amber-700">{r.unlogged}</span>}
                       {/* The allowance, in brief — the field's Water allowance
@@ -196,13 +196,13 @@ export function IrrigationOverview({ year, onOpenField }: { year: number; onOpen
                         </span>
                       )}
                     </td>
-                    <td className="py-1.5 pr-2 text-right">
+                    <td className="px-3 py-1.5 text-right">
                       <Depth mm={r.etcMm} u={u} />
                     </td>
-                    <td className="py-1.5 pr-2 whitespace-nowrap">
+                    <td className="px-3 py-1.5 whitespace-nowrap">
                       {r.running ? <span className="font-medium text-sky-700">running now</span> : r.last ? md(r.last) : <span className="text-gray-400">not this year</span>}
                     </td>
-                    <td className="py-1.5 pr-2 whitespace-nowrap">
+                    <td className="px-3 py-1.5 whitespace-nowrap">
                       {r.done ? (
                         <span className="text-gray-400">—</span>
                       ) : r.status === 'now' || r.status === 'stress' ? (
@@ -213,7 +213,7 @@ export function IrrigationOverview({ year, onOpenField }: { year: number; onOpen
                         <span className="text-gray-400">not this week</span>
                       )}
                     </td>
-                    <td className="py-1.5 text-gray-300">
+                    <td className="px-3 py-1.5 text-gray-300">
                       <ChevronRight className="h-4 w-4" />
                     </td>
                   </tr>
@@ -244,7 +244,7 @@ export function IrrigationOverview({ year, onOpenField }: { year: number; onOpen
 /** A header with its "what is this?" button. */
 function Th({ help, right, children }: { help: keyof typeof OVERVIEW_HELP; right?: boolean; children: React.ReactNode }) {
   return (
-    <th className={cn('py-1 pr-2 font-medium', right && 'text-right')}>
+    <th className={cn(TABLE_TH, right && 'text-right')}>
       <span className={cn('inline-flex items-center gap-0.5', right && 'justify-end')}>
         {children}
         <ColumnHelp help={OVERVIEW_HELP[help]} width={360} />

@@ -169,7 +169,7 @@ function BinsView() {
   // 'movements' was a Storage tab once; saved links to it land on the bins.
   // 'map' was the Bin map tab, now part of Bins (23 Oct 2026). 'crops' and
   // 'guide' were Moisture's ranges and procedure.
-  const [tab, choose] = useTab<BinsTab>('harvest', BINS_TABS.map((t) => t.key), 'bins', (a) =>
+  const [tab, choose] = useTab<BinsTab>('harvest', BINS_TABS.map((t) => t.key), (a) =>
     a === 'movements' || a === 'map' ? 'bins' : a === 'crops' || a === 'guide' ? 'moisture' : undefined,
   )
   // The reading form is a pop-up on the Moisture tab, open again after a
@@ -214,7 +214,7 @@ type ScaleTab = (typeof SCALE_TABS)[number]['key']
 /** Weigh scale (/weigh-scale). 'scale' and 'stats' were these as Harvest tabs. */
 export function WeighScalePage() {
   const { cropYear } = useCropYear()
-  const [tab, choose] = useTab<ScaleTab>('weigh-scale', SCALE_TABS.map((t) => t.key), 'weigh', (a) =>
+  const [tab, choose] = useTab<ScaleTab>('weigh-scale', SCALE_TABS.map((t) => t.key), (a) =>
     a === 'scale' ? 'weigh' : a === 'stats' ? 'trucks' : undefined,
   )
   return (
@@ -255,7 +255,7 @@ type ReportTab = (typeof REPORT_TABS)[number]['key']
  */
 export function HarvestReportsPage() {
   const { cropYear } = useCropYear()
-  const [tab, choose] = useTab<ReportTab>('harvest-reports', REPORT_TABS.map((t) => t.key), 'all', (a) =>
+  const [tab, choose] = useTab<ReportTab>('harvest-reports', REPORT_TABS.map((t) => t.key), (a) =>
     a === 'reports' ? 'all' : a === 'seed-forms' ? 'seed-report' : undefined,
   )
   return (

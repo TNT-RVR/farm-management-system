@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ArrowUpRight } from 'lucide-react'
 import { PillNavTabs } from '@/components/PillTabs'
-import { usePartnerView } from '@/lib/partner-view'
+import { usePartnerView, usePartnerYears } from '@/lib/partner-view'
 
 /**
  * One field, in sections rather than one long scroll.
@@ -124,9 +124,10 @@ export const tabFor = (section: FieldSection): FieldSection => (section === 'not
  */
 export function FieldTabBar({ fieldId, active }: { fieldId: string; active: FieldSection }) {
   const base = `/fields/${fieldId}`
-  // A crop-share partner records on the field but does not set it up.
-  const partner = usePartnerView()
-  const tabs = FIELD_TABS.filter((t) => !(partner && t.key === 'settings')).map((t) => ({ to: base + t.path, label: t.label, end: t.path === '' }))
+  // A crop-share partner records on our field but does not set it up; his
+  // company's own fields he does.
+  const { partner, own } = usePartnerYears(fieldId)
+  const tabs = FIELD_TABS.filter((t) => !(partner && !own && t.key === 'settings')).map((t) => ({ to: base + t.path, label: t.label, end: t.path === '' }))
   const on = FIELD_TABS.find((t) => t.key === tabFor(active))
   return (
     <nav className="mt-3 print:hidden">

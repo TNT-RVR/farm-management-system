@@ -4,7 +4,7 @@ import { useInvoiceUrl, useProductPurchases, type ProductPurchase } from '@/lib/
 import { fmtMoney } from '@/lib/applied'
 import { cn } from '@/lib/utils'
 import { ImportHint } from '@/components/ImportHint'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 /**
  * The invoice a price came from.
@@ -97,45 +97,47 @@ export function InvoiceViewer({
             ) : lines.length === 0 ? (
               <p className="text-sm text-gray-500">Nothing recorded against this invoice number.</p>
             ) : (
-              <table className="w-full text-sm">
-                <thead className={TABLE_HEAD}>
-                  <tr>
-                    <th className="py-2 pr-3 font-medium">Qty</th>
-                    <th className="py-2 pr-3 font-medium">Unit</th>
-                    <th className="py-2 pr-3 font-medium">Description</th>
-                    <th className="py-2 pr-3 text-right font-medium">Unit price</th>
-                    <th className="py-2 pr-3 text-right font-medium">Per L/kg</th>
-                    <th className="py-2 text-right font-medium">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {lines.map((l) => (
-                    <tr
-                      key={l.id}
-                      className={cn(
-                        highlightProductId &&
-                          l.product_id === highlightProductId &&
-                          'bg-amber-50 font-medium',
-                      )}
-                    >
-                      <td className="py-2 pr-3 tabular-nums">{l.quantity ?? '—'}</td>
-                      <td className="py-2 pr-3 text-gray-500">{l.pack_unit ?? '—'}</td>
-                      <td className="py-2 pr-3 text-gray-800">{l.description}</td>
-                      <td className="py-2 pr-3 text-right tabular-nums">
-                        {l.unit_price == null ? '—' : fmtMoney(Number(l.unit_price))}
-                      </td>
-                      <td className="py-2 pr-3 text-right tabular-nums text-gray-500">
-                        {l.price_per_canonical == null
-                          ? '—'
-                          : `${fmtMoney(Number(l.price_per_canonical))}/${l.canonical_unit ?? '?'}`}
-                      </td>
-                      <td className="py-2 text-right tabular-nums">
-                        {l.amount == null ? '—' : fmtMoney(Number(l.amount))}
-                      </td>
+              <div className="overflow-x-auto rounded-lg border border-gray-200">
+                <table className="w-full text-sm">
+                  <thead className={TABLE_HEAD}>
+                    <tr>
+                      <th className={TABLE_TH}>Qty</th>
+                      <th className={TABLE_TH}>Unit</th>
+                      <th className={TABLE_TH}>Description</th>
+                      <th className={cn(TABLE_TH, 'text-right')}>Unit price</th>
+                      <th className={cn(TABLE_TH, 'text-right')}>Per L/kg</th>
+                      <th className={cn(TABLE_TH, 'text-right')}>Amount</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {lines.map((l) => (
+                      <tr
+                        key={l.id}
+                        className={cn(
+                          highlightProductId &&
+                            l.product_id === highlightProductId &&
+                            'bg-amber-50 font-medium',
+                        )}
+                      >
+                        <td className="px-3 py-2 tabular-nums">{l.quantity ?? '—'}</td>
+                        <td className="px-3 py-2 text-gray-500">{l.pack_unit ?? '—'}</td>
+                        <td className="px-3 py-2 text-gray-800">{l.description}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {l.unit_price == null ? '—' : fmtMoney(Number(l.unit_price))}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                          {l.price_per_canonical == null
+                            ? '—'
+                            : `${fmtMoney(Number(l.price_per_canonical))}/${l.canonical_unit ?? '?'}`}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {l.amount == null ? '—' : fmtMoney(Number(l.amount))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
 

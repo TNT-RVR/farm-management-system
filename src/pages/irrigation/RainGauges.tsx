@@ -5,7 +5,7 @@ import { useAllRainGauges, useDeleteRainGauge, useDeleteRainReading, useSaveRain
 import { keepOpenOnError } from '@/lib/record-actions'
 import { conv, depthToMm, type UnitSystem } from '@/lib/units'
 import { cn } from '@/lib/utils'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const md = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
 
@@ -32,22 +32,23 @@ export function RainReadingsList({ readings, gaugeName, u }: { readings: Reading
   if (!readings.length) return <p className="text-gray-400">No readings on {gaugeName} this season.</p>
   return (
     <div>
-      <table className="w-full max-w-md">
+      <div className="max-w-md overflow-x-auto rounded-lg border border-gray-200">
+      <table className="w-full">
         <thead className={TABLE_HEAD}>
           <tr>
-            <th className="py-0.5 font-medium">Date</th>
-            <th className="py-0.5 text-right font-medium">Rain ({unit})</th>
-            <th className="py-0.5 pl-3 font-medium">Note</th>
+            <th className={TABLE_TH}>Date</th>
+            <th className={cn(TABLE_TH, 'text-right')}>Rain ({unit})</th>
+            <th className={TABLE_TH}>Note</th>
             <th />
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {shown.map((r) => (
             <tr key={r.id}>
-              <td className="py-0.5 text-gray-700">{md(r.date)}</td>
-              <td className="py-0.5 text-right tabular-nums">{conv.depth(r.mm, u, dp)}</td>
-              <td className="py-0.5 pl-3 text-gray-500">{r.note ?? ''}</td>
-              <td className="py-0.5 pl-2">
+              <td className="px-3 py-0.5 text-gray-700">{md(r.date)}</td>
+              <td className="px-3 py-0.5 text-right tabular-nums">{conv.depth(r.mm, u, dp)}</td>
+              <td className="px-3 py-0.5 text-gray-500">{r.note ?? ''}</td>
+              <td className="px-3 py-0.5">
                 <span className="flex justify-end gap-1">
                   <EditButton
                     onClick={() => {
@@ -66,6 +67,7 @@ export function RainReadingsList({ readings, gaugeName, u }: { readings: Reading
           ))}
         </tbody>
       </table>
+      </div>
       {readings.length > 8 && (
         <button type="button" onClick={() => setAll((a) => !a)} className="mt-1 text-[11px] text-brand-700 underline">
           {all ? 'show fewer' : `show all ${readings.length}`}

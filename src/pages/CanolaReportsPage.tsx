@@ -36,7 +36,7 @@ export function CanolaReportsPage() {
 }
 
 function CanolaReportsView() {
-  const [tab, setTab] = useTab<Tab>('canola', TABS, 'isolation')
+  const [tab, setTab] = useTab<Tab>('canola', TABS)
   return (
     <div className="mx-auto max-w-6xl space-y-3 p-4 md:p-6">
       <PageHeader title="Isolation" icon={<Flower2 className="h-5 w-5 text-brand-700" />} subtitle="The mile around each seed field, and its field history, for the seed companies" />

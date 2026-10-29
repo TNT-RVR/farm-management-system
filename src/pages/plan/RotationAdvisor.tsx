@@ -14,7 +14,7 @@ import { AdminOnly } from '@/components/TechnicalDetails'
 import { money, n0 } from '@/lib/format'
 import { askConfirm } from '@/components/askConfirm'
 import { HelpNote } from '@/components/HelpNote'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 /** Hex SHA-256 of the request text, matching the one the function stores. */
 async function sha256(text: string) {
@@ -790,17 +790,18 @@ export function RotationAdvisor({
             )
           })}
         </ul>
-        <table className="mt-2 hidden w-full text-xs sm:table">
+        <div className="mt-2 hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
+        <table className="w-full text-xs">
           <thead className={TABLE_HEAD}>
             <tr>
-              <th className="py-1 font-medium">Crop</th>
-              <th className="py-1 text-right font-medium">Max acres / year</th>
-              <th className="py-1 text-right font-medium">Margin $/ac</th>
-              <th className="py-1 text-right font-medium" title={LIMIT_TIP.water}>Water in/yr</th>
-              <th className="py-1 text-right font-medium">Soil score</th>
-              <th className="py-1 text-right font-medium" title={LIMIT_TIP.renter}>Renter&apos;s crop</th>
-              <th className="py-1 text-right font-medium" title={LIMIT_TIP.ownUse}>Own feed</th>
-              <th className="py-1 text-right font-medium" title={LIMIT_TIP.sister}>Sister co. $/ac</th>
+              <th className={TABLE_TH}>Crop</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Max acres / year</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Margin $/ac</th>
+              <th className={cn(TABLE_TH, 'text-right')} title={LIMIT_TIP.water}>Water in/yr</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Soil score</th>
+              <th className={cn(TABLE_TH, 'text-right')} title={LIMIT_TIP.renter}>Renter&apos;s crop</th>
+              <th className={cn(TABLE_TH, 'text-right')} title={LIMIT_TIP.ownUse}>Own feed</th>
+              <th className={cn(TABLE_TH, 'text-right')} title={LIMIT_TIP.sister}>Sister co. $/ac</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -808,8 +809,8 @@ export function RotationAdvisor({
               const lim = ctx.limits.find((l) => l.crop_group === g.group && l.crop_year == null)
               return (
                 <tr key={g.group} className="bg-gray-50/60">
-                  <td className="py-1 font-medium text-gray-800">{g.label}</td>
-                  <td className="py-1 text-right">
+                  <td className="px-3 py-1 font-medium text-gray-800">{g.label}</td>
+                  <td className="px-3 py-1 text-right">
                     <input
                       key={`${g.group}-${lim?.max_acres ?? ''}`}
                       defaultValue={lim?.max_acres ?? ''}
@@ -823,7 +824,7 @@ export function RotationAdvisor({
                       className="w-24 rounded border border-gray-300 px-1.5 py-0.5 text-right tabular-nums"
                     />
                   </td>
-                  <td colSpan={6} className="py-1 pl-3 text-[10px] text-gray-400">one limit across every crop in the group</td>
+                  <td colSpan={6} className="px-3 py-1 text-[10px] text-gray-400">one limit across every crop in the group</td>
                 </tr>
               )
             })}
@@ -832,8 +833,8 @@ export function RotationAdvisor({
               const soil = SOIL_SCORE[c.key]
               return (
                 <tr key={c.id}>
-                  <td className="py-1 text-gray-800">{c.name}</td>
-                  <td className="py-1 text-right">
+                  <td className="px-3 py-1 text-gray-800">{c.name}</td>
+                  <td className="px-3 py-1 text-right">
                     <input
                       key={`${c.id}-${lim?.max_acres ?? ''}`}
                       defaultValue={lim?.max_acres ?? ''}
@@ -847,7 +848,7 @@ export function RotationAdvisor({
                       className="w-24 rounded border border-gray-300 px-1.5 py-0.5 text-right tabular-nums"
                     />
                   </td>
-                  <td className="py-1 text-right">
+                  <td className="px-3 py-1 text-right">
                     <input
                       key={`${c.id}-m-${c.margin ?? ''}`}
                       defaultValue={c.margin ?? ''}
@@ -862,7 +863,7 @@ export function RotationAdvisor({
                       className="w-24 rounded border border-gray-300 px-1.5 py-0.5 text-right tabular-nums"
                     />
                   </td>
-                  <td className="py-1 text-right">
+                  <td className="px-3 py-1 text-right">
                     <input
                       key={`${c.id}-w-${c.waterNeedIn ?? ''}`}
                       defaultValue={c.waterNeedIn ?? ''}
@@ -876,11 +877,11 @@ export function RotationAdvisor({
                       className="w-16 rounded border border-gray-300 px-1.5 py-0.5 text-right tabular-nums"
                     />
                   </td>
-                  <td className="py-1 text-right tabular-nums text-gray-600">
+                  <td className="px-3 py-1 text-right tabular-nums text-gray-600">
                     {soil.score}
                     {!soil.measured && <span className="text-gray-400">*</span>}
                   </td>
-                  <td className="py-1 text-right">
+                  <td className="px-3 py-1 text-right">
                     <input
                       type="checkbox"
                       checked={Boolean(c.renterOnly)}
@@ -889,7 +890,7 @@ export function RotationAdvisor({
                       aria-label={`${c.name} is grown here only by a renter`}
                     />
                   </td>
-                  <td className="py-1 text-right">
+                  <td className="px-3 py-1 text-right">
                     <input
                       type="checkbox"
                       checked={ctx.marginBasis(c.id, year).ownUse}
@@ -898,7 +899,7 @@ export function RotationAdvisor({
                       aria-label={`${c.name} is grown for our own feed`}
                     />
                   </td>
-                  <td className="py-1 text-right">
+                  <td className="px-3 py-1 text-right">
                     {(() => {
                       const sv = ctx.sisterValue.get(c.id)
                       return (
@@ -923,6 +924,7 @@ export function RotationAdvisor({
             })}
           </tbody>
         </table>
+        </div>
         <HelpNote className="mt-1" summary="Some soil scores are estimates." title="Soil scores">
           * Soil scores are estimates where the Vauxhall study did not measure the crop (carbon returned and residue left). Full sources in the
           rotation report.

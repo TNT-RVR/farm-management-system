@@ -384,6 +384,24 @@ $$;
 ALTER FUNCTION "public"."anydo_claim_sync"("p_user" "uuid", "p_minutes" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."app_ask_schema"() RETURNS TABLE("table_name" "text", "columns" "text")
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select c.relname::text,
+         string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod), ', ' order by a.attnum)
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+   where c.relkind in ('r', 'v', 'm', 'p')
+   group by c.relname
+   order by c.relname;
+$$;
+
+
+ALTER FUNCTION "public"."app_ask_schema"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."app_issue_record"("p_kind" "text", "p_fingerprint" "text", "p_title" "text", "p_message" "text", "p_details" "jsonb", "p_path" "text", "p_build" "text", "p_user" "uuid") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
@@ -1225,10 +1243,10 @@ CREATE OR REPLACE FUNCTION "public"."ensure_farm"() RETURNS "uuid"
 declare
   v_id uuid;
 begin
-  select id into v_id from farms limit 1;
+  select id into v_id from farms order by is_home desc limit 1;
   if v_id is null then
-    insert into farms (name)
-    values (coalesce((select farm_name from farm_setup limit 1), 'My farm'))
+    insert into farms (name, is_home)
+    values (coalesce((select farm_name from farm_setup limit 1), 'My farm'), true)
     returning id into v_id;
   end if;
   return v_id;
@@ -5064,6 +5082,28 @@ $$;
 ALTER FUNCTION "public"."handle_user_invited"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."home_farm_id"() RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select id from farms where is_home limit 1;
+$$;
+
+
+ALTER FUNCTION "public"."home_farm_id"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."home_field_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select id from fields where farm_id = (select id from farms where is_home limit 1);
+$$;
+
+
+ALTER FUNCTION "public"."home_field_ids"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."import_map_layer"("p_name" "text", "p_source" "text", "p_features" "jsonb") RETURNS "uuid"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public', 'extensions'
@@ -7220,6 +7260,27 @@ CREATE TABLE IF NOT EXISTS "public"."app_issues" (
 ALTER TABLE "public"."app_issues" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."app_questions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "asked_by" "uuid",
+    "question" "text" NOT NULL,
+    "page" "text",
+    "status" "text" DEFAULT 'pending'::"text" NOT NULL,
+    "progress" "text",
+    "steps" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "answer" "text",
+    "error" "text",
+    "model" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "finished_at" timestamp with time zone,
+    CONSTRAINT "app_questions_question_check" CHECK ((("length"("question") >= 1) AND ("length"("question") <= 2000))),
+    CONSTRAINT "app_questions_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'done'::"text", 'error'::"text"])))
+);
+
+
+ALTER TABLE "public"."app_questions" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."app_secrets" (
     "key" "text" NOT NULL,
     "value" "text" NOT NULL,
@@ -7431,6 +7492,7 @@ CREATE TABLE IF NOT EXISTS "public"."crops" (
     "goal_yield_per_acre" numeric,
     "on_combines" boolean DEFAULT true NOT NULL,
     "weighed" boolean DEFAULT true NOT NULL,
+    "farm_id" "uuid",
     CONSTRAINT "crops_category_new_check" CHECK (("category" = ANY (ARRAY['seed'::"text", 'commercial'::"text", 'own_use'::"text"]))),
     CONSTRAINT "crops_days_to_maturity_check" CHECK ((("days_to_maturity" IS NULL) OR (("days_to_maturity" >= 1) AND ("days_to_maturity" <= 400)))),
     CONSTRAINT "crops_feed_dm_pct_check" CHECK ((("feed_dm_pct" > (0)::numeric) AND ("feed_dm_pct" <= (100)::numeric))),
@@ -9868,6 +9930,7 @@ CREATE TABLE IF NOT EXISTS "public"."farms" (
     "power_sell_kwh" numeric,
     "power_value_basis" "text" DEFAULT 'sell'::"text" NOT NULL,
     "water_value_af" numeric,
+    "is_home" boolean DEFAULT false NOT NULL,
     CONSTRAINT "farms_power_value_basis_check" CHECK (("power_value_basis" = ANY (ARRAY['sell'::"text", 'buy'::"text"]))),
     CONSTRAINT "farms_weather_source_check" CHECK (("weather_source" = ANY (ARRAY['openmeteo'::"text", 'eccc'::"text"])))
 );
@@ -15760,7 +15823,9 @@ CREATE TABLE IF NOT EXISTS "public"."users" (
     "finance_access" boolean DEFAULT false NOT NULL,
     "avatar_url" "text",
     "show_truck_forecast" boolean DEFAULT true NOT NULL,
-    "menu_prefs" "jsonb"
+    "menu_prefs" "jsonb",
+    "voice_reply" boolean DEFAULT false NOT NULL,
+    "farm_id" "uuid"
 );
 
 
@@ -16460,6 +16525,11 @@ ALTER TABLE ONLY "public"."app_commits"
 
 ALTER TABLE ONLY "public"."app_issues"
     ADD CONSTRAINT "app_issues_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."app_questions"
+    ADD CONSTRAINT "app_questions_pkey" PRIMARY KEY ("id");
 
 
 
@@ -18538,6 +18608,10 @@ CREATE INDEX "app_issues_status" ON "public"."app_issues" USING "btree" ("status
 
 
 
+CREATE INDEX "app_questions_asked_by_created" ON "public"."app_questions" USING "btree" ("asked_by", "created_at" DESC);
+
+
+
 CREATE INDEX "auction_reports_market_date" ON "public"."auction_reports" USING "btree" ("market", "sale_date" DESC);
 
 
@@ -18847,6 +18921,10 @@ CREATE INDEX "events_status" ON "public"."events" USING "btree" ("status");
 
 
 CREATE INDEX "events_when" ON "public"."events" USING "btree" ("starts_on");
+
+
+
+CREATE UNIQUE INDEX "farms_one_home" ON "public"."farms" USING "btree" ("is_home") WHERE "is_home";
 
 
 
@@ -20640,6 +20718,11 @@ ALTER TABLE ONLY "public"."app_issues"
 
 
 
+ALTER TABLE ONLY "public"."app_questions"
+    ADD CONSTRAINT "app_questions_asked_by_fkey" FOREIGN KEY ("asked_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."bale_check_readings"
     ADD CONSTRAINT "bale_check_readings_check_id_fkey" FOREIGN KEY ("check_id") REFERENCES "public"."bale_checks"("id") ON DELETE CASCADE;
 
@@ -21152,6 +21235,11 @@ ALTER TABLE ONLY "public"."crop_weather_alerts"
 
 ALTER TABLE ONLY "public"."crops"
     ADD CONSTRAINT "crops_crop_coefficient_id_fkey" FOREIGN KEY ("crop_coefficient_id") REFERENCES "public"."crop_coefficients"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."crops"
+    ADD CONSTRAINT "crops_farm_id_fkey" FOREIGN KEY ("farm_id") REFERENCES "public"."farms"("id") ON DELETE CASCADE;
 
 
 
@@ -22581,6 +22669,11 @@ ALTER TABLE ONLY "public"."user_signatures"
 
 
 ALTER TABLE ONLY "public"."users"
+    ADD CONSTRAINT "users_farm_id_fkey" FOREIGN KEY ("farm_id") REFERENCES "public"."farms"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."users"
     ADD CONSTRAINT "users_id_fkey" FOREIGN KEY ("id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
 
@@ -22722,6 +22815,13 @@ ALTER TABLE "public"."app_issues" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "app_issues_select" ON "public"."app_issues" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+ALTER TABLE "public"."app_questions" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "app_questions_select" ON "public"."app_questions" FOR SELECT TO "authenticated" USING (("asked_by" = "auth"."uid"()));
 
 
 
@@ -23718,6 +23818,10 @@ CREATE POLICY "mfa_required" ON "public"."app_commits" AS RESTRICTIVE TO "authen
 
 
 CREATE POLICY "mfa_required" ON "public"."app_issues" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."app_questions" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -27893,6 +27997,11 @@ GRANT ALL ON FUNCTION "public"."anydo_claim_sync"("p_user" "uuid", "p_minutes" i
 
 
 
+REVOKE ALL ON FUNCTION "public"."app_ask_schema"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."app_ask_schema"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."app_issue_record"("p_kind" "text", "p_fingerprint" "text", "p_title" "text", "p_message" "text", "p_details" "jsonb", "p_path" "text", "p_build" "text", "p_user" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."app_issue_record"("p_kind" "text", "p_fingerprint" "text", "p_title" "text", "p_message" "text", "p_details" "jsonb", "p_path" "text", "p_build" "text", "p_user" "uuid") TO "service_role";
 
@@ -29629,6 +29738,16 @@ GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."handle_user_invited"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."handle_user_invited"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."home_farm_id"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."home_farm_id"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."home_field_ids"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."home_field_ids"() TO "service_role";
 
 
 
@@ -33780,6 +33899,11 @@ GRANT ALL ON TABLE "public"."app_commits" TO "service_role";
 
 GRANT ALL ON TABLE "public"."app_issues" TO "authenticated";
 GRANT ALL ON TABLE "public"."app_issues" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."app_questions" TO "authenticated";
+GRANT ALL ON TABLE "public"."app_questions" TO "service_role";
 
 
 

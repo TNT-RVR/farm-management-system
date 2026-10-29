@@ -51,12 +51,12 @@ join public.crops c on c.name = d.crop_name;
 insert into public.crop_plans (crop_year, field_id, crop_id, variety, planned_acres, yield_per_acre_override, harvest_method, notes)
 select y.crop_year, y.field_id, y.crop_id,
        case y.crop_name
-         when 'Canola' then case when y.irrigated then 'InVigor L345PC' else (array['InVigor L340PC','Pioneer 45M35','DKTF 98 SC'])[1 + abs(hashtext(y.field_id::text)) % 3] end
-         when 'Wheat'  then case when y.irrigated then 'AAC Brandon' else (array['AAC Brandon','AAC Viewfield','CDC Go'])[1 + abs(hashtext(y.field_id::text)) % 3] end
-         when 'Barley' then case when y.irrigated then 'AAC Synergy' else 'CDC Austenson' end
-         when 'Peas'   then 'CDC Inca'
-         when 'Oats'   then 'CS Camden'
-         when 'Alfalfa' then 'Algonquin / meadow brome'
+         when 'Canola' then case when y.irrigated then 'Northfield NF345' else (array['Northfield NF340','Ridgeline RL45','Ridgeline RL98'])[1 + abs(hashtext(y.field_id::text)) % 3] end
+         when 'Wheat'  then case when y.irrigated then 'Northfield W701' else (array['Northfield W701','Northfield W715','Ridgeline W620'])[1 + abs(hashtext(y.field_id::text)) % 3] end
+         when 'Barley' then case when y.irrigated then 'Ridgeline B210' else 'Northfield B305' end
+         when 'Peas'   then 'Northfield P410'
+         when 'Oats'   then 'Ridgeline O510'
+         when 'Alfalfa' then 'Alfalfa / meadow brome'
          when 'Green Feed' then 'Oat-pea mix'
        end,
        y.acres,
@@ -65,7 +65,7 @@ select y.crop_year, y.field_id, y.crop_id,
        case when y.crop_name = 'Canola' then case when y.irrigated or abs(hashtext(y.field_id::text)) % 2 = 0 then 'straight' else 'swathed' end end,
        case
          when y.crop_name = 'Peas' then 'Inoculant on seed. Roll after seeding to push rocks down.'
-         when y.crop_name = 'Canola' and y.crop_year > extract(year from current_date)::int then 'Seed into wheat stubble. Liberty system; clubroot-resistant variety.'
+         when y.crop_name = 'Canola' and y.crop_year > extract(year from current_date)::int then 'Seed into wheat stubble. glufosinate-tolerant; clubroot-resistant variety.'
          when y.crop_name = 'Alfalfa' then 'Two cuts; graze the aftermath in October.'
        end
 from demo_yield y
@@ -75,12 +75,12 @@ where y.crop_year >= extract(year from current_date)::int;
 insert into public.crop_history (crop_year, field_id, crop_id, variety, acres, yield_per_acre, yield_unit, actual_yield_total, source, source_note)
 select y.crop_year, y.field_id, y.crop_id,
        case y.crop_name
-         when 'Canola' then (array['InVigor L233P','InVigor L340PC','Pioneer 45M35','DKTF 98 SC'])[1 + abs(hashtext(y.field_id::text || y.crop_year)) % 4]
-         when 'Wheat'  then (array['AAC Brandon','AAC Viewfield','CDC Go'])[1 + abs(hashtext(y.field_id::text || y.crop_year)) % 3]
-         when 'Barley' then case when y.irrigated then 'AAC Synergy' else 'CDC Austenson' end
-         when 'Peas'   then (array['CDC Inca','CDC Amarillo'])[1 + abs(hashtext(y.field_id::text || y.crop_year)) % 2]
-         when 'Oats'   then 'CS Camden'
-         when 'Alfalfa' then 'Algonquin / meadow brome'
+         when 'Canola' then (array['Northfield NF233','Northfield NF340','Ridgeline RL45','Ridgeline RL98'])[1 + abs(hashtext(y.field_id::text || y.crop_year)) % 4]
+         when 'Wheat'  then (array['Northfield W701','Northfield W715','Ridgeline W620'])[1 + abs(hashtext(y.field_id::text || y.crop_year)) % 3]
+         when 'Barley' then case when y.irrigated then 'Ridgeline B210' else 'Northfield B305' end
+         when 'Peas'   then (array['Northfield P410','Ridgeline P420'])[1 + abs(hashtext(y.field_id::text || y.crop_year)) % 2]
+         when 'Oats'   then 'Ridgeline O510'
+         when 'Alfalfa' then 'Alfalfa / meadow brome'
          when 'Green Feed' then 'Oat-pea mix'
        end,
        y.acres, y.yield, y.yield_unit, round(y.yield * y.acres),

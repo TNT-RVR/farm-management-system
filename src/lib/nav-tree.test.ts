@@ -70,7 +70,7 @@ describe('the tree', () => {
   it('gives every view the home the agreed tree marks with ↗', () => {
     const homes: Record<string, string> = {
       leases: 'financials', 'next-year-plan': 'winter', 'field-progress': 'fields', 'tissue-tests': 'growing', manure: 'winter',
-      'spray-restrictions': 'cattle', contracts: 'financials', 'bale-checks': 'cattle', 'crop-money': 'financials',
+      contracts: 'financials', 'bale-checks': 'cattle', 'crop-money': 'financials',
       'equipment-service': 'equipment', conferences: 'tasks-calendar', 'fuel-trucking': 'equipment', grants: 'winter',
       'cattle-sales': 'cattle', 'cattle-markets': 'cattle', combine: 'harvest', 'seed-planter': 'planting',
     }
@@ -86,7 +86,6 @@ describe('the tree', () => {
   it('lists Cattle’s hub pages, with shortcuts straight to their tabs', () => {
     expect(viewKeys('cattle')).toEqual([
       'pastures',
-      'spray-restrictions',
       'herd',
       'feed',
       'cattle-sales',
@@ -95,19 +94,14 @@ describe('the tree', () => {
     expect(MENU_SECTION_BY_KEY.get('cattle')!.groups.every((g) => g.heading === null)).toBe(true)
     const to = (section: string, view: string) =>
       sectionItems(MENU_SECTION_BY_KEY.get(section)!).find((i) => i.view.key === view)?.view.to
-    expect(to('cattle', 'spray-restrictions')).toBe('/cattle?tab=restrictions')
     expect(to('harvest', 'bale-checks')).toBe('/feed?tab=bale-checks')
     expect(to('financials', 'cattle-markets')).toBe('/cattle-markets?tab=markets')
   })
 
-  it('keeps spray restrictions out of Growing season', () => {
-    // Sam, 29 Oct 2026: it is about where cattle may go, so Cattle is the
-    // only place it is listed. Growing season keeps the spraying itself.
-    expect(viewKeys('growing')).not.toContain('spray-restrictions')
-    expect(viewKeys('growing')).toContain('spraying')
-    // Still reachable, and still under Cattle: it is in "All views" once.
-    expect(allItems().filter((i) => i.view.key === 'spray-restrictions')).toHaveLength(1)
-    expect(VIEW_HOME.get('spray-restrictions')).toBe('cattle')
+  it('keeps spray restrictions a tab of Pastures, not a menu line', () => {
+    // Sam, 29 Oct 2026: Pastures already has it as a tab.
+    expect(allItems().some((i) => i.view.key === 'spray-restrictions')).toBe(false)
+    expect(viewKeys('growing')).toContain('chemicals')
   })
 
   it('pins Settings last', () => {
@@ -200,24 +194,29 @@ describe('prefs', () => {
 })
 
 describe('phone bar', () => {
-  it('defaults to Home, the Tasks view, Fields and Cattle', () => {
+  it('defaults to Search, Dashboard, Add, Tasks, Menu', () => {
     const bar = resolveBar(resolveMenu(allowed, undefined), undefined)
-    expect(bar.map((s) => `${s.kind}:${s.key}`)).toEqual(['section:home', 'view:tasks', 'section:fields', 'section:cattle'])
-    expect(DEFAULT_PHONE_BAR).toHaveLength(4)
+    expect(bar.map((s) => `${s.kind}:${s.key}`)).toEqual(['tool:search', 'section:home', 'tool:add', 'view:tasks', 'tool:menu'])
+    expect(DEFAULT_PHONE_BAR).toHaveLength(5)
   })
 
   it('fills an unavailable slot with the next section in order', () => {
     const noCattle = filterSections(MENU_SECTIONS, ({ to }) => !['/cattle', '/herd', '/feed', '/cattle-markets', '/cattle-settings'].includes(to.split('?')[0]))
-    const bar = resolveBar(resolveMenu(noCattle, undefined), undefined)
+    const bar = resolveBar(resolveMenu(noCattle, undefined), ['search', 'home', 'cattle', 'fields', 'menu'])
     // Home and Fields are on already, so the spare is Map.
-    expect(bar.map((s) => s.key)).toEqual(['home', 'tasks', 'fields', 'map'])
+    expect(bar.map((s) => s.key)).toEqual(['search', 'home', 'map', 'fields', 'menu'])
   })
 
   it('drops unknown and duplicate keys, and a view hidden on the phone', () => {
     const menu = resolveMenu(allowed, { hidden: ['weather'] })
-    const bar = resolveBar(menu, ['harvest', 'harvest', 'nope', 'weather'])
+    const bar = resolveBar(menu, ['harvest', 'harvest', 'nope', 'weather', 'menu'])
     // The holes fill from the menu's own order: Home, then Map, then Fields.
-    expect(bar.map((s) => s.key)).toEqual(['harvest', 'home', 'map', 'fields'])
+    expect(bar.map((s) => s.key)).toEqual(['harvest', 'home', 'map', 'fields', 'menu'])
+  })
+
+  it('keeps Menu on the bar when it was left off', () => {
+    const bar = resolveBar(resolveMenu(allowed, undefined), ['home', 'fields', 'map', 'tasks', 'cattle'])
+    expect(bar.map((s) => s.key)).toEqual(['home', 'fields', 'map', 'tasks', 'menu'])
   })
 })
 
@@ -233,11 +232,18 @@ describe('where you are', () => {
     expect(at('/dashboard')).toBe('home')
   })
 
-  it('lands Spraying, Chemicals and Seed & planter on their own views, on any tab', () => {
-    // Split from Chemicals and Calculator, 24 Oct 2026: each is its own route now.
-    expect(at('/spraying', '?tab=reentry')).toBe('growing > spraying')
+  it('lands Chemicals and Seed & planter on their own views, on any tab', () => {
+    // Seed & planter split from Calculator, 24 Oct 2026: its own route now.
     expect(at('/chemicals', '?tab=prices')).toBe('growing > chemicals')
     expect(at('/planter', '?tab=crops')).toBe('planting > seed-planter')
+  })
+
+  it('has no Spraying view: it is tabs of Chemicals again', () => {
+    // Sam, 29 Oct 2026. /spraying stays as a redirect, so it is not a view
+    // the menu lists, and both of its tabs are Chemicals.
+    expect(MENU_VIEWS.has('spraying')).toBe(false)
+    expect(at('/chemicals', '?tab=spraycheck')).toBe('growing > chemicals')
+    expect(at('/chemicals', '?tab=reentry')).toBe('growing > chemicals')
   })
 
   it('prefers a matching ?tab= over a path-only view', () => {
@@ -267,9 +273,7 @@ describe('where you are', () => {
     expect(at('/plan', '?tab=budget')).toBe('financials > crop-money')
     // A shortcut to a tab names the view the tab is on.
     expect(at('/feed', '?tab=bale-checks')).toBe('cattle > feed')
-    // Unless the tab is listed in its own right, as Spray restrictions is in
-    // Cattle since 29 Oct 2026 — then the header names it, not its parent.
-    expect(at('/cattle', '?tab=restrictions')).toBe('cattle > spray-restrictions')
+    expect(at('/cattle', '?tab=restrictions')).toBe('cattle > pastures')
     expect(at('/cattle')).toBe('cattle > pastures')
     expect(at('/cattle-markets', '?tab=markets')).toBe('cattle > cattle-sales')
   })

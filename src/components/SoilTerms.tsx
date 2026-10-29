@@ -2,7 +2,7 @@ import { InfoPopover } from '@/components/InfoPopover'
 import { TEXTURE, type SoilHorizon } from '@/lib/soil-landscape'
 import { SOIL_COLUMN_HELP, parseHorizon } from '@/lib/soil-glossary'
 import { n1 } from '@/lib/format'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 /** The info button beside a column heading. */
 export function SoilTermInfo({ term }: { term: keyof typeof SOIL_COLUMN_HELP | string }) {
@@ -80,14 +80,14 @@ export function HorizonTable({
   const shown = columns.filter((c) => !(compact && c.hideCompact))
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-lg border border-gray-200">
       <table className="w-full text-[11px]">
         <thead className={TABLE_HEAD}>
           <tr>
             {shown.map((c) => (
               <th
                 key={c.key}
-                className={`py-1 pr-2 font-medium ${c.right ? 'text-right' : ''}`}
+                className={`${TABLE_TH} ${c.right ? 'text-right' : ''}`}
               >
                 <span className="inline-flex items-center">
                   {c.label}
@@ -100,21 +100,21 @@ export function HorizonTable({
         <tbody>
           {horizons.map((h, i) => (
             <tr key={i} className="border-b border-gray-100 last:border-0">
-              <td className="py-1 pr-2">
+              <td className="px-3 py-1">
                 <HorizonInfo code={h.horizon} />
               </td>
-              <td className="py-1 pr-2 text-gray-600">
+              <td className="px-3 py-1 text-gray-600">
                 {h.top != null && h.bottom != null ? `${h.top}–${h.bottom} cm` : '—'}
               </td>
-              <td className="py-1 pr-2 text-gray-600">
+              <td className="px-3 py-1 text-gray-600">
                 {h.texture ? (TEXTURE[h.texture] ?? h.texture) : '—'}
               </td>
-              <td className="py-1 pr-2 text-right tabular-nums">{n1(h.clay)}</td>
-              {!compact && <td className="py-1 pr-2 text-right tabular-nums">{n1(h.organicCarbon)}</td>}
-              <td className="py-1 pr-2 text-right tabular-nums">{n1(h.ph)}</td>
-              <td className="py-1 pr-2 text-right tabular-nums">{n1(h.ec)}</td>
-              {!compact && <td className="py-1 pr-2 text-right tabular-nums">{n1(h.cec)}</td>}
-              {!compact && <td className="py-1 pr-2 text-right tabular-nums">{n1(h.caco3)}</td>}
+              <td className="px-3 py-1 text-right tabular-nums">{n1(h.clay)}</td>
+              {!compact && <td className="px-3 py-1 text-right tabular-nums">{n1(h.organicCarbon)}</td>}
+              <td className="px-3 py-1 text-right tabular-nums">{n1(h.ph)}</td>
+              <td className="px-3 py-1 text-right tabular-nums">{n1(h.ec)}</td>
+              {!compact && <td className="px-3 py-1 text-right tabular-nums">{n1(h.cec)}</td>}
+              {!compact && <td className="px-3 py-1 text-right tabular-nums">{n1(h.caco3)}</td>}
             </tr>
           ))}
         </tbody>

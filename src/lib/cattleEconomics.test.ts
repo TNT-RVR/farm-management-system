@@ -5,6 +5,8 @@ import {
   lockInSignals,
   valueOfGain,
   COW_CALF_BENCHMARK_COSTS,
+  abCowCashCostPerYear,
+  abCowCostPerYear,
   benchmarkTotalPerCow,
   type CattleCosts,
 } from './cattleEconomics'
@@ -158,6 +160,29 @@ describe('lockInSignals', () => {
     const s = lockInSignals({ ...base, basisHistory: [-40, -35], historyPricesPerLb: [5] })
     expect(s.map((x) => x.label)).not.toContain('Basis')
     expect(s.map((x) => x.label)).not.toContain('Against our own history')
+  })
+})
+
+describe('what a cow costs for a year in Alberta', () => {
+  it('is the published 2024 benchmark in its own year', () => {
+    // Canfax, October 2025: $1,059 cash + $257 depreciation + $422 opportunity.
+    expect(abCowCostPerYear(2024)).toBe(1738)
+    expect(abCowCashCostPerYear(2024)).toBe(1059)
+  })
+
+  it('carries forward at the rise the Network itself measures', () => {
+    expect(abCowCostPerYear(2026)).toBe(1738 + 2 * 110)
+    expect(abCowCashCostPerYear(2026)).toBe(1059 + 2 * 70)
+  })
+
+  it('never indexes backwards', () => {
+    expect(abCowCostPerYear(2019)).toBe(1738)
+  })
+
+  it('stays in the range a Prairie cow-calf budget would recognise', () => {
+    // A sanity rail: if indexing ever runs away, this is what catches it.
+    expect(abCowCostPerYear(new Date().getFullYear())).toBeGreaterThan(1200)
+    expect(abCowCostPerYear(new Date().getFullYear())).toBeLessThan(2600)
   })
 })
 

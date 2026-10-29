@@ -36,7 +36,8 @@ import {
   type ColdDay,
 } from '@/lib/winter-feeding'
 import { WarningList } from '@/pages/cattle/feed/bits'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { MenuButton } from '@/components/MenuButton'
 
 /**
  * The cattle manager's feed sheets, typed in.
@@ -262,43 +263,58 @@ export function FeedRecordsTab({
             </p>
           </HelpNote>
         </div>
-        {canEdit && !adding && (
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              onClick={() => {
-                setDay(today())
-                setAdding(true)
-              }}
-              className="flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
-            >
-              <CalendarPlus className="h-4 w-4" /> Feed today
-            </button>
-            <button
-              onClick={() => {
-                setDay(null)
-                setAdding(true)
-              }}
-              className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              <Plus className="h-4 w-4" /> A period
-            </button>
-          </div>
+        {/* One button for the one job (Sam, 29 Oct 2026). Recording a
+            feeding today and recording one over a period differ only in which
+            day it goes on, so they were one job wearing two buttons. The form
+            is a pop-up now, so the button stays put while it is open. */}
+        {canEdit && (
+          <MenuButton
+            label="Record feeding"
+            icon={CalendarPlus}
+            className="shrink-0"
+            choices={[
+              {
+                key: 'today',
+                label: 'Feed today',
+                hint: "Dated today",
+                icon: CalendarPlus,
+                onPick: () => {
+                  setDay(today())
+                  setAdding(true)
+                },
+              },
+              {
+                key: 'period',
+                label: 'A period',
+                hint: 'Over a run of days',
+                icon: Plus,
+                onPick: () => {
+                  setDay(null)
+                  setAdding(true)
+                },
+              },
+            ]}
+          />
         )}
       </div>
 
+      {/* In a pop-up, like the edit path right below (Sam, 29 Oct 2026):
+          the same form opening two different ways was the odd part. */}
       {adding && (
-        <FeedRecordForm
-          ranchId={ranchId}
-          ranches={ranches}
-          types={types ?? []}
-          defaultDay={day}
-          rates={recent.rates}
-          onDone={() => {
-            setAdding(false)
-            void qc.invalidateQueries({ queryKey: ['feed_records'] })
-          }}
-          onCancel={() => setAdding(false)}
-        />
+        <Modal title={day ? 'Feed today' : 'Feed over a period'} onClose={() => setAdding(false)} wide>
+          <FeedRecordForm
+            ranchId={ranchId}
+            ranches={ranches}
+            types={types ?? []}
+            defaultDay={day}
+            rates={recent.rates}
+            onDone={() => {
+              setAdding(false)
+              void qc.invalidateQueries({ queryKey: ['feed_records'] })
+            }}
+            onCancel={() => setAdding(false)}
+          />
+        </Modal>
       )}
 
       <FeedOnHandPanel
@@ -564,34 +580,36 @@ function FeedRecordDetail({
           ['Notes', r.notes],
         ]}
       />
-      <table className="mt-3 w-full text-sm">
-        <thead className={TABLE_HEAD}>
-          <tr>
-            <th className="py-1 font-medium">Feed</th>
-            <th className="py-1 text-right font-medium">Amount</th>
-            <th className="py-1 text-right font-medium">lb / bale</th>
-            <th className="py-1 text-right font-medium">Pounds</th>
-            <th className="py-1 pl-2 font-medium">Use</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {r.feed_record_lines
-            .slice()
-            .sort((a, b) => a.sort_order - b.sort_order)
-            .map((l) => {
-              const lb = poundsFor({ quantity: Number(l.quantity), unit: l.unit, lbPerBale: l.lb_per_bale != null ? Number(l.lb_per_bale) : lbPerBaleFor(l.feed_type_id) })
-              return (
-                <tr key={l.id}>
-                  <td className="py-1">{l.feed_type_name}</td>
-                  <td className="py-1 text-right tabular-nums">{describeQuantity({ quantity: Number(l.quantity), unit: l.unit })}</td>
-                  <td className="py-1 text-right tabular-nums text-gray-500">{l.unit === 'lb' ? '' : (l.lb_per_bale ?? lbPerBaleFor(l.feed_type_id) ?? '—')}</td>
-                  <td className="py-1 text-right tabular-nums">{lb == null ? '—' : lbs(lb)}</td>
-                  <td className="py-1 pl-2 text-gray-500">{PURPOSE_LABEL[l.purpose]}</td>
-                </tr>
-              )
-            })}
-        </tbody>
-      </table>
+      <div className="mt-3 overflow-x-auto rounded-lg border border-gray-200">
+        <table className="w-full text-sm">
+          <thead className={TABLE_HEAD}>
+            <tr>
+              <th className={TABLE_TH}>Feed</th>
+              <th className={`${TABLE_TH} text-right`}>Amount</th>
+              <th className={`${TABLE_TH} text-right`}>lb / bale</th>
+              <th className={`${TABLE_TH} text-right`}>Pounds</th>
+              <th className={TABLE_TH}>Use</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {r.feed_record_lines
+              .slice()
+              .sort((a, b) => a.sort_order - b.sort_order)
+              .map((l) => {
+                const lb = poundsFor({ quantity: Number(l.quantity), unit: l.unit, lbPerBale: l.lb_per_bale != null ? Number(l.lb_per_bale) : lbPerBaleFor(l.feed_type_id) })
+                return (
+                  <tr key={l.id}>
+                    <td className="px-3 py-1">{l.feed_type_name}</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{describeQuantity({ quantity: Number(l.quantity), unit: l.unit })}</td>
+                    <td className="px-3 py-1 text-right tabular-nums text-gray-500">{l.unit === 'lb' ? '' : (l.lb_per_bale ?? lbPerBaleFor(l.feed_type_id) ?? '—')}</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{lb == null ? '—' : lbs(lb)}</td>
+                    <td className="px-3 py-1 text-gray-500">{PURPOSE_LABEL[l.purpose]}</td>
+                  </tr>
+                )
+              })}
+          </tbody>
+        </table>
+      </div>
       {canEdit && (
         <div className="mt-4 flex justify-between gap-2">
           <button
@@ -1054,7 +1072,7 @@ function FeedRecordForm({
             save.mutate()
           }}
           disabled={save.isPending}
-          className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+          className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
         >
           {save.isPending ? 'Saving...' : existing ? 'Save changes' : 'Save record'}
         </button>

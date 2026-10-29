@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils'
 import { Card, SettingsGroup, type NumberField } from './ui'
 import { FieldLink, Sources, money, n0, n1 } from '../fertilizer/savings/ui'
 import { CardList, RowCard, type Fact } from '@/components/RowCards'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const TRUCK_FIELDS: NumberField<keyof TruckSettings>[] = [
   { key: 'payloadT', label: 'Payload', unit: 't a load' },
@@ -172,16 +172,16 @@ export function TruckingTab({ year, isManager }: { year: number; isManager: bool
     const c = cells(r)
     return (
       <tr key={r.f.id} className="align-top">
-        <td className="px-2 py-1.5 text-gray-800">{c.field}</td>
-        <td className="px-2 py-1.5 text-gray-600">{c.crop}</td>
-        <td className="px-2 py-1.5 text-right tabular-nums">{c.tonnes ?? '—'}</td>
-        <td className="px-2 py-1.5">{c.where}</td>
-        <td className="px-2 py-1.5 text-right tabular-nums">{c.loads ?? '—'}</td>
-        <td className="hidden px-2 py-1.5 text-right tabular-nums md:table-cell">{c.km ?? '—'}</td>
-        <td className="hidden px-2 py-1.5 text-right tabular-nums md:table-cell">{c.hours ?? '—'}</td>
-        <td className="hidden px-2 py-1.5 text-right tabular-nums md:table-cell">{c.diesel ?? '—'}</td>
-        <td className="hidden px-2 py-1.5 text-right tabular-nums md:table-cell">{c.driver ?? '—'}</td>
-        <td className={cn('px-2 py-1.5 text-right font-semibold tabular-nums', !c.total && 'font-normal text-gray-300')}>
+        <td className="px-3 py-1.5 text-gray-800">{c.field}</td>
+        <td className="px-3 py-1.5 text-gray-600">{c.crop}</td>
+        <td className="px-3 py-1.5 text-right tabular-nums">{c.tonnes ?? '—'}</td>
+        <td className="px-3 py-1.5">{c.where}</td>
+        <td className="px-3 py-1.5 text-right tabular-nums">{c.loads ?? '—'}</td>
+        <td className="hidden px-3 py-1.5 text-right tabular-nums md:table-cell">{c.km ?? '—'}</td>
+        <td className="hidden px-3 py-1.5 text-right tabular-nums md:table-cell">{c.hours ?? '—'}</td>
+        <td className="hidden px-3 py-1.5 text-right tabular-nums md:table-cell">{c.diesel ?? '—'}</td>
+        <td className="hidden px-3 py-1.5 text-right tabular-nums md:table-cell">{c.driver ?? '—'}</td>
+        <td className={cn('px-3 py-1.5 text-right font-semibold tabular-nums', !c.total && 'font-normal text-gray-300')}>
           {c.total ?? '—'}
           {c.total ? (
             <span className="block whitespace-nowrap text-[10px] font-normal text-gray-500 md:hidden">
@@ -189,7 +189,7 @@ export function TruckingTab({ year, isManager }: { year: number; isManager: bool
             </span>
           ) : null}
         </td>
-        <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{c.perTonne ?? '—'}</td>
+        <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">{c.perTonne ?? '—'}</td>
       </tr>
     )
   }
@@ -230,23 +230,23 @@ export function TruckingTab({ year, isManager }: { year: number; isManager: bool
         {/* Eleven columns does not fit a phone, so under `sm` each field is a
             card with its total on the right. */}
         <CardList>{rows.map(renderCard)}</CardList>
-        <div className="hidden overflow-x-auto sm:block">
+        <div className="hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
           <table className="w-full min-w-[980px] text-xs">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="px-2 py-1 font-medium">Field</th>
-                <th className="px-2 py-1 font-medium">Crop</th>
-                <th className="px-2 py-1 text-right font-medium">Tonnes</th>
-                <th className="px-2 py-1 font-medium">Where it goes</th>
-                <th className="px-2 py-1 text-right font-medium">Loads</th>
+                <th className={TABLE_TH}>Field</th>
+                <th className={TABLE_TH}>Crop</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Tonnes</th>
+                <th className={TABLE_TH}>Where it goes</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Loads</th>
                 {/* The make-up of Total: its own columns on a wide screen, a
                     line under Total on a phone, so eleven columns fit. */}
-                <th className="hidden px-2 py-1 text-right font-medium md:table-cell">Km</th>
-                <th className="hidden px-2 py-1 text-right font-medium md:table-cell">Hours</th>
-                <th className="hidden px-2 py-1 text-right font-medium md:table-cell">Diesel</th>
-                <th className="hidden px-2 py-1 text-right font-medium md:table-cell">Driver</th>
-                <th className="px-2 py-1 text-right font-medium">Total</th>
-                <th className="px-2 py-1 text-right font-medium">$/t</th>
+                <th className={cn(TABLE_TH, 'hidden text-right md:table-cell')}>Km</th>
+                <th className={cn(TABLE_TH, 'hidden text-right md:table-cell')}>Hours</th>
+                <th className={cn(TABLE_TH, 'hidden text-right md:table-cell')}>Diesel</th>
+                <th className={cn(TABLE_TH, 'hidden text-right md:table-cell')}>Driver</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Total</th>
+                <th className={cn(TABLE_TH, 'text-right')}>$/t</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">

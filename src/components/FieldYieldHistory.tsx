@@ -19,7 +19,7 @@ import { fetchAreaYields, type CropAreaYield } from '@/lib/cropAreaYields'
 import { AreaYieldEditor } from '@/components/AreaYieldEditor'
 import { AbnormalYearMark } from '@/components/AbnormalYearMark'
 import { abnormalIndex, abnormalKey, useAbnormalYears } from '@/lib/abnormal-yields'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const SOURCE_LABEL: Record<string, string> = {
   scale: 'Scale loads',
@@ -327,8 +327,8 @@ export function FieldYieldHistory({
         </div>
       )}
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <div className="flex items-center justify-between gap-2">
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white pb-4">
+        <div className="flex items-center justify-between gap-2 px-4 pt-4">
           <h3 className="text-sm font-semibold text-gray-700">Crop history</h3>
           {(canEdit || partnerToAdd.length > 0) && (
             <AddButton
@@ -341,19 +341,19 @@ export function FieldYieldHistory({
           )}
         </div>
         {history.length || areaLines?.length ? (
-          <div className="overflow-x-auto">
-            <table className="mt-2 w-full min-w-[860px] text-sm">
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[860px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="py-1 pr-3 font-medium">Year</th>
-                  <th className="py-1 pr-3 font-medium">Crop</th>
-                  <th className="py-1 pr-3 text-right font-medium">Acres</th>
-                  <th className="py-1 pr-3 text-right font-medium" title="Field-run, before cleaning">Pre-clean / ac</th>
-                  <th className="py-1 pr-3 text-right font-medium" title="Field-run, before cleaning">Pre-clean total</th>
-                  <th className="py-1 pr-3 text-right font-medium" title="What was left after cleaning">Clean / ac</th>
-                  <th className="py-1 pr-3 text-right font-medium" title="What was left after cleaning">Clean total</th>
-                  <th className="py-1 font-medium">From</th>
-                  {canEdit && <th className="py-1" />}
+                  <th className={TABLE_TH}>Year</th>
+                  <th className={TABLE_TH}>Crop</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Acres</th>
+                  <th className={cn(TABLE_TH, 'text-right')} title="Field-run, before cleaning">Pre-clean / ac</th>
+                  <th className={cn(TABLE_TH, 'text-right')} title="Field-run, before cleaning">Pre-clean total</th>
+                  <th className={cn(TABLE_TH, 'text-right')} title="What was left after cleaning">Clean / ac</th>
+                  <th className={cn(TABLE_TH, 'text-right')} title="What was left after cleaning">Clean total</th>
+                  <th className={TABLE_TH}>From</th>
+                  {canEdit && <th className="px-3" />}
                 </tr>
               </thead>
               <tbody>
@@ -368,8 +368,8 @@ export function FieldYieldHistory({
                         className={cn('border-t border-gray-100 align-top', yearOpen(l.crop_year) && 'cursor-pointer hover:bg-gray-50')}
                         onClick={yearOpen(l.crop_year) ? () => setEditingArea({ cropYear: l.crop_year, cropId: l.crop_id, acres: l.acres, row: l.row }) : undefined}
                       >
-                        <td className="py-1.5 pr-3">{l.crop_year}</td>
-                        <td className="py-1.5 pr-3">
+                        <td className="px-3 py-1.5">{l.crop_year}</td>
+                        <td className="px-3 py-1.5">
                           {cropName(l.crop_id)}
                           <span className="ml-1.5 rounded bg-brand-50 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-800">crop area</span>
                           {(l.yield_per_acre != null || markOf(l.crop_year, l.crop_id) != null) && (
@@ -384,16 +384,16 @@ export function FieldYieldHistory({
                             />
                           )}
                         </td>
-                        <td className="py-1.5 pr-3 text-right tabular-nums">{l.acres != null ? Number(l.acres).toFixed(1) : '—'}</td>
-                        <td className="py-1.5 pr-3 text-right whitespace-nowrap tabular-nums">
+                        <td className="px-3 py-1.5 text-right tabular-nums">{l.acres != null ? Number(l.acres).toFixed(1) : '—'}</td>
+                        <td className="px-3 py-1.5 text-right whitespace-nowrap tabular-nums">
                           {l.yield_per_acre != null ? Number(l.yield_per_acre) : '—'}
                           {l.yield_unit && l.yield_per_acre != null && <span className="ml-1 text-xs text-gray-400">{l.yield_unit}</span>}
                         </td>
-                        <td className="py-1.5 pr-3 text-right whitespace-nowrap tabular-nums">{total != null ? Number(total).toLocaleString('en-CA') : '—'}</td>
-                        <td className="py-1.5 pr-3 text-right text-gray-300">—</td>
-                        <td className="py-1.5 pr-3 text-right text-gray-300">—</td>
-                        <td className="py-1.5 text-xs text-gray-500">{l.yield_per_acre == null ? 'not yet' : l.source === 'manual' ? 'typed' : 'scale loads'}</td>
-                        {canEdit && <td className="py-1.5 text-right"><Pencil className="ml-auto h-3.5 w-3.5 text-gray-400" /></td>}
+                        <td className="px-3 py-1.5 text-right whitespace-nowrap tabular-nums">{total != null ? Number(total).toLocaleString('en-CA') : '—'}</td>
+                        <td className="px-3 py-1.5 text-right text-gray-300">—</td>
+                        <td className="px-3 py-1.5 text-right text-gray-300">—</td>
+                        <td className="px-3 py-1.5 text-xs text-gray-500">{l.yield_per_acre == null ? 'not yet' : l.source === 'manual' ? 'typed' : 'scale loads'}</td>
+                        {canEdit && <td className="px-3 py-1.5 text-right"><Pencil className="ml-auto h-3.5 w-3.5 text-gray-400" /></td>}
                       </tr>
                     )
                   })}
@@ -401,8 +401,8 @@ export function FieldYieldHistory({
                   const unit = h.yield_unit ?? ''
                   return (
                     <tr key={h.id} className="border-t border-gray-100 align-top">
-                      <td className="py-1.5 pr-3">{h.crop_year}</td>
-                      <td className="py-1.5 pr-3">
+                      <td className="px-3 py-1.5">{h.crop_year}</td>
+                      <td className="px-3 py-1.5">
                         {cropName(h.crop_id)}
                         {h.variety && <span className="block text-[11px] text-gray-400">{h.variety}</span>}
                         <TraitBadge t={canolaTrait?.(h.crop_id, h.variety) ?? null} />
@@ -421,21 +421,21 @@ export function FieldYieldHistory({
                           />
                         )}
                       </td>
-                      <td className="py-1.5 pr-3 text-right">{cell(h, 'acres', 'w-20')}</td>
-                      <td className="py-1.5 pr-3 text-right whitespace-nowrap">
+                      <td className="px-3 py-1.5 text-right">{cell(h, 'acres', 'w-20')}</td>
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap">
                         {cell(h, 'yield_per_acre', 'w-20')}
                         {unit && <span className="ml-1 text-xs text-gray-400">{unit}</span>}
                         {h.plan_yield_saved && h.clean_yield_per_acre == null && h.yield_per_acre != null && <PlanMark label="Plan uses this (pre-clean)" amber />}
                       </td>
-                      <td className="py-1.5 pr-3 text-right whitespace-nowrap">
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap">
                         {cell(h, 'actual_yield_total', 'w-24')}
                         {unit && <span className="ml-1 text-xs text-gray-400">{unit}</span>}
                       </td>
-                      <td className="py-1.5 pr-3 text-right whitespace-nowrap">
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap">
                         {cell(h, 'clean_yield_per_acre', 'w-20')}
                         {h.plan_yield_saved && h.clean_yield_per_acre != null && <PlanMark label="Plan uses this" />}
                       </td>
-                      <td className="py-1.5 pr-3 text-right whitespace-nowrap">
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap">
                         {cell(h, 'clean_total', 'w-24')}
                         {h.clean_total != null && h.actual_yield_total != null && Number(h.actual_yield_total) > 0 && (
                           <span className="block text-[11px] text-gray-500">
@@ -443,7 +443,7 @@ export function FieldYieldHistory({
                           </span>
                         )}
                       </td>
-                      <td className="py-1.5 text-xs text-gray-500">
+                      <td className="px-3 py-1.5 text-xs text-gray-500">
                         {h.yield_override ? (
                           <>
                             <span className="font-medium text-amber-800">Typed over the scale</span>
@@ -473,7 +473,7 @@ export function FieldYieldHistory({
                         )}
                       </td>
                       {canEdit && (
-                        <td className="whitespace-nowrap py-1.5 pl-2 text-right">
+                        <td className="whitespace-nowrap px-3 py-1.5 text-right">
                           {!locked(h.crop_year) && (
                             <>
                               <button
@@ -511,7 +511,7 @@ export function FieldYieldHistory({
             </table>
           </div>
         ) : (
-          <p className="mt-2 text-sm text-gray-400">No history yet.</p>
+          <p className="mt-2 px-4 text-sm text-gray-400">No history yet.</p>
         )}
         {editingArea && (
           <AreaYieldEditor
@@ -526,14 +526,14 @@ export function FieldYieldHistory({
           />
         )}
         {history.some((h) => yearOpen(h.crop_year)) && (
-          <HelpNote className="mt-2" summary="Type per-acre or total; the other fills in." title="Entering yields">
+          <HelpNote className="mx-4 mt-2" summary="Type per-acre or total; the other fills in." title="Entering yields">
             Type the yield per acre or the total and the other follows from the acres, for both the pre-clean (field-run) yield and
             the yield after clean-out. This season's plan, marketing position and bin estimate use the clean yield once it is
             entered, and the pre-clean one, labelled as such, until then. A figure typed over the scale's is kept until
             "Use the scale figure". Past seasons are locked unless a manager unlocks the year.
           </HelpNote>
         )}
-        {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+        {error && <p className="mt-2 px-4 text-xs text-red-600">{error}</p>}
       </div>
 
       {adding && (

@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { InfoPopover } from '@/components/InfoPopover'
 import { useMarkNotable, useToolFocus } from './context'
 import { money } from '@/lib/format'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 export { money, n0, n1Fixed as n1 } from '@/lib/format'
 export const perLbFmt = (v: number | null | undefined) => (v == null ? '—' : `$${v.toFixed(2)}/lb`)
@@ -197,12 +197,12 @@ export function ToolCard({
 
 export function Table({ head, children, className }: { head: ReactNode[]; children: ReactNode; className?: string }) {
   return (
-    <div className={cn('overflow-x-auto', className)}>
+    <div className={cn('overflow-x-auto rounded-lg border border-gray-200', className)}>
       <table className="w-full text-xs">
         <thead className={TABLE_HEAD}>
           <tr>
             {head.map((h, i) => (
-              <th key={i} className="px-2 py-1 font-medium">
+              <th key={i} className={TABLE_TH}>
                 {h}
               </th>
             ))}
@@ -214,8 +214,8 @@ export function Table({ head, children, className }: { head: ReactNode[]; childr
   )
 }
 
-export const td = 'px-2 py-1 text-gray-700'
-export const tdNum = 'px-2 py-1 text-right tabular-nums text-gray-800'
+export const td = 'px-3 py-1 text-gray-700'
+export const tdNum = 'px-3 py-1 text-right tabular-nums text-gray-800'
 
 export function Muted({ children }: { children: ReactNode }) {
   return <p className="text-xs text-gray-500">{children}</p>

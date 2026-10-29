@@ -16,6 +16,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, mergeConfig, type Plugin, type PluginOption, type UserConfig } from 'vite'
 import appConfig from '../vite.config'
+import { genericSource } from './generic-names'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
@@ -111,6 +112,21 @@ function seo(): Plugin {
   }
 }
 
+/** The app's text names made-up companies instead of real ones (demo/generic-names.ts). */
+function genericNames(): Plugin {
+  const SRC = path.join(ROOT, 'src')
+  return {
+    name: 'rvr-demo-generic-names',
+    enforce: 'pre',
+    transform(code, id) {
+      const file = path.normalize(id.split('?')[0])
+      if (!/\.[jt]sx?$/.test(file) || !(file.startsWith(SRC) || file.startsWith(HERE))) return null
+      const out = genericSource(code, file)
+      return out == null ? null : { code: out, map: null }
+    },
+  }
+}
+
 /** The app's plugins, less the PWA ones (which come as a nested array). */
 function withoutPwa(plugins: PluginOption[] | undefined): PluginOption[] {
   return (plugins ?? []).flat(Infinity as 1).filter((p) => {
@@ -124,7 +140,7 @@ const base = appConfig as UserConfig
 export default defineConfig(
   mergeConfig({ ...base, plugins: withoutPwa(base.plugins) }, {
     root: ROOT,
-    plugins: [swapClient(), seo()],
+    plugins: [swapClient(), genericNames(), seo()],
     build: {
       outDir: path.join(HERE, 'dist'),
       emptyOutDir: true,

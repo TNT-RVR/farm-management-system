@@ -32,7 +32,7 @@ import { localDate } from '@/lib/date-range'
 import { cn } from '@/lib/utils'
 import { cropGrazingSummary, type GrazingRule } from '@/lib/grazing-restrictions'
 import { useLabelGrazingRules } from '@/lib/grazing-restrictions-hooks'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const METHOD_LABEL: Record<string, string> = {
   ground: 'Ground rig only',
@@ -112,7 +112,7 @@ function CropRow({
   if (editing) {
     return (
       <tr className="bg-brand-50/40">
-        <td colSpan={7} className="px-2 py-2">
+        <td colSpan={7} className="px-3 py-2">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <label className="text-[11px] text-gray-500">
               Crop *
@@ -218,24 +218,24 @@ function CropRow({
 
   return (
     <tr className="align-top">
-      <td className="px-2 py-1.5 font-medium text-gray-900">{readable(row.crop)}</td>
+      <td className="px-3 py-1.5 font-medium text-gray-900">{readable(row.crop)}</td>
       {/* Per acre for reading; the label's own per-hectare wording on hover. */}
       <td
-        className="px-2 py-1.5 tabular-nums text-gray-900"
+        className="px-3 py-1.5 tabular-nums text-gray-900"
         title={row.rate && perAcre(row.rate) !== row.rate ? `On the label: ${row.rate}` : undefined}
       >
         {row.rate ? perAcre(row.rate) : '—'}
       </td>
-      <td className="px-2 py-1.5 text-gray-600">{row.pest ? readable(row.pest) : '—'}</td>
-      <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">
+      <td className="px-3 py-1.5 text-gray-600">{row.pest ? readable(row.pest) : '—'}</td>
+      <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
         {row.preharvest_interval_days != null ? `${row.preharvest_interval_days} d` : '—'}
       </td>
-      <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">
+      <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
         {row.replant_interval_days != null ? `${row.replant_interval_days} d` : '—'}
       </td>
-      <td className="px-2 py-1.5 text-gray-600">{row.rotation_restriction ? readable(row.rotation_restriction) : '—'}</td>
+      <td className="px-3 py-1.5 text-gray-600">{row.rotation_restriction ? readable(row.rotation_restriction) : '—'}</td>
       <GrazingCell rules={grazing} reg={reg} crop={row.crop ?? ''} />
-      <td className="px-2 py-1.5 text-gray-600">
+      <td className="px-3 py-1.5 text-gray-600">
         {canEdit && (
           <span className="ml-2 inline-flex gap-1 align-middle">
             <button
@@ -265,11 +265,11 @@ function CropRow({
  * Red when it rules grazing or feeding out altogether.
  */
 function GrazingCell({ rules, reg, crop }: { rules?: GrazingRule[]; reg: string; crop: string }) {
-  if (!rules) return <td className="px-2 py-1.5 text-gray-300">…</td>
+  if (!rules) return <td className="px-3 py-1.5 text-gray-300">…</td>
   const s = crop ? cropGrazingSummary(rules, reg, crop) : null
-  if (!s) return <td className="px-2 py-1.5 text-gray-400">{rules.length ? 'none for this crop' : '—'}</td>
+  if (!s) return <td className="px-3 py-1.5 text-gray-400">{rules.length ? 'none for this crop' : '—'}</td>
   return (
-    <td className={cn('px-2 py-1.5', /not at all/.test(s.text) ? 'font-medium text-red-700' : 'text-amber-800')} title={s.quote ?? undefined}>
+    <td className={cn('px-3 py-1.5', /not at all/.test(s.text) ? 'font-medium text-red-700' : 'text-amber-800')} title={s.quote ?? undefined}>
       {s.text}
       {s.assumed && <span className="text-gray-400"> *</span>}
     </td>
@@ -292,17 +292,17 @@ function CropTable({
 }) {
   const { data: grazing } = useLabelGrazingRules(reg)
   return (
-    <div className="mt-1 overflow-x-auto">
+    <div className="mt-1 overflow-x-auto rounded-lg border border-gray-200">
       <table className="w-full text-sm">
         <thead className={TABLE_HEAD}>
           <tr>
-            <th className="px-2 pb-1 font-medium">Crop</th>
-            <th className="px-2 pb-1 font-medium">Rate</th>
-            <th className="px-2 pb-1 font-medium">Pests</th>
-            <th className="px-2 pb-1 text-right font-medium">Days to harvest</th>
-            <th className="px-2 pb-1 text-right font-medium">Days to replant</th>
-            <th className="px-2 pb-1 font-medium">Cannot follow</th>
-            <th className="px-2 pb-1 font-medium" title="After a spray, from the label: how long before livestock may graze the crop or be fed it. * = the label does not name this crop; its general line is used.">
+            <th className={TABLE_TH}>Crop</th>
+            <th className={TABLE_TH}>Rate</th>
+            <th className={TABLE_TH}>Pests</th>
+            <th className={cn(TABLE_TH, 'text-right')}>Days to harvest</th>
+            <th className={cn(TABLE_TH, 'text-right')}>Days to replant</th>
+            <th className={TABLE_TH}>Cannot follow</th>
+            <th className={TABLE_TH} title="After a spray, from the label: how long before livestock may graze the crop or be fed it. * = the label does not name this crop; its general line is used.">
               Grazing / feeding
             </th>
             <th />

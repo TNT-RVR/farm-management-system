@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, Navigate, useParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Pencil, Plus, Trash2 } from 'lucide-react'
 import { EditButton, rowClick } from '@/components/RecordEditor'
@@ -12,6 +12,7 @@ import { CropPlanterSettings } from '@/pages/crops/CropPlanterSettings'
 import { Fold } from '@/components/Fold'
 import { supabase } from '@/lib/supabase'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
+import { usePartnerCrops } from '@/lib/partner-view'
 import { useCropYear } from '@/lib/crop-year'
 import {
   useCropVarieties,
@@ -788,8 +789,13 @@ export function CropDetailPage() {
   const { profile } = useAuth()
   const { data: crops } = useCrops()
   const crop = crops?.find((c) => c.id === id)
-  const readonly = !hasManagerAccess(profile?.role)
+  // A crop-share partner edits the crops he grows and opens no other; our
+  // input costs and planters stay ours (lib/partner-view.ts).
+  const partnerCrops = usePartnerCrops()
+  const partner = partnerCrops != null
+  const readonly = !hasManagerAccess(profile?.role) && !(id && partnerCrops?.has(id))
 
+  if (partnerCrops && crop && !partnerCrops.has(crop.id)) return <Navigate to="/crops" replace />
   if (!crop) {
     return <div className="p-6 text-sm text-gray-500">{crops ? 'Crop not found.' : 'Loading…'}</div>
   }
@@ -809,7 +815,7 @@ export function CropDetailPage() {
         <VarietiesEditor key={`var-${crop.id}`} crop={crop} readonly={readonly} />
         <CropMoisture key={`moist-${crop.id}`} crop={crop} readonly={readonly} />
         <PriceEditor key={`price-${crop.id}`} crop={crop} readonly={readonly} />
-        <InputsEditor key={`inputs-${crop.id}`} crop={crop} readonly={readonly} />
+        {!partner && <InputsEditor key={`inputs-${crop.id}`} crop={crop} readonly={readonly} />}
         {/* The four stage notes and "Other notes" in one card. */}
         <CropNotes
           key={`notes-${crop.id}-${crop.notes_planting ?? ''}${crop.notes_growing ?? ''}${crop.notes_harvest ?? ''}${crop.notes_storage ?? ''}${crop.cheatsheet_md ?? ''}`}
@@ -820,14 +826,16 @@ export function CropDetailPage() {
             reference rather than something you come here to change. Shown for
             archived crops too — an archived crop is exactly the one whose
             history you are looking up. */}
-        <Fold title="Planter settings" storageKey="crop-planter-settings" className="border-0 bg-transparent" bodyClassName="border-t-0 p-0">
-          <CropPlanterSettings
-            key={`planter-${crop.id}`}
-            cropId={crop.id}
-            cropName={crop.name}
-            readonly={readonly}
-          />
-        </Fold>
+        {!partner && (
+          <Fold title="Planter settings" storageKey="crop-planter-settings" className="border-0 bg-transparent" bodyClassName="border-t-0 p-0">
+            <CropPlanterSettings
+              key={`planter-${crop.id}`}
+              cropId={crop.id}
+              cropName={crop.name}
+              readonly={readonly}
+            />
+          </Fold>
+        )}
         <Fold title="Field history" storageKey="crop-field-history" className="border-0 bg-transparent" bodyClassName="border-t-0 p-0">
           <CropFieldHistory key={`hist-${crop.id}`} cropId={crop.id} cropName={crop.name} />
         </Fold>

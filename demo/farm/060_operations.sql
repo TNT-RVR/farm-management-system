@@ -6,33 +6,33 @@
 insert into public.jd_equipment (id, jd_id, name, category, make, model, equipment_type, serial_number, vin, engine_hours, engine_hours_at, archived, is_manual, notes,
                                  warranty_provider, warranty_starts_on, warranty_expires_on, warranty_hours, warranty_note, created_at)
 values
-  ('0de30000-0000-4000-8000-000000000801', 'demo-eq-01', '8R 370 tractor', 'machine', 'John Deere', '8R 370', 'Tractor', '1RW8370RXMD012345', null, 3420, now() - interval '2 days', false, true,
-   'Main drill tractor. Duals on for seeding, off for the grain cart.', 'Valley Equipment Ltd.', current_date - 1300, current_date - 200, 3000, 'Base warranty ended; PowerGard extension not bought.', now() - interval '3 years'),
-  ('0de30000-0000-4000-8000-000000000802', 'demo-eq-02', '7230R loader tractor', 'machine', 'John Deere', '7230R', 'Tractor', '1RW7230RCJD054321', null, 6855, now() - interval '1 day', false, true,
+  ('0de30000-0000-4000-8000-000000000801', 'demo-eq-01', 'T370 tractor', 'machine', 'Prairieline', 'T370', 'Tractor', '1RW8370RXMD012345', null, 3420, now() - interval '2 days', false, true,
+   'Main drill tractor. Duals on for seeding, off for the grain cart.', 'Valley Equipment Ltd.', current_date - 1300, current_date - 200, 3000, 'Base warranty ended; extended warranty not bought.', now() - interval '3 years'),
+  ('0de30000-0000-4000-8000-000000000802', 'demo-eq-02', 'T230 loader tractor', 'machine', 'Prairieline', 'T230', 'Tractor', '1RWT230CJD054321', null, 6855, now() - interval '1 day', false, true,
    'Loader tractor: bale feeding, snow, the auger.', null, null, null, null, null, now() - interval '3 years'),
-  ('0de30000-0000-4000-8000-000000000803', 'demo-eq-03', 'S780 combine', 'machine', 'John Deere', 'S780', 'Combine', '1H0S780SCL0765432', null, 2148, now() - interval '1 day', false, true,
+  ('0de30000-0000-4000-8000-000000000803', 'demo-eq-03', 'C780 combine', 'machine', 'Prairieline', 'C780', 'Combine', '1H0C780SCL0765432', null, 2148, now() - interval '1 day', false, true,
    'Separator hours about 1,560. Concaves changed two seasons ago.', null, null, null, null, null, now() - interval '3 years'),
-  ('0de30000-0000-4000-8000-000000000804', 'demo-eq-04', 'R4045 sprayer', 'machine', 'John Deere', 'R4045', 'Sprayer', '1N04045RVPN098765', null, 1012, now() - interval '3 days', false, true,
-   '120 ft boom, ExactApply. Rinse tank after every Group 2 product.', 'Valley Equipment Ltd.', current_date - 520, current_date + 210, 3000, 'Three years or 3,000 hours, whichever comes first.', now() - interval '2 years'),
-  ('0de30000-0000-4000-8000-000000000805', 'demo-eq-05', 'M1170 windrower', 'machine', 'MacDon', 'M1170', 'Windrower', 'MD1170-22-03311', null, 1255, now() - interval '20 days', false, true,
+  ('0de30000-0000-4000-8000-000000000804', 'demo-eq-04', 'SP120 sprayer', 'machine', 'Prairieline', 'SP120', 'Sprayer', '1N04045RVPN098765', null, 1012, now() - interval '3 days', false, true,
+   '120 ft boom, nozzle-by-nozzle control. Rinse tank after every Group 2 product.', 'Valley Equipment Ltd.', current_date - 520, current_date + 210, 3000, 'Three years or 3,000 hours, whichever comes first.', now() - interval '2 years'),
+  ('0de30000-0000-4000-8000-000000000805', 'demo-eq-05', 'W117 windrower', 'machine', 'Prairieline', 'W117', 'Windrower', 'MD1170-22-03311', null, 1255, now() - interval '20 days', false, true,
    'Hay and swathed canola. 35 ft draper header.', null, null, null, null, null, now() - interval '3 years'),
-  ('0de30000-0000-4000-8000-000000000806', 'demo-eq-06', 'Kenworth T800 semi', 'machine', 'Kenworth', 'T800', 'Truck', null, '1XKDD49X5KJ456789', 9840, now() - interval '3 days', false, true,
-   'Pulls the Doepker tridem grain trailer. CVIP due in spring.', null, null, null, null, null, now() - interval '3 years'),
-  ('0de30000-0000-4000-8000-000000000807', 'demo-eq-07', 'Truck 2 (IH tandem)', 'machine', 'International', '4900', 'Truck', null, '1HTSHAAR1WH567890', 11230, now() - interval '5 days', false, true,
+  ('0de30000-0000-4000-8000-000000000806', 'demo-eq-06', 'H800 semi', 'machine', 'Roadline', 'H800', 'Truck', null, '1XKDD49X5KJ456789', 9840, now() - interval '3 days', false, true,
+   'Pulls the tridem grain trailer. CVIP due in spring.', null, null, null, null, null, now() - interval '3 years'),
+  ('0de30000-0000-4000-8000-000000000807', 'demo-eq-07', 'Truck 2 (tandem)', 'machine', 'Roadline', '4900', 'Truck', null, '1HTSHAAR1WH567890', 11230, now() - interval '5 days', false, true,
    'Old faithful. 20 ft box with a roll tarp.', null, null, null, null, null, now() - interval '3 years'),
-  ('0de30000-0000-4000-8000-000000000808', 'demo-eq-08', 'Truck 3 (Freightliner tandem)', 'machine', 'Freightliner', 'M2 106', 'Truck', null, '1FVHG3DV7EHF67890', 7410, now() - interval '5 days', false, true,
+  ('0de30000-0000-4000-8000-000000000808', 'demo-eq-08', 'Truck 3 (tandem)', 'machine', 'Roadline', 'M106', 'Truck', null, '1FVHG3DV7EHF67890', 7410, now() - interval '5 days', false, true,
    null, null, null, null, null, null, now() - interval '3 years'),
-  ('0de30000-0000-4000-8000-000000000809', 'demo-eq-09', 'Bourgault 3320 drill', 'implement', 'Bourgault', '3320 PHD', 'Air drill', 'B3320-60-11842', null, null, null, false, true,
+  ('0de30000-0000-4000-8000-000000000809', 'demo-eq-09', 'AD60 air drill', 'implement', 'Prairieline', 'AD60', 'Air drill', 'B3320-60-11842', null, null, null, false, true,
    '60 ft, 10 in spacing. Mid-row banders for nitrogen.', null, null, null, null, null, now() - interval '3 years'),
-  ('0de30000-0000-4000-8000-000000000810', 'demo-eq-10', 'Bourgault 7950 air cart', 'implement', 'Bourgault', '7950', 'Air cart', 'B7950-15523', null, null, null, false, true,
+  ('0de30000-0000-4000-8000-000000000810', 'demo-eq-10', 'AC795 air cart', 'implement', 'Prairieline', 'AC795', 'Air cart', 'B7950-15523', null, null, null, false, true,
    'Four tanks; tank 4 is the inoculant tank for peas.', null, null, null, null, null, now() - interval '3 years'),
-  ('0de30000-0000-4000-8000-000000000811', 'demo-eq-11', 'FD145 draper header', 'implement', 'MacDon', 'FD145', 'Header', 'FD145-19-22871', null, null, null, false, true,
+  ('0de30000-0000-4000-8000-000000000811', 'demo-eq-11', 'D45 draper header', 'implement', 'Prairieline', 'D45', 'Header', 'FD145-19-22871', null, null, null, false, true,
    '45 ft flex draper for straight-cut canola and peas.', null, null, null, null, null, now() - interval '3 years'),
-  ('0de30000-0000-4000-8000-000000000812', 'demo-eq-12', 'Grain cart', 'implement', 'Brent', '1196', 'Grain cart', 'BR1196-08812', null, null, null, false, true,
+  ('0de30000-0000-4000-8000-000000000812', 'demo-eq-12', 'Grain cart', 'implement', 'Prairieline', 'GC1196', 'Grain cart', 'BR1196-08812', null, null, null, false, true,
    '1,100 bu. Scale on the cart is within 1% of the elevator.', null, null, null, null, null, now() - interval '3 years'),
-  ('0de30000-0000-4000-8000-000000000813', 'demo-eq-13', 'StarFire 7500 receiver', 'technology', 'John Deere', 'StarFire 7500', 'GPS receiver', 'PCGT75A123456', null, null, null, false, true,
+  ('0de30000-0000-4000-8000-000000000813', 'demo-eq-13', 'G75 receiver', 'technology', 'Prairieline', 'G75', 'GPS receiver', 'PCGT75A123456', null, null, null, false, true,
    'SF3 correction. Moves between the 8R and the sprayer.', null, null, null, null, null, now() - interval '2 years'),
-  ('0de30000-0000-4000-8000-000000000814', 'demo-eq-14', 'Ranch pickup', 'other', 'Ford', 'F-350', 'Pickup', null, '1FT8W3BT1NEC12345', null, null, false, true,
+  ('0de30000-0000-4000-8000-000000000814', 'demo-eq-14', 'Ranch pickup', 'other', 'Roadline', 'P350', 'Pickup', null, '1FT8W3BT1NEC12345', null, null, false, true,
    'Bale deck. 186,000 km.', null, null, null, null, null, now() - interval '3 years');
 
 insert into public.equipment_service_plans (id, equipment_id, name, interval_hours, interval_months, last_done_hours, last_done_on, warn_within_hours, notes, active) values
@@ -64,9 +64,9 @@ insert into public.jd_equipment_alerts (jd_id, equipment_jd_id, occurred_at, sev
 
 -- Legacy equipment list (checklists hang off it).
 insert into public.equipment (id, name, type, make, model, year, serial, notes_md, active) values
-  ('0de30000-0000-4000-8000-000000000851', 'S780 combine', 'Combine', 'John Deere', 'S780', extract(year from current_date)::int - 6, '1H0S780SCL0765432', null, true),
-  ('0de30000-0000-4000-8000-000000000852', 'R4045 sprayer', 'Sprayer', 'John Deere', 'R4045', extract(year from current_date)::int - 3, '1N04045RVPN098765', null, true),
-  ('0de30000-0000-4000-8000-000000000853', 'Creek pivots', 'Pivot', 'Valley / Zimmatic', null, null, null, 'The three pivots on the creek pump station.', true);
+  ('0de30000-0000-4000-8000-000000000851', 'C780 combine', 'Combine', 'Prairieline', 'C780', extract(year from current_date)::int - 6, '1H0C780SCL0765432', null, true),
+  ('0de30000-0000-4000-8000-000000000852', 'SP120 sprayer', 'Sprayer', 'Prairieline', 'SP120', extract(year from current_date)::int - 3, '1N04045RVPN098765', null, true),
+  ('0de30000-0000-4000-8000-000000000853', 'Creek pivots', 'Pivot', 'Prairieline', null, null, null, 'The three pivots on the creek pump station.', true);
 
 -- Fuel: bulk deliveries to the yard tanks over two years.
 insert into public.fuel_purchases (supplier, invoice_no, invoice_date, product, description, litres, price_per_l, amount, checked, source, created_by)
@@ -112,7 +112,7 @@ from (values
   ('0de30000-0000-4000-8000-000000000614', 'Run the fan on bin #1 overnight', 'Canola came in at 10.8%. Fan until it reads under 10.', null, null, 0, 'open', null, null, null, null),
   ('0de30000-0000-4000-8000-000000000615', 'Renew the Miller Half lease', 'Five-year lease ends this fall. Evelyn is happy to renew at the same rent.', '0de30000-0000-4000-8000-000000000111', null, 25, 'open', null, null, null, null),
   ('0de30000-0000-4000-8000-000000000616', 'Clean out the seed shed', null, null, null, null, 'open', null, null, null, null),
-  ('0de30000-0000-4000-8000-000000000621', 'Desiccate the peas on West Half', 'Reglone, 1.1 L/ac in 20 gal water.', '0de30000-0000-4000-8000-000000000107', '0de30000-0000-4000-8000-0000000000a1', -64, 'done', 63, '0de30000-0000-4000-8000-0000000000a2', null, null),
+  ('0de30000-0000-4000-8000-000000000621', 'Desiccate the peas on West Half', 'Diquat 240, 1.1 L/ac in 20 gal water.', '0de30000-0000-4000-8000-000000000107', '0de30000-0000-4000-8000-0000000000a1', -64, 'done', 63, '0de30000-0000-4000-8000-0000000000a2', null, null),
   ('0de30000-0000-4000-8000-000000000622', 'Cut and bale second-cut hay on Hay Flat', null, '0de30000-0000-4000-8000-000000000104', null, -55, 'done', 52, '0de30000-0000-4000-8000-0000000000a3', null, null),
   ('0de30000-0000-4000-8000-000000000623', 'Book the combine pre-harvest inspection', null, null, null, -75, 'done', 73, '0de30000-0000-4000-8000-0000000000a1', null, '0de30000-0000-4000-8000-000000000803'),
   ('0de30000-0000-4000-8000-000000000624', 'Pre-harvest glyphosate on Miller Half', 'Wheat at 30% kernel moisture.', '0de30000-0000-4000-8000-000000000111', '0de30000-0000-4000-8000-0000000000a1', -35, 'done', 33, '0de30000-0000-4000-8000-0000000000a2', null, null),

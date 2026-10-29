@@ -5,6 +5,8 @@ import { ShortcutMark } from '@/components/layout/SeasonSidebar'
 import {
   MENU_SECTIONS,
   PHONE_BAR_SLOTS,
+  BAR_TOOLS,
+  BAR_TOOL_LABEL,
   allItems,
   isLeaf,
   menuEnabled,
@@ -95,8 +97,9 @@ export function MenuPanel() {
     commit({ ...prefs, [orderFor]: { ...was, order: moveSection(fullOrder, visibleKeys, key, by) } })
   }
 
-  // Phone bar: any section or view they may open.
+  // Phone bar: Search, Add or Menu, or any section or view they may open.
   const barOptions: SelectOption[] = [
+    ...BAR_TOOLS.map((k) => ({ value: k, label: BAR_TOOL_LABEL[k], group: 'Buttons' })),
     ...[...phone.sections, ...phone.pinned].map((s) => ({ value: s.key, label: s.label, group: 'Sections' })),
     ...allItems()
       .filter((i) => phone.canSee(i.view))
@@ -110,7 +113,7 @@ export function MenuPanel() {
     const other = next.indexOf(key)
     if (other >= 0) next[other] = next[slot]
     next[slot] = key
-    commit({ ...prefs, phone: { ...(prefs.phone ?? {}), bar: next.filter(Boolean) } })
+    commit({ ...prefs, phone: { ...(prefs.phone ?? {}), buttons: next.filter(Boolean) } })
   }
 
   const oldMenu = !menuEnabled(prefs)
@@ -216,8 +219,8 @@ export function MenuPanel() {
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
         <h2 className={cn('font-medium', CARD_HEAD)}>Phone bar</h2>
         <div className="p-4">
-        <p className="mb-2 text-xs text-gray-500">The four buttons along the bottom of your phone, before More.</p>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <p className="mb-2 text-xs text-gray-500">The five buttons along the bottom of your phone, left to right. Menu always stays on.</p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           {Array.from({ length: PHONE_BAR_SLOTS }, (_, slot) => (
             <Select key={slot} value={bar[slot] ?? ''} options={barOptions} onChange={(v) => pickSlot(slot, v)} ariaLabel={`Phone bar button ${slot + 1}`} />
           ))}

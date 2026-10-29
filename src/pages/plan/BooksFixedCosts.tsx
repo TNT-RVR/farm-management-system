@@ -25,7 +25,7 @@ import {
 import { cn } from '@/lib/utils'
 import { powerByUse } from '@/lib/irrigation-power-core'
 import { usePowerBillSites } from '@/lib/power-bills'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const money0 = (v: number) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
 const when = (iso: string) => new Date(iso).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -167,16 +167,16 @@ export function BooksFixedCosts({ year, locked, setting }: { year: number; locke
             </label>
           </div>
 
-          <div className="mt-2 overflow-x-auto">
+          <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
             <table className="w-full min-w-[520px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="py-1 font-medium">Part</th>
-                  <th className="py-1 text-right font-medium">Books</th>
-                  <th className="py-1 text-right font-medium">Fee off</th>
-                  <th className="py-1 text-right font-medium">Crops&apos; share</th>
-                  <th className="py-1 text-right font-medium">Saved now</th>
-                  <th className="py-1 text-right font-medium">Change</th>
+                  <th className={TABLE_TH}>Part</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Books</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Fee off</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Crops&apos; share</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Saved now</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Change</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 tabular-nums">
@@ -186,23 +186,23 @@ export function BooksFixedCosts({ year, locked, setting }: { year: number; locke
                   const diff = now == null ? null : p.crops - now
                   return (
                     <tr key={c.key}>
-                      <td className="py-1.5 pr-2 text-gray-800">{c.label}</td>
-                      <td className="py-1.5 text-right text-gray-700">{money0(p.total)}</td>
-                      <td className="py-1.5 text-right text-gray-500">{p.fee ? `−${money0(p.fee)}` : '—'}</td>
-                      <td className="py-1.5 text-right font-medium text-gray-900">{money0(p.crops)}</td>
-                      <td className="py-1.5 text-right text-gray-500">{now == null ? '—' : money0(now)}</td>
-                      <td className={cn('py-1.5 text-right', diff == null || Math.abs(diff) < 1 ? 'text-gray-400' : diff > 0 ? 'text-red-700' : 'text-green-700')}>
+                      <td className="px-3 py-1.5 text-gray-800">{c.label}</td>
+                      <td className="px-3 py-1.5 text-right text-gray-700">{money0(p.total)}</td>
+                      <td className="px-3 py-1.5 text-right text-gray-500">{p.fee ? `−${money0(p.fee)}` : '—'}</td>
+                      <td className="px-3 py-1.5 text-right font-medium text-gray-900">{money0(p.crops)}</td>
+                      <td className="px-3 py-1.5 text-right text-gray-500">{now == null ? '—' : money0(now)}</td>
+                      <td className={cn('px-3 py-1.5 text-right', diff == null || Math.abs(diff) < 1 ? 'text-gray-400' : diff > 0 ? 'text-red-700' : 'text-green-700')}>
                         {diff == null ? '—' : Math.abs(diff) < 1 ? 'same' : `${diff > 0 ? '+' : '−'}${money0(Math.abs(diff))}`}
                       </td>
                     </tr>
                   )
                 })}
                 <tr>
-                  <td className="py-1.5 font-semibold text-gray-900" colSpan={3}>
+                  <td className="px-3 py-1.5 font-semibold text-gray-900" colSpan={3}>
                     Fixed expenses, crops&apos; share
                   </td>
-                  <td className="py-1.5 text-right font-semibold text-gray-900">{money0(totalCrops)}</td>
-                  <td colSpan={2} className="py-1.5 text-right text-xs text-gray-500">
+                  <td className="px-3 py-1.5 text-right font-semibold text-gray-900">{money0(totalCrops)}</td>
+                  <td colSpan={2} className="px-3 py-1.5 text-right text-xs text-gray-500">
                     {setting?.spread_acres ? `≈ ${money2(totalCrops / Number(setting.spread_acres))}/ac over ${Math.round(Number(setting.spread_acres)).toLocaleString('en-CA')} ac` : ''}
                   </td>
                 </tr>

@@ -14,7 +14,7 @@ import { useTab } from '@/lib/useTab'
 import { SolarPage } from '@/pages/SolarPage'
 import { GasBills } from '@/pages/utilities/GasBills'
 import { PowerBills } from '@/pages/utilities/PowerBills'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const TABS = ['solar', 'power', 'gas'] as const
 type Tab = (typeof TABS)[number]
@@ -30,7 +30,7 @@ type Tab = (typeof TABS)[number]
 export function UtilitiesPage() {
   const solarOn = useFeature('solar')
   const tabs = solarOn ? TABS : (['power', 'gas'] as const)
-  const [tab, setTab] = useTab<Tab>('utilities', tabs, solarOn ? 'solar' : 'power')
+  const [tab, setTab] = useTab<Tab>('utilities', tabs)
   return (
     <div className="mx-auto max-w-4xl space-y-3 p-4 md:p-6">
       <PageHeader title="Utilities" icon={<Plug className="h-5 w-5 text-brand-700" />} subtitle="Solar, power and natural gas" />
@@ -146,8 +146,8 @@ function PowerTab() {
 
       <PowerBills />
 
-      <section className="rounded-lg border border-gray-200 bg-white p-3">
-        <div className="mb-2 flex items-center gap-1">
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div className="flex items-center gap-1 px-3 pb-2 pt-3">
           <h2 className="text-sm font-semibold text-gray-900">Pump meters</h2>
           <InfoPopover title="The pumps' power meters">
             <p>
@@ -160,11 +160,11 @@ function PowerTab() {
           <table className="w-full min-w-[480px] text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="py-1 pr-3 font-medium">Pump</th>
-                <th className="py-1 pr-3 font-medium">HP</th>
-                <th className="py-1 pr-3 font-medium">Utility</th>
-                <th className="py-1 pr-3 font-medium">Meter #</th>
-                <th className="py-1 font-medium">Last reading</th>
+                <th className={TABLE_TH}>Pump</th>
+                <th className={TABLE_TH}>HP</th>
+                <th className={TABLE_TH}>Utility</th>
+                <th className={TABLE_TH}>Meter #</th>
+                <th className={TABLE_TH}>Last reading</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -174,17 +174,17 @@ function PowerTab() {
                   // The whole row opens the pump's record on Pump Information,
                   // expanded and scrolled to (Sam, 7 Oct 2026).
                   <tr key={p.id} className="cursor-pointer hover:bg-gray-50" onClick={rowClick(() => navigate(`/irrigation-info?tab=pump&pump=${p.id}`))}>
-                    <td className="py-1.5 pr-3 text-gray-900">
+                    <td className="px-3 py-1.5 text-gray-900">
                       <Link to={`/irrigation-info?tab=pump&pump=${p.id}`} className="hover:text-brand-700 hover:underline">
                         {p.name}
                       </Link>
                     </td>
-                    <td className="py-1.5 pr-3 tabular-nums text-gray-700">{p.horse_power ?? '—'}</td>
-                    <td className="py-1.5 pr-3 text-gray-700">{p.power_utility ?? '—'}</td>
-                    <td className="py-1.5 pr-3 tabular-nums text-gray-700">
+                    <td className="px-3 py-1.5 tabular-nums text-gray-700">{p.horse_power ?? '—'}</td>
+                    <td className="px-3 py-1.5 text-gray-700">{p.power_utility ?? '—'}</td>
+                    <td className="px-3 py-1.5 tabular-nums text-gray-700">
                       {p.power_meter_number ?? (shares ? <span className="text-gray-500">on {shares.name}&apos;s meter</span> : <span className="text-amber-700">not entered</span>)}
                     </td>
-                    <td className="py-1.5 tabular-nums text-gray-700">
+                    <td className="px-3 py-1.5 tabular-nums text-gray-700">
                       {p.power_meter_reading_kwh != null
                         ? `${Number(p.power_meter_reading_kwh).toLocaleString('en-CA')} kWh${p.power_meter_read_on ? ` · ${p.power_meter_read_on}` : ''}`
                         : '—'}
@@ -195,7 +195,7 @@ function PowerTab() {
             </tbody>
           </table>
         </div>
-        <Link to="/irrigation-info?tab=pump" className="mt-2 inline-block text-xs font-medium text-brand-700 hover:underline">
+        <Link to="/irrigation-info?tab=pump" className="inline-block px-3 py-2 text-xs font-medium text-brand-700 hover:underline">
           Pump Information →
         </Link>
       </section>

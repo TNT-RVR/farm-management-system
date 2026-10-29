@@ -11,7 +11,7 @@ import { useFieldSeasons } from '@/lib/irrigation'
 import { conv, depthToMm, type UnitSystem } from '@/lib/units'
 import { cn } from '@/lib/utils'
 import { RainGaugeManager, RainReadingsList } from './RainGauges'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const md = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
 const mdt = (ts: string) =>
@@ -313,32 +313,34 @@ export function PivotBlock({ fieldId, year, u }: { fieldId: string; year: number
         </p>
       )}
       {data.passes.length > 0 && (
-        <div className="overflow-x-auto">
+        <div>
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full min-w-[420px]">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="py-0.5 font-medium">Started</th>
-                <th className="py-0.5 font-medium">Ran</th>
-                <th className="py-0.5 text-right font-medium">Depth</th>
-                <th className="py-0.5 pl-3 font-medium">Ended</th>
+                <th className={TABLE_TH}>Started</th>
+                <th className={TABLE_TH}>Ran</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Depth</th>
+                <th className={TABLE_TH}>Ended</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {shown.map((p) => (
                 <tr key={p.id} className={cn(p.completed === false && 'bg-amber-50')}>
-                  <td className="py-0.5 text-gray-700">{mdt(p.started_at)}</td>
-                  <td className="py-0.5 text-gray-600">
+                  <td className="px-3 py-0.5 text-gray-700">{mdt(p.started_at)}</td>
+                  <td className="px-3 py-0.5 text-gray-600">
                     {p.start_deg != null && p.end_deg != null ? `${Math.round(p.start_deg)}° → ${Math.round(p.end_deg)}°` : '—'}
                     {p.swept_deg != null && <span className="text-gray-400"> ({Math.round(p.swept_deg)}°)</span>}
                   </td>
-                  <td className="py-0.5 text-right tabular-nums">{p.depth_mm != null ? `${conv.depth(p.depth_mm, u)} ${unit}` : '—'}</td>
-                  <td className={cn('py-0.5 pl-3', p.completed === false ? 'font-medium text-amber-800' : 'text-gray-500')}>
+                  <td className="px-3 py-0.5 text-right tabular-nums">{p.depth_mm != null ? `${conv.depth(p.depth_mm, u)} ${unit}` : '—'}</td>
+                  <td className={cn('px-3 py-0.5', p.completed === false ? 'font-medium text-amber-800' : 'text-gray-500')}>
                     {p.ended_at ? `${(p.end_status ?? '').replace(/-/g, ' ')}${p.completed === false ? ' — stopped short' : ''}` : 'still running'}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
           {data.passes.length > 6 && (
             <button type="button" onClick={() => setAll((a) => !a)} className="mt-1 text-[11px] text-brand-700 underline">
               {all ? 'show fewer' : `show all ${data.passes.length}`}

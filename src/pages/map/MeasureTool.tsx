@@ -19,8 +19,11 @@ import { cn } from '@/lib/utils'
  * Measuring off the map.
  *
  * Click the corners; it gives the distance along them and, from three corners
- * on, the area they enclose. Double-click or Enter finishes, Escape clears,
- * Backspace takes back the last corner.
+ * on, the area they enclose. Clicking an earlier corner again closes the shape
+ * (it turns blue and the perimeter takes in the closing side); clicking the
+ * last corner again, a double-click or Enter finishes it as a line. Escape
+ * clears, Backspace takes back the last corner. Once finished, a corner can be
+ * dragged to move it or clicked to take it out (Sam, 29 Oct 2026).
  *
  * BOTH NUMBERS AT ONCE, rather than a distance tool and an area tool. The
  * question is usually both at the same time — how far along that headland, and
@@ -34,6 +37,10 @@ import { cn } from '@/lib/utils'
  */
 const SRC = 'measure'
 const UNIT_KEY = 'rvr.measure.units'
+const DRAWING = '#f59e0b'
+const CLOSED = '#2563eb'
+/** How far (px) a press on a corner has to travel before it is a drag rather than a click. */
+const DRAG_PX = 4
 
 type Units = { distance: DistanceUnit; area: AreaUnit }
 
@@ -77,6 +84,14 @@ export function MeasureTool({
   useEffect(() => {
     doneRef.current = done
   }, [done])
+  /** The shape was closed by clicking back onto a corner: blue, and the perimeter includes the closing side. */
+  const [closed, setClosed] = useState(false)
+  /** The cursor is over an earlier corner: a click there would close the shape, so it is shown closed (blue) before the click. */
+  const [closing, setClosing] = useState(false)
+  const pointsRef = useRef<Position[]>([])
+  useEffect(() => {
+    pointsRef.current = points
+  }, [points])
 
   useEffect(() => {
     try {
@@ -90,13 +105,51 @@ export function MeasureTool({
   // own click behaviour is untouched the rest of the time.
   useEffect(() => {
     if (!map || !mapReady) return
+    const canvas = map.getCanvas()
+
+    /** The corners under a screen point (8 px either way): their indexes. */
+    const cornersAt = (p: maplibregl.Point): number[] =>
+      map.getLayer('measure-point')
+        ? map
+            .queryRenderedFeatures(
+              [
+                [p.x - 8, p.y - 8],
+                [p.x + 8, p.y + 8],
+              ],
+              { layers: ['measure-point'] },
+            )
+            .map((f) => Number(f.properties?.index))
+        : []
+    /** An earlier corner (not the one just placed) with a shape's worth of corners down: a click would close it. */
+    const wouldClose = (hit: number[]) => {
+      const n = pointsRef.current.length
+      return n >= 3 && hit.some((i) => i < n - 1)
+    }
 
     const onClick = (e: maplibregl.MapMouseEvent) => {
       if (doneRef.current) return
+      // Back onto a corner already placed: an earlier one closes the shape,
+      // the last one (the second click of a double-click, too) ends the line.
+      const hit = cornersAt(e.point)
+      if (hit.length) {
+        if (wouldClose(hit)) setClosed(true)
+        if (pointsRef.current.length >= 2) {
+          setDone(true)
+          setHover(null)
+          setClosing(false)
+        }
+        return
+      }
       setPoints((p) => [...p, [e.lngLat.lng, e.lngLat.lat]])
     }
     const onMove = (e: maplibregl.MapMouseEvent) => {
       if (doneRef.current) return
+      // Over an earlier corner the shape shows closed — blue, with its
+      // closing side — before the click, so it is plain whether a click there
+      // closes it or the cursor is just off the corner.
+      const snap = wouldClose(cornersAt(e.point))
+      setClosing(snap)
+      canvas.style.cursor = snap ? 'pointer' : 'crosshair'
       setHover([e.lngLat.lng, e.lngLat.lat])
     }
     // Finishing on a double-click is the convention everywhere else that draws
@@ -111,6 +164,8 @@ export function MeasureTool({
         setPoints([])
         setHover(null)
         setDone(false)
+        setClosed(false)
+        setClosing(false)
       } else if (e.key === 'Enter') {
         setDone(true)
         setHover(null)
@@ -118,10 +173,10 @@ export function MeasureTool({
         e.preventDefault()
         setPoints((p) => p.slice(0, -1))
         setDone(false)
+        setClosed(false)
       }
     }
 
-    const canvas = map.getCanvas()
     const cursor = canvas.style.cursor
     canvas.style.cursor = 'crosshair'
     map.doubleClickZoom.disable()
@@ -142,6 +197,56 @@ export function MeasureTool({
         if (map.getCanvas()) map.doubleClickZoom.enable()
       }, 0)
       canvas.style.cursor = cursor
+    }
+  }, [map, mapReady])
+
+  // Editing a finished shape: press a corner and drag to move it, or press and
+  // let go where it is to take it out. The press stops the map panning, so the
+  // drag moves the corner rather than the map.
+  useEffect(() => {
+    if (!map || !mapReady) return
+    const canvas = map.getCanvas()
+    const onDown = (e: maplibregl.MapLayerMouseEvent | maplibregl.MapLayerTouchEvent) => {
+      if (!doneRef.current) return
+      const idx = Number(e.features?.[0]?.properties?.index)
+      if (!Number.isInteger(idx)) return
+      e.preventDefault()
+      const start = e.point
+      let moved = false
+      const onMove = (ev: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
+        if (!moved && Math.hypot(ev.point.x - start.x, ev.point.y - start.y) < DRAG_PX) return
+        moved = true
+        setPoints((p) => p.map((q, i) => (i === idx ? [ev.lngLat.lng, ev.lngLat.lat] : q)))
+      }
+      const touch = e.type === 'touchstart'
+      const onUp = () => {
+        map.off(touch ? 'touchmove' : 'mousemove', onMove)
+        if (moved) return
+        const left = pointsRef.current.length - 1
+        setPoints((p) => p.filter((_, i) => i !== idx))
+        // Under three corners there is no shape left to be closed; with none
+        // left, the tape is back to waiting for a first click.
+        if (left < 3) setClosed(false)
+        if (left === 0) setDone(false)
+      }
+      map.on(touch ? 'touchmove' : 'mousemove', onMove)
+      map.once(touch ? 'touchend' : 'mouseup', onUp)
+    }
+    const onEnter = () => {
+      if (doneRef.current) canvas.style.cursor = 'move'
+    }
+    const onLeave = () => {
+      canvas.style.cursor = 'crosshair'
+    }
+    map.on('mousedown', 'measure-point', onDown)
+    map.on('touchstart', 'measure-point', onDown)
+    map.on('mouseenter', 'measure-point', onEnter)
+    map.on('mouseleave', 'measure-point', onLeave)
+    return () => {
+      map.off('mousedown', 'measure-point', onDown)
+      map.off('touchstart', 'measure-point', onDown)
+      map.off('mouseenter', 'measure-point', onEnter)
+      map.off('mouseleave', 'measure-point', onLeave)
     }
   }, [map, mapReady])
 
@@ -198,7 +303,14 @@ export function MeasureTool({
   // What is on it, redrawn as the corners come in.
   useEffect(() => {
     if (!map || !mapReady) return
-    const line = hover && !done ? [...points, hover] : points
+    const shut = closed || (closing && !done)
+    const line = shut ? [...points, points[0]] : hover && !done ? [...points, hover] : points
+    const colour = shut ? CLOSED : DRAWING
+    if (map.getLayer('measure-fill')) {
+      map.setPaintProperty('measure-fill', 'fill-color', colour)
+      map.setPaintProperty('measure-line', 'line-color', colour)
+      map.setPaintProperty('measure-point', 'circle-color', colour)
+    }
     const data = {
       type: 'FeatureCollection' as const,
       features: [
@@ -218,7 +330,7 @@ export function MeasureTool({
                 properties: { kind: 'area' },
                 geometry: {
                   type: 'Polygon' as const,
-                  coordinates: [[...line, line[0]]],
+                  coordinates: [shut ? line : [...line, line[0]]],
                 },
               },
             ]
@@ -233,19 +345,20 @@ export function MeasureTool({
 
     const src = map.getSource(SRC) as maplibregl.GeoJSONSource | undefined
     src?.setData(data)
-  }, [map, mapReady, points, hover, done])
+  }, [map, mapReady, points, hover, done, closed, closing])
 
-  const live = hover && !done ? [...points, hover] : points
-  const total = pathLengthM(live)
+  const shut = closed || (closing && !done)
+  const live = shut ? points : hover && !done ? [...points, hover] : points
+  const total = pathLengthM(shut ? [...points, points[0]] : live)
   const area = pathAreaM2(live)
   const lastLeg =
     live.length >= 2 ? haversineM(live[live.length - 2], live[live.length - 1]) : null
 
   return (
-    <div className="absolute bottom-3 left-2 z-10 w-64 rounded-lg border border-amber-300 bg-white/95 p-3 shadow-lg backdrop-blur">
+    <div className={cn('absolute bottom-3 left-2 z-10 w-64 rounded-xl border bg-white/85 p-3 shadow-lg backdrop-blur-md', shut ? 'border-blue-300' : 'border-amber-300')}>
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
-          <Ruler className="h-4 w-4 text-amber-600" /> Measure
+          <Ruler className={cn('h-4 w-4', shut ? 'text-blue-600' : 'text-amber-600')} /> Measure
         </h2>
         <button
           onClick={onClose}
@@ -258,17 +371,19 @@ export function MeasureTool({
 
       {points.length === 0 ? (
         <p className="mt-2 text-xs text-gray-500">
-          Click the corners. Double-click to finish, Escape to start over.
+          Click the corners. Click the first corner again to close the shape.
         </p>
       ) : (
         <dl className="mt-2 space-y-1.5">
+          {done && <p className="text-[11px] text-gray-500">Drag a corner to move it, or tap it to remove it.</p>}
+          {closing && !done && <p className="text-[11px] font-medium text-blue-600">Click to close the shape.</p>}
           <div className="flex items-baseline justify-between gap-2">
-            <dt className="text-xs text-gray-500">Distance</dt>
+            <dt className="text-xs text-gray-500">{shut ? 'Perimeter' : 'Distance'}</dt>
             <dd className="font-semibold tabular-nums text-gray-900">
               {formatDistance(total, units.distance)}
             </dd>
           </div>
-          {lastLeg != null && live.length > 2 && (
+          {lastLeg != null && live.length > 2 && !done && !shut && (
             <div className="flex items-baseline justify-between gap-2">
               <dt className="text-xs text-gray-400">Last leg</dt>
               <dd className="text-xs tabular-nums text-gray-500">
@@ -326,6 +441,8 @@ export function MeasureTool({
           onClick={() => {
             setPoints((p) => p.slice(0, -1))
             setDone(false)
+            setClosed(false)
+            setClosing(false)
           }}
           disabled={!points.length}
           className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-50 disabled:opacity-40"
@@ -337,6 +454,8 @@ export function MeasureTool({
             setPoints([])
             setHover(null)
             setDone(false)
+            setClosed(false)
+            setClosing(false)
           }}
           disabled={!points.length}
           className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-50 disabled:opacity-40"
@@ -357,7 +476,7 @@ export function MeasureTool({
             finish
           </button>
         )}
-        {done && <span className="ml-auto text-[11px] text-gray-400">finished</span>}
+        {done && <span className={cn('ml-auto text-[11px]', closed ? 'font-medium text-blue-600' : 'text-gray-400')}>{closed ? 'shape closed' : 'finished'}</span>}
       </div>
     </div>
   )

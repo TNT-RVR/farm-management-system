@@ -28,6 +28,7 @@ import { rowClick } from '@/components/RecordEditor'
 import { CardList, RowCard } from '@/components/RowCards'
 import { askConfirm } from '@/components/askConfirm'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { Modal } from '@/components/Modal'
 
 const STATUS_COLORS: Record<ContractStatus, string> = {
   open: 'bg-sky-100 text-sky-800',
@@ -79,7 +80,6 @@ export function ContractsPage() {
   const [tab, setTab] = useTab<ContractTab>(
     'contracts',
     CONTRACT_TABS.map((t) => t.key),
-    'contracts',
     // Scale tickets had a tab of its own until 27 Oct 2026; a load is read
     // inside the contract it is on, or under the contract list when it is on
     // none. Old ?tab=tickets links land on the contracts.
@@ -256,118 +256,120 @@ export function ContractsPage() {
           </div>
 
           {adding && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                create.mutate(
-                  {
-                    crop_year: cropYear,
-                    crop_id: form.crop_id || null,
-                    buyer_contact_id: form.buyer_contact_id || null,
-                    contract_number: form.contract_number || null,
-                    bushels: form.bushels ? Number(form.bushels) : null,
-                    price_per_unit: form.price_per_unit ? Number(form.price_per_unit) : null,
-                    delivery_start: form.delivery_start || null,
-                    delivery_end: form.delivery_end || null,
-                  },
-                  {
-                    onSuccess: () => {
-                      setAdding(false)
-                      setForm({
-                        crop_id: '',
-                        buyer_contact_id: '',
-                        contract_number: '',
-                        bushels: '',
-                        price_per_unit: '',
-                        delivery_start: '',
-                        delivery_end: '',
-                      })
+            <Modal title={'New contract'} onClose={() => setAdding(false)} wide>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  create.mutate(
+                    {
+                      crop_year: cropYear,
+                      crop_id: form.crop_id || null,
+                      buyer_contact_id: form.buyer_contact_id || null,
+                      contract_number: form.contract_number || null,
+                      bushels: form.bushels ? Number(form.bushels) : null,
+                      price_per_unit: form.price_per_unit ? Number(form.price_per_unit) : null,
+                      delivery_start: form.delivery_start || null,
+                      delivery_end: form.delivery_end || null,
                     },
-                  },
-                )
-              }}
-              className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-gray-200 bg-white p-4 sm:grid-cols-4"
-            >
-              <label className="text-xs text-gray-500">
-                Crop
-                <Select
-                  value={form.crop_id}
-                  onChange={(v) => setForm((f) => ({ ...f, crop_id: v }))}
-                  ariaLabel="Crop"
-                  className="mt-1"
-                  options={[
-                    { value: '', label: '—' },
-                    ...(crops ?? []).map((c) => ({ value: c.id, label: c.name })),
-                  ]}
-                />
-              </label>
-              <label className="text-xs text-gray-500">
-                Buyer
-                <Select
-                  value={form.buyer_contact_id}
-                  onChange={(v) => setForm((f) => ({ ...f, buyer_contact_id: v }))}
-                  ariaLabel="Buyer"
-                  className="mt-1"
-                  options={[
-                    { value: '', label: '—' },
-                    ...(contacts ?? [])
-                      .filter((c) => c.type === 'buyer' || c.type === 'other')
-                      .map((c) => ({ value: c.id, label: c.company || c.contact_name || '—' })),
-                  ]}
-                />
-              </label>
-              <label className="text-xs text-gray-500">
-                Contract #
-                <input
-                  value={form.contract_number}
-                  onChange={(e) => setForm((f) => ({ ...f, contract_number: e.target.value }))}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
-                />
-              </label>
-              <label className="text-xs text-gray-500">
-                Units (bu/lbs/cwt)
-                <input
-                  type="number"
-                  value={form.bushels}
-                  onChange={(e) => setForm((f) => ({ ...f, bushels: e.target.value }))}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
-                />
-              </label>
-              <label className="text-xs text-gray-500">
-                Price / unit
-                <input
-                  type="number"
-                  step="0.01"
-                  value={form.price_per_unit}
-                  onChange={(e) => setForm((f) => ({ ...f, price_per_unit: e.target.value }))}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
-                />
-              </label>
-              <label className="text-xs text-gray-500">
-                Delivery start
-                <DateField
-                  value={form.delivery_start}
-                  onChange={(v) => setForm((f) => ({ ...f, delivery_start: v }))}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
-                />
-              </label>
-              <label className="text-xs text-gray-500">
-                Delivery end
-                <DateField
-                  value={form.delivery_end}
-                  onChange={(v) => setForm((f) => ({ ...f, delivery_end: v }))}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
-                />
-              </label>
-              <div className="flex items-end">
-                <button
-                  type="submit"
-                  className="rounded-md bg-brand-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800"
-                >
-                  Add
-                </button>
-              </div>
-            </form>
+                    {
+                      onSuccess: () => {
+                        setAdding(false)
+                        setForm({
+                          crop_id: '',
+                          buyer_contact_id: '',
+                          contract_number: '',
+                          bushels: '',
+                          price_per_unit: '',
+                          delivery_start: '',
+                          delivery_end: '',
+                        })
+                      },
+                    },
+                  )
+                }}
+                className="mb-4 grid grid-cols-2 gap-3 rounded-lg border border-gray-200 bg-white p-4 sm:grid-cols-4"
+              >
+                <label className="text-xs text-gray-500">
+                  Crop
+                  <Select
+                    value={form.crop_id}
+                    onChange={(v) => setForm((f) => ({ ...f, crop_id: v }))}
+                    ariaLabel="Crop"
+                    className="mt-1"
+                    options={[
+                      { value: '', label: '—' },
+                      ...(crops ?? []).map((c) => ({ value: c.id, label: c.name })),
+                    ]}
+                  />
+                </label>
+                <label className="text-xs text-gray-500">
+                  Buyer
+                  <Select
+                    value={form.buyer_contact_id}
+                    onChange={(v) => setForm((f) => ({ ...f, buyer_contact_id: v }))}
+                    ariaLabel="Buyer"
+                    className="mt-1"
+                    options={[
+                      { value: '', label: '—' },
+                      ...(contacts ?? [])
+                        .filter((c) => c.type === 'buyer' || c.type === 'other')
+                        .map((c) => ({ value: c.id, label: c.company || c.contact_name || '—' })),
+                    ]}
+                  />
+                </label>
+                <label className="text-xs text-gray-500">
+                  Contract #
+                  <input
+                    value={form.contract_number}
+                    onChange={(e) => setForm((f) => ({ ...f, contract_number: e.target.value }))}
+                    className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+                  />
+                </label>
+                <label className="text-xs text-gray-500">
+                  Units (bu/lbs/cwt)
+                  <input
+                    type="number"
+                    value={form.bushels}
+                    onChange={(e) => setForm((f) => ({ ...f, bushels: e.target.value }))}
+                    className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+                  />
+                </label>
+                <label className="text-xs text-gray-500">
+                  Price / unit
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={form.price_per_unit}
+                    onChange={(e) => setForm((f) => ({ ...f, price_per_unit: e.target.value }))}
+                    className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+                  />
+                </label>
+                <label className="text-xs text-gray-500">
+                  Delivery start
+                  <DateField
+                    value={form.delivery_start}
+                    onChange={(v) => setForm((f) => ({ ...f, delivery_start: v }))}
+                    className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+                  />
+                </label>
+                <label className="text-xs text-gray-500">
+                  Delivery end
+                  <DateField
+                    value={form.delivery_end}
+                    onChange={(v) => setForm((f) => ({ ...f, delivery_end: v }))}
+                    className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+                  />
+                </label>
+                <div className="flex items-end">
+                  <button
+                    type="submit"
+                    className="rounded-md bg-brand-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800"
+                  >
+                    Add
+                  </button>
+                </div>
+              </form>
+            </Modal>
           )}
 
           <div className="rounded-lg border border-gray-200 bg-white">

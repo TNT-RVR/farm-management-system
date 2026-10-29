@@ -16,7 +16,8 @@ import {
   type Preference,
 } from '@/lib/rotation'
 import { cn } from '@/lib/utils'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { usePartnerCrops } from '@/lib/partner-view'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 /**
  * Its own tab since 28 Oct 2026 (Sam): the rules were a drawer that pushed the
@@ -62,6 +63,10 @@ function RotationRules({
   const setSettings = useSetCropRotationSettings()
   const { data: allCrops } = useCrops()
   const { setPreference } = useSuccessionMutations()
+  // A crop-share partner changes the rules of the crops he grows, and the
+  // pairs that involve one; the rest he reads (lib/partner-view.ts).
+  const partnerCrops = usePartnerCrops()
+  const canRule = (...ids: string[]) => isManager || ids.some((id) => partnerCrops?.has(id))
   const [reading, setReading] = useState<string | null>(null)
   const qc = useQueryClient()
   const poll = useRef<number | null>(null)
@@ -103,15 +108,15 @@ function RotationRules({
           <b>Return</b>: years before the same crop comes back after it leaves (all beans count as one crop, canola with seed canola). <b>In a row</b>: years it may
           run back to back (1 = never twice). <b>Stand</b>: a perennial kept in at least the first number of years and taken out after the second.
         </HelpNote>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
           <table className="w-full min-w-[480px] text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="py-1 font-medium">Crop</th>
-                <th className="py-1 text-right font-medium">Return (yrs)</th>
-                <th className="py-1 text-right font-medium">In a row</th>
-                <th className="py-1 text-right font-medium">Stand min</th>
-                <th className="py-1 text-right font-medium">Stand max</th>
+                <th className={TABLE_TH}>Crop</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Return (yrs)</th>
+                <th className={cn(TABLE_TH, 'text-right')}>In a row</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Stand min</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Stand max</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -121,13 +126,13 @@ function RotationRules({
                 const box = 'w-14 rounded border border-gray-200 px-1 py-0.5 text-right tabular-nums'
                 return (
                   <tr key={c.id}>
-                    <td className="py-1 text-gray-800">{c.name}</td>
-                    <td className="py-1 text-right">
+                    <td className="px-3 py-1 text-gray-800">{c.name}</td>
+                    <td className="px-3 py-1 text-right">
                       <input
                         type="number"
                         min={0}
                         max={12}
-                        disabled={!isManager}
+                        disabled={!canRule(c.id)}
                         defaultValue={c.min_return_years}
                         onBlur={(e) => {
                           const v = Math.max(0, Math.round(Number(e.target.value)))
@@ -136,12 +141,12 @@ function RotationRules({
                         className={box}
                       />
                     </td>
-                    <td className="py-1 text-right">
+                    <td className="px-3 py-1 text-right">
                       <input
                         type="number"
                         min={1}
                         max={6}
-                        disabled={!isManager}
+                        disabled={!canRule(c.id)}
                         defaultValue={full?.max_in_a_row ?? 1}
                         onBlur={(e) => {
                           const v = Math.min(6, Math.max(1, Math.round(Number(e.target.value) || 1)))
@@ -150,13 +155,13 @@ function RotationRules({
                         className={box}
                       />
                     </td>
-                    <td className="py-1 text-right">
+                    <td className="px-3 py-1 text-right">
                       <input
                         type="number"
                         min={1}
                         max={10}
                         placeholder="—"
-                        disabled={!isManager}
+                        disabled={!canRule(c.id)}
                         defaultValue={full?.stand_min_years ?? ''}
                         onBlur={(e) => {
                           const v = num(e.target.value)
@@ -165,13 +170,13 @@ function RotationRules({
                         className={box}
                       />
                     </td>
-                    <td className="py-1 text-right">
+                    <td className="px-3 py-1 text-right">
                       <input
                         type="number"
                         min={1}
                         max={12}
                         placeholder="—"
-                        disabled={!isManager}
+                        disabled={!canRule(c.id)}
                         defaultValue={full?.stand_max_years ?? ''}
                         onBlur={(e) => {
                           const v = num(e.target.value)
@@ -238,7 +243,7 @@ function RotationRules({
                         >
                           <input
                             type="checkbox"
-                            disabled={!isManager}
+                            disabled={!canRule(prev.id, next.id)}
                             checked={p !== 'no_go'}
                             aria-label={`${next.name} may follow ${prev.name}`}
                             onChange={(e) =>
@@ -254,7 +259,7 @@ function RotationRules({
                           />
                           <button
                             type="button"
-                            disabled={!isManager || p === 'no_go'}
+                            disabled={!canRule(prev.id, next.id) || p === 'no_go'}
                             title={`How the farm rates ${next.name} after ${prev.name}`}
                             aria-label={`Rate ${next.name} after ${prev.name}`}
                             onClick={() => {

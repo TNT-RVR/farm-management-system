@@ -162,7 +162,7 @@ export function PastureInsurance({ isManager }: { isManager: boolean }) {
             <button
               onClick={() => saveLand.mutate(toAdd)}
               disabled={saveLand.isPending}
-              className="flex items-center gap-1.5 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-50 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-md border border-brand-200 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-800 disabled:opacity-50"
             >
               <Plus className="h-3.5 w-3.5" /> Add the {toAdd.length} {toAdd.length === 1 ? 'pasture' : 'pastures'} not listed
             </button>

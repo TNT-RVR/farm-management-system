@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { Navigate, useLocation } from 'react-router-dom'
 import { useCropYear } from '@/lib/crop-year'
 import { useCropPlans, useCrops } from '@/lib/queries'
 import { productName, readable } from '@/lib/chemical-display'
@@ -13,6 +12,9 @@ import {
 } from 'lucide-react'
 import { ChemicalLabelDetail } from '@/components/ChemicalLabelDetail'
 import { PillTabs } from '@/components/PillTabs'
+import { SprayCheck } from '@/components/SprayCheck'
+import { ReentryPanel } from '@/components/ReentryWarning'
+import { FieldEntryAlert } from '@/components/FieldEntryAlert'
 import { HelpNote } from '@/components/HelpNote'
 import { AdminOnly } from '@/components/TechnicalDetails'
 import { InventoryTab } from '@/pages/chemicals/InventoryTab'
@@ -175,20 +177,7 @@ function ChemicalCard({ c, canEdit, farmCrops }: { c: ChemicalListRow; canEdit: 
   )
 }
 
-/**
- * Before spraying and Recently sprayed moved to their own view, Spraying: they
- * are in-season jobs, and the registry, shed and prices are looked up year
- * round (Sam, 24 Oct 2026). Saved links to those two tabs go there.
- */
-const MOVED: Record<string, string> = {
-  spraycheck: '/spraying?tab=spraycheck',
-  reentry: '/spraying?tab=reentry',
-}
-
 export function ChemicalsPage() {
-  const { search } = useLocation()
-  const moved = MOVED[new URLSearchParams(search).get('tab') ?? '']
-  if (moved) return <Navigate to={moved} replace />
   return <ChemicalsView />
 }
 
@@ -208,15 +197,19 @@ function ChemicalsView() {
   const queue = useQueueLabels()
   const { data: progress } = useLabelProgress()
 
-  // Two things live under Chemicals: the registry, and what we pay for the ones
-  // we buy. Tabs rather than a second route — a price is a fact about a
-  // chemical, and looking one up and looking up its price are the same errand.
+  // Everything about a chemical is here: the registry, what is in the shed,
+  // what we pay, and the two in-season jobs — checking a product before the
+  // sprayer goes out and seeing what was sprayed lately. Tabs rather than
+  // separate routes, because looking a product up, looking up its price and
+  // asking what it rules out are the same errand.
+  //
+  // Those last two were their own view, Spraying, from 24 Oct 2026 until
+  // Sam asked for them back here on 29 Oct. Saved /spraying links redirect.
   // 'pricing' was the Prices tab's key while it was called "Pricing settings";
   // saved links to it still land there.
   const [tab, setTab] = useTab(
     'chemicals',
-    ['registry', 'inventory', 'prices'] as const,
-    'registry',
+    ['registry', 'inventory', 'prices', 'spraycheck', 'reentry'] as const,
     (asked) => (asked === 'pricing' ? 'prices' : undefined),
   )
 
@@ -232,7 +225,11 @@ function ChemicalsView() {
               ? `${count ?? '—'} agricultural products, from Health Canada's pesticide registry. Refreshed monthly.`
               : tab === 'inventory'
                 ? `What is in the shed: bought on the ${retailerName} invoices, less what the sprayer put out, corrected by counts.`
-                : 'What we pay, from the invoices. Each product takes its price from its most recent one.'}
+                : tab === 'prices'
+                  ? 'What we pay, from the invoices. Each product takes its price from its most recent one.'
+                  : tab === 'spraycheck'
+                    ? 'Pick a product and the fields: see which planned crops its label rules out.'
+                    : 'Fields sprayed lately, and when it is safe to go back in.'}
           </p>
         </div>
         {tab === 'registry' && isManager && (
@@ -261,6 +258,8 @@ function ChemicalsView() {
           { key: 'registry', label: 'Registry' },
           { key: 'inventory', label: 'Inventory' },
           { key: 'prices', label: 'Prices' },
+          { key: 'spraycheck', label: 'Before spraying' },
+          { key: 'reentry', label: 'Recently sprayed' },
         ]}
         value={tab}
         onChange={setTab}
@@ -271,6 +270,15 @@ function ChemicalsView() {
         <InventoryTab />
       ) : tab === 'prices' ? (
         <ProductPrices category="chemical" />
+      ) : tab === 'spraycheck' ? (
+        <SprayCheck />
+      ) : tab === 'reentry' ? (
+        <>
+          <div className="mb-3">
+            <FieldEntryAlert />
+          </div>
+          <ReentryPanel />
+        </>
       ) : (
         <>
           {/* Search-by comes first: "canola" against every column matches a hundred

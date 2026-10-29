@@ -28,7 +28,7 @@ import {
 } from '@/lib/seed-forms/data'
 import { growerBinLabel, longDate, nextCheck, type Position } from '@/lib/seed-forms/format'
 import { formStyleFor, type FormStyle } from '@/lib/seed-forms/styles'
-import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
 
 const input = 'mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none disabled:bg-gray-50'
@@ -684,8 +684,8 @@ function BinRecord(p: { report: SeedReport; bin: SeedReportBin; name: string; cr
   const latestCount = rows[0] ? style.sensors.read(rows[0].levels).length : 0
 
   return (
-    <div className="rounded-md border border-gray-200 p-3">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="overflow-hidden rounded-md border border-gray-200">
+      <div className="flex flex-wrap items-center gap-2 p-3">
         <Thermometer className="h-4 w-4 text-brand-700" />
         <span className="mr-auto text-sm font-medium text-gray-800">
           {title}
@@ -712,31 +712,31 @@ function BinRecord(p: { report: SeedReport; bin: SeedReportBin; name: string; cr
           <Download className="h-4 w-4" /> {p.busy ? 'Making…' : 'PDF'}
         </button>
       </div>
-      {saveBin.error && <p className="mt-1 text-xs text-red-600">{(saveBin.error as Error).message}</p>}
+      {saveBin.error && <p className="mx-3 mb-2 text-xs text-red-600">{(saveBin.error as Error).message}</p>}
       {rows.length > 0 && (
-        <div className="mt-2 overflow-x-auto">
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[40rem] text-xs">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="py-1 pr-2">Date</th>
+                <th className={TABLE_TH}>Date</th>
                 {Array.from({ length: n }, (_, i) => (
-                  <th key={i} className="py-1 pr-2">
+                  <th key={i} className={TABLE_TH}>
                     {style.sensors.topFirst ? style.sensors.label(i, n) : i === 0 ? '1 (bottom)' : i + 1}
                   </th>
                 ))}
-                <th className="py-1">Aeration on</th>
+                <th className={TABLE_TH}>Aeration on</th>
               </tr>
             </thead>
             <tbody>
               {[...rows].reverse().map((r) => (
                 <tr key={r.id} onClick={() => setEditing(r)} className="cursor-pointer border-t border-gray-100 hover:bg-gray-50">
-                  <td className="py-1 pr-2 text-gray-700">{longDate(r.read_on)}</td>
+                  <td className="px-3 py-1 text-gray-700">{longDate(r.read_on)}</td>
                   {Array.from({ length: n }, (_, i) => style.sensors.read(r.levels)[i]).map((pos, i) => (
-                    <td key={i} className="py-1 pr-2 tabular-nums text-gray-700">
+                    <td key={i} className="px-3 py-1 tabular-nums text-gray-700">
                       {style.sensors.cell(pos)}
                     </td>
                   ))}
-                  <td className="py-1 text-gray-700">{r.aeration_on ? 'Yes' : ''}</td>
+                  <td className="px-3 py-1 text-gray-700">{r.aeration_on ? 'Yes' : ''}</td>
                 </tr>
               ))}
             </tbody>

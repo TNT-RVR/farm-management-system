@@ -8,7 +8,7 @@ import { Fold } from '@/components/Fold'
 import { FeedInfo } from './FeedInfo'
 import { n0, tonnes } from './bits'
 import { HelpNote } from '@/components/HelpNote'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 /**
  * "What should each group get, from what we actually have?" — the yard's
@@ -146,26 +146,28 @@ export function YardPlanner({
               </div>
             ))}
           </div>
-          <table className="w-full text-xs">
-            <thead className={TABLE_HEAD}>
-              <tr>
-                <th className="py-1 font-medium">Feed</th>
-                <th className="py-1 text-right font-medium">Used to turnout</th>
-                <th className="py-1 text-right font-medium">In the yard (usable)</th>
-                <th className="py-1 text-right font-medium">Left over</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {plan.use.map((u) => (
-                <tr key={u.feed.id}>
-                  <td className="py-1">{u.feed.name}</td>
-                  <td className="py-1 text-right tabular-nums">{tonnes(u.usedLb)} t</td>
-                  <td className="py-1 text-right tabular-nums">{tonnes(u.haveLb)} t</td>
-                  <td className="py-1 text-right tabular-nums text-gray-600">{tonnes(Math.max(0, u.haveLb - u.usedLb))} t</td>
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
+            <table className="w-full text-xs">
+              <thead className={TABLE_HEAD}>
+                <tr>
+                  <th className={TABLE_TH}>Feed</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Used to turnout</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>In the yard (usable)</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Left over</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {plan.use.map((u) => (
+                  <tr key={u.feed.id}>
+                    <td className="px-3 py-1">{u.feed.name}</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{tonnes(u.usedLb)} t</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{tonnes(u.haveLb)} t</td>
+                    <td className="px-3 py-1 text-right tabular-nums text-gray-600">{tonnes(Math.max(0, u.haveLb - u.usedLb))} t</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <div className="flex items-center gap-2">
             {isManager && (
               <button type="button" disabled={busy} onClick={apply} className="rounded-md bg-brand-700 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50">

@@ -8,6 +8,7 @@ import {
   usePlanterProfiles,
   type PlanterProfile,
 } from '@/lib/planter-profiles'
+import { Modal } from '@/components/Modal'
 
 /** What each box means on the machine, so the numbers are not just numbers. */
 const HELP: Partial<Record<keyof PlanterProfile, string>> = {
@@ -115,7 +116,7 @@ export function CropPlanterSettings({
           <Link to="/planter?tab=planter" className="text-xs text-brand-700 hover:underline">
             Open the planter calculator →
           </Link>
-          {!readonly && !editing && (
+          {!readonly && (
             <button
               onClick={start}
               className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
@@ -126,7 +127,7 @@ export function CropPlanterSettings({
         </div>
       </div>
 
-      {!editing && (
+      {(
         <>
           {summary.length > 0 ? (
             <p className="mt-2 text-sm text-gray-800">{summary.join(' · ')}</p>
@@ -141,57 +142,59 @@ export function CropPlanterSettings({
       )}
 
       {editing && (
-        <div className="mt-3 space-y-3">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {FIELDS.map((f) => (
-              <label key={f.key} className="text-[11px] font-medium text-gray-500">
-                {f.label}
-                {f.unit ? <span className="text-gray-400"> ({f.unit})</span> : null}
-                <input
-                  type={f.kind === 'number' ? 'number' : 'text'}
-                  inputMode={f.kind === 'number' ? 'decimal' : undefined}
-                  value={draft[f.key] ?? ''}
-                  onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
-                  className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
-                />
-                {HELP[f.key] && (
-                  <span className="mt-0.5 block text-[10px] font-normal text-gray-400">
-                    {HELP[f.key]}
-                  </span>
-                )}
-              </label>
-            ))}
+        <Modal title={'Planter settings'} onClose={() => setEditing(false)} wide>
+          <div className="mt-3 space-y-3">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {FIELDS.map((f) => (
+                <label key={f.key} className="text-[11px] font-medium text-gray-500">
+                  {f.label}
+                  {f.unit ? <span className="text-gray-400"> ({f.unit})</span> : null}
+                  <input
+                    type={f.kind === 'number' ? 'number' : 'text'}
+                    inputMode={f.kind === 'number' ? 'decimal' : undefined}
+                    value={draft[f.key] ?? ''}
+                    onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                    className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+                  />
+                  {HELP[f.key] && (
+                    <span className="mt-0.5 block text-[10px] font-normal text-gray-400">
+                      {HELP[f.key]}
+                    </span>
+                  )}
+                </label>
+              ))}
+            </div>
+            <label className="block text-[11px] font-medium text-gray-500">
+              Notes
+              <input
+                value={draft.notes ?? profile?.notes ?? ''}
+                onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
+                placeholder="anything the numbers do not say"
+                className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+              />
+            </label>
+            <p className="text-[11px] text-gray-500">
+              Leave a box empty where there is no figure. A range left with only one end filled is
+              treated as a single number, not a range.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={commit}
+                disabled={save.isPending}
+                className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
+              >
+                {save.isPending ? 'Saving…' : 'Save settings'}
+              </button>
+              <button
+                onClick={() => setEditing(false)}
+                className="rounded-md px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+            {save.error && <p className="text-xs text-red-700">{(save.error as Error).message}</p>}
           </div>
-          <label className="block text-[11px] font-medium text-gray-500">
-            Notes
-            <input
-              value={draft.notes ?? profile?.notes ?? ''}
-              onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
-              placeholder="anything the numbers do not say"
-              className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
-            />
-          </label>
-          <p className="text-[11px] text-gray-500">
-            Leave a box empty where there is no figure. A range left with only one end filled is
-            treated as a single number, not a range.
-          </p>
-          <div className="flex gap-2">
-            <button
-              onClick={commit}
-              disabled={save.isPending}
-              className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
-            >
-              {save.isPending ? 'Saving…' : 'Save settings'}
-            </button>
-            <button
-              onClick={() => setEditing(false)}
-              className="rounded-md px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-          </div>
-          {save.error && <p className="text-xs text-red-700">{(save.error as Error).message}</p>}
-        </div>
+        </Modal>
       )}
     </div>
   )

@@ -387,6 +387,65 @@ export function useCostBenchmark() {
 
 
 /**
+ * What a cow costs for a year in Alberta.
+ *
+ * From the Canadian Cow-Calf Cost of Production Network — Canfax Research
+ * Services with the Beef Cattle Research Council — whose Alberta benchmarks
+ * for the 2024 production year were published in October 2025. Across its 19
+ * Alberta benchmark farms the total cost of production averaged **$1,738 a
+ * cow**: $1,059 cash, $257 depreciation and $422 opportunity cost (unpaid
+ * labour, and the land and capital tied up).
+ *
+ * **There is no southern-Alberta figure to be had.** The Network says so in
+ * its own words — it "is missing data from the Southern part of the province"
+ * — and Alberta's AgriProfit$ has not published a regional split since the
+ * 2002 report. The nearest published southern evidence is older than the feed
+ * market it would be used against. So this is an Alberta figure, and the
+ * places that offer it say which it is.
+ *
+ * Southern Alberta is not the provincial average in two ways that pull against
+ * each other: a shorter winter means less feed, and land worth more means a
+ * bigger opportunity cost. We have no basis for an adjustment, so none is made.
+ *
+ * The Network collects every five years and indexes in between, publishing the
+ * rise it measures. Over 2020–2024 that was $70 a cow a year on cash, $23 on
+ * depreciation and $17 on opportunity cost. `abCowCostPerYear` carries the
+ * 2024 benchmark forward on those, which is the Network's own method and not
+ * a guess of ours — but it is still an extrapolation, so it is spelled out
+ * wherever the number is shown.
+ */
+export const AB_COW_CALF_COP = {
+  /** The production year measured. */
+  year: 2024,
+  farms: 19,
+  cashPerCow: 1059,
+  depreciationPerCow: 257,
+  /** Unpaid labour, and the land and capital tied up in the herd. */
+  opportunityPerCow: 422,
+  /** The measured rise a cow a year: cash 70 + depreciation 23 + opportunity 17. */
+  risePerCowPerYear: 110,
+  /** The cash part of that rise, for the money-out-the-door figure. */
+  cashRisePerCowPerYear: 70,
+} as const
+
+export const AB_COW_CALF_COP_SOURCE =
+  'Canadian Cow-Calf Cost of Production Network — Alberta 2024 benchmarks, 19 farms (Canfax Research Services, October 2025). An Alberta figure: the Network has no southern Alberta farms.'
+
+/** Never index backwards: before the benchmark year the benchmark is the benchmark. */
+const yearsOn = (year: number) => Math.max(0, Math.round(year) - AB_COW_CALF_COP.year)
+
+/** Everything a cow costs in a year — cash, depreciation and opportunity cost. */
+export function abCowCostPerYear(year: number): number {
+  const base = AB_COW_CALF_COP.cashPerCow + AB_COW_CALF_COP.depreciationPerCow + AB_COW_CALF_COP.opportunityPerCow
+  return base + yearsOn(year) * AB_COW_CALF_COP.risePerCowPerYear
+}
+
+/** Money actually out the door — no depreciation, no opportunity cost. */
+export function abCowCashCostPerYear(year: number): number {
+  return AB_COW_CALF_COP.cashPerCow + yearsOn(year) * AB_COW_CALF_COP.cashRisePerCowPerYear
+}
+
+/**
  * Benchmark cow-calf costs, per cow per year.
  *
  * Taken from Manitoba Agriculture's "2026 Cost of Production, Beef Cow-Calf,

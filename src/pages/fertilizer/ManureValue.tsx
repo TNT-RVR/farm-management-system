@@ -15,7 +15,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { FieldLink, Sources, money, n1 } from './savings/ui'
 import { SettingsGroup, type NumberField } from '../hauling/ui'
 import { S } from './savings/sources'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 /** The job each field is priced on: ten tonnes an acre over the whole field. */
 const TONS_PER_ACRE = 10
@@ -201,40 +201,40 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
             </p>
           </HelpNote>
         )}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full text-xs">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="px-2 py-1 font-medium">Field</th>
-                <th className="px-2 py-1 font-medium">Needs</th>
-                <th className="px-2 py-1 text-right font-medium">Worth / ton</th>
-                <th className="px-2 py-1 text-right font-medium">Road km</th>
-                <th className="px-2 py-1 text-right font-medium">Custom / ton</th>
-                <th className="px-2 py-1 text-right font-medium">Ourselves / ton</th>
-                <th className="px-2 py-1 text-right font-medium">Net / ton</th>
-                <th className="px-2 py-1 text-right font-medium">At {TONS_PER_ACRE} t/ac</th>
+                <th className={TABLE_TH}>Field</th>
+                <th className={TABLE_TH}>Needs</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Worth / ton</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Road km</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Custom / ton</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Ourselves / ton</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Net / ton</th>
+                <th className={cn(TABLE_TH, 'text-right')}>At {TONS_PER_ACRE} t/ac</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {shown.map(({ f, needs, fromRec, t, gross, c, o, net }) => (
                 <tr key={f.id}>
-                  <td className="px-2 py-1 text-gray-700">
+                  <td className="px-3 py-1 text-gray-700">
                     <FieldLink id={f.id} name={f.name} to="soil" />
                   </td>
-                  <td className="px-2 py-1 text-gray-600">
+                  <td className="px-3 py-1 text-gray-600">
                     {[needs.n && 'N', needs.p && 'P', needs.k && 'K'].filter(Boolean).join(' ') || 'nothing'}
                     <span className="block text-[10px] text-gray-400">{fromRec ? 'from the recommendation' : 'from the soil test'}</span>
                   </td>
-                  <td className="px-2 py-1 text-right tabular-nums">{money(gross, 2)}</td>
-                  <td className={cn('px-2 py-1 text-right tabular-nums', t?.basis === 'straight' && 'text-amber-700')} title={t?.note ?? undefined}>
+                  <td className="px-3 py-1 text-right tabular-nums">{money(gross, 2)}</td>
+                  <td className={cn('px-3 py-1 text-right tabular-nums', t?.basis === 'straight' && 'text-amber-700')} title={t?.note ?? undefined}>
                     {t ? n1(t.km) : '—'}
                   </td>
-                  <td className="px-2 py-1 text-right tabular-nums">{c ? money(c.perTonne, 2) : '—'}</td>
-                  <td className="px-2 py-1 text-right tabular-nums" title={o ? `fuel ${money(o.fuel)}, people ${money(o.labour)}, machines ${money(o.machine)}` : undefined}>
+                  <td className="px-3 py-1 text-right tabular-nums">{c ? money(c.perTonne, 2) : '—'}</td>
+                  <td className="px-3 py-1 text-right tabular-nums" title={o ? `fuel ${money(o.fuel)}, people ${money(o.labour)}, machines ${money(o.machine)}` : undefined}>
                     {o ? money(o.perTonne, 2) : '—'}
                   </td>
-                  <td className={cn('px-2 py-1 text-right font-semibold tabular-nums', (net ?? 0) > 0 ? 'text-green-800' : 'text-red-700')}>{net != null ? money(net, 2) : '—'}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-gray-600">{net != null ? `${money(net * TONS_PER_ACRE)}/ac` : '—'}</td>
+                  <td className={cn('px-3 py-1 text-right font-semibold tabular-nums', (net ?? 0) > 0 ? 'text-green-800' : 'text-red-700')}>{net != null ? money(net, 2) : '—'}</td>
+                  <td className="px-3 py-1 text-right tabular-nums text-gray-600">{net != null ? `${money(net * TONS_PER_ACRE)}/ac` : '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -259,32 +259,32 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
         {jobs.length > 0 && (
           <div className="mt-3">
             <h3 className="text-xs font-semibold text-gray-700">Against what N &amp; K actually billed</h3>
-            <div className="overflow-x-auto">
-              <table className="mt-1 w-full text-xs">
+            <div className="mt-1 overflow-x-auto rounded-lg border border-gray-200">
+              <table className="w-full text-xs">
                 <thead className={TABLE_HEAD}>
                   <tr>
-                    <th className="px-2 py-1 font-medium">Job</th>
-                    <th className="px-2 py-1 text-right font-medium">Tonnes</th>
-                    <th className="px-2 py-1 text-right font-medium">N &amp; K billed</th>
-                    <th className="px-2 py-1 text-right font-medium">Ourselves</th>
-                    <th className="hidden px-2 py-1 text-right font-medium md:table-cell">Tractor hours</th>
-                    <th className="px-2 py-1 text-right font-medium">Difference</th>
+                    <th className={TABLE_TH}>Job</th>
+                    <th className={cn(TABLE_TH, 'text-right')}>Tonnes</th>
+                    <th className={cn(TABLE_TH, 'text-right')}>N &amp; K billed</th>
+                    <th className={cn(TABLE_TH, 'text-right')}>Ourselves</th>
+                    <th className={cn(TABLE_TH, 'hidden text-right md:table-cell')}>Tractor hours</th>
+                    <th className={cn(TABLE_TH, 'text-right')}>Difference</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {jobs.map((j) => (
                     <tr key={j.id}>
-                      <td className="px-2 py-1 text-gray-700">
+                      <td className="px-3 py-1 text-gray-700">
                         {j.fieldId ? <FieldLink id={j.fieldId} name={j.name} to="soil" /> : j.name}
                         {j.on && <span className="block text-[10px] text-gray-400">{j.on}</span>}
                       </td>
-                      <td className="px-2 py-1 text-right tabular-nums">{n1(j.tonnes)}</td>
-                      <td className="px-2 py-1 text-right tabular-nums">{money(j.billed)}</td>
-                      <td className="px-2 py-1 text-right tabular-nums" title={j.o ? `fuel ${money(j.o.fuel)}, people ${money(j.o.labour)}, machines ${money(j.o.machine)}` : undefined}>
+                      <td className="px-3 py-1 text-right tabular-nums">{n1(j.tonnes)}</td>
+                      <td className="px-3 py-1 text-right tabular-nums">{money(j.billed)}</td>
+                      <td className="px-3 py-1 text-right tabular-nums" title={j.o ? `fuel ${money(j.o.fuel)}, people ${money(j.o.labour)}, machines ${money(j.o.machine)}` : undefined}>
                         {j.o ? money(j.o.total) : '—'}
                       </td>
-                      <td className="hidden px-2 py-1 text-right tabular-nums text-gray-600 md:table-cell">{j.o ? n1(j.o.tractorHours) : '—'}</td>
-                      <td className={cn('px-2 py-1 text-right tabular-nums', j.o && j.o.total < j.billed ? 'text-green-800' : 'text-red-700')}>
+                      <td className="hidden px-3 py-1 text-right tabular-nums text-gray-600 md:table-cell">{j.o ? n1(j.o.tractorHours) : '—'}</td>
+                      <td className={cn('px-3 py-1 text-right tabular-nums', j.o && j.o.total < j.billed ? 'text-green-800' : 'text-red-700')}>
                         {j.o ? (j.o.total < j.billed ? `${money(j.billed - j.o.total)} cheaper ourselves` : `${money(j.o.total - j.billed)} dearer ourselves`) : '—'}
                       </td>
                     </tr>

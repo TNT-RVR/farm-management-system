@@ -6,7 +6,7 @@
 -- Products (chemicals by the litre, fertilizer by the kg). Generic names.
 insert into public.jd_products (id, name, unit, price_per_unit, pmra_registration, notes, category, label_note, manual_crops) values
   ('0de30000-0000-4000-8000-000000000901', 'Glyphosate 540', 'L', 6.20, 'DEMO-1001', 'Burnoff and pre-harvest.', 'chemical', null, '{}'),
-  ('0de30000-0000-4000-8000-000000000902', 'Glufosinate 150', 'L', 14.50, 'DEMO-1002', 'Liberty-system canola only.', 'chemical', null, '{canola}'),
+  ('0de30000-0000-4000-8000-000000000902', 'Glufosinate 150', 'L', 14.50, 'DEMO-1002', 'Glufosinate-tolerant canola only.', 'chemical', null, '{canola}'),
   ('0de30000-0000-4000-8000-000000000903', 'Clethodim 240', 'L', 38.00, 'DEMO-1003', 'Grass partner in canola and peas.', 'chemical', null, '{canola,pea}'),
   ('0de30000-0000-4000-8000-000000000904', 'Florasulam + MCPA', 'L', 24.00, 'DEMO-1004', 'Broadleaf herbicide for cereals.', 'chemical', null, '{wheat,barley}'),
   ('0de30000-0000-4000-8000-000000000905', 'Pinoxaden 100', 'L', 46.00, 'DEMO-1005', 'Wild oats in wheat and barley.', 'chemical', null, '{wheat,barley}'),
@@ -153,7 +153,7 @@ select 'demo-op-' || o.fx || '-' || o.kind,
        jsonb_build_object(
          'cropName', upper(o.crop),
          'fieldOperationMachines', jsonb_build_array(jsonb_build_object(
-            'name', case when o.op_type = 'seeding' then '8R 370 tractor' else 'R4045 sprayer' end,
+            'name', case when o.op_type = 'seeding' then 'T370 tractor' else 'SP120 sprayer' end,
             'vin', case when o.op_type = 'seeding' then '1RW8370RXMD012345' else '1N04045RVPN098765' end,
             'operators', jsonb_build_array(jsonb_build_object('name', case when o.op_type = 'seeding' then 'Alex Rivers' else 'Jordan Pike' end)))),
          'varieties', case when o.op_type = 'seeding' then jsonb_build_array(jsonb_build_object('name', o.variety, 'brand', 'Northfield Seeds')) else '[]'::jsonb end
@@ -176,10 +176,10 @@ insert into public.jd_field_operations (jd_id, field_id, operation_type, crop_se
 select 'demo-op-' || right(l.field_id::text, 3) || '-harvest', l.field_id, 'harvest', l.crop_year,
        (min(l.loaded_on)::timestamp + time '12:30') at time zone 'America/Edmonton',
        (max(l.loaded_on)::timestamp + time '21:00') at time zone 'America/Edmonton',
-       c.name, 'Alex Rivers', 'demo-eq-03', '1H0S780SCL0765432',
+       c.name, 'Alex Rivers', 'demo-eq-03', '1H0C780SCL0765432',
        jsonb_build_array(jsonb_build_object('name', min(l.variety), 'productType', 'VARIETY')),
        jsonb_build_object('cropName', upper(c.name),
-         'fieldOperationMachines', jsonb_build_array(jsonb_build_object('name', 'S780 combine', 'vin', '1H0S780SCL0765432',
+         'fieldOperationMachines', jsonb_build_array(jsonb_build_object('name', 'C780 combine', 'vin', '1H0C780SCL0765432',
             'operators', jsonb_build_array(jsonb_build_object('name', 'Alex Rivers'))))),
        now() - make_interval(days => current_date - max(l.loaded_on)),
        round(max(b.acres) * 0.404686 * case when bool_or(l.last_from_field) then 1 else 0.55 end, 2),

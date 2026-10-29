@@ -3,7 +3,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 /**
  * Which crops count toward seeding and harvest progress.
@@ -90,65 +90,67 @@ export function CropProgressExemptions({ canEdit }: { canEdit: boolean }) {
           {isLoading ? (
             <p className="text-sm text-gray-500">Loading…</p>
           ) : (
-            <table className="w-full text-sm">
-              <thead className={TABLE_HEAD}>
-                <tr>
-                  <th className="py-1 font-medium">Crop</th>
-                  <th className="w-20 py-1 text-center font-medium">We seed</th>
-                  <th className="w-24 py-1 text-center font-medium">We harvest</th>
-                  <th className="py-1 pl-3 font-medium">Why not</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {(crops ?? []).map((c) => (
-                  <tr key={c.id}>
-                    <td className="py-1.5 text-gray-900">{c.name}</td>
-                    <td className="py-1.5 text-center">
-                      <input
-                        type="checkbox"
-                        checked={c.counts_for_seeding}
-                        disabled={!canEdit || save.isPending}
-                        aria-label={`We seed ${c.name}`}
-                        onChange={(e) =>
-                          save.mutate({ id: c.id, counts_for_seeding: e.target.checked })
-                        }
-                        className="h-4 w-4 rounded border-gray-300"
-                      />
-                    </td>
-                    <td className="py-1.5 text-center">
-                      <input
-                        type="checkbox"
-                        checked={c.counts_for_harvest}
-                        disabled={!canEdit || save.isPending}
-                        aria-label={`We harvest ${c.name}`}
-                        onChange={(e) =>
-                          save.mutate({ id: c.id, counts_for_harvest: e.target.checked })
-                        }
-                        className="h-4 w-4 rounded border-gray-300"
-                      />
-                    </td>
-                    <td className="py-1.5 pl-3">
-                      {c.counts_for_seeding && c.counts_for_harvest ? (
-                        <span className="text-gray-300">—</span>
-                      ) : (
-                        <input
-                          defaultValue={c.progress_note ?? ''}
-                          disabled={!canEdit}
-                          placeholder="Why is it exempt?"
-                          aria-label={`Why ${c.name} is exempt`}
-                          onBlur={(e) => {
-                            const v = e.target.value.trim()
-                            if (v !== (c.progress_note ?? ''))
-                              save.mutate({ id: c.id, progress_note: v || null })
-                          }}
-                          className="w-full rounded-md border border-gray-200 px-2 py-1 text-xs"
-                        />
-                      )}
-                    </td>
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="w-full text-sm">
+                <thead className={TABLE_HEAD}>
+                  <tr>
+                    <th className={TABLE_TH}>Crop</th>
+                    <th className={`${TABLE_TH} w-20 text-center`}>We seed</th>
+                    <th className={`${TABLE_TH} w-24 text-center`}>We harvest</th>
+                    <th className={TABLE_TH}>Why not</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {(crops ?? []).map((c) => (
+                    <tr key={c.id}>
+                      <td className="px-3 py-1.5 text-gray-900">{c.name}</td>
+                      <td className="px-3 py-1.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={c.counts_for_seeding}
+                          disabled={!canEdit || save.isPending}
+                          aria-label={`We seed ${c.name}`}
+                          onChange={(e) =>
+                            save.mutate({ id: c.id, counts_for_seeding: e.target.checked })
+                          }
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                      </td>
+                      <td className="px-3 py-1.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={c.counts_for_harvest}
+                          disabled={!canEdit || save.isPending}
+                          aria-label={`We harvest ${c.name}`}
+                          onChange={(e) =>
+                            save.mutate({ id: c.id, counts_for_harvest: e.target.checked })
+                          }
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                      </td>
+                      <td className="px-3 py-1.5">
+                        {c.counts_for_seeding && c.counts_for_harvest ? (
+                          <span className="text-gray-300">—</span>
+                        ) : (
+                          <input
+                            defaultValue={c.progress_note ?? ''}
+                            disabled={!canEdit}
+                            placeholder="Why is it exempt?"
+                            aria-label={`Why ${c.name} is exempt`}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim()
+                              if (v !== (c.progress_note ?? ''))
+                                save.mutate({ id: c.id, progress_note: v || null })
+                            }}
+                            className="w-full rounded-md border border-gray-200 px-2 py-1 text-xs"
+                          />
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
 
           {save.isError && (

@@ -113,7 +113,7 @@ export function useMenu(device: MenuDevice) {
       /** Everything they may open, ignoring their own hiding: for "All views" and the settings list. */
       allowed,
       hidden: new Set(devicePrefs?.hidden ?? []),
-      bar: resolveBar(resolved, prefs.phone?.bar),
+      bar: resolveBar(resolved, prefs.phone?.buttons),
       canSee,
     }
   }, [prefs, canSee, device])

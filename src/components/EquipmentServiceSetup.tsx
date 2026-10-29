@@ -16,6 +16,7 @@ import {
   type MachineType,
 } from '@/lib/service-templates'
 import { Select } from '@/components/Select'
+import { Modal } from '@/components/Modal'
 
 type Person = { id: string; full_name: string | null; email: string | null }
 
@@ -67,7 +68,7 @@ export function ServiceAssignees({ equipment }: { equipment: Equipment }) {
             {own.length ? names(own) : def.length ? `${names(def)} (farm default)` : 'nobody yet — managers are told'}
           </span>
         </span>
-        {!editing && (
+        {(
           <>
             <button type="button" onClick={() => { setDraft(own); setEditing('machine') }} className="text-brand-700 hover:underline">
               Change
@@ -79,32 +80,34 @@ export function ServiceAssignees({ equipment }: { equipment: Equipment }) {
         )}
       </div>
       {editing && (
-        <div className="mt-2">
-          <p className="mb-1 text-[11px] text-gray-500">
-            {editing === 'machine'
-              ? `For ${equipment.name ?? 'this machine'}. Tick nobody to use the farm default.`
-              : 'For every machine without its own people.'}
-          </p>
-          <PeopleChecks people={people} value={draft} onChange={setDraft} />
-          <div className="mt-2 flex items-center gap-2">
-            <button
-              type="button"
-              disabled={saveMachine.isPending || saveDefault.isPending}
-              onClick={() => {
-                const done = { onSuccess: () => setEditing(null) }
-                if (editing === 'machine') saveMachine.mutate({ id: equipment.id, service_assignees: draft }, done)
-                else saveDefault.mutate(draft, done)
-              }}
-              className="rounded-md bg-brand-700 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
-            >
-              Save
-            </button>
-            <button type="button" onClick={() => setEditing(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-600">
-              Cancel
-            </button>
-            {err && <span className="text-xs text-red-600">{err.message}</span>}
+        <Modal title={editing === 'machine' ? 'Who services this machine' : 'Who services machines by default'} onClose={() => setEditing(null)} wide>
+          <div className="mt-2">
+            <p className="mb-1 text-[11px] text-gray-500">
+              {editing === 'machine'
+                ? `For ${equipment.name ?? 'this machine'}. Tick nobody to use the farm default.`
+                : 'For every machine without its own people.'}
+            </p>
+            <PeopleChecks people={people} value={draft} onChange={setDraft} />
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                disabled={saveMachine.isPending || saveDefault.isPending}
+                onClick={() => {
+                  const done = { onSuccess: () => setEditing(null) }
+                  if (editing === 'machine') saveMachine.mutate({ id: equipment.id, service_assignees: draft }, done)
+                  else saveDefault.mutate(draft, done)
+                }}
+                className="rounded-md bg-brand-700 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+              >
+                Save
+              </button>
+              <button type="button" onClick={() => setEditing(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-600">
+                Cancel
+              </button>
+              {err && <span className="text-xs text-red-600">{err.message}</span>}
+            </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

@@ -303,12 +303,12 @@ where c.location = 'Home yard bale yard';
 insert into public.crop_varieties (crop_id, name, active, company)
 select c.id, v.name, true, v.company
 from (values
-  ('Canola', 'InVigor L345PC', 'BASF'), ('Canola', 'InVigor L340PC', 'BASF'), ('Canola', 'InVigor L233P', 'BASF'),
-  ('Canola', 'Pioneer 45M35', 'Corteva'), ('Canola', 'DKTF 98 SC', 'Bayer'),
-  ('Wheat', 'AAC Brandon', 'SeCan'), ('Wheat', 'AAC Viewfield', 'FP Genetics'), ('Wheat', 'CDC Go', 'SeCan'),
-  ('Barley', 'AAC Synergy', 'Syngenta'), ('Barley', 'CDC Austenson', 'SeCan'),
-  ('Peas', 'CDC Inca', 'SeCan'), ('Peas', 'CDC Amarillo', 'SeCan'),
-  ('Oats', 'CS Camden', 'Canterra')
+  ('Canola', 'Northfield NF345', 'Northfield'), ('Canola', 'Northfield NF340', 'Northfield'), ('Canola', 'Northfield NF233', 'Northfield'),
+  ('Canola', 'Ridgeline RL45', 'Ridgeline'), ('Canola', 'Ridgeline RL98', 'Ridgeline'),
+  ('Wheat', 'Northfield W701', 'Northfield'), ('Wheat', 'Northfield W715', 'Northfield'), ('Wheat', 'Ridgeline W620', 'Ridgeline'),
+  ('Barley', 'Ridgeline B210', 'Ridgeline'), ('Barley', 'Northfield B305', 'Northfield'),
+  ('Peas', 'Northfield P410', 'Northfield'), ('Peas', 'Ridgeline P420', 'Ridgeline'),
+  ('Oats', 'Ridgeline O510', 'Ridgeline')
 ) as v(crop, name, company)
 join public.crops c on c.name = v.crop
 on conflict do nothing;

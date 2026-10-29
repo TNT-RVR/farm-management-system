@@ -28,7 +28,7 @@ type Tab = (typeof TABS)[number]
 const LABEL: Record<Tab, string> = { todo: 'To do', completed: 'Completed', jobs: 'Jobs' }
 
 export function MonthlyPage() {
-  const [tab, setTab] = useTab<Tab>('monthly', TABS, 'todo')
+  const [tab, setTab] = useTab<Tab>('monthly', TABS)
   const [params] = useSearchParams()
   const [withNext, setWithNext] = useState(params.get('next') === '1')
   const now = ymOf(new Date())

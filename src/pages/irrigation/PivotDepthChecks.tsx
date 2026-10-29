@@ -30,7 +30,7 @@ import {
   type MeterUnit,
   type Verdict,
 } from '@/lib/pivot-depth'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 type Check = Database['public']['Tables']['pivot_depth_checks']['Row']
 type Method = Check['method']
@@ -427,16 +427,17 @@ function PivotDetail({
         {checks.length === 0 ? (
           <p className="text-gray-400">No checks recorded for this pivot.</p>
         ) : (
-          <table className="w-full max-w-2xl">
+          <div className="max-w-2xl overflow-x-auto rounded-lg border border-gray-200">
+          <table className="w-full">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="py-0.5 font-medium">Date</th>
-                <th className="py-0.5 font-medium">Method</th>
-                <th className="py-0.5 text-right font-medium">Speed</th>
-                <th className="py-0.5 text-right font-medium">Panel</th>
-                <th className="py-0.5 text-right font-medium">Measured</th>
-                <th className="py-0.5 text-right font-medium">Implied</th>
-                <th className="py-0.5 pl-3 font-medium">Note</th>
+                <th className={TABLE_TH}>Date</th>
+                <th className={TABLE_TH}>Method</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Speed</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Panel</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Measured</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Implied</th>
+                <th className={TABLE_TH}>Note</th>
                 {isMgr && <th />}
               </tr>
             </thead>
@@ -445,19 +446,19 @@ function PivotDetail({
                 const imp = impliedCorrection(Number(c.measured_mm), c.panel_mm != null ? Number(c.panel_mm) : null)
                 return (
                   <tr key={c.id}>
-                    <td className="py-0.5 text-gray-700">{md(c.checked_on)}</td>
-                    <td className="py-0.5 text-gray-600">{METHOD_LABEL[c.method]}</td>
-                    <td className="py-0.5 text-right tabular-nums">{c.speed_pct != null ? `${Number(c.speed_pct)}%` : '—'}</td>
-                    <td className="py-0.5 text-right">
+                    <td className="px-3 py-0.5 text-gray-700">{md(c.checked_on)}</td>
+                    <td className="px-3 py-0.5 text-gray-600">{METHOD_LABEL[c.method]}</td>
+                    <td className="px-3 py-0.5 text-right tabular-nums">{c.speed_pct != null ? `${Number(c.speed_pct)}%` : '—'}</td>
+                    <td className="px-3 py-0.5 text-right">
                       <Depth mm={c.panel_mm != null ? Number(c.panel_mm) : null} u={u} />
                     </td>
-                    <td className="py-0.5 text-right">
+                    <td className="px-3 py-0.5 text-right">
                       <Depth mm={Number(c.measured_mm)} u={u} />
                     </td>
-                    <td className="py-0.5 text-right tabular-nums">{imp != null ? `×${imp.toFixed(2)}` : '—'}</td>
-                    <td className="py-0.5 pl-3 text-gray-500">{c.note ?? ''}</td>
+                    <td className="px-3 py-0.5 text-right tabular-nums">{imp != null ? `×${imp.toFixed(2)}` : '—'}</td>
+                    <td className="px-3 py-0.5 text-gray-500">{c.note ?? ''}</td>
                     {isMgr && (
-                      <td className="py-0.5 pl-2 text-right">
+                      <td className="px-3 py-0.5 text-right">
                         <EditButton onClick={() => setEditing(c)} />
                       </td>
                     )}
@@ -466,6 +467,7 @@ function PivotDetail({
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
       {editing && <EditCheck check={editing} panel100Mm={a.panelMm} u={u} onClose={() => setEditing(null)} />}

@@ -377,8 +377,8 @@ export function CattleRedirect() {
 const RANCH_STORE_KEY = 'cattle_ranch_id'
 
 export function CattlePage({ view = 'pastures' }: { view?: CattleView } = {}) {
-  // Keyed by view: the five routes share this component, and a tab remembered
-  // for one must not carry over when the sidebar moves to another.
+  // Keyed by view: the five routes share this component, and a tab picked
+  // on one must not carry over when the sidebar moves to another.
   return view === 'settings' ? <CattleBody key={view} view={view} tabs={[]} /> : <TabbedView key={view} view={view} />
 }
 
@@ -392,8 +392,8 @@ function TabbedView({ view }: { view: Exclude<CattleView, 'settings'> }) {
     (t) => !isPathOff(off, `${def.path}?tab=${t.key}`) && !isPathOff(off, t.was) && !isViewDenied(profile, t.was),
   )
   const keys = tabs.map((t) => t.key)
-  const [asked, setTab] = useTab(`cattle-${view}`, keys, keys[0] ?? def.tabs[0].key, (a) => def.alias?.[a])
-  // The remembered tab can be one that has since been switched off.
+  const [asked, setTab] = useTab(`cattle-${view}`, keys, (a) => def.alias?.[a])
+  // A tab named in a link can be one that has since been switched off.
   const tab = keys.includes(asked) ? asked : keys[0]
   if (!tab) return <p className="p-6 text-sm text-gray-500">This part of the app is switched off.</p>
   return <CattleBody view={view} tabs={tabs} tab={tab} setTab={setTab} />
@@ -484,12 +484,19 @@ function CattleBody({
   return (
     <div>
       {(showTabs || ranchScoped) && (
-        <div className="space-y-2 border-b border-gray-200 bg-white px-4 py-3 md:px-6 print:hidden">
+        // On a computer the Ranch picker sits at the right end of the tab row
+        // (Sam, 29 Oct 2026); on a phone it goes under the tabs.
+        <div className="space-y-2 border-b border-gray-200 bg-white px-4 py-3 md:flex md:items-center md:gap-4 md:space-y-0 md:px-6 print:hidden">
           {showTabs && (
-            <PillTabs tabs={tabs.map((t) => ({ key: t.key, label: t.label }))} value={tab!} onChange={setTab!} />
+            <PillTabs
+              className="md:flex-1 md:border-b-0 md:pb-0"
+              tabs={tabs.map((t) => ({ key: t.key, label: t.label }))}
+              value={tab!}
+              onChange={setTab!}
+            />
           )}
           {ranchScoped && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 md:ml-auto md:shrink-0">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
                 Ranch
               </span>

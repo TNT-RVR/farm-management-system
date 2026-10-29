@@ -184,7 +184,7 @@ export function ChecklistsPage() {
   const { data: equipment } = useEquipment()
   const isManager = hasManagerAccess(profile?.role)
 
-  const [tab, setTab] = useTab('checklists', ['templates', 'runs'] as const, 'runs')
+  const [tab, setTab] = useTab('checklists', ['runs', 'templates'] as const)
   const [search, setSearch] = useState('')
   const [cat, setCat] = useState<ChecklistCategory | 'all'>('all')
   const [starting, setStarting] = useState<TemplateRow | null>(null)

@@ -45,7 +45,7 @@ import {
   useSaveStockReturn,
   useStockReturns,
 } from '@/lib/grazing-leases-data'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const LEASE_KEY = 'grazing_lease_id'
 const readLease = () => {
@@ -996,57 +996,59 @@ function RowsEditor<T extends Record<string, unknown>>({
     onChange(rows.map((r, j) => (j === i ? { ...r, [key]: v } : r)))
   }
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className={TABLE_HEAD}>
-          <tr>
-            {columns.map((c) => (
-              <th key={c.key} className={cn('pb-1 pr-2 font-medium', c.width)}>
-                {c.label}
-              </th>
-            ))}
-            <th className="w-8" />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              {columns.map((c) => (
-                <td key={c.key} className={cn('py-0.5 pr-2', c.width)}>
-                  <input
-                    type={c.type ?? 'text'}
-                    value={r[c.key] == null ? '' : String(r[c.key])}
-                    disabled={disabled}
-                    list={c.list ? `${listId}-${c.key}` : undefined}
-                    placeholder={c.placeholder}
-                    onChange={(e) => set(i, c.key, e.target.value, c.type)}
-                    className={cn(input, c.type === 'number' && 'text-right')}
-                  />
-                </td>
-              ))}
-              <td className="py-0.5">
-                {!disabled && (
-                  <button
-                    type="button"
-                    onClick={() => onChange(rows.filter((_, j) => j !== i))}
-                    className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-600"
-                    aria-label="Remove row"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-          {!rows.length && (
+    <div>
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="w-full text-sm">
+          <thead className={TABLE_HEAD}>
             <tr>
-              <td colSpan={columns.length + 1} className="py-1 text-xs text-gray-400">
-                None entered.
-              </td>
+              {columns.map((c) => (
+                <th key={c.key} className={cn(TABLE_TH, c.width)}>
+                  {c.label}
+                </th>
+              ))}
+              <th className="w-8" />
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                {columns.map((c) => (
+                  <td key={c.key} className={cn('px-3 py-1', c.width)}>
+                    <input
+                      type={c.type ?? 'text'}
+                      value={r[c.key] == null ? '' : String(r[c.key])}
+                      disabled={disabled}
+                      list={c.list ? `${listId}-${c.key}` : undefined}
+                      placeholder={c.placeholder}
+                      onChange={(e) => set(i, c.key, e.target.value, c.type)}
+                      className={cn(input, c.type === 'number' && 'text-right')}
+                    />
+                  </td>
+                ))}
+                <td className="py-1 pr-1">
+                  {!disabled && (
+                    <button
+                      type="button"
+                      onClick={() => onChange(rows.filter((_, j) => j !== i))}
+                      className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-600"
+                      aria-label="Remove row"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {!rows.length && (
+              <tr>
+                <td colSpan={columns.length + 1} className="px-3 py-2 text-xs text-gray-400">
+                  None entered.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
       {columns
         .filter((c) => c.list)
         .map((c) => (
@@ -1060,7 +1062,7 @@ function RowsEditor<T extends Record<string, unknown>>({
         <button
           type="button"
           onClick={() => onChange([...rows, blank()])}
-          className="mt-1 flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
+          className="mt-2 flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
         >
           <Plus className="h-3.5 w-3.5" /> Add a row
         </button>

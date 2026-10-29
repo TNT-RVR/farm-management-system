@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import type { MultiPolygon } from 'geojson'
 import { supabase } from './supabase'
+import { nearestPerSubject } from './map-as-of'
 
 // Pastures, and whatever the satellite module currently knows about them.
 //
@@ -101,21 +102,42 @@ export type FieldImage = {
 export function useFieldImagery(
   kind: 'truecolour' | 'ndvi' | 'ndvi_field' | 'ndre' = 'truecolour',
   subjectType: 'field' | 'pasture' = 'field',
+  /** A past day (YYYY-MM-DD): each subject's image taken nearest it, instead of the latest. */
+  asOf: string | null = null,
 ) {
   return useQuery({
-    queryKey: ['sat-latest-image', kind, subjectType],
+    queryKey: ['sat-latest-image', kind, subjectType, asOf],
     queryFn: async (): Promise<FieldImage[]> => {
-      const { data, error } = await supabase
-        .from('sat_latest_image')
-        .select('subject_id, sensed_on, storage_path, west, south, east, north, days_old, stretch_min, stretch_max')
-        .eq('subject_type', subjectType)
-        .eq('kind', kind)
-      // Every failure below is reported, never swallowed. The first version
-      // returned an empty array whatever went wrong, and the map said "no photo
-      // captured yet" — which is indistinguishable from success with no data,
-      // and was wrong: three images were sitting in storage the whole time.
-      if (error) throw new Error(`reading sat_latest_image: ${error.message}`)
-      const rows = (data ?? []) as unknown as Omit<FieldImage, 'url'>[]
+      let rows: Omit<FieldImage, 'url'>[]
+      if (asOf) {
+        // Within four months either side; nearer than that is always on file in season.
+        const at = Date.parse(`${asOf}T00:00:00Z`)
+        const span = (d: number) => new Date(at + d * 86_400_000).toISOString().slice(0, 10)
+        const { data, error } = await supabase
+          .from('sat_images')
+          .select('subject_id, sensed_on, storage_path, west, south, east, north, stretch_min, stretch_max')
+          .eq('subject_type', subjectType)
+          .eq('kind', kind)
+          .gte('sensed_on', span(-120))
+          .lte('sensed_on', span(120))
+        if (error) throw new Error(`reading sat_images: ${error.message}`)
+        rows = nearestPerSubject(data ?? [], asOf).map((r) => ({
+          ...r,
+          days_old: Math.round((Date.now() - Date.parse(`${r.sensed_on}T00:00:00Z`)) / 86_400_000),
+        })) as unknown as Omit<FieldImage, 'url'>[]
+      } else {
+        const { data, error } = await supabase
+          .from('sat_latest_image')
+          .select('subject_id, sensed_on, storage_path, west, south, east, north, days_old, stretch_min, stretch_max')
+          .eq('subject_type', subjectType)
+          .eq('kind', kind)
+        // Every failure below is reported, never swallowed. The first version
+        // returned an empty array whatever went wrong, and the map said "no photo
+        // captured yet" — which is indistinguishable from success with no data,
+        // and was wrong: three images were sitting in storage the whole time.
+        if (error) throw new Error(`reading sat_latest_image: ${error.message}`)
+        rows = (data ?? []) as unknown as Omit<FieldImage, 'url'>[]
+      }
       if (!rows.length) return []
 
       const { data: signed, error: signErr } = await supabase.storage

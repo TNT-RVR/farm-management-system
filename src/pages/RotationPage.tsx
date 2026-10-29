@@ -6,6 +6,7 @@ import { TabSuspense } from '@/components/TabSuspense'
 import { useTab } from '@/lib/useTab'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { RotationPlanner } from '@/pages/plan/RotationPlanner'
+import { usePartnerView } from '@/lib/partner-view'
 
 // The rules are read once a winter and the recommendations are run a handful
 // of times; neither needs to be in the plan's chunk.
@@ -13,6 +14,9 @@ const RotationRulesTab = lazy(() => import('@/pages/plan/RotationRules').then((m
 
 const TABS = ['plan', 'advice', 'rules'] as const
 type Tab = (typeof TABS)[number]
+// The recommendations are Claude's runs over the whole farm, which a
+// crop-share partner neither reads nor starts.
+const PARTNER_TABS: readonly Tab[] = ['plan', 'rules']
 
 /**
  * The crop rotation plan.
@@ -30,7 +34,8 @@ type Tab = (typeof TABS)[number]
 export function RotationPage() {
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
-  const [tab, setTab] = useTab<Tab>('rotation', TABS, 'plan')
+  const partner = usePartnerView()
+  const [tab, setTab] = useTab<Tab>('rotation', partner ? PARTNER_TABS : TABS)
   return (
     <div className="space-y-3 p-4 md:p-6">
       <PageHeader
@@ -41,7 +46,7 @@ export function RotationPage() {
       <PillTabs
         tabs={[
           { key: 'plan', label: 'Plan' },
-          { key: 'advice', label: 'Recommendations' },
+          ...(partner ? [] : [{ key: 'advice' as const, label: 'Recommendations' }]),
           { key: 'rules', label: 'Rules' },
         ]}
         value={tab}

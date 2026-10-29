@@ -13,7 +13,7 @@ import { levelsToForm } from '@/lib/record-edits'
 import { rowClick } from '@/components/RecordEditor'
 import { cn } from '@/lib/utils'
 import { askConfirm } from '@/components/askConfirm'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 type Crop = { id: string; name: string; moisture_dry_max: number | string | null }
 
@@ -435,15 +435,15 @@ function ReadingForm({
         </label>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full text-xs">
           <thead className={TABLE_HEAD}>
             <tr>
-              <th className="px-1 py-1 font-medium">Level</th>
-              <th className="px-1 py-1 font-medium">Temp °C</th>
-              <th className="px-1 py-1 font-medium">{mode === 'rh' ? 'RH %' : 'Moisture %'}</th>
-              <th className="px-1 py-1 text-right font-medium">Moisture</th>
-              <th className="px-1 py-1 font-medium" title="The sensor is in the headspace, not buried in the grain. Left out of the reading.">Above grain</th>
+              <th className={TABLE_TH}>Level</th>
+              <th className={TABLE_TH}>Temp °C</th>
+              <th className={TABLE_TH}>{mode === 'rh' ? 'RH %' : 'Moisture %'}</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Moisture</th>
+              <th className={TABLE_TH} title="The sensor is in the headspace, not buried in the grain. Left out of the reading.">Above grain</th>
               <th />
             </tr>
           </thead>
@@ -453,14 +453,14 @@ function ReadingForm({
               const outside = mode === 'rh' && l.temp_c != null && l.rh_pct != null && l.moisture_pct == null
               return (
                 <tr key={i}>
-                  <td className="px-1 py-0.5 text-gray-600">{i === 0 ? '1 (top)' : i === rows.length - 1 ? `${i + 1} (bottom)` : i + 1}</td>
-                  <td className="px-1 py-0.5">
+                  <td className="px-3 py-0.5 text-gray-600">{i === 0 ? '1 (top)' : i === rows.length - 1 ? `${i + 1} (bottom)` : i + 1}</td>
+                  <td className="px-3 py-0.5">
                     <input inputMode="decimal" value={r.temp} onChange={(e) => set(i, { temp: e.target.value })} className={cn(inputCls, 'w-20 text-right')} />
                   </td>
-                  <td className="px-1 py-0.5">
+                  <td className="px-3 py-0.5">
                     <input inputMode="decimal" value={r.pct} onChange={(e) => set(i, { pct: e.target.value })} className={cn(inputCls, 'w-20 text-right')} />
                   </td>
-                  <td className="px-1 py-0.5 text-right tabular-nums">
+                  <td className="px-3 py-0.5 text-right tabular-nums">
                     {l.moisture_pct != null ? (
                       <span className="font-semibold text-gray-900">
                         {l.moisture_pct}%
@@ -476,10 +476,10 @@ function ReadingForm({
                       <span className="text-gray-300">—</span>
                     )}
                   </td>
-                  <td className="px-1 py-0.5 text-center">
+                  <td className="px-3 py-0.5 text-center">
                     <input type="checkbox" checked={r.air} onChange={(e) => set(i, { air: e.target.checked })} aria-label={`Level ${i + 1} is above the grain, leave it out`} />
                   </td>
-                  <td className="px-1 py-0.5 text-right">
+                  <td className="px-3 py-0.5 text-right">
                     {rows.length > 1 && (
                       <button type="button" aria-label="Remove level" onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} className="rounded p-0.5 text-gray-300 hover:text-red-600">
                         <X className="h-3.5 w-3.5" />

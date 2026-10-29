@@ -9,7 +9,7 @@ import { InfoPopover } from '@/components/InfoPopover'
 import { useFarmSettings, useFeature } from '@/lib/farm-setup'
 import { WaterSupplyList } from './WaterSupply'
 import { n0 } from '@/lib/format'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 type Ctx = Extract<ReturnType<typeof useRotationContext>, { ready: true }>
 type Plan = ReturnType<typeof buildPlan>
@@ -201,13 +201,14 @@ export function SeasonAhead({
             )
           })}
         </ul>
-        <table className="mt-1.5 hidden w-full sm:table">
+        <div className="mt-1.5 hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
+        <table className="w-full">
           <thead className={TABLE_HEAD}>
             <tr>
-              <th className="py-0.5 font-medium">Source</th>
-              <th className="py-0.5 pl-3 text-right font-medium">Acres</th>
-              <th className="py-0.5 pl-4 text-right font-medium">Has</th>
-              <th className="py-0.5 pl-4 text-right font-medium">Plan needs</th>
+              <th className={TABLE_TH}>Source</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Acres</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Has</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Plan needs</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -217,15 +218,15 @@ export function SeasonAhead({
               const over = has > 0 && need > has + 0.5
               return (
                 <tr key={s.key}>
-                  <td className="py-1 text-gray-800">
+                  <td className="px-3 py-1 text-gray-800">
                     {sourceFields(s.key) || s.label}
                     <span className="block text-[10px] text-gray-400">
                       {s.label} · {s.basis}
                     </span>
                   </td>
-                  <td className="py-1 pl-3 text-right tabular-nums text-gray-600">{n0(s.acres)}</td>
-                  <td className="py-1 pl-4 text-right tabular-nums text-gray-700">{s.acres > 0 && has > 0 ? `${(has / s.acres).toFixed(1)}"` : '—'}</td>
-                  <td className={cn('py-1 text-right tabular-nums', over ? 'font-semibold text-red-700' : 'text-gray-800')}>
+                  <td className="px-3 py-1 text-right tabular-nums text-gray-600">{n0(s.acres)}</td>
+                  <td className="px-3 py-1 text-right tabular-nums text-gray-700">{s.acres > 0 && has > 0 ? `${(has / s.acres).toFixed(1)}"` : '—'}</td>
+                  <td className={cn('px-3 py-1 text-right tabular-nums', over ? 'font-semibold text-red-700' : 'text-gray-800')}>
                     {s.acres > 0 ? `${(need / s.acres).toFixed(1)}"` : '—'}
                     {over && <span className="block text-[10px]">short {n0((need - has) / 12)} ac-ft</span>}
                   </td>
@@ -234,6 +235,7 @@ export function SeasonAhead({
             })}
           </tbody>
         </table>
+        </div>
         {noRight.length > 0 && (
           <p className="mt-1 rounded bg-gray-50 px-1.5 py-1 text-[11px] text-gray-600">
             No {districtName} parcel or licence on file for {noRight.map((id) => fieldNames.get(id)).join(', ')} — not limited here. Add the licence on the
@@ -335,27 +337,28 @@ export function SeasonAhead({
         {cellList.length === 0 ? (
           <p className="mt-2 text-gray-400">No heat-unit history yet{isManager ? ' — refresh the outlook below.' : '.'}</p>
         ) : (
-          <table className="mt-1.5 hidden w-full sm:table">
+          <div className="mt-1.5 hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
+          <table className="w-full">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="py-0.5 font-medium">Area</th>
-                <th className="py-0.5 text-right font-medium">Heat units</th>
-                <th className="py-0.5 text-right font-medium">Cool year</th>
-                <th className="py-0.5 text-right font-medium">Frost-free</th>
+                <th className={TABLE_TH}>Area</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Heat units</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Cool year</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Frost-free</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {cellList.map((c) => (
                 <tr key={c.cell_key}>
-                  <td className="py-1 text-gray-700">
+                  <td className="px-3 py-1 text-gray-700">
                     {Number(c.lat).toFixed(2)}°, {Number(c.lon).toFixed(2)}°
                     <span className="block text-[10px] text-gray-400">
                       {c.years_from}–{c.years_to}
                     </span>
                   </td>
-                  <td className="py-1 text-right tabular-nums text-gray-800">{c.chu_median != null ? n0(Number(c.chu_median)) : '—'}</td>
-                  <td className="py-1 text-right tabular-nums text-gray-600">{c.chu_p20 != null ? n0(Number(c.chu_p20)) : '—'}</td>
-                  <td className="py-1 text-right tabular-nums text-gray-600">
+                  <td className="px-3 py-1 text-right tabular-nums text-gray-800">{c.chu_median != null ? n0(Number(c.chu_median)) : '—'}</td>
+                  <td className="px-3 py-1 text-right tabular-nums text-gray-600">{c.chu_p20 != null ? n0(Number(c.chu_p20)) : '—'}</td>
+                  <td className="px-3 py-1 text-right tabular-nums text-gray-600">
                     {c.ffd_median != null ? `${Math.round(Number(c.ffd_median))} d` : '—'}
                     <span className="block text-[10px] text-gray-400">
                       {md(c.spring_frost_median)} – {md(c.fall_frost_median)}
@@ -365,6 +368,7 @@ export function SeasonAhead({
               ))}
             </tbody>
           </table>
+          </div>
         )}
         <div className="mt-2 space-y-0.5 border-t border-gray-100 pt-1.5 text-[11px] text-gray-700">
           {summer ? (
@@ -480,15 +484,15 @@ export function SeasonAhead({
               )
             })}
         </ul>
-        <div className="mt-1.5 hidden overflow-x-auto sm:block">
+        <div className="mt-1.5 hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
           <table className="w-full min-w-[640px]">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="py-0.5 font-medium">Crop</th>
-                <th className="py-0.5 text-right font-medium">Yield</th>
-                <th className="py-0.5 text-right font-medium">Price</th>
-                <th className="py-0.5 text-right font-medium">Cost / ac</th>
-                <th className="py-0.5 text-right font-medium">Margin / ac</th>
+                <th className={TABLE_TH}>Crop</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Yield</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Price</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Cost / ac</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Margin / ac</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -502,7 +506,7 @@ export function SeasonAhead({
                   const sister = ctx.sisterValue.get(c.id)
                   return (
                     <tr key={c.id}>
-                      <td className="py-1 text-gray-800">
+                      <td className="px-3 py-1 text-gray-800">
                         {c.name}
                         {b.ownUse && <span className="ml-1 rounded bg-emerald-50 px-1 text-[10px] text-emerald-800">own feed</span>}
                         {k && (
@@ -523,19 +527,19 @@ export function SeasonAhead({
                           </span>
                         )}
                       </td>
-                      <td className="py-1 text-right tabular-nums text-gray-700">
+                      <td className="px-3 py-1 text-right tabular-nums text-gray-700">
                         {b.yield != null ? `${b.yield < 20 ? b.yield.toFixed(1) : n0(b.yield)} ${b.unit}` : '—'}
                         <span className="block text-[10px] text-gray-400">{b.yieldFrom}</span>
                       </td>
-                      <td className="py-1 text-right tabular-nums text-gray-700">
+                      <td className="px-3 py-1 text-right tabular-nums text-gray-700">
                         {b.price != null ? `$${b.price < 1 ? b.price.toFixed(3) : b.price.toFixed(2)}` : '—'}
                         <span className="block text-[10px] text-gray-400">{b.priceFrom}</span>
                       </td>
-                      <td className="py-1 text-right tabular-nums text-gray-700">
+                      <td className="px-3 py-1 text-right tabular-nums text-gray-700">
                         {b.cost != null ? `$${n0(b.cost)}` : '—'}
                         <span className="block text-[10px] text-gray-400">{b.costFrom}</span>
                       </td>
-                      <td className={cn('py-1 text-right font-semibold tabular-nums', b.margin != null && b.margin < 0 ? 'text-red-700' : 'text-gray-900')}>
+                      <td className={cn('px-3 py-1 text-right font-semibold tabular-nums', b.margin != null && b.margin < 0 ? 'text-red-700' : 'text-gray-900')}>
                         {b.margin != null ? `${b.margin < 0 ? '−' : ''}$${n0(Math.abs(b.margin))}` : '—'}
                         <span className="block text-[10px] font-normal text-gray-400">{marginBasisNote(b)}</span>
                       </td>

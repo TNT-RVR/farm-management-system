@@ -25,7 +25,7 @@ type Tab = (typeof TABS)[number]['key']
  * The tab is in the address so the Prices tab's basis line can link to Basis.
  */
 export function CropMarketsPage() {
-  const [tab, setTab] = useTab<Tab>('markets', TABS.map((t) => t.key), 'prices')
+  const [tab, setTab] = useTab<Tab>('markets', TABS.map((t) => t.key))
   const { cropYear } = useCropYear()
 
   return (

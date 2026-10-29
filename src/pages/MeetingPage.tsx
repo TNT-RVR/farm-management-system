@@ -107,7 +107,7 @@ export function MeetingPage() {
   const [monday, setMonday] = useState(() => weekStart())
   // Opening tab from the URL, so a tile or a pasted link can land on the one
   // somebody means; remembered, so a refresh does too.
-  const [tab, setTab] = useTab<MeetingTab>('meeting', MEETING_TABS, 'agenda', (t) => OLD_TABS[t])
+  const [tab, setTab] = useTab<MeetingTab>('meeting', MEETING_TABS, (t) => OLD_TABS[t])
 
   const { data: tasks } = useTasks()
   const { create: createTask } = useTaskMutations()

@@ -13,7 +13,7 @@ import { useCropBooks } from '@/lib/reports/crop-books'
 import { ourRows } from '@/lib/reports/agristability-form'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const db = supabase as unknown as SupabaseClient
 const money0 = (v: number) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
@@ -81,7 +81,8 @@ export function InputsTab({ realm }: { realm: string }) {
 
   return (
     <div className="space-y-3">
-      <section className="rounded-lg border border-gray-200 bg-white p-3">
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div className="p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
             <Sprout className="h-4 w-4 text-emerald-700" /> Inputs: the books against the fields · {year} crop ({fy.label})
@@ -109,35 +110,36 @@ export function InputsTab({ realm }: { realm: string }) {
         {cb.error && <p className="mt-2 text-sm text-red-600">{cb.error.message}</p>}
         {report.error && <p className="mt-2 text-sm text-red-600">{(report.error as Error).message}</p>}
         {report.isLoading && <p className="mt-2 text-sm text-gray-500">Asking QuickBooks…</p>}
+        </div>
 
         {cmp && (
-          <div className="mt-3 overflow-x-auto">
+          <div className="overflow-x-auto">
             <table className="w-full min-w-[480px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="py-1 font-medium">Input</th>
-                  <th className="py-1 text-right font-medium">Books</th>
-                  <th className="py-1 text-right font-medium">On the fields</th>
-                  <th className="py-1 text-right font-medium">Not on a field</th>
-                  <th className="py-1 text-right font-medium">Placed</th>
+                  <th className={TABLE_TH}>Input</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Books</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>On the fields</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Not on a field</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Placed</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 tabular-nums">
                 {cmp.kinds.map((k) => (
                   <tr key={k.kind}>
-                    <td className="py-1.5 text-gray-800">{INPUT_KINDS.find((x) => x.key === k.kind)!.label}</td>
-                    <td className="py-1.5 text-right text-gray-900">{money0(k.books)}</td>
-                    <td className="py-1.5 text-right text-gray-700">{compared ? money0(k.app) : '—'}</td>
-                    <td className={cn('py-1.5 text-right', compared && k.gap > 0 ? 'text-amber-800' : 'text-gray-500')}>{compared ? money0(k.gap) : '—'}</td>
-                    <td className="py-1.5 text-right text-gray-600">{compared ? pct(k.app, k.books) : '—'}</td>
+                    <td className="px-3 py-1.5 text-gray-800">{INPUT_KINDS.find((x) => x.key === k.kind)!.label}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-900">{money0(k.books)}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-700">{compared ? money0(k.app) : '—'}</td>
+                    <td className={cn('px-3 py-1.5 text-right', compared && k.gap > 0 ? 'text-amber-800' : 'text-gray-500')}>{compared ? money0(k.gap) : '—'}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-600">{compared ? pct(k.app, k.books) : '—'}</td>
                   </tr>
                 ))}
                 <tr className="font-semibold">
-                  <td className="py-1.5 text-gray-900">Inputs</td>
-                  <td className="py-1.5 text-right text-gray-900">{money0(booksTotal)}</td>
-                  <td className="py-1.5 text-right text-gray-900">{compared ? money0(appTotal) : '—'}</td>
-                  <td className="py-1.5 text-right text-gray-900">{compared ? money0(booksTotal - appTotal) : '—'}</td>
-                  <td className="py-1.5 text-right text-gray-700">{compared ? pct(appTotal, booksTotal) : '—'}</td>
+                  <td className="px-3 py-1.5 text-gray-900">Inputs</td>
+                  <td className="px-3 py-1.5 text-right text-gray-900">{money0(booksTotal)}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-900">{compared ? money0(appTotal) : '—'}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-900">{compared ? money0(booksTotal - appTotal) : '—'}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-700">{compared ? pct(appTotal, booksTotal) : '—'}</td>
                 </tr>
               </tbody>
             </table>
@@ -146,24 +148,24 @@ export function InputsTab({ realm }: { realm: string }) {
       </section>
 
       {cmp && compared && (
-        <Fold title="Field by field" summary={`${cmp.fields.length} fields`} storageKey="qb-inputs-fields" defaultOpen>
+        <Fold title="Field by field" summary={`${cmp.fields.length} fields`} storageKey="qb-inputs-fields" defaultOpen className="overflow-hidden" bodyClassName="p-0">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="py-1 font-medium">Field</th>
-                  <th className="py-1 text-right font-medium">Fert</th>
-                  <th className="py-1 text-right font-medium">Chem</th>
-                  <th className="py-1 text-right font-medium">Seed</th>
-                  <th className="py-1 text-right font-medium">Fuel</th>
-                  <th className="py-1 text-right font-medium">$/ac</th>
-                  <th className="py-1 text-right font-medium">Invoiced fert</th>
+                  <th className={TABLE_TH}>Field</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Fert</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Chem</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Seed</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Fuel</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>$/ac</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Invoiced fert</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 tabular-nums">
                 {cmp.fields.map((f) => (
                   <tr key={f.fieldId}>
-                    <td className="py-1.5 pr-2">
+                    <td className="px-3 py-1.5">
                       <Link to={`/fields/${f.fieldId}`} className="text-gray-900 hover:text-brand-700 hover:underline">
                         {f.field}
                       </Link>
@@ -171,14 +173,14 @@ export function InputsTab({ realm }: { realm: string }) {
                         {f.crop ?? '—'} · {Math.round(f.acres).toLocaleString('en-CA')} ac
                       </span>
                     </td>
-                    <td className="py-1.5 text-right text-gray-700">{money0(f.app.fertilizer)}</td>
-                    <td className="py-1.5 text-right text-gray-700">{money0(f.app.chemical)}</td>
-                    <td className="py-1.5 text-right text-gray-700">{money0(f.app.seed)}</td>
-                    <td className="py-1.5 text-right text-gray-700">{money0(f.app.fuel)}</td>
-                    <td className="py-1.5 text-right font-medium text-gray-900">{f.acres > 0 ? money0(f.appTotal / f.acres) : '—'}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-700">{money0(f.app.fertilizer)}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-700">{money0(f.app.chemical)}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-700">{money0(f.app.seed)}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-700">{money0(f.app.fuel)}</td>
+                    <td className="px-3 py-1.5 text-right font-medium text-gray-900">{f.acres > 0 ? money0(f.appTotal / f.acres) : '—'}</td>
                     <td
                       className={cn(
-                        'py-1.5 text-right',
+                        'px-3 py-1.5 text-right',
                         f.invoiced == null ? 'text-gray-400' : f.invoiced > f.app.fertilizer * 1.1 + 100 ? 'text-amber-800' : 'text-gray-700',
                       )}
                       title={f.invoiced != null && f.invoiced > f.app.fertilizer * 1.1 + 100 ? 'More fertilizer invoiced to this field than the passes cost' : undefined}

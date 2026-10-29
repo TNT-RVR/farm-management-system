@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import { farmRetailer } from '@/lib/farm-context'
 import { useSavings } from './context'
 import { money } from './ui'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const signed = (v: number) => `${v < 0 ? '−' : '+'}${money(Math.abs(v))}`
 
@@ -36,32 +36,34 @@ export function AdderMonths({ straightKey }: { straightKey: string }) {
   const used = new Set((a.auto?.used ?? []).map((m) => m.month))
   return (
     <>
+      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
       <table className="w-full text-[11px]">
         <thead className={TABLE_HEAD}>
           <tr>
-            <th className="py-0.5 font-medium">Month</th>
-            <th className="py-0.5 text-right font-medium">Here</th>
-            <th className="py-0.5 text-right font-medium">DTN, CA$/t</th>
-            <th className="py-0.5 text-right font-medium">Adder</th>
+            <th className={TABLE_TH}>Month</th>
+            <th className={cn(TABLE_TH, 'text-right')}>Here</th>
+            <th className={cn(TABLE_TH, 'text-right')}>DTN, CA$/t</th>
+            <th className={cn(TABLE_TH, 'text-right')}>Adder</th>
           </tr>
         </thead>
         <tbody>
           {months.slice(-8).map((m) => (
             <tr key={m.month} className={cn(!used.has(m.month) && 'text-gray-400', m.flag && 'line-through')} title={m.flag ?? undefined}>
-              <td className="py-0.5">
+              <td className="px-3 py-0.5">
                 {m.month}
                 <span className="ml-1 text-[10px] text-gray-400">{m.localSource === 'ICI' ? `${farmRetailer()}, ${m.localTonnes!.toFixed(1)} t` : 'survey'}</span>
               </td>
-              <td className="py-0.5 text-right tabular-nums">{money(m.local)}</td>
-              <td className="py-0.5 text-right tabular-nums" title={`US$${Math.round(m.dtnUsd)}/ton over ${m.dtnWeeks} week${m.dtnWeeks === 1 ? '' : 's'} at ${m.fx.toFixed(4)}${m.fxBorrowedFrom ? ` (rate from ${m.fxBorrowedFrom})` : ''}`}>
+              <td className="px-3 py-0.5 text-right tabular-nums">{money(m.local)}</td>
+              <td className="px-3 py-0.5 text-right tabular-nums" title={`US$${Math.round(m.dtnUsd)}/ton over ${m.dtnWeeks} week${m.dtnWeeks === 1 ? '' : 's'} at ${m.fx.toFixed(4)}${m.fxBorrowedFrom ? ` (rate from ${m.fxBorrowedFrom})` : ''}`}>
                 {money(m.dtnCad)}
                 {m.fxBorrowedFrom && <span className="text-amber-600">*</span>}
               </td>
-              <td className="py-0.5 text-right font-medium tabular-nums">{signed(m.adder)}</td>
+              <td className="px-3 py-0.5 text-right font-medium tabular-nums">{signed(m.adder)}</td>
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
       <p className="mt-1 text-[10px] text-gray-400">
         {a.auto?.perTonne != null ? `The adder is the median of the dark rows (the ${ADDER_WINDOW_MONTHS} months up to the latest): ${signed(a.auto.perTonne)}/t.` : ''}
         {months.some((m) => m.fxBorrowedFrom) ? ' * no exchange rate stored for that month; the nearest day’s was used.' : ''}

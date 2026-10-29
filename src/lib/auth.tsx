@@ -56,6 +56,8 @@ export type UserProfile = {
   is_owner?: boolean
   /** Sees the owners-only financials without being an owner. See canSeeFinances. */
   finance_access?: boolean
+  /** The company (farms) this person belongs to; null for the home farm's own people. */
+  farm_id?: string | null
 }
 
 type AuthState = {

@@ -6,7 +6,8 @@ import { depthCosts, usePowerPrices } from '@/lib/pivot-cost'
 import { DEFAULT_APPLICATION_EFFICIENCY, pivotFlow, pivotHorsepower } from '@/lib/water-review'
 import { EquipmentPhotos, FlagList, PlateBlock } from '@/pages/irrigation/EquipmentBlocks'
 import { money as fmtMoney } from '@/lib/format'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { cn } from '@/lib/utils'
 
 /**
  * A pivot's nameplate, the things on its record to check, its photos, and what
@@ -115,34 +116,36 @@ function PivotWaterCost({ pivot, fieldName, pump, pivotsOnPump }: { pivot: Field
           </div>
         </InfoPopover>
       </div>
+      <div className="w-fit max-w-full overflow-x-auto rounded-lg border border-gray-200">
       <table className="text-xs tabular-nums">
         <thead className={TABLE_HEAD}>
           <tr>
-            <th className="py-0.5 pr-4 font-medium">Depth</th>
-            {showTimer && <th className="py-0.5 pr-4 text-right font-medium">Timer</th>}
-            <th className="py-0.5 pr-4 text-right font-medium">Hours</th>
-            <th className="py-0.5 pr-4 text-right font-medium">kWh</th>
-            <th className="py-0.5 pr-4 text-right font-medium">Cost</th>
-            <th className="py-0.5 pr-4 text-right font-medium">$/ac</th>
-            {showWater && <th className="py-0.5 pr-4 text-right font-medium">Water</th>}
-            {showWater && <th className="py-0.5 text-right font-medium">Water $/ac</th>}
+            <th className={TABLE_TH}>Depth</th>
+            {showTimer && <th className={cn(TABLE_TH, 'text-right')}>Timer</th>}
+            <th className={cn(TABLE_TH, 'text-right')}>Hours</th>
+            <th className={cn(TABLE_TH, 'text-right')}>kWh</th>
+            <th className={cn(TABLE_TH, 'text-right')}>Cost</th>
+            <th className={cn(TABLE_TH, 'text-right')}>$/ac</th>
+            {showWater && <th className={cn(TABLE_TH, 'text-right')}>Water</th>}
+            {showWater && <th className={cn(TABLE_TH, 'text-right')}>Water $/ac</th>}
           </tr>
         </thead>
         <tbody className="text-gray-700">
           {rows.map((r) => (
             <tr key={r.depthIn}>
-              <td className="py-0.5 pr-4 font-medium text-gray-800">{DEPTH_LABEL[r.depthIn] ?? `${r.depthIn} in`}</td>
-              {showTimer && <td className="py-0.5 pr-4 text-right">{r.timerPct != null ? `${r.timerPct.toFixed(r.timerPct < 10 ? 1 : 0)}%` : '—'}</td>}
-              <td className="py-0.5 pr-4 text-right">{r.hours.toFixed(1)}</td>
-              <td className="py-0.5 pr-4 text-right">{r.kwh != null ? Math.round(r.kwh).toLocaleString('en-CA') : '—'}</td>
-              <td className="py-0.5 pr-4 text-right">{r.cost != null ? money(r.cost) : '—'}</td>
-              <td className="py-0.5 pr-4 text-right">{r.perAcre != null ? `$${r.perAcre.toFixed(2)}` : '—'}</td>
-              {showWater && <td className="py-0.5 pr-4 text-right">{r.waterValue != null ? money(r.waterValue) : '—'}</td>}
-              {showWater && <td className="py-0.5 text-right">{r.waterValue != null ? `$${(r.waterValue / acres!).toFixed(2)}` : '—'}</td>}
+              <td className="px-3 py-0.5 font-medium text-gray-800">{DEPTH_LABEL[r.depthIn] ?? `${r.depthIn} in`}</td>
+              {showTimer && <td className="px-3 py-0.5 text-right">{r.timerPct != null ? `${r.timerPct.toFixed(r.timerPct < 10 ? 1 : 0)}%` : '—'}</td>}
+              <td className="px-3 py-0.5 text-right">{r.hours.toFixed(1)}</td>
+              <td className="px-3 py-0.5 text-right">{r.kwh != null ? Math.round(r.kwh).toLocaleString('en-CA') : '—'}</td>
+              <td className="px-3 py-0.5 text-right">{r.cost != null ? money(r.cost) : '—'}</td>
+              <td className="px-3 py-0.5 text-right">{r.perAcre != null ? `$${r.perAcre.toFixed(2)}` : '—'}</td>
+              {showWater && <td className="px-3 py-0.5 text-right">{r.waterValue != null ? money(r.waterValue) : '—'}</td>}
+              {showWater && <td className="px-3 py-0.5 text-right">{r.waterValue != null ? `$${(r.waterValue / acres!).toFixed(2)}` : '—'}</td>}
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }

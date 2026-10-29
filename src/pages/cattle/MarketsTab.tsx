@@ -60,7 +60,7 @@ import { useFarmSettings } from '@/lib/farm-setup'
 import { monthName, ranchSale, saleWeightSource } from '@/lib/calf-sale'
 import { useMainRanch, useRanches } from '@/lib/ranches'
 import type { CattleSale } from '@/lib/cattleMarkets'
-import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const money = (v: number, dp = 2) => `$${v.toFixed(dp)}`
 
@@ -366,21 +366,17 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
             <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-800">
               Every lot ({(sales ?? []).length})
             </summary>
-            <div className="mt-2 max-h-72 overflow-auto">
+            <div className="mt-2 max-h-72 overflow-auto rounded-lg border border-gray-200">
               <table className="w-full text-xs">
                 <thead className={TABLE_HEAD}>
                   <tr>
-                    {/* pr-3 on every column but the last. Without it a
-                        right-aligned figure sits flush against the next column's
-                        left-aligned text — "$2.35Hillcrest Auction" — which is two
-                        columns in the markup and one to anybody reading it. */}
-                    <th className="pb-1 pr-3 font-medium">Year</th>
-                    <th className="pb-1 pr-3 font-medium">Ranch</th>
-                    <th className="pb-1 pr-3 font-medium">Class</th>
-                    <th className="pb-1 pr-3 text-right font-medium">Head</th>
-                    <th className="pb-1 pr-3 text-right font-medium">Avg lb</th>
-                    <th className="pb-1 pr-6 text-right font-medium">$/lb</th>
-                    <th className="pb-1 font-medium">Buyer</th>
+                    <th className={TABLE_TH}>Year</th>
+                    <th className={TABLE_TH}>Ranch</th>
+                    <th className={TABLE_TH}>Class</th>
+                    <th className={cn(TABLE_TH, 'text-right')}>Head</th>
+                    <th className={cn(TABLE_TH, 'text-right')}>Avg lb</th>
+                    <th className={cn(TABLE_TH, 'text-right')}>$/lb</th>
+                    <th className={TABLE_TH}>Buyer</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -390,14 +386,14 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
                       onClick={() => isManager && setEditing(s)}
                       className={cn(isManager && 'cursor-pointer hover:bg-gray-50')}
                     >
-                      <td className="py-1 pr-3">{s.crop_year}</td>
-                      <td className="py-1 pr-3 text-gray-600">{s.ranch}</td>
-                      <td className="py-1 pr-3 capitalize text-gray-600">{s.animal_class}</td>
-                      <td className="py-1 pr-3 text-right tabular-nums">{s.head ?? '—'}</td>
-                      <td className="py-1 pr-3 text-right tabular-nums">
+                      <td className="px-3 py-1">{s.crop_year}</td>
+                      <td className="px-3 py-1 text-gray-600">{s.ranch}</td>
+                      <td className="px-3 py-1 capitalize text-gray-600">{s.animal_class}</td>
+                      <td className="px-3 py-1 text-right tabular-nums">{s.head ?? '—'}</td>
+                      <td className="px-3 py-1 text-right tabular-nums">
                         {s.avg_weight_lb != null ? s.avg_weight_lb.toFixed(0) : '—'}
                       </td>
-                      <td className="py-1 pr-6 text-right font-medium tabular-nums">
+                      <td className="px-3 py-1 text-right font-medium tabular-nums">
                         {s.price_per_lb != null ? (
                           money(s.price_per_lb)
                         ) : (
@@ -406,7 +402,7 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
                           </span>
                         )}
                       </td>
-                      <td className="py-1 text-gray-500">{s.buyer ?? '—'}</td>
+                      <td className="px-3 py-1 text-gray-500">{s.buyer ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -41,7 +41,7 @@ import {
 } from '@/lib/combine-monitor-data'
 import { useCropYear } from '@/lib/crop-year'
 import { cn } from '@/lib/utils'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 /**
  * Combine → Monitor files: the files the combine display reads off a stick,
@@ -574,23 +574,23 @@ function BoundariesCard({
         {canEdit && <EditButton label="Edit grower and farm" onClick={() => setEditingSettings(true)} />}
       </div>
 
-      <div className="mt-2 max-h-96 overflow-auto">
+      <div className="mt-2 max-h-96 overflow-auto rounded-lg border border-gray-200">
         <table className="w-full text-sm">
           <thead className={cn(TABLE_HEAD, 'sticky top-0')}>
             <tr>
-              <th className="w-6 py-1" />
-              <th className="py-1 pr-2 font-medium">Farm</th>
-              <th className="py-1 pr-2 font-medium">Field on the display</th>
-              <th className="py-1 pr-2 font-medium">In the app</th>
-              <th className="py-1 pr-2 text-right font-medium">Acres</th>
-              <th className="hidden py-1 font-medium sm:table-cell">Crop</th>
-              {canEdit && <th className="w-8 py-1" />}
+              <th className={cn(TABLE_TH, 'w-6')} />
+              <th className={TABLE_TH}>Farm</th>
+              <th className={TABLE_TH}>Field on the display</th>
+              <th className={TABLE_TH}>In the app</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Acres</th>
+              <th className={cn(TABLE_TH, 'hidden sm:table-cell')}>Crop</th>
+              {canEdit && <th className={cn(TABLE_TH, 'w-8')} />}
             </tr>
           </thead>
           <tbody>
             {fields.map((f) => (
               <tr key={f.id} className={cn('border-t border-gray-100', !f.hasBoundary && 'text-gray-400')}>
-                <td className="py-1">
+                <td className="px-3 py-1">
                   <input
                     type="checkbox"
                     aria-label={`Include ${f.name}`}
@@ -599,11 +599,11 @@ function BoundariesCard({
                     onChange={() => toggle(f.id)}
                   />
                 </td>
-                <td className="py-1 pr-2 text-gray-700">
+                <td className="px-3 py-1 text-gray-700">
                   {f.monitor.farm}
                   {f.monitor.farmSet && <span className="ml-1 rounded bg-gray-100 px-1 text-[10px] text-gray-600">set</span>}
                 </td>
-                <td className="py-1 pr-2">
+                <td className="px-3 py-1">
                   <span className="font-medium">{f.monitor.name}</span>
                   {f.monitor.source === 'override' && <span className="ml-1 rounded bg-gray-100 px-1 text-[10px] text-gray-600">set</span>}
                   {f.monitor.shortened && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] text-amber-800">shortened</span>}
@@ -616,11 +616,11 @@ function BoundariesCard({
                     </div>
                   ))}
                 </td>
-                <td className="py-1 pr-2 text-gray-600">{f.monitor.name !== f.name ? f.name : <span className="text-gray-300">same</span>}</td>
-                <td className="py-1 pr-2 text-right tabular-nums">{f.acres != null ? f.acres.toFixed(1) : 'No boundary'}</td>
-                <td className="hidden py-1 text-gray-600 sm:table-cell">{f.crops.join(' / ')}</td>
+                <td className="px-3 py-1 text-gray-600">{f.monitor.name !== f.name ? f.name : <span className="text-gray-300">same</span>}</td>
+                <td className="px-3 py-1 text-right tabular-nums">{f.acres != null ? f.acres.toFixed(1) : 'No boundary'}</td>
+                <td className="hidden px-3 py-1 text-gray-600 sm:table-cell">{f.crops.join(' / ')}</td>
                 {canEdit && (
-                  <td className="py-1 text-right">
+                  <td className="px-3 py-1 text-right">
                     <EditButton label="Edit" onClick={() => setNaming(f)} />
                   </td>
                 )}

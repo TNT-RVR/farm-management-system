@@ -28,6 +28,7 @@ import { BALE_TYPES, isWeightEstimate, lotLbPerBale, ordinal } from '@/lib/balin
 import { Num } from '@/pages/cattle/feed/bits'
 import { cn } from '@/lib/utils'
 import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { Modal } from '@/components/Modal'
 
 const KINDS: FeedInventoryKind[] = [
   'harvested',
@@ -189,16 +190,17 @@ export function FeedOnHandPanel({
         {canEdit && ranchId && !adding && (
           <button
             onClick={() => setAdding(true)}
-            className="flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-50"
+            className="flex items-center gap-1 rounded-md border border-brand-200 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-800"
           >
             <Plus className="h-3.5 w-3.5" /> Feed put up
           </button>
         )}
       </div>
 
+      {/* A pop-up, not a panel pushed into the table (Sam, 29 Oct 2026). */}
       {adding && (
-        <div className="border-b border-gray-200 bg-gray-50 p-3">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <Modal title="Feed put up" onClose={() => setAdding(false)} wide>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <label className="text-xs text-gray-500">
               Feed
               <Select
@@ -298,7 +300,7 @@ export function FeedOnHandPanel({
               <span className="text-xs text-red-600">{(save.error as Error).message}</span>
             )}
           </div>
-        </div>
+        </Modal>
       )}
 
       {nothingPutUp && (

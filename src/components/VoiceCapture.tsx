@@ -8,6 +8,7 @@ import { useFieldMutations, useFields, useUsers } from '@/lib/queries'
 import { useTaskMutations } from '@/lib/tasks'
 import { useHere } from '@/lib/useHere'
 import { cn } from '@/lib/utils'
+import { makeRecognizer, type Recognizer } from '@/lib/speech'
 
 /**
  * Say it, see it, save it.
@@ -32,28 +33,6 @@ type Captured = {
   assignee_ids: string[]
   due_on: string | null
   unsure: string[]
-}
-
-type Recognizer = {
-  lang: string
-  continuous: boolean
-  interimResults: boolean
-  onresult: ((e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null
-  onend: (() => void) | null
-  onerror: ((e: { error: string }) => void) | null
-  start(): void
-  stop(): void
-}
-
-function makeRecognizer(): Recognizer | null {
-  const w = window as unknown as { SpeechRecognition?: new () => Recognizer; webkitSpeechRecognition?: new () => Recognizer }
-  const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition
-  if (!Ctor) return null
-  const r = new Ctor()
-  r.lang = 'en-CA'
-  r.continuous = true
-  r.interimResults = true
-  return r
 }
 
 export function VoiceCapture({ onClose, onSaved }: { onClose: () => void; onSaved?: () => void }) {

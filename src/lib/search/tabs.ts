@@ -241,6 +241,13 @@ export const TAB_ENTRIES: TabEntry[] = [
     exact: true,
     keywords: 'profit loss map net per acre',
   },
+  {
+    label: 'Compare',
+    page: 'Map',
+    to: '/map?tab=compare',
+    exact: true,
+    keywords: 'compare split screen side by side layers fields',
+  },
 
   // Weather (useTab 'weather')
   {
@@ -468,18 +475,18 @@ export const TAB_ENTRIES: TabEntry[] = [
     keywords: 'pivot water cost inch power kwh pumping allotment licence',
   },
 
-  // Spraying (useTab 'spraying') — split from Chemicals, 24 Oct 2026
+  // The spray check and re-entry times: tabs of Chemicals again (Sam, 29 Oct 2026)
   {
     label: 'Before spraying',
-    page: 'Spraying',
-    to: '/spraying?tab=spraycheck',
+    page: 'Chemicals',
+    to: '/chemicals?tab=spraycheck',
     exact: true,
     keywords: 'spray check label rotation',
   },
   {
     label: 'Recently sprayed',
-    page: 'Spraying',
-    to: '/spraying?tab=reentry',
+    page: 'Chemicals',
+    to: '/chemicals?tab=reentry',
     exact: true,
     keywords: 're-entry reentry',
   },

@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
 import { WaterConcerns } from './WaterConcerns'
 import { useFarmSettings } from '@/lib/farm-setup'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const fmt = (v: number, digits: number) =>
   v.toLocaleString('en-CA', { minimumFractionDigits: 0, maximumFractionDigits: digits })
@@ -83,14 +83,14 @@ export function WaterQualityCard({ isManager }: { isManager: boolean }) {
       {isLoading ? (
         <p className="text-xs text-gray-500">Loading…</p>
       ) : !stations.length ? null : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full min-w-[560px] text-xs">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="px-2 py-1 font-medium">Station</th>
-                <th className="px-2 py-1 font-medium">Latest</th>
+                <th className={TABLE_TH}>Station</th>
+                <th className={TABLE_TH}>Latest</th>
                 {WQ_PARAMS.map((p) => (
-                  <th key={p.key} className="px-2 py-1 text-right font-medium">
+                  <th key={p.key} className={cn(TABLE_TH, 'text-right')}>
                     {p.label}
                     {p.unit && <span className="block normal-case text-brand-200">{p.unit}</span>}
                   </th>
@@ -103,15 +103,15 @@ export function WaterQualityCard({ isManager }: { isManager: boolean }) {
                 const at = m ? [...m.values()].map((x) => x.at).sort().pop() : null
                 return (
                   <tr key={s.station_id}>
-                    <td className="px-2 py-1">
+                    <td className="px-3 py-1">
                       {s.name}
                       {s.for_credit && <span className="ml-1 rounded bg-sky-100 px-1 text-[10px] text-sky-800">in the credit</span>}
                     </td>
-                    <td className="px-2 py-1 whitespace-nowrap text-gray-500">{at ? at.slice(0, 10) : 'none yet'}</td>
+                    <td className="px-3 py-1 whitespace-nowrap text-gray-500">{at ? at.slice(0, 10) : 'none yet'}</td>
                     {WQ_PARAMS.map((p) => {
                       const r = m?.get(p.key)
                       return (
-                        <td key={p.key} className="px-2 py-1 text-right tabular-nums">
+                        <td key={p.key} className="px-3 py-1 text-right tabular-nums">
                           {r ? (r.below && r.value === 0 ? 'ND' : `${r.below ? '<' : ''}${fmt(r.value, p.digits)}`) : '—'}
                         </td>
                       )

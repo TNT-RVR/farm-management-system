@@ -57,7 +57,7 @@ import { PUBLIC_COPY } from '@/config/edition'
 import { FuelTab } from './hauling/FuelTab'
 import { PricesBar } from './hauling/ui'
 import { TabSuspense } from '@/components/TabSuspense'
-import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 // The maps and charts are their own chunks, loaded when their tab (or the price chart) shows.
 const PriceChart = lazy(() =>
@@ -199,7 +199,6 @@ function FuelView() {
   const [tab, setTab] = useTab<Tab>(
     'fuel',
     tabs.map((t) => t.key),
-    'fuel',
     (asked) => (asked === 'silage' && hauling ? 'trucking' : undefined),
   )
   useScrollToHash(tab, arrivedFor === 'silage' ? 'silage' : null)
@@ -664,25 +663,25 @@ function QbBills({ bills, finance }: { bills: QbFuelBill[]; finance: boolean }) 
             />
           ))}
         </CardList>
-        <div className="hidden overflow-x-auto sm:block">
+        <div className="hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
           <table className="w-full text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="py-1 pr-2">Date</th>
-                <th className="py-1 pr-2">Invoice</th>
-                <th className="py-1 pr-2">What</th>
-                <th className="py-1 pr-2 text-right">Amount</th>
-                <th className="py-1 pr-2 text-right">Litres</th>
-                <th className="py-1 pr-2 text-right">$/L</th>
+                <th className={TABLE_TH}>Date</th>
+                <th className={TABLE_TH}>Invoice</th>
+                <th className={TABLE_TH}>What</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Amount</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Litres</th>
+                <th className={cn(TABLE_TH, 'text-right')}>$/L</th>
                 {finance && <th />}
               </tr>
             </thead>
             <tbody>
               {rows.map((b) => (
                 <tr key={b.key} className="border-b border-gray-100">
-                  <td className="py-1 pr-2 tabular-nums">{b.on}</td>
-                  <td className="py-1 pr-2 text-gray-600">{b.docNumber ?? '\u2014'}</td>
-                  <td className="py-1 pr-2" title={b.description ?? undefined}>
+                  <td className="px-3 py-1 tabular-nums">{b.on}</td>
+                  <td className="px-3 py-1 text-gray-600">{b.docNumber ?? '\u2014'}</td>
+                  <td className="px-3 py-1" title={b.description ?? undefined}>
                     {kindLabel(b.kind)}
                     {b.assumedDyed && (
                       <span className="ml-1 text-[10px] text-amber-700">taken as dyed</span>
@@ -691,13 +690,13 @@ function QbBills({ bills, finance }: { bills: QbFuelBill[]; finance: boolean }) 
                       <span className="ml-1 text-[10px] text-gray-400">from the PDF</span>
                     )}
                   </td>
-                  <td className="py-1 pr-2 text-right tabular-nums">{money(b.amount)}</td>
-                  <td className="py-1 pr-2 text-right tabular-nums">
+                  <td className="px-3 py-1 text-right tabular-nums">{money(b.amount)}</td>
+                  <td className="px-3 py-1 text-right tabular-nums">
                     {b.litres != null ? Math.round(b.litres).toLocaleString('en-CA') : '\u2014'}
                   </td>
-                  <td className="py-1 pr-2 text-right tabular-nums">{perL(b.perL, 4)}</td>
+                  <td className="px-3 py-1 text-right tabular-nums">{perL(b.perL, 4)}</td>
                   {finance && (
-                    <td className="py-1 text-right text-xs">
+                    <td className="px-3 py-1 text-right text-xs">
                       <OpenInvoice id={b.attachableId} />
                     </td>
                   )}
@@ -893,16 +892,16 @@ function PurchaseHistory({
               )
             })}
           </CardList>
-          <div className="hidden overflow-x-auto sm:block">
+          <div className="hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
             <table className="w-full text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="py-1 pr-2">Date</th>
-                  <th className="py-1 pr-2">Invoice</th>
-                  <th className="py-1 pr-2">Product</th>
-                  <th className="py-1 pr-2 text-right">Litres</th>
-                  <th className="py-1 pr-2 text-right">$/L</th>
-                  <th className="py-1 pr-2 text-right">Amount</th>
+                  <th className={TABLE_TH}>Date</th>
+                  <th className={TABLE_TH}>Invoice</th>
+                  <th className={TABLE_TH}>Product</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Litres</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>$/L</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Amount</th>
                   <th />
                 </tr>
               </thead>
@@ -916,7 +915,7 @@ function PurchaseHistory({
                         onClick={rowClick(() => setOpenId(isOpen ? null : p.id))}
                         aria-expanded={isOpen}
                       >
-                        <td className="py-1 pr-2 tabular-nums">
+                        <td className="px-3 py-1 tabular-nums">
                           <span className="flex items-center gap-1">
                             <ChevronRight
                               className={cn(
@@ -927,23 +926,23 @@ function PurchaseHistory({
                             {p.invoice_date}
                           </span>
                         </td>
-                        <td className="py-1 pr-2 text-gray-600">
+                        <td className="px-3 py-1 text-gray-600">
                           {p.invoice_no ?? (p.source === 'typed' ? 'typed' : '\u2014')}
                         </td>
-                        <td className="py-1 pr-2" title={p.description ?? undefined}>
+                        <td className="px-3 py-1" title={p.description ?? undefined}>
                           {FUEL_PRODUCT_LABEL[p.product]}
                           {!p.checked && (
                             <span className="ml-1 text-[10px] text-amber-700">check</span>
                           )}
                         </td>
-                        <td className="py-1 pr-2 text-right tabular-nums">
+                        <td className="px-3 py-1 text-right tabular-nums">
                           {Math.round(p.litres).toLocaleString('en-CA')}
                         </td>
-                        <td className="py-1 pr-2 text-right tabular-nums">
+                        <td className="px-3 py-1 text-right tabular-nums">
                           {perL(p.price_per_l, 4)}
                         </td>
-                        <td className="py-1 pr-2 text-right tabular-nums">{money(p.amount)}</td>
-                        <td className="py-1 text-right">
+                        <td className="px-3 py-1 text-right tabular-nums">{money(p.amount)}</td>
+                        <td className="px-3 py-1 text-right">
                           {isManager && p.source === 'typed' && (
                             <span className="flex justify-end gap-1">
                               <EditButton onClick={() => setEditing(p)} />

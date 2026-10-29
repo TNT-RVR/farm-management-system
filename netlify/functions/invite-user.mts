@@ -39,7 +39,9 @@ export default async (req: Request) => {
     .select('role, active')
     .eq('id', caller.user.id)
     .single()
-  if (!profile || profile.role !== 'admin' || !profile.active) {
+  // The company an invite joins, when the caller runs a partner company.
+  let partnerFarm: string | null = null
+  if (!profile || !profile.active || (profile.role !== 'admin' && !partnerFarm)) {
     return json({ error: 'Only admins can invite users' }, 403)
   }
 
@@ -49,7 +51,8 @@ export default async (req: Request) => {
     'admin',
     'manager',
   ]
-  const role = ROLES.includes(body.role ?? '') ? body.role! : 'user'
+  // A partner company's invite is always to that company, as a partner.
+  const role = partnerFarm ? ROLES[ROLES.length - 1] : ROLES.includes(body.role ?? '') ? body.role! : 'user'
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return json({ error: 'A valid email is required' }, 400)
   }
@@ -57,7 +60,7 @@ export default async (req: Request) => {
   const { error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
     // `invite: true` is read by the handle_new_user trigger to activate the
     // account immediately (invited_at isn't set yet at insert time).
-    data: { role, invite: true },
+    data: { role, invite: true, ...(partnerFarm ? { farm_id: partnerFarm } : {}) },
     redirectTo: process.env.SITE_URL || 'https://your-farm.example',
   })
   if (inviteErr) return json({ error: inviteErr.message }, 400)

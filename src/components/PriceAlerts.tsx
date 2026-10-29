@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { rowClick } from '@/components/RecordEditor'
 import { watchNeedsRearm } from '@/lib/record-edits'
 import { askConfirm } from '@/components/askConfirm'
+import { Modal } from '@/components/Modal'
 
 const input = 'rounded-md border border-gray-200 px-2 py-1 text-sm text-gray-900'
 
@@ -51,7 +52,7 @@ export function PriceAlerts({
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
           <Bell className="h-4 w-4 text-gray-400" /> Price watches
         </h3>
-        {isManager && !adding && series.length > 0 && (
+        {isManager && series.length > 0 && (
           <button
             onClick={() => {
               setD({ series_id: series[0].id, direction: 'above', threshold: '' })
@@ -66,68 +67,70 @@ export function PriceAlerts({
       </div>
 
       {adding && (
-        <div className="mt-2 flex flex-wrap items-end gap-2 rounded-md bg-gray-50 p-2">
-          <label className="text-xs text-gray-500">
-            Series
-            <select
-              className={cn(input, 'mt-0.5 block max-w-64')}
-              value={d.series_id}
-              onChange={(e) => setD({ ...d, series_id: e.target.value })}
+        <Modal title={editingId ? 'Edit the price watch' : 'Watch a price'} onClose={() => { setAdding(false); setEditingId(null) }} wide>
+          <div className="mt-2 flex flex-wrap items-end gap-2 rounded-md bg-gray-50 p-2">
+            <label className="text-xs text-gray-500">
+              Series
+              <select
+                className={cn(input, 'mt-0.5 block max-w-64')}
+                value={d.series_id}
+                onChange={(e) => setD({ ...d, series_id: e.target.value })}
+              >
+                {series.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs text-gray-500">
+              Goes
+              <select
+                className={cn(input, 'mt-0.5 block')}
+                value={d.direction}
+                onChange={(e) => setD({ ...d, direction: e.target.value as 'above' | 'below' })}
+              >
+                <option value="above">above</option>
+                <option value="below">below</option>
+              </select>
+            </label>
+            <label className="text-xs text-gray-500">
+              {unitOf(d.series_id) || 'Value'}
+              <input
+                className={cn(input, 'mt-0.5 block w-28')}
+                inputMode="decimal"
+                value={d.threshold}
+                onChange={(e) => setD({ ...d, threshold: e.target.value })}
+              />
+            </label>
+            <button
+              disabled={!Number.isFinite(Number(d.threshold)) || !d.threshold.trim()}
+              onClick={async () => {
+                const was = relevant.find((a) => a.id === editingId)
+                const next = { series_id: d.series_id, direction: d.direction, threshold: Number(d.threshold) }
+                await save.mutateAsync({
+                  ...next,
+                  ...(was ? { id: was.id, ...(watchNeedsRearm(was, next) || was.series_id !== next.series_id ? { armed: true } : {}) } : {}),
+                })
+                setAdding(false)
+                setEditingId(null)
+              }}
+              className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
             >
-              {series.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs text-gray-500">
-            Goes
-            <select
-              className={cn(input, 'mt-0.5 block')}
-              value={d.direction}
-              onChange={(e) => setD({ ...d, direction: e.target.value as 'above' | 'below' })}
+              Save
+            </button>
+            <button
+              onClick={() => {
+                setAdding(false)
+                setEditingId(null)
+              }}
+              className="rounded-md px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
             >
-              <option value="above">above</option>
-              <option value="below">below</option>
-            </select>
-          </label>
-          <label className="text-xs text-gray-500">
-            {unitOf(d.series_id) || 'Value'}
-            <input
-              className={cn(input, 'mt-0.5 block w-28')}
-              inputMode="decimal"
-              value={d.threshold}
-              onChange={(e) => setD({ ...d, threshold: e.target.value })}
-            />
-          </label>
-          <button
-            disabled={!Number.isFinite(Number(d.threshold)) || !d.threshold.trim()}
-            onClick={async () => {
-              const was = relevant.find((a) => a.id === editingId)
-              const next = { series_id: d.series_id, direction: d.direction, threshold: Number(d.threshold) }
-              await save.mutateAsync({
-                ...next,
-                ...(was ? { id: was.id, ...(watchNeedsRearm(was, next) || was.series_id !== next.series_id ? { armed: true } : {}) } : {}),
-              })
-              setAdding(false)
-              setEditingId(null)
-            }}
-            className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
-          >
-            Save
-          </button>
-          <button
-            onClick={() => {
-              setAdding(false)
-              setEditingId(null)
-            }}
-            className="rounded-md px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
-          >
-            Cancel
-          </button>
-          {editingId && <span className="text-[11px] text-gray-400">A moved line arms the watch again.</span>}
-        </div>
+              Cancel
+            </button>
+            {editingId && <span className="text-[11px] text-gray-400">A moved line arms the watch again.</span>}
+          </div>
+        </Modal>
       )}
 
       {relevant.length === 0 ? (

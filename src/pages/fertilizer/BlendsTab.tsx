@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useCrops, useCropPlans, useFields } from '@/lib/queries'
 import { useCropYear } from '@/lib/crop-year'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
+import { usePartnerAccess } from '@/lib/partner-view'
 import { usePrescriptions, weightedRate } from '@/lib/fertility-rx'
 import { parseAnalysis } from '@/lib/fertilizer-analysis'
 import { useJdProducts } from '@/lib/products'
@@ -30,7 +31,7 @@ import {
 import { cn } from '@/lib/utils'
 import { money as fmtMoney } from '@/lib/format'
 import { askConfirm } from '@/components/askConfirm'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const money = (v: number | null | undefined) => fmtMoney(v, v != null && v < 100 ? 2 : 0, { min: 0, neg: 'inside' })
 const lb = (v: number) => v.toLocaleString('en-CA', { maximumFractionDigits: v < 10 ? 1 : 0 })
@@ -111,28 +112,30 @@ function BlendTable({
         <span className="ml-auto text-lg font-bold tabular-nums text-gray-900">{money(result.costPerAc)}/ac</span>
       </div>
       {children}
-      <table className="mt-2 w-full text-xs">
+      <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
+      <table className="w-full text-xs">
         <thead className={TABLE_HEAD}>
           <tr>
-            <th className="py-1 font-medium">Product</th>
-            <th className="py-1 text-right font-medium">lb/ac</th>
-            <th className="hidden py-1 text-right font-medium sm:table-cell">Tonnes</th>
-            <th className="py-1 text-right font-medium">$/ac</th>
+            <th className={TABLE_TH}>Product</th>
+            <th className={cn(TABLE_TH, 'text-right')}>lb/ac</th>
+            <th className={cn(TABLE_TH, 'hidden text-right sm:table-cell')}>Tonnes</th>
+            <th className={cn(TABLE_TH, 'text-right')}>$/ac</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {result.lines.map((l) => (
             <tr key={l.product.id}>
-              <td className="py-1 text-gray-800">
+              <td className="px-3 py-1 text-gray-800">
                 {l.product.name} <span className="text-gray-400">{analysisLabel(l.product)}</span>
               </td>
-              <td className="py-1 text-right tabular-nums">{lb(l.lbPerAc)}</td>
-              <td className="hidden py-1 text-right tabular-nums text-gray-600 sm:table-cell">{((l.lbPerAc * acres) / LB_PER_TONNE).toFixed(1)}</td>
-              <td className="py-1 text-right tabular-nums">{l.product.pricePerTonne == null ? '—' : money((l.lbPerAc / LB_PER_TONNE) * l.product.pricePerTonne)}</td>
+              <td className="px-3 py-1 text-right tabular-nums">{lb(l.lbPerAc)}</td>
+              <td className="hidden px-3 py-1 text-right tabular-nums text-gray-600 sm:table-cell">{((l.lbPerAc * acres) / LB_PER_TONNE).toFixed(1)}</td>
+              <td className="px-3 py-1 text-right tabular-nums">{l.product.pricePerTonne == null ? '—' : money((l.lbPerAc / LB_PER_TONNE) * l.product.pricePerTonne)}</td>
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
         <span>
           Rate <b className="tabular-nums text-gray-900">{lb(result.rate)} lb/ac</b>
@@ -174,6 +177,12 @@ function BlendTable({
 export function BlendsTab() {
   const { profile } = useAuth()
   const isMgr = hasManagerAccess(profile?.role)
+  // A crop-share partner saves blends for his own field-years; the product
+  // list stays ours (lib/partner-view.ts).
+  const { partner, canWrite } = usePartnerAccess()
+  // He prices and adds products too (fertilizer prices are his in full); deleting stays ours.
+  const canPrice = isMgr || partner
+  const canSaveFor = (field: string | null, year: number | null) => isMgr || canWrite(field, year)
   const { cropYear } = useCropYear()
   const qc = useQueryClient()
   const { data: rows } = useBlendProducts()
@@ -585,14 +594,14 @@ export function BlendsTab() {
             {customResult && customResult.lines.length > 0 && (
               <div className="mt-3">
                 <BlendTable result={customResult} acres={ac} title="Your blend" />
-                {isMgr && (
+                {canSaveFor(fieldId || null, cropYear) && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <input value={blendName} onChange={(e) => setBlendName(e.target.value)} placeholder={`${field?.name ?? 'Blend'} ${cropYear}`} className="w-56 rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
                     <button
                       type="button"
                       onClick={() => saveBlend.mutate(customResult)}
                       disabled={saveBlend.isPending}
-                      className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                      className="inline-flex items-center gap-1 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
                     >
                       <Save className="h-4 w-4" /> Save blend
                     </button>
@@ -614,19 +623,19 @@ export function BlendsTab() {
           Untick a product to keep it out of the cheapest mixes. Lock one at a rate (lb/ac) to build around it — the way the spreadsheet puts
           ESN or 40 Rock in first.
         </HelpNote>
-        <div className="mt-2 overflow-x-auto">
+        <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full min-w-[560px] text-xs">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="py-1 font-medium">Use</th>
-                <th className="py-1 font-medium">Product</th>
-                <th className="py-1 font-medium">N-P-K-S</th>
-                <th className="py-1 text-right font-medium">$/tonne</th>
-                <th className="hidden py-1 text-right font-medium sm:table-cell">lb/ft³</th>
-                <th className="py-1 text-right font-medium">
+                <th className={TABLE_TH}>Use</th>
+                <th className={TABLE_TH}>Product</th>
+                <th className={TABLE_TH}>N-P-K-S</th>
+                <th className={cn(TABLE_TH, 'text-right')}>$/tonne</th>
+                <th className={cn(TABLE_TH, 'hidden text-right sm:table-cell')}>lb/ft³</th>
+                <th className={cn(TABLE_TH, 'text-right')}>
                   <Lock className="inline h-3 w-3" /> lb/ac
                 </th>
-                {isMgr && <th />}
+                {isMgr && <th className={TABLE_TH} />}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -635,7 +644,7 @@ export function BlendsTab() {
                 const paid = lastPaid(p)
                 return (
                   <tr key={r.id}>
-                    <td className="py-1">
+                    <td className="px-3 py-1">
                       <input
                         type="checkbox"
                         checked={!excluded.has(r.id)}
@@ -648,10 +657,10 @@ export function BlendsTab() {
                         aria-label={`Use ${r.name}`}
                       />
                     </td>
-                    <td className="py-1 text-gray-800">{r.name}</td>
-                    <td className="py-1 tabular-nums text-gray-600">{analysisLabel(p)}</td>
-                    <td className="py-1 text-right">
-                      {isMgr ? (
+                    <td className="px-3 py-1 text-gray-800">{r.name}</td>
+                    <td className="px-3 py-1 tabular-nums text-gray-600">{analysisLabel(p)}</td>
+                    <td className="px-3 py-1 text-right">
+                      {canPrice ? (
                         <input
                           key={`${r.id}-${r.price_per_tonne}`}
                           defaultValue={r.price_per_tonne ?? ''}
@@ -672,8 +681,8 @@ export function BlendsTab() {
                         {paid && ` · last invoice ${money(paid.perTonne)}${paid.on ? ` (${paid.on.slice(0, 7)})` : ''}`}
                       </span>
                     </td>
-                    <td className="hidden py-1 text-right tabular-nums text-gray-600 sm:table-cell">{r.density_lb_ft3 ?? '—'}</td>
-                    <td className="py-1 text-right">
+                    <td className="hidden px-3 py-1 text-right tabular-nums text-gray-600 sm:table-cell">{r.density_lb_ft3 ?? '—'}</td>
+                    <td className="px-3 py-1 text-right">
                       <input
                         value={locks[r.id] ?? ''}
                         onChange={(e) => setLocks({ ...locks, [r.id]: e.target.value })}
@@ -684,7 +693,7 @@ export function BlendsTab() {
                       />
                     </td>
                     {isMgr && (
-                      <td className="py-1 pl-1 text-right">
+                      <td className="px-3 py-1 text-right">
                         <button
                           type="button"
                           onClick={() => deleteProduct.mutate({ id: r.id, name: r.name })}
@@ -703,7 +712,7 @@ export function BlendsTab() {
           </table>
         </div>
         {deleteProduct.error && <p className="mt-1 text-xs text-red-700">{(deleteProduct.error as Error).message}</p>}
-        {isMgr && <AddProduct onAdd={(patch) => saveProduct.mutate({ patch })} />}
+        {canPrice && <AddProduct onAdd={(patch) => saveProduct.mutate({ patch })} />}
       </section>
 
       {/* Saved */}
@@ -738,7 +747,7 @@ export function BlendsTab() {
                   >
                     open
                   </button>
-                  {isMgr && (
+                  {canSaveFor(b.field_id, b.crop_year) && (
                     <button type="button" onClick={() => setEditBlend(b.id)} aria-label="Edit" className="rounded p-1 text-gray-400 hover:bg-gray-100">
                       <Pencil className="h-3.5 w-3.5" />
                     </button>

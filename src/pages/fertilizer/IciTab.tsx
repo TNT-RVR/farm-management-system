@@ -12,7 +12,7 @@ import { useFarmSettings } from '@/lib/farm-setup'
 import { ImportHint } from '@/components/ImportHint'
 import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
 import { n0 } from '@/lib/format'
-import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const $0 = (v: number) => `$${Math.round(v).toLocaleString('en-CA')}`
 
@@ -42,44 +42,46 @@ function NutrientCompare({ f }: { f: FieldIci }) {
     return d > 15 ? 'font-semibold text-red-700' : d < -15 ? 'font-semibold text-amber-700' : 'text-emerald-700'
   }
   return (
+    <div className="inline-block max-w-full overflow-x-auto rounded-lg border border-gray-200">
     <table className="text-[11px] tabular-nums">
       <thead className={TABLE_HEAD}>
         <tr>
-          <td className="pr-2" />
+          <th className={TABLE_TH} />
           {keys.map((k) => (
-            <td key={k} className="px-1 text-right">
+            <th key={k} className={cn(TABLE_TH, 'text-right')}>
               {label[k]}
-            </td>
+            </th>
           ))}
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td className="pr-2 text-gray-500">{retailerName} put on</td>
+          <td className="px-3 text-gray-500">{retailerName} put on</td>
           {keys.map((k) => (
-            <td key={k} className={cn('px-1 text-right', tone(f.applied[k], f.soilRec?.[k] ?? f.rx?.[k]))}>
+            <td key={k} className={cn('px-3 text-right', tone(f.applied[k], f.soilRec?.[k] ?? f.rx?.[k]))}>
               {n0(f.applied[k])}
             </td>
           ))}
         </tr>
         <tr className="text-gray-500">
-          <td className="pr-2">Prescription{f.rxOtherCrop ? ` (${f.rxOtherCrop})` : ''}</td>
+          <td className="px-3">Prescription{f.rxOtherCrop ? ` (${f.rxOtherCrop})` : ''}</td>
           {keys.map((k) => (
-            <td key={k} className="px-1 text-right">
+            <td key={k} className="px-3 text-right">
               {f.rx ? n0(f.rx[k]) : '—'}
             </td>
           ))}
         </tr>
         <tr className="text-gray-500">
-          <td className="pr-2">Soil test</td>
+          <td className="px-3">Soil test</td>
           {keys.map((k) => (
-            <td key={k} className="px-1 text-right">
+            <td key={k} className="px-3 text-right">
               {f.soilRec ? n0(f.soilRec[k]) : '—'}
             </td>
           ))}
         </tr>
       </tbody>
     </table>
+    </div>
   )
 }
 

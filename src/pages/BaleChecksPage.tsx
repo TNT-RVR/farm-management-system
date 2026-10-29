@@ -30,7 +30,7 @@ import { supabase } from '@/lib/supabase'
 import { useUsers } from '@/lib/queries'
 import { localDateKey } from '@/lib/ranchWeather'
 import { cn } from '@/lib/utils'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 // bale_checks is newer than the generated types.
 const db = supabase as unknown as SupabaseClient
@@ -265,7 +265,7 @@ function CheckRow({ check }: { check: BaleCheck }) {
       </li>
     )
   return (
-    <li className="rounded-lg border border-gray-200 bg-white">
+    <li className="overflow-hidden rounded-lg border border-gray-200 bg-white">
       <button onClick={() => setOpen(!open)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-left text-sm">
         <span className="font-medium text-gray-900">{new Date(`${check.checked_on}T12:00`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
         <span className="text-gray-600">{[ranch, check.location].filter(Boolean).join(' · ')}</span>
@@ -276,35 +276,37 @@ function CheckRow({ check }: { check: BaleCheck }) {
         <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold', RISK_STYLE[worst])}>{RISK_WORD[worst]}</span>
       </button>
       {open && (
-        <div className="border-t border-gray-100 px-3 py-2 text-xs">
-          <table className="w-full">
-            <thead className={TABLE_HEAD}>
-              <tr>
-                <th className="py-1 font-medium">Feed</th>
-                <th className="py-1 font-medium">Stack</th>
-                <th className="py-1 text-right font-medium">Core</th>
-                <th className="py-1 text-right font-medium">Moisture</th>
-                <th className="py-1 pl-2 font-medium">Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rs.map((r, i) => (
-                <tr key={r.id ?? i} className="border-t border-gray-50">
-                  <td className="py-1">{r.feed_name}</td>
-                  <td className="py-1">{[r.stack, r.bale_label].filter(Boolean).join(' · ')}</td>
-                  <td className="py-1 text-right tabular-nums">{r.temp_c == null ? '—' : `${r.temp_c.toFixed(1)} °C / ${cToF(r.temp_c).toFixed(0)} °F`}</td>
-                  <td className="py-1 text-right tabular-nums">{r.moisture_pct == null ? '—' : `${r.moisture_pct}%`}</td>
-                  <td className="py-1 pl-2">
-                    <span className={cn('mr-1 rounded px-1 py-0.5 text-[10px] font-semibold', RISK_STYLE[readingRisk(r)])}>{RISK_WORD[readingRisk(r)]}</span>
-                    {r.notes}
-                  </td>
+        <div className="border-t border-gray-100 pb-2 text-xs">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className={TABLE_HEAD}>
+                <tr>
+                  <th className={TABLE_TH}>Feed</th>
+                  <th className={TABLE_TH}>Stack</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Core</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Moisture</th>
+                  <th className={TABLE_TH}>Note</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {check.notes && <p className="mt-2 text-gray-600">{check.notes}</p>}
+              </thead>
+              <tbody>
+                {rs.map((r, i) => (
+                  <tr key={r.id ?? i} className="border-t border-gray-50">
+                    <td className="px-3 py-1">{r.feed_name}</td>
+                    <td className="px-3 py-1">{[r.stack, r.bale_label].filter(Boolean).join(' · ')}</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{r.temp_c == null ? '—' : `${r.temp_c.toFixed(1)} °C / ${cToF(r.temp_c).toFixed(0)} °F`}</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{r.moisture_pct == null ? '—' : `${r.moisture_pct}%`}</td>
+                    <td className="px-3 py-1">
+                      <span className={cn('mr-1 rounded px-1 py-0.5 text-[10px] font-semibold', RISK_STYLE[readingRisk(r)])}>{RISK_WORD[readingRisk(r)]}</span>
+                      {r.notes}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {check.notes && <p className="mt-2 px-3 text-gray-600">{check.notes}</p>}
           {canDelete && (
-            <div className="mt-2 flex gap-4">
+            <div className="mt-2 flex gap-4 px-3">
               <button onClick={() => setEditing(true)} className="flex items-center gap-1 text-brand-700">
                 <Pencil className="h-3.5 w-3.5" /> Edit check
               </button>

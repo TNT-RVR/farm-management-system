@@ -27,6 +27,7 @@ import { useSeasonProgress, progressByField } from '@/lib/field-progress-data'
 import { fieldState, hailLabel, hailSummary, FIELD_STATE_CLASS, type HailSummary } from '@/lib/field-state'
 import { HailEventDialog } from '@/components/HailEventDialog'
 import { CARD_HEAD } from '@/lib/table-style'
+import { usePartnerAccess } from '@/lib/partner-view'
 
 type Row = FieldListRow
 
@@ -44,6 +45,10 @@ export function FieldsPage() {
   const { data: seasons } = useFieldSeasons(cropYear)
   const { data: progress } = useSeasonProgress(cropYear)
   const isManager = hasManagerAccess(profile?.role)
+  // A crop-share partner adds and keeps his company's own fields; ours on his
+  // list are his to record on, not to set up (lib/partner-view.ts).
+  const { partner, isOwnField } = usePartnerAccess()
+  const canAdd = isManager || partner
 
   // The year's hail per field: a count and the worst assessed loss, which is
   // what the chip says. A field can hail twice.
@@ -168,13 +173,20 @@ export function FieldsPage() {
       },
     },
   )
-  if (isManager) {
+  if (partner) {
+    columns.splice(1, 0, {
+      key: 'whose',
+      label: 'Whose',
+      value: (r) => (isOwnField(r.id) ? 'Yours' : 'Shared'),
+    })
+  }
+  if (canAdd) {
     columns.push({
       key: 'actions',
       label: '',
       value: () => '',
       className: 'text-right',
-      render: (r) => (
+      render: (r) => partner && !isOwnField(r.id) ? null : (
         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => navigate(`/fields/${r.id}`)}
@@ -229,7 +241,7 @@ export function FieldsPage() {
             ))}
           </div>
         </div>
-        {isManager && (
+        {canAdd && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => setAdding(true)}
@@ -237,12 +249,12 @@ export function FieldsPage() {
             >
               <Plus className="h-3.5 w-3.5" /> Add field
             </button>
-            <Link
+            {isManager && <Link
               to="/fields/import"
               className="flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
             >
               <FileUp className="h-3.5 w-3.5" /> Import boundaries
-            </Link>
+            </Link>}
           </div>
         )}
       </div>

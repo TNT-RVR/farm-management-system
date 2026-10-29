@@ -58,7 +58,7 @@ values
   ('Example: On-farm water efficiency program', 'Provincial agriculture ministry (example)', null, 'applying', 5000, 50000,
    'Example: Alberta producers upgrading irrigation to low-pressure drops, variable-rate irrigation or better metering. Cost-share up to 50%.',
    'Example — written for this made-up farm. In your own copy, the AI writes this from your farm''s data.' || E'\n\n'
-   || 'Cost-share for irrigation upgrades that save water. Prairie Creek''s two older Valley pivots could qualify for new drops and pressure regulators, and the creek pump for a variable-frequency drive.',
+   || 'Cost-share for irrigation upgrades that save water. Prairie Creek''s two older pivots could qualify for new drops and pressure regulators, and the creek pump for a variable-frequency drive.',
    'Example — written for this made-up farm. In your own copy, the AI writes this from your farm''s data.' || E'\n\n'
    || E'**Draft outline**\n- Project: new drops and regulators on North Pivot and Creek Pivot West; a VFD on the creek pump.\n- Water saved: about 1.5 in a year across 260 ac.\n- Cost: about $48,000; asking for 50%.\n- Quotes needed from Precision Pivot Service before submitting.',
    current_date - 60, current_date + 34, 'Alberta', '{irrigation,water,equipment}', '0de30000-0000-4000-8000-0000000000a1', 'auto', 'demo-grant-1', now() - interval '40 days'),
@@ -95,7 +95,7 @@ values
    72, 'watching', null, 'auto', 'demo-event-3', 'annual'),
   ('Example: Farm equipment and technology show', 'Example exhibition society', null, current_date + 155, current_date + 157, null, null,
    'Exhibition grounds', 'Edmonton', 'AB', 'Canada', 20, null, 'CAD', 'Gate admission.', '{equipment,technology}',
-   'Example — written for this made-up farm. In your own copy, the AI writes this from your farm''s data.' || E'\n\n' || 'Three days of equipment dealers. Worth a look before replacing the 7230R loader tractor.',
+   'Example — written for this made-up farm. In your own copy, the AI writes this from your farm''s data.' || E'\n\n' || 'Three days of equipment dealers. Worth a look before replacing the T230 loader tractor.',
    55, 'watching', null, 'auto', 'demo-event-4', 'annual'),
   ('Example: Grain marketing short course', 'Example farm business network', null, current_date + 63, current_date + 64, current_date + 50, current_date + 30,
    'Online', null, null, 'Canada', 450, 395, 'CAD', null, '{marketing,business}',

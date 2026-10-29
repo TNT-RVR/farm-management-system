@@ -1,16 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useLandDeals } from '@/lib/land-deals-data'
-import { useFixedAreas, useFixedPerAcre, useLandSharePerAcre } from '@/lib/farm-costs'
 import maplibregl from 'maplibre-gl'
 import { TriangleAlert } from 'lucide-react'
 import { useFarmMap } from '@/lib/geo/use-farm-map'
-import { useProductResolver } from '@/lib/products'
-import { boundariesForYear, useAllBoundaries, useFields } from '@/lib/queries'
+import { boundariesForYear, useAllBoundaries } from '@/lib/queries'
 import { colourStops } from '@/lib/profit-loss'
 import { money } from '@/lib/profit-loss-lines'
-import { farmBooks, farmTotals, seasonsFrom, useFarmData, type FieldBooks } from '@/lib/profit-loss-farm'
-import { useOperatingCostLines } from '@/lib/operating-costs'
-import { useSeasonFuelOps } from '@/lib/hauling-data'
+import { farmTotals, type FieldBooks } from '@/lib/profit-loss-farm'
+import { useFarmBooks } from '@/lib/use-farm-books'
 import { Legend } from '@/components/ProfitLossLines'
 import { BreakevenCard } from '@/components/BreakevenCard'
 import { cn } from '@/lib/utils'
@@ -35,38 +31,8 @@ export function ProfitLossFarm({
   priceMode: 'target' | 'actual'
   onPickField: (fieldId: string) => void
 }) {
-  const { data: fields } = useFields()
   const { data: allBoundaries } = useAllBoundaries()
-  const { data, isLoading, error } = useFarmData(cropYear)
-  const resolve = useProductResolver()
-  const { data: deals } = useLandDeals()
-  const fixed = useFixedPerAcre(cropYear)
-  const fixedAreas = useFixedAreas(cropYear)
-  const { data: landSharePerAcre } = useLandSharePerAcre(cropYear)
-  // Fuel and trucking per field, priced the same as each field's own page.
-  const { data: fuelOps } = useSeasonFuelOps(cropYear)
-  const operatingLines = useOperatingCostLines(cropYear, fuelOps)
-
-  const seasons = useMemo(() => (data ? seasonsFrom(data, priceMode) : new Map()), [data, priceMode])
-  const books = useMemo(() => {
-    if (!data || !fields || !resolve) return []
-    return farmBooks({
-      cropYear,
-      fields: fields.map((f) => ({ id: f.id, name: f.name })),
-      seasons,
-      ops: data.ops,
-      layers: data.layers,
-      saved: data.saved,
-      resolve,
-      priceSource: priceMode,
-      deals: deals ?? [],
-      fixedPerAcre: fixed.perAcre,
-      fixedFrom: fixed.carriedFrom,
-      fixedAreas,
-      landSharePerAcre: landSharePerAcre ?? null,
-      extraLines: operatingLines,
-    })
-  }, [data, fields, resolve, cropYear, priceMode, seasons, deals, fixed.perAcre, fixed.carriedFrom, fixedAreas, landSharePerAcre, operatingLines])
+  const { books, seasons, fixed, isLoading, error } = useFarmBooks(cropYear, priceMode)
   const totals = useMemo(() => farmTotals(books), [books])
 
   const withNet = books.filter((b) => b.netPerAcre != null).map((b) => b.netPerAcre!)

@@ -6,7 +6,7 @@ import { appliedByProduct, fmtMoney, fmtQty } from '@/lib/applied'
 import { useFieldOperations } from '@/lib/fieldOps'
 import { useProductResolver } from '@/lib/products'
 import { useCropYear } from '@/lib/crop-year'
-import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
 
 /**
@@ -62,14 +62,14 @@ export function FieldInputsCard({ fieldId, acres }: { fieldId: string; acres: nu
   }
 
   return (
-    <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white pb-4">
+      <div className="flex flex-wrap items-center gap-2 px-4 pt-4">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
           <FlaskConical className="h-4 w-4 text-brand-700" /> Inputs applied
         </h3>
         <span className="ml-auto text-xs text-gray-400">{cropYear}</span>
       </div>
-      <p className="mt-0.5 text-xs text-gray-500">
+      <p className="mt-0.5 px-4 text-xs text-gray-500">
         {applications.length} application{applications.length === 1 ? '' : 's'} in {cropYear} over{' '}
         {acres.toFixed(1)} ac. Deere records gallons as US. Tap a product for the passes behind it.
       </p>
@@ -78,10 +78,10 @@ export function FieldInputsCard({ fieldId, acres }: { fieldId: string; acres: nu
         <table className="w-full text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
-              <th className="pb-1 font-medium">Product</th>
-              <th className="pb-1 text-right font-medium">Passes</th>
-              <th className="pb-1 text-right font-medium">Total</th>
-              <th className="pb-1 text-right font-medium">Cost</th>
+              <th className={TABLE_TH}>Product</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Passes</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Total</th>
+              <th className={cn(TABLE_TH, 'text-right')}>Cost</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -92,7 +92,7 @@ export function FieldInputsCard({ fieldId, acres }: { fieldId: string; acres: nu
                 title={`${l.passes} pass${l.passes === 1 ? '' : 'es'} — dates, rates, machine and operator`}
                 className="cursor-pointer hover:bg-gray-50"
               >
-                <td className="py-1.5 pr-2">
+                <td className="px-3 py-1.5">
                   <span className="text-gray-800">{l.product}</span>
                   {/* Show the folding, so a merged line is never a mystery. */}
                   {l.aliases.length > 1 && (
@@ -106,11 +106,11 @@ export function FieldInputsCard({ fieldId, acres }: { fieldId: string; acres: nu
                     </span>
                   )}
                 </td>
-                <td className="py-1.5 text-right tabular-nums text-gray-500">{l.passes}</td>
-                <td className="py-1.5 text-right tabular-nums text-gray-700">
+                <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{l.passes}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
                   {fmtQty(l.total, l.unit)}
                 </td>
-                <td className="py-1.5 text-right tabular-nums text-gray-700">
+                <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">
                   {l.cost == null ? <span className="text-gray-300">—</span> : fmtMoney(l.cost)}
                 </td>
               </tr>
@@ -118,22 +118,22 @@ export function FieldInputsCard({ fieldId, acres }: { fieldId: string; acres: nu
           </tbody>
           <tfoot>
             <tr className="border-t border-gray-200 font-medium">
-              <td className="pt-2" colSpan={3}>
+              <td className="px-3 pt-2" colSpan={3}>
                 Total{uncosted > 0 && <span className="text-gray-400"> (priced products only)</span>}
               </td>
-              <td className="pt-2 text-right tabular-nums">{fmtMoney(costed)}</td>
+              <td className="px-3 pt-2 text-right tabular-nums">{fmtMoney(costed)}</td>
             </tr>
             {costed > 0 && (
               <tr className="text-xs text-gray-500">
-                <td colSpan={3}>Per acre</td>
-                <td className="text-right tabular-nums">{fmtMoney(costed / acres)}/ac</td>
+                <td className="px-3" colSpan={3}>Per acre</td>
+                <td className="px-3 text-right tabular-nums">{fmtMoney(costed / acres)}/ac</td>
               </tr>
             )}
           </tfoot>
         </table>
       </div>
 
-      <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
+      <p className="mt-2 flex items-center gap-1.5 px-4 text-xs text-gray-500">
         <Droplets className="h-3.5 w-3.5 text-sky-600" />
         {Math.round(waterL).toLocaleString('en-CA')} L of water carried
       </p>
@@ -143,7 +143,7 @@ export function FieldInputsCard({ fieldId, acres }: { fieldId: string; acres: nu
       )}
 
       {uncosted > 0 && (
-        <p className="mt-2 text-xs text-gray-500">
+        <p className="mt-2 px-4 text-xs text-gray-500">
           {uncosted} product{uncosted === 1 ? ' has' : 's have'} no price yet.{' '}
           <SetupLink managerOnly to={SETUP_LINKS.chemicalPrices()}>
             Set prices

@@ -32,13 +32,14 @@ import { MergeProductDialog } from '@/components/MergeProductDialog'
 import { ProductSheetCell } from '@/components/ProductSheetCell'
 import { ManualUseEditor } from '@/components/ManualUseEditor'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
+import { usePartnerView } from '@/lib/partner-view'
 import { cn } from '@/lib/utils'
 import { handAddedProduct } from '@/lib/product-hand'
 import { carryover, type CropKey, type RecropRule } from '@/lib/rotation-engine'
 import { askConfirm } from '@/components/askConfirm'
 import { HelpNote } from '@/components/HelpNote'
 import { CardList, RowCard, type Fact } from '@/components/RowCards'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 /**
  * The price book behind every input cost in the app.
@@ -58,35 +59,37 @@ const STALE_DAYS = 400
  */
 function Applications({ r }: { r: Row }) {
   return (
-    <table className="w-full text-xs">
-      <thead className={TABLE_HEAD}>
-        <tr>
-          <th className="py-1 pr-4 font-medium">Date</th>
-          <th className="py-1 pr-4 font-medium">Field</th>
-          <th className="py-1 pr-4 font-medium">Rate</th>
-          <th className="hidden py-1 pr-4 font-medium sm:table-cell">Season</th>
-          <th className="hidden py-1 font-medium sm:table-cell">Applied as</th>
-        </tr>
-      </thead>
-      <tbody>
-        {r.applications.map((a) => (
-          <tr key={`${a.operation_id}-${a.applied_name}-${a.field_id}`}>
-            <td className="py-1 pr-4 tabular-nums text-gray-700">{a.applied_on ?? '—'}</td>
-            <td className="py-1 pr-4 text-gray-700">{a.field_name ?? 'unmatched field'}</td>
-            <td className="py-1 pr-4 tabular-nums text-gray-600">
-              {a.rate_value == null
-                ? '—'
-                : `${Number(a.rate_value).toLocaleString('en-CA', { maximumFractionDigits: 3 })} ${a.rate_unit ?? ''}`}
-            </td>
-            <td className="hidden py-1 pr-4 text-gray-500 sm:table-cell">{a.crop_season ?? '—'}</td>
-            <td className="hidden py-1 text-gray-500 sm:table-cell">
-              {a.applied_name}
-              {a.from_mix && a.mix_name && <span className="text-gray-400"> · in {a.mix_name}</span>}
-            </td>
+    <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      <table className="w-full text-xs">
+        <thead className={TABLE_HEAD}>
+          <tr>
+            <th className={TABLE_TH}>Date</th>
+            <th className={TABLE_TH}>Field</th>
+            <th className={TABLE_TH}>Rate</th>
+            <th className={cn(TABLE_TH, 'hidden sm:table-cell')}>Season</th>
+            <th className={cn(TABLE_TH, 'hidden sm:table-cell')}>Applied as</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {r.applications.map((a) => (
+            <tr key={`${a.operation_id}-${a.applied_name}-${a.field_id}`}>
+              <td className="px-3 py-1 tabular-nums text-gray-700">{a.applied_on ?? '—'}</td>
+              <td className="px-3 py-1 text-gray-700">{a.field_name ?? 'unmatched field'}</td>
+              <td className="px-3 py-1 tabular-nums text-gray-600">
+                {a.rate_value == null
+                  ? '—'
+                  : `${Number(a.rate_value).toLocaleString('en-CA', { maximumFractionDigits: 3 })} ${a.rate_unit ?? ''}`}
+              </td>
+              <td className="hidden px-3 py-1 text-gray-500 sm:table-cell">{a.crop_season ?? '—'}</td>
+              <td className="hidden px-3 py-1 text-gray-500 sm:table-cell">
+                {a.applied_name}
+                {a.from_mix && a.mix_name && <span className="text-gray-400"> · in {a.mix_name}</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -132,6 +135,10 @@ export function ProductPrices({
   const { data, isLoading } = useJdProducts()
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
+  // A crop-share partner keeps the fertilizer prices with us; deleting a
+  // product stays ours (lib/partner-view.ts).
+  const partner = usePartnerView()
+  const canEdit = isManager || (partner && category === 'fertilizer')
   const { data: apps } = useProductApplications()
   const { data: purchases } = useProductPurchases()
   const { data: cropBySeason } = useCropByFieldSeason()
@@ -426,7 +433,7 @@ export function ProductPrices({
           )}
           <span className="block text-[10px] text-gray-400">
             {r.applications.length} application{r.applications.length === 1 ? '' : 's'}
-            {isManager && (
+            {canEdit && (
               <button
                 type="button"
                 onClick={() => setEditingUse(p)}
@@ -437,7 +444,7 @@ export function ProductPrices({
             )}
           </span>
         </span>
-      ) : isManager ? (
+      ) : canEdit ? (
         <button
           type="button"
           onClick={() => setEditingUse(p)}
@@ -480,7 +487,7 @@ export function ProductPrices({
         ) : (
           // No registration: the reason why, the supplier sheet if there is
           // one, or the amber button until somebody has looked.
-          <ProductSheetCell product={p} canEdit={isManager} onLink={() => setLinking(p)} />
+          <ProductSheetCell product={p} canEdit={canEdit} onLink={() => setLinking(p)} />
         ),
       invoice: r.invoiceNo ? (
         <button
@@ -635,7 +642,7 @@ export function ProductPrices({
           hundred-and-something products. */}
       <UnpricedMatches products={data?.products ?? []} category={category} />
 
-      {isManager && (
+      {canEdit && (
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
           {adding ? (
             <>

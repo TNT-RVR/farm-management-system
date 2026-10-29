@@ -1,45 +1,32 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 /**
- * Which tab a page is on, kept where a refresh and a return can find it.
+ * Which tab a page is on, kept in the URL (`?tab=`) so a link and a refresh
+ * land where they say.
  *
- * Three places, in order: the URL (`?tab=`), so a link and a refresh land
- * where they say; the browser's storage, so coming back through the nav —
- * whose links carry no tab — lands where you left; and the page's own
- * default. Every change writes the first two. Before this, most pages read
- * the URL once and never wrote it, so a refresh went back to the first tab
- * and a tile link was the only way to arrive anywhere else.
+ * With no tab in the URL — arriving from the menu, a tile or a bare link — the
+ * page opens on its FIRST tab, the one farthest left (Sam, 29 Oct 2026:
+ * "whenever you click on a new view the default tab that should open is
+ * always the first tab"). It used to reopen the tab last used, which made the
+ * same menu link land in different places. So `tabs` must be in the order the
+ * tab row shows them.
  */
 export function useTab<T extends string>(
   section: string,
   tabs: readonly T[],
-  fallback: T,
   /** Old tab names still in saved links, mapped to where they went. */
   alias?: (asked: string) => T | undefined,
 ) {
   const [params, setParams] = useSearchParams()
-  const key = `tab:${section}`
   const valid = (v: string | null | undefined): v is T => !!v && (tabs as readonly string[]).includes(v)
-
-  // What to show when the URL says nothing: the remembered tab, else the
-  // page's default. The URL, when it names a tab, wins over this.
-  const [remembered, setRemembered] = useState<T>(() => {
-    try {
-      const saved = localStorage.getItem(key)
-      if (valid(saved)) return saved
-    } catch {
-      /* private window */
-    }
-    return fallback
-  })
 
   const asked = params.get('tab')
   const moved = asked && !valid(asked) && alias ? alias(asked) : undefined
-  const tab: T = valid(asked) ? asked : (moved ?? remembered)
+  const tab: T = valid(asked) ? asked : (moved ?? tabs[0])
 
-  // Keep the URL and the memory in step with what is on screen, so the next
-  // refresh and the next visit both agree with it.
+  // The URL names what is on screen, so a refresh stays on it. The memory
+  // the old version kept is cleared as each page is opened.
   useEffect(() => {
     if (asked !== tab) {
       const next = new URLSearchParams(params)
@@ -47,7 +34,7 @@ export function useTab<T extends string>(
       setParams(next, { replace: true })
     }
     try {
-      localStorage.setItem(key, tab)
+      localStorage.removeItem(`tab:${section}`)
     } catch {
       /* private window */
     }
@@ -56,7 +43,6 @@ export function useTab<T extends string>(
 
   const setTab = useCallback(
     (t: T) => {
-      setRemembered(t)
       const next = new URLSearchParams(params)
       next.set('tab', t)
       setParams(next, { replace: true })

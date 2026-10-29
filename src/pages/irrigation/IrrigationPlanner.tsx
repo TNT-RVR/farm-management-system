@@ -27,7 +27,7 @@ import {
 } from '@/lib/irrigation-planner'
 import { conv, useUnitSystem, type UnitSystem } from '@/lib/units'
 import { cn } from '@/lib/utils'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const DAY = 86_400_000
 const PAGE = 1000
@@ -139,7 +139,7 @@ function adviceText(p: FieldPlan, u: UnitSystem) {
 /** A header with its "what is this?" button. */
 function PlanTh({ help, children }: { help: keyof typeof PLAN_HELP; children: ReactNode }) {
   return (
-    <th className="py-0.5 pr-2 font-medium">
+    <th className={TABLE_TH}>
       <span className="inline-flex items-center gap-0.5">
         {children}
         <ColumnHelp help={PLAN_HELP[help]} width={360} />
@@ -194,19 +194,19 @@ function PlanRow({ row, u, nowMs, clash, onPickField }: { row: Row; u: UnitSyste
   const late = p.startByMs != null && p.startByMs <= nowMs
   const beyondWeek = p.crossing.ms != null && p.crossing.ms > nowMs + PLAN_RULES.horizonDays * DAY
   return (
-    <tr className="grid grid-cols-2 gap-x-3 gap-y-1.5 py-2 sm:table-row sm:py-0">
-      <td className="col-span-2 align-top sm:py-1.5 sm:pr-2">
+    <tr className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 py-2 sm:table-row sm:p-0">
+      <td className="col-span-2 align-top sm:px-3 sm:py-1.5">
         <button type="button" onClick={() => onPickField?.(p.fieldId)} className="text-left font-medium text-brand-700 hover:underline">
           {row.name}
         </button>
         {row.crop && <span className="block text-gray-500">{row.crop}</span>}
         {row.zone && <span className="block text-[11px] text-gray-400">driest zone: {row.zone}</span>}
       </td>
-      <td className="align-top sm:py-1.5 sm:pr-2">
+      <td className="align-top sm:px-3 sm:py-1.5">
         <Lbl>Status</Lbl>
         <span className={cn('inline-block whitespace-nowrap rounded-full px-2 py-0.5 font-medium', STATUS_COLOR[p.status ?? 'ok'])}>{STATUS_LABEL[p.status ?? 'ok'] ?? p.status}</span>
       </td>
-      <td className="align-top tabular-nums sm:py-1.5 sm:pr-2" title="Water the crop can still use in its root zone now / the level at which it needs irrigating">
+      <td className="align-top tabular-nums sm:px-3 sm:py-1.5" title="Water the crop can still use in its root zone now / the level at which it needs irrigating">
         <Lbl>Water / trigger</Lbl>
         {conv.depth(p.availMm, u, dp)} <span className="text-gray-400">/ {conv.depth(p.thresholdMm, u, dp)} {unit}</span>
         <span className="block text-[11px] text-gray-500">
@@ -219,7 +219,7 @@ function PlanRow({ row, u, nowMs, clash, onPickField }: { row: Row; u: UnitSyste
               : 'no recent crop-use figure'}
         </span>
       </td>
-      <td className="align-top sm:py-1.5 sm:pr-2">
+      <td className="align-top sm:px-3 sm:py-1.5">
         <Lbl>Crosses trigger</Lbl>
         {p.crossing.kind === 'now' ? (
           <span className="font-medium text-red-700">already</span>
@@ -234,7 +234,7 @@ function PlanRow({ row, u, nowMs, clash, onPickField }: { row: Row; u: UnitSyste
           <span className="text-gray-400">{p.thresholdMm == null ? '—' : 'not in the next 7 days'}</span>
         )}
       </td>
-      <td className="align-top sm:py-1.5 sm:pr-2">
+      <td className="align-top sm:px-3 sm:py-1.5">
         <Lbl>Start by</Lbl>
         {p.crossing.ms == null ? (
           <span className="text-gray-400">—</span>
@@ -260,7 +260,7 @@ function PlanRow({ row, u, nowMs, clash, onPickField }: { row: Row; u: UnitSyste
           </>
         )}
       </td>
-      <td className="col-span-2 align-top sm:py-1.5">
+      <td className="col-span-2 align-top sm:px-3 sm:py-1.5">
         <Lbl>Advice</Lbl>
         <span className={cn('inline-block rounded px-1.5 py-0.5 font-medium', ADVICE_COLOR[p.advice.kind])}>{adviceText(p, u)}</span>
         {p.advice.kind === 'irrigate' && p.advice.rainUnknown && <span className="block text-[11px] text-gray-400">rain chance not in yet for a wet day</span>}
@@ -399,8 +399,8 @@ export function IrrigationPlanner({ year, onPickField }: { year: number; onPickF
           : 'rain may cover them — watch the forecast')
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-3">
-      <div className="flex items-start gap-1.5">
+    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div className="flex items-start gap-1.5 p-3">
         <button type="button" onClick={() => setOpen((o) => !o)} className="flex min-w-0 flex-1 items-start gap-1.5 text-left" aria-expanded={open}>
           <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-brand-700" />
           <span className="min-w-0">
@@ -412,13 +412,13 @@ export function IrrigationPlanner({ year, onPickField }: { year: number; onPickF
         <PlanRules u={u} />
       </div>
       {open && (
-        <div className="mt-2">
+        <div>
           {error ? (
-            <p className="text-xs text-red-700">{(error as Error).message}</p>
+            <p className="px-3 pb-3 text-xs text-red-700">{(error as Error).message}</p>
           ) : loading ? (
-            <p className="py-3 text-center text-xs text-gray-400">Reading the water balance…</p>
+            <p className="px-3 pb-3 pt-2 text-center text-xs text-gray-400">Reading the water balance…</p>
           ) : rows.length === 0 ? (
-            <p className="text-xs text-gray-500">
+            <p className="px-3 pb-3 text-xs text-gray-500">
               No {year} field has a water balance in the last two weeks. They need planting dates, then Sync.{' '}
               <SetupLink to={SETUP_LINKS.plantingDate()}>Set planting dates</SetupLink>
             </p>
@@ -427,7 +427,7 @@ export function IrrigationPlanner({ year, onPickField }: { year: number; onPickF
               <table className="w-full text-xs">
                 <thead className={cn(TABLE_HEAD, 'hidden sm:table-header-group')}>
                   <tr>
-                    <th className="py-0.5 pr-2 font-medium">Field</th>
+                    <th className={TABLE_TH}>Field</th>
                     <PlanTh help="status">Status</PlanTh>
                     <PlanTh help="waterTrigger">Water / trigger</PlanTh>
                     <PlanTh help="crosses">Crosses</PlanTh>
@@ -441,7 +441,7 @@ export function IrrigationPlanner({ year, onPickField }: { year: number; onPickF
                   ))}
                 </tbody>
               </table>
-              <p className="mt-2 text-[11px] text-gray-400">
+              <p className="px-3 py-2 text-[11px] text-gray-400">
                 From the balance as of {asOf ? fmtWallDay(wallOfDate(asOf)) : '—'} and its forecast; times are local.
                 {doneCount > 0 && ` ${doneCount} field${doneCount === 1 ? '' : 's'} marked done for the season ${doneCount === 1 ? 'is' : 'are'} left out.`} Tap a field
                 for its Detailed View.

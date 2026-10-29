@@ -63,16 +63,16 @@ insert into public.crop_variety_settings (crop_id, variety, default_yield_per_ac
   seeds_per_acre_min, seeds_per_acre_max, seed_spacing_in, depth_in_min, depth_in_max, row_spacing_in, planting_speed_mph, notes)
 select c.id, v.variety, v.yld, v.tw, v.dry, v.tough, v.damp, v.smin, v.smax, v.spacing, v.dmin, v.dmax, v.rows, v.mph, v.notes
   from (values
-    ('Canola', 'InVigor L340PC', 52, 50, 10.0, 12.5, 15.0, 400000, 450000, null::numeric, 0.5, 1.0, 10, 5.0, 'Pod-shatter resistant: fine to straight-cut.'),
-    ('Canola', 'InVigor L345PC', 54, 50, 10.0, 12.5, 15.0, 400000, 450000, null, 0.5, 1.0, 10, 5.0, 'Clubroot resistant. On the pivots.'),
-    ('Canola', 'Pioneer 45M35', 48, 50, 10.0, 12.5, 15.0, 380000, 430000, null, 0.5, 1.0, 10, 5.0, null),
-    ('Wheat', 'CDC Go', 62, 63, 14.5, 17.0, 19.0, 1100000, 1300000, null, 1.0, 2.0, 10, 5.5, null),
-    ('Wheat', 'AAC Brandon', 66, 63, 14.5, 17.0, 19.0, 1100000, 1300000, null, 1.0, 2.0, 10, 5.5, 'Good standability under the pivot.'),
-    ('Wheat', 'AAC Viewfield', 64, 63, 14.5, 17.0, 19.0, 1100000, 1300000, null, 1.0, 2.0, 10, 5.5, null),
-    ('Barley', 'CDC Austenson', 88, 50, 14.8, 17.0, 19.8, 1000000, 1200000, null, 1.0, 2.0, 10, 5.5, 'Feed barley for the cows.'),
-    ('Barley', 'AAC Synergy', 82, 50, 14.8, 17.0, 19.8, 1000000, 1150000, null, 1.0, 2.0, 10, 5.5, 'Malt contract: keep protein under 12.5%.'),
-    ('Peas', 'CDC Inca', 55, 60, 16.0, 18.0, 20.0, 330000, 380000, null, 1.5, 2.5, 10, 5.0, null),
-    ('Oats', 'CS Camden', 115, 38, 14.0, 16.0, 18.0, 1000000, 1200000, null, 1.0, 1.5, 10, 5.5, null)
+    ('Canola', 'Northfield NF340', 52, 50, 10.0, 12.5, 15.0, 400000, 450000, null::numeric, 0.5, 1.0, 10, 5.0, 'Pod-shatter resistant: fine to straight-cut.'),
+    ('Canola', 'Northfield NF345', 54, 50, 10.0, 12.5, 15.0, 400000, 450000, null, 0.5, 1.0, 10, 5.0, 'Clubroot resistant. On the pivots.'),
+    ('Canola', 'Ridgeline RL45', 48, 50, 10.0, 12.5, 15.0, 380000, 430000, null, 0.5, 1.0, 10, 5.0, null),
+    ('Wheat', 'Ridgeline W620', 62, 63, 14.5, 17.0, 19.0, 1100000, 1300000, null, 1.0, 2.0, 10, 5.5, null),
+    ('Wheat', 'Northfield W701', 66, 63, 14.5, 17.0, 19.0, 1100000, 1300000, null, 1.0, 2.0, 10, 5.5, 'Good standability under the pivot.'),
+    ('Wheat', 'Northfield W715', 64, 63, 14.5, 17.0, 19.0, 1100000, 1300000, null, 1.0, 2.0, 10, 5.5, null),
+    ('Barley', 'Northfield B305', 88, 50, 14.8, 17.0, 19.8, 1000000, 1200000, null, 1.0, 2.0, 10, 5.5, 'Feed barley for the cows.'),
+    ('Barley', 'Ridgeline B210', 82, 50, 14.8, 17.0, 19.8, 1000000, 1150000, null, 1.0, 2.0, 10, 5.5, 'Malt contract: keep protein under 12.5%.'),
+    ('Peas', 'Northfield P410', 55, 60, 16.0, 18.0, 20.0, 330000, 380000, null, 1.5, 2.5, 10, 5.0, null),
+    ('Oats', 'Ridgeline O510', 115, 38, 14.0, 16.0, 18.0, 1000000, 1200000, null, 1.0, 1.5, 10, 5.5, null)
   ) v(crop, variety, yld, tw, dry, tough, damp, smin, smax, spacing, dmin, dmax, rows, mph, notes)
   join public.crops c on c.name = v.crop;
 
@@ -97,7 +97,7 @@ insert into public.field_crop_zones (field_id, crop_year, crop_id, acres, geojso
 select '0de30000-0000-4000-8000-000000000111', extract(year from current_date)::int,
        (select id from public.crops where name = case h.part when 'north' then 'Wheat' else 'Barley' end),
        round((st_area(h.g::geography) / 4046.8564224)::numeric, 1), st_asgeojson(h.g)::jsonb,
-       case h.part when 'north' then 'North half: AAC Viewfield.' else 'South half: barley for the cows, after the wet spring.' end, 'drawn'
+       case h.part when 'north' then 'North half: Northfield W715.' else 'South half: barley for the cows, after the wet spring.' end, 'drawn'
   from halves h;
 
 insert into public.crop_area_yields (field_id, crop_year, crop_id, acres, yield_unit, yield_per_acre, actual_yield_total, source, notes)
@@ -110,7 +110,7 @@ select z.field_id, z.crop_year, z.crop_id, z.acres, c.yield_unit, v.yld, round(z
 -- ── A yield loss taken off a field: the August hail on Creek Flat ──────────
 insert into public.yield_adjustments (field_id, crop_year, crop_id, zone_id, loss_pct, reason)
 values ('0de30000-0000-4000-8000-000000000115', extract(year from current_date)::int, (select id from public.crops where name = 'Canola'), null, 8,
-        'Hail in August: 8% loss on the AFSC inspection (example).');
+        'Hail in August: 8% loss on the crop insurance inspection (example).');
 
 -- ── Pivot winterizing on the map: each place and what to do there ──────────
 update public.checklist_templates set map_based = true where id = '0de30000-0000-4000-8000-000000000702';

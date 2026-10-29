@@ -1,6 +1,6 @@
 import { waterSourceLabel } from '@/lib/water-source-names'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, Navigate, useParams } from 'react-router-dom'
 import type { MultiPolygon } from 'geojson'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { FieldYieldHistory } from '@/components/FieldYieldHistory'
@@ -732,10 +732,12 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
     if (!crop || !isCanola(crop.name)) return null
     return grownTrait(crop, companyOf(cropId, variety), crops ?? []) ?? { trait: null, from: null }
   }
-  const canEdit = hasManagerAccess(profile?.role)
-  // A crop-share partner: his own records in his years, the field itself read-only (lib/partner.ts).
+  // A crop-share partner: his own records in his years, our field itself
+  // read-only; his company's own fields are his in full (lib/partner-view.ts).
   const partner = usePartnerView()
   const partnerYears = usePartnerYears(id)
+  const canEdit = hasManagerAccess(profile?.role) || partnerYears.own
+  const fieldReadOnly = partner && !partnerYears.own
   // For him, a year's yields are his to enter only in his listed years.
   const canEditYear = partner ? partnerYears.canWrite : undefined
 
@@ -848,7 +850,7 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
               fieldId={field.id}
               column="notes_md"
               initial={field.notes_md}
-              readOnly={partner}
+              readOnly={fieldReadOnly}
             />
           </div>
           <div className="mt-4">
@@ -872,7 +874,7 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
               fieldId={field.id}
               column="pivot_start_instructions_md"
               initial={field.pivot_start_instructions_md}
-              readOnly={partner}
+              readOnly={fieldReadOnly}
             />
           </div>
         </>
@@ -897,7 +899,7 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
               fieldId={field.id}
               column="soil_notes_md"
               initial={field.soil_notes_md}
-              readOnly={partner}
+              readOnly={fieldReadOnly}
             />
           </div>
         </>
@@ -920,7 +922,9 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
         </TabSuspense>
       )}
 
-      {section === 'settings' && (
+      {/* Our field's setup is ours: a partner is sent back to its overview. */}
+      {section === 'settings' && fieldReadOnly && <Navigate to={`/fields/${field.id}`} replace />}
+      {section === 'settings' && !fieldReadOnly && (
         <>
           <div className="mt-4">
             <FieldInfoEditor
@@ -931,9 +935,12 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
             />
           </div>
 
-          <div className="mt-4">
-            <FieldTenure field={field} mappedAcres={boundary?.acres ?? null} canEdit={canEdit} />
-          </div>
+          {/* Lease terms are between us and the landlord, never a partner's. */}
+          {!partner && (
+            <div className="mt-4">
+              <FieldTenure field={field} mappedAcres={boundary?.acres ?? null} canEdit={canEdit} />
+            </div>
+          )}
 
           {/* Shown to everyone: the source and date used to sit on the overview
               for anyone to read. Only the redraw button is for managers. The

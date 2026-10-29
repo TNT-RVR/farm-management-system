@@ -13,8 +13,15 @@
  * headers in the app were carrying their own bg-white to get one.
  */
 
-/** The green bar, on the `thead` (or on its `tr` where the page puts it there). */
-export const TABLE_HEAD = 'bg-brand-700 text-left text-[11px] uppercase tracking-wide text-white'
+/**
+ * The green bar, on the `thead` (or on its `tr` where the page puts it there).
+ *
+ * `rvr-head` is not a Tailwind class: it marks the bar for the one rule in
+ * index.css that turns the info buttons inside it white. They are grey by
+ * default, which was right on the white headers these replaced and all but
+ * invisible on green (Sam, 29 Oct 2026).
+ */
+export const TABLE_HEAD = 'rvr-head bg-brand-700 text-left text-[11px] uppercase tracking-wide text-white'
 
 /**
  * A `th` inside it. Pages that need their own padding or alignment pass their
@@ -34,7 +41,7 @@ export const TABLE_TH_MUTED = 'text-brand-200'
  * same kind of object on one page. `Card` uses it; so does any panel that
  * draws its own heading.
  */
-export const CARD_HEAD = 'bg-brand-700 px-3 py-2 text-[11px] uppercase tracking-wide text-white'
+export const CARD_HEAD = 'rvr-head bg-brand-700 px-3 py-2 text-[11px] uppercase tracking-wide text-white'
 
 /** The heading text inside CARD_HEAD. */
 export const CARD_HEAD_TEXT = 'font-medium text-white'

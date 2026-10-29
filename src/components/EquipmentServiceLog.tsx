@@ -6,7 +6,7 @@ import { useUsers } from '@/lib/queries'
 import { keepOpenOnError } from '@/lib/record-actions'
 import { cn } from '@/lib/utils'
 import { money as fmtMoney } from '@/lib/format'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const day = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })
 const money = (v: number | null) => (v == null ? null : fmtMoney(Number(v), 2, { neg: 'inside' }))
@@ -54,8 +54,8 @@ export function EquipmentServiceLog({ equipment, canEdit, canAdd }: { equipment:
   const err = save.error ?? del.error
 
   return (
-    <section className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-      <div className="flex flex-wrap items-center gap-2">
+    <section className="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div className="flex flex-wrap items-center gap-2 px-4 pt-4">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
           <History className="h-4 w-4 text-brand-700" /> Service history
         </h2>
@@ -73,18 +73,18 @@ export function EquipmentServiceLog({ equipment, canEdit, canAdd }: { equipment:
         )}
       </div>
       {rows.length === 0 ? (
-        <p className="mt-2 text-sm text-gray-400">Nothing recorded yet. &ldquo;Done&rdquo; on the schedule above records a service here.</p>
+        <p className="mt-2 px-4 pb-4 text-sm text-gray-400">Nothing recorded yet. &ldquo;Done&rdquo; on the schedule above records a service here.</p>
       ) : (
-        <div className="mt-2 overflow-x-auto">
+        <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[480px] text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="w-5" />
-                <th className="py-1 font-medium">Date</th>
-                <th className="py-1 font-medium">What</th>
-                <th className="py-1 text-right font-medium">Hours</th>
-                <th className="py-1 text-right font-medium">Cost</th>
-                <th className="py-1 pl-3 font-medium">By</th>
+                <th className="w-8" />
+                <th className={TABLE_TH}>Date</th>
+                <th className={TABLE_TH}>What</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Hours</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Cost</th>
+                <th className={TABLE_TH}>By</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -93,22 +93,22 @@ export function EquipmentServiceLog({ equipment, canEdit, canAdd }: { equipment:
                 return (
                   <Fragment key={r.id}>
                     <tr className={cn('cursor-pointer hover:bg-gray-50', isOpen && 'bg-gray-50')} onClick={rowClick(() => setOpen(isOpen ? null : r.id))}>
-                      <td>
+                      <td className="pl-3">
                         <ChevronRight className={cn('h-3.5 w-3.5 text-gray-400 transition-transform', isOpen && 'rotate-90')} />
                       </td>
-                      <td className="py-1.5 whitespace-nowrap text-gray-700">{day(r.done_on)}</td>
-                      <td className="py-1.5 text-gray-900">
+                      <td className="px-3 py-1.5 whitespace-nowrap text-gray-700">{day(r.done_on)}</td>
+                      <td className="px-3 py-1.5 text-gray-900">
                         {what(r)}
                         {r.notes && <span className="ml-1.5 text-xs text-gray-400">{r.notes.length > 40 ? `${r.notes.slice(0, 40)}…` : r.notes}</span>}
                       </td>
-                      <td className="py-1.5 text-right tabular-nums text-gray-600">{r.engine_hours != null ? Math.round(Number(r.engine_hours)).toLocaleString('en-CA') : '—'}</td>
-                      <td className="py-1.5 text-right tabular-nums text-gray-600">{money(r.cost) ?? '—'}</td>
-                      <td className="py-1.5 pl-3 text-gray-500">{r.done_by ? (userName.get(r.done_by) ?? '—') : '—'}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">{r.engine_hours != null ? Math.round(Number(r.engine_hours)).toLocaleString('en-CA') : '—'}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">{money(r.cost) ?? '—'}</td>
+                      <td className="px-3 py-1.5 text-gray-500">{r.done_by ? (userName.get(r.done_by) ?? '—') : '—'}</td>
                     </tr>
                     {isOpen && (
                       <tr className="bg-gray-50/60">
                         <td />
-                        <td colSpan={5} className="pb-2 pt-1">
+                        <td colSpan={5} className="px-3 pb-2 pt-1">
                           <DetailList
                             className="text-xs"
                             rows={[
@@ -141,7 +141,7 @@ export function EquipmentServiceLog({ equipment, canEdit, canAdd }: { equipment:
             </tbody>
           </table>
           {rows.length > 10 && (
-            <button type="button" onClick={() => setAll((a) => !a)} className="mt-1 text-xs text-brand-700 underline">
+            <button type="button" onClick={() => setAll((a) => !a)} className="mx-3 my-2 text-xs text-brand-700 underline">
               {all ? 'show fewer' : `show all ${rows.length}`}
             </button>
           )}

@@ -20,7 +20,7 @@ import {
 import type { Database } from '@/lib/database.types'
 import { ManifestPrint } from '@/pages/cattle/ManifestPrint'
 import { useMyNamedSignature } from '@/lib/signature'
-import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 type ManifestInsert = Database['public']['Tables']['cattle_manifests']['Insert']
 type ManifestLineInsert = Omit<
@@ -284,33 +284,33 @@ export function ManifestsTab({ cropYear, canEdit }: { cropYear: number; canEdit:
                 </div>
 
                 {m.lines.length > 0 && (
-                  <div className="overflow-x-auto border-t border-gray-100 px-3 py-2">
+                  <div className="overflow-x-auto border-t border-gray-100">
                     <table className="w-full text-sm">
                       <thead className={TABLE_HEAD}>
                         <tr>
-                          <th className="pb-1 pr-3 font-medium">Class</th>
-                          <th className="pb-1 pr-3 text-right font-medium">Head</th>
-                          <th className="pb-1 pr-3 font-medium">Sex</th>
-                          <th className="pb-1 pr-3 font-medium">Colour</th>
-                          <th className="pb-1 pr-3 text-right font-medium">Avg lb</th>
-                          <th className="pb-1 pr-3 font-medium">Brand</th>
-                          <th className="pb-1 font-medium">Tags</th>
+                          <th className={TABLE_TH}>Class</th>
+                          <th className={cn(TABLE_TH, 'text-right')}>Head</th>
+                          <th className={TABLE_TH}>Sex</th>
+                          <th className={TABLE_TH}>Colour</th>
+                          <th className={cn(TABLE_TH, 'text-right')}>Avg lb</th>
+                          <th className={TABLE_TH}>Brand</th>
+                          <th className={TABLE_TH}>Tags</th>
                         </tr>
                       </thead>
                       <tbody>
                         {m.lines.map((l) => (
                           <tr key={l.id} className="border-t border-gray-100">
-                            <td className="py-1 pr-3 capitalize">{l.animal_class ?? '—'}</td>
-                            <td className="py-1 pr-3 text-right font-medium tabular-nums">
+                            <td className="px-3 py-1 capitalize">{l.animal_class ?? '—'}</td>
+                            <td className="px-3 py-1 text-right font-medium tabular-nums">
                               {l.head ?? '—'}
                             </td>
-                            <td className="py-1 pr-3 text-gray-600">{l.sex ?? '—'}</td>
-                            <td className="py-1 pr-3 text-gray-600">{l.colour ?? '—'}</td>
-                            <td className="py-1 pr-3 text-right tabular-nums text-gray-600">
+                            <td className="px-3 py-1 text-gray-600">{l.sex ?? '—'}</td>
+                            <td className="px-3 py-1 text-gray-600">{l.colour ?? '—'}</td>
+                            <td className="px-3 py-1 text-right tabular-nums text-gray-600">
                               {l.avg_weight_lb ?? '—'}
                             </td>
-                            <td className="py-1 pr-3 text-gray-600">{l.brand ?? '—'}</td>
-                            <td className="py-1 text-gray-600">{l.tag_range ?? '—'}</td>
+                            <td className="px-3 py-1 text-gray-600">{l.brand ?? '—'}</td>
+                            <td className="px-3 py-1 text-gray-600">{l.tag_range ?? '—'}</td>
                           </tr>
                         ))}
                       </tbody>

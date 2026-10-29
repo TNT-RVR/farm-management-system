@@ -60,7 +60,7 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
   // 'movements' is still accepted and lands on the yard list: the tab it named
   // is gone, and a saved link or a home-screen tile pointing at it should not
   // dead-end.
-  const [ownTab, setTab] = useTab('bins', ['estimator', 'bins', 'map'] as const, 'estimator', (asked) =>
+  const [ownTab, setTab] = useTab('bins', ['estimator', 'bins', 'map'] as const, (asked) =>
     asked === 'movements' ? 'bins' : undefined,
   )
   const embedded = shownTab != null

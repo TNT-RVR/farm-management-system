@@ -31,8 +31,8 @@ insert into public.cost_benchmarks (key, base_year, source, index_as_of, lines, 
 -- What is in the shed and the tanks: bought from Prairie Ag Supply, used on
 -- fields this season, and one count adjustment. On hand is the view over these.
 insert into public.input_items (name, category, unit, unit_cost, supplier_contact_id, notes, active, chemical_id) values
-  ('InVigor-type canola seed (example)', 'seed', 'bag', 640, '0de30000-0000-4000-8000-000000000301', '50 lb bags, 10 ac each. Order next year''s by December for the early discount.', true, null),
-  ('CDC wheat seed, certified (example)', 'seed', 'bu', 16.50, '0de30000-0000-4000-8000-000000000301', 'Cleaned and treated.', true, null),
+  ('Hybrid canola seed (example)', 'seed', 'bag', 640, '0de30000-0000-4000-8000-000000000301', '50 lb bags, 10 ac each. Order next year''s by December for the early discount.', true, null),
+  ('Certified wheat seed (example)', 'seed', 'bu', 16.50, '0de30000-0000-4000-8000-000000000301', 'Cleaned and treated.', true, null),
   ('Yellow pea seed (example)', 'seed', 'bu', 14.00, '0de30000-0000-4000-8000-000000000301', null, true, null),
   ('46-0-0 urea', 'fert', 'tonne', 905, '0de30000-0000-4000-8000-000000000301', 'Kept in the yard fertilizer bin.', true, null),
   ('11-52-0 MAP', 'fert', 'tonne', 1080, '0de30000-0000-4000-8000-000000000301', null, true, null),
@@ -55,12 +55,12 @@ select i.id, v.mtype::public.input_movement_type, v.qty, v.cost, current_date - 
        v.po, v.note, v.who::uuid
 from (values
   -- Seed bought in winter, seeded in May.
-  ('InVigor-type canola seed (example)', 'purchase', 62,   640,   230, null,     null, 'PO-1182', 'Early-order discount taken.', '0de30000-0000-4000-8000-0000000000a1'),
-  ('InVigor-type canola seed (example)', 'use',      30,   null,  165, 'Canola', '0de30000-0000-4000-8000-000000000110', null, 'Correction Line.', '0de30000-0000-4000-8000-0000000000a2'),
-  ('InVigor-type canola seed (example)', 'use',      28,   null,  163, 'Canola', '0de30000-0000-4000-8000-000000000115', null, 'Creek Flat.', '0de30000-0000-4000-8000-0000000000a2'),
-  ('CDC wheat seed, certified (example)', 'purchase', 900,  16.50, 210, null,     null, 'PO-1190', null, '0de30000-0000-4000-8000-0000000000a1'),
-  ('CDC wheat seed, certified (example)', 'use',      560,  null,  172, 'Wheat',  '0de30000-0000-4000-8000-000000000102', null, 'East Home, 1.8 bu/ac.', '0de30000-0000-4000-8000-0000000000a2'),
-  ('CDC wheat seed, certified (example)', 'use',      290,  null,  170, 'Wheat',  '0de30000-0000-4000-8000-000000000107', null, null, '0de30000-0000-4000-8000-0000000000a2'),
+  ('Hybrid canola seed (example)', 'purchase', 62,   640,   230, null,     null, 'PO-1182', 'Early-order discount taken.', '0de30000-0000-4000-8000-0000000000a1'),
+  ('Hybrid canola seed (example)', 'use',      30,   null,  165, 'Canola', '0de30000-0000-4000-8000-000000000110', null, 'Correction Line.', '0de30000-0000-4000-8000-0000000000a2'),
+  ('Hybrid canola seed (example)', 'use',      28,   null,  163, 'Canola', '0de30000-0000-4000-8000-000000000115', null, 'Creek Flat.', '0de30000-0000-4000-8000-0000000000a2'),
+  ('Certified wheat seed (example)', 'purchase', 900,  16.50, 210, null,     null, 'PO-1190', null, '0de30000-0000-4000-8000-0000000000a1'),
+  ('Certified wheat seed (example)', 'use',      560,  null,  172, 'Wheat',  '0de30000-0000-4000-8000-000000000102', null, 'East Home, 1.8 bu/ac.', '0de30000-0000-4000-8000-0000000000a2'),
+  ('Certified wheat seed (example)', 'use',      290,  null,  170, 'Wheat',  '0de30000-0000-4000-8000-000000000107', null, null, '0de30000-0000-4000-8000-0000000000a2'),
   ('Yellow pea seed (example)', 'purchase', 520, 14.00, 205, null, null, 'PO-1191', null, '0de30000-0000-4000-8000-0000000000a1'),
   ('Yellow pea seed (example)', 'use',      505, null,  176, 'Peas', '0de30000-0000-4000-8000-000000000108', null, 'Hilltop, 3.2 bu/ac.', '0de30000-0000-4000-8000-0000000000a2'),
   -- Fertilizer: spring fill, and fall urea already in the bin.

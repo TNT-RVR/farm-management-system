@@ -6,7 +6,7 @@ import { useRationMutations, useUpdateGroup, type GroupRationRow, type HerdCount
 import { cn } from '@/lib/utils'
 import { FeedInfo } from './FeedInfo'
 import { FromHerdChip, Num, WarningList, n0, n1, yardAmount } from './bits'
-import { TABLE_HEAD } from '@/lib/table-style'
+import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const GROWING: FeedClass[] = ['backgrounder', 'heifer_calf']
 
@@ -166,19 +166,19 @@ export function GroupCard({
               </p>
               {Math.abs(shareTotal - 100) > 0.5 && ration.length > 0 && <span className="text-[11px] text-amber-700">shares add to {n0(shareTotal)}% — scaled to 100</span>}
             </div>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
               <table className="w-full min-w-[620px] text-sm">
                 <thead className={TABLE_HEAD}>
                   <tr>
-                    <th className="py-1 font-medium">Feed</th>
-                    <th className="py-1 text-right font-medium" title="Share of this group's daily dry matter — what it is fed today">
+                    <th className={TABLE_TH}>Feed</th>
+                    <th className={cn(TABLE_TH, 'text-right')} title="Share of this group's daily dry matter — what it is fed today">
                       Group share (% DM)
                     </th>
-                    <th className="py-1 text-right font-medium">
+                    <th className={cn(TABLE_TH, 'text-right')}>
                       <span className="inline-flex items-center gap-1">Waste <FeedInfo k="waste" /></span>
                     </th>
-                    <th className="py-1 text-right font-medium">lb/hd as fed</th>
-                    <th className="py-1 text-right font-medium">Group / day</th>
+                    <th className={cn(TABLE_TH, 'text-right')}>lb/hd as fed</th>
+                    <th className={cn(TABLE_TH, 'text-right')}>Group / day</th>
                     <th />
                   </tr>
                 </thead>
@@ -188,7 +188,7 @@ export function GroupCard({
                     const out = result?.lines.find((l) => l.feed.id === r.feed_type_id)
                     return (
                       <tr key={r.id}>
-                        <td className="py-1 text-gray-900">
+                        <td className="px-3 py-1 text-gray-900">
                           {v?.name ?? '?'}
                           {notUsed.has(r.feed_type_id) && <span className="ml-1 rounded bg-amber-50 px-1 text-[10px] text-amber-800">not usually fed here</span>}
                           {v && (
@@ -197,10 +197,10 @@ export function GroupCard({
                             </span>
                           )}
                         </td>
-                        <td className="py-1 text-right">
+                        <td className="px-3 py-1 text-right">
                           <Num value={Number(r.dm_share_pct)} step="1" min={0} max={100} suffix="%" disabled={!isManager} onCommit={(x) => x != null && rm.set.mutate({ id: r.id, patch: { dm_share_pct: x } })} />
                         </td>
-                        <td className="py-1 text-right">
+                        <td className="px-3 py-1 text-right">
                           <span className="inline-flex items-center gap-1">
                             <Select
                               value=""
@@ -217,9 +217,9 @@ export function GroupCard({
                             <Num value={Number(r.waste_pct)} step="1" min={0} max={80} suffix="%" disabled={!isManager} onCommit={(x) => x != null && rm.set.mutate({ id: r.id, patch: { waste_pct: x } })} className="w-12" />
                           </span>
                         </td>
-                        <td className="py-1 text-right tabular-nums text-gray-700">{out ? n1(out.offeredLb) : '—'}</td>
-                        <td className="py-1 text-right tabular-nums font-medium text-gray-900">{out ? yardAmount(out.groupOfferedLb, out.feed.unit, out.feed.lbPerBale) : '—'}</td>
-                        <td className="py-1 text-right">
+                        <td className="px-3 py-1 text-right tabular-nums text-gray-700">{out ? n1(out.offeredLb) : '—'}</td>
+                        <td className="px-3 py-1 text-right tabular-nums font-medium text-gray-900">{out ? yardAmount(out.groupOfferedLb, out.feed.unit, out.feed.lbPerBale) : '—'}</td>
+                        <td className="px-3 py-1 text-right">
                           {isManager && (
                             <button type="button" onClick={() => rm.remove.mutate(r.id)} className="text-gray-300 hover:text-red-600" aria-label={`Take ${v?.name} out of the ration`}>
                               <Trash2 className="h-3.5 w-3.5" />

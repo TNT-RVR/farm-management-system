@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
 import { useFarmSettings, useFeature } from '@/lib/farm-setup'
 import { n1 } from '@/lib/format'
+import { Modal } from '@/components/Modal'
 
 /** Pivots with their allotments, and every irrigation event this season. */
 export function useAllocation(year: number) {
@@ -93,7 +94,7 @@ export function SmridAllotment({ year, smrid, allotments }: { year: number; smri
           <span className="text-amber-800">not set</span>
         )}
         {history.length > 0 && <span className="text-xs text-gray-500">({history.map((h) => `${h.year}: ${n1(Number(h.inches))} in`).join(' · ')})</span>}
-        {isMgr && !editing && (
+        {isMgr && (
           <button
             type="button"
             onClick={() => {
@@ -108,23 +109,25 @@ export function SmridAllotment({ year, smrid, allotments }: { year: number; smri
         )}
       </div>
       {editing && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-          <label className="flex items-center gap-1">
-            Allotment
-            <input value={inches} onChange={(e) => setInches(e.target.value)} inputMode="decimal" className="w-16 rounded border border-gray-300 px-1.5 py-0.5" /> in
-          </label>
-          <label className="flex items-center gap-1">
-            Contract
-            <input value={contract} onChange={(e) => setContract(e.target.value)} inputMode="decimal" className="w-16 rounded border border-gray-300 px-1.5 py-0.5" /> in
-          </label>
-          <button type="button" disabled={!(Number(inches) > 0) || save.isPending} onClick={() => save.mutate()} className="rounded bg-brand-700 px-2 py-0.5 font-semibold text-white disabled:opacity-50">
-            Save
-          </button>
-          <button type="button" onClick={() => setEditing(false)} className="text-gray-500 underline">
-            cancel
-          </button>
-          {save.error && <span className="text-red-700">{(save.error as Error).message}</span>}
-        </div>
+        <Modal title={'Water allocation'} onClose={() => setEditing(false)} wide>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            <label className="flex items-center gap-1">
+              Allotment
+              <input value={inches} onChange={(e) => setInches(e.target.value)} inputMode="decimal" className="w-16 rounded border border-gray-300 px-1.5 py-0.5" /> in
+            </label>
+            <label className="flex items-center gap-1">
+              Contract
+              <input value={contract} onChange={(e) => setContract(e.target.value)} inputMode="decimal" className="w-16 rounded border border-gray-300 px-1.5 py-0.5" /> in
+            </label>
+            <button type="button" disabled={!(Number(inches) > 0) || save.isPending} onClick={() => save.mutate()} className="rounded bg-brand-700 px-2 py-0.5 font-semibold text-white disabled:opacity-50">
+              Save
+            </button>
+            <button type="button" onClick={() => setEditing(false)} className="text-gray-500 underline">
+              cancel
+            </button>
+            {save.error && <span className="text-red-700">{(save.error as Error).message}</span>}
+          </div>
+        </Modal>
       )}
       <HelpNote
         className="mt-1"

@@ -114,7 +114,7 @@ function CombineView() {
   const canEdit = hasManagerAccess(profile?.role)
   // ?tab= lands on one, so a tile or a link can open straight on it, and the
   // tab is remembered so a refresh lands on it too.
-  const [asked, setTab] = useTab<Tab>('combine', TAB_KEYS, 'setup', (asked) =>
+  const [asked, setTab] = useTab<Tab>('combine', TAB_KEYS, (asked) =>
     asked === 'reference' ? 'setup' : undefined,
   )
   const [crop, setCrop] = useState<CombineCropKey>('canola')
