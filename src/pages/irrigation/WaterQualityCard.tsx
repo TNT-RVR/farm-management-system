@@ -26,11 +26,11 @@ export function WaterQualityCard({ isManager }: { isManager: boolean }) {
   const { data, isLoading } = useWaterQualityLatest()
   const { data: credit, isLoading: creditLoading } = useWaterSCredit()
   const pull = usePullWaterQuality()
-  const { districtName, riverName } = useFarmSettings()
+  const { districtName } = useFarmSettings()
   const stations = (data?.stations ?? []).filter((s) => s.water_source)
   // The sources this farm samples (a farm on a creek alone has no canal); both until any station is set up.
   const sources = (['smrid', 'oldman'] as const).filter((k) => !stations.length || stations.some((s) => s.water_source === k))
-  const sourceNames = sources.map((k) => (k === 'oldman' ? riverName : `${districtName} canal`)).join(' and ')
+  const sourceNames = sources.map((k) => (k === 'oldman' ? 'the river' : `${districtName} canal`)).join(' and ')
 
   return (
     <div className="mt-4 rounded-lg border border-gray-200 bg-white p-3">

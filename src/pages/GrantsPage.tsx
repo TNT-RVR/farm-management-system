@@ -1,6 +1,7 @@
 import { DateField } from '@/components/DateField'
 import { useMemo, useState } from 'react'
 import { useTab } from '@/lib/useTab'
+import { usePartnerView } from '@/lib/partner-view'
 import {
   Archive,
   ArrowDown,
@@ -201,6 +202,7 @@ function TasksSection({ grantId }: { grantId: string }) {
 function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void }) {
   const { update, remove } = useGrantMutations()
   const { data: users } = useUsers()
+  const partner = usePartnerView()
   const [copied, setCopied] = useState(false)
   const set = (patch: Parameters<typeof update.mutate>[0]['patch']) =>
     update.mutate({ id: grant.id, patch })
@@ -222,6 +224,7 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
         <div className="flex items-start justify-between gap-2 border-b border-gray-200 p-4">
           <div className="min-w-0">
             <input
+              readOnly={partner}
               defaultValue={grant.title}
               onBlur={(e) =>
                 e.target.value.trim() &&
@@ -231,6 +234,7 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
               className="w-full rounded border border-transparent text-base font-semibold text-gray-900 hover:border-gray-200 focus:border-gray-300 focus:outline-none"
             />
             <input
+              readOnly={partner}
               defaultValue={grant.funder ?? ''}
               placeholder="Funder"
               onBlur={(e) =>
@@ -246,6 +250,7 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
         </div>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+
           {/* Status + owner */}
           <div className="flex flex-wrap items-center gap-2">
             <Select
@@ -289,6 +294,8 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
             <Fact label="Region">{grant.region ?? '—'}</Fact>
           </div>
 
+          {/* A partner keeps his own status, owner and notes; the grant itself is the list's. */}
+          <fieldset disabled={partner} className="min-w-0 space-y-4">
           <Field label="Eligibility">
             <textarea
               defaultValue={grant.eligibility_summary ?? ''}
@@ -311,6 +318,7 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
               className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
             />
           </Field>
+          </fieldset>
           <Field label="Our notes">
             <textarea
               defaultValue={grant.notes_md ?? ''}
@@ -324,7 +332,7 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
             />
           </Field>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <fieldset disabled={partner} className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-1.5 text-xs text-gray-500">
               Closes
               <DateField
@@ -346,7 +354,7 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
                 className="w-56 rounded-md border border-gray-300 px-2 py-1 text-sm"
               />
             </label>
-          </div>
+          </fieldset>
 
           <div className="border-t border-gray-100 pt-3">
             <TasksSection grantId={grant.id} />
@@ -378,6 +386,7 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
                 <Archive className="h-3.5 w-3.5" /> Restore to active
               </button>
             )}
+            {!partner && (
             <button
               onClick={async () => {
                 if (
@@ -391,6 +400,7 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
             >
               <Trash2 className="h-3.5 w-3.5" /> Delete
             </button>
+            )}
           </div>
           <button
             onClick={draftWithClaude}
@@ -488,6 +498,7 @@ function Count({ label, n }: { label: string; n: number }) {
 
 export function GrantsPage() {
   const { profile } = useAuth()
+  const partner = usePartnerView()
   const { data: grants } = useGrants()
   const { add } = useGrantMutations()
   const pull = useGrantsPull()
@@ -608,7 +619,7 @@ export function GrantsPage() {
               {pull.isSuccess ? 'Checking…' : 'Check for new'}
             </button>
           )}
-          {profile && (
+          {profile && !partner && (
             <button
               onClick={() =>
                 add.mutate({ title: 'New grant' }, { onSuccess: (id) => setOpenId(id) })

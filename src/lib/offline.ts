@@ -1,6 +1,8 @@
 import { del, get, set } from 'idb-keyval'
 import type { PersistedClient, Persister } from '@tanstack/query-persist-client-core'
 import type { Query } from '@tanstack/react-query'
+// View as partner
+import { getPartnerPreview } from './partner-preview'
 
 /**
  * Keeping the app useful with no signal.
@@ -154,6 +156,8 @@ const LIVE_ONLY = new Set([
   'checklist_photo_urls',
   'invoice_url',
   'sat-latest-image',
+  // A canola field's summer pictures, the same.
+  'canola-bloom-pictures',
 ])
 
 /**
@@ -180,6 +184,12 @@ export const UNKEPT_HEADS: readonly string[] = [...LIVE_ONLY, 'search']
 export function shouldPersistQuery(query: Query): boolean {
   const head = query.queryKey?.[0]
   if (typeof head !== 'string') return false
+  // View as partner
+  // Nothing fetched while an admin views as a partner is saved: those lists
+  // are the partner's, narrowed. Saved, they outlived the preview (a closed
+  // tab ends it without the Stop button's cache clear) and the next load
+  // showed the whole farm as the partner's three fields (30 Oct 2026).
+  if (getPartnerPreview()) return false
   if (LIVE_ONLY.has(head)) return false
   if (isTypedSearch(query.queryKey)) return false
   // A failed query has no data worth keeping, and persisting the error state

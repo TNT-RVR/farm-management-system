@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logApiCall, runSatelliteIngest, FULL_QUALITY, PARTIAL_QUALITY } from './sat-ingest.ts'
 import { runRadarIngest } from './sat-radar.ts'
+import { runCanolaBloom } from './canola-bloom.ts'
 import { runLandsatIngest } from './sat-landsat.ts'
 import { rebuildDaily } from './sat-daily.ts'
 import { runAlertDetection } from './sat-alerts.ts'
@@ -198,6 +199,17 @@ export async function runFullIngest(
     await logApiCall(sb, 'alerts', false, (e as Error).message.slice(0, 200))
   }
 
+  // Canola bloom, from the yellow share on the new looks. Every run: it is a
+  // few reads, and a field that crossed the line on an earlier partial run
+  // must still get its message.
+  let bloom: { detail: string }
+  try {
+    bloom = await runCanolaBloom(sb)
+  } catch (e) {
+    bloom = { detail: `canola bloom failed: ${(e as Error).message.slice(0, 100)}` }
+    await logApiCall(sb, 'canola-bloom', false, (e as Error).message.slice(0, 200))
+  }
+
   // Cattle alerts, after the pasture series is rebuilt and graded.
   let cattle: { raised: number; cleared: number; detail: string } = { raised: 0, cleared: 0, detail: 'cattle alerts on the pasture run' }
   if (opts.pastures) try {
@@ -217,7 +229,7 @@ export async function runFullIngest(
       `${optical.detail} · ${radar.detail} · ${landsat.detail} · ${pasture.detail}` +
       (strips.detail ? ` · ${strips.detail}` : '') +
       ` · ${daily.days} field days, ${pastureDaily.days} pasture days` +
-      ` · ${harmony.detail} · ${imagery.detail} · ${alerts.detail} · ${cattle.detail}` +
+      ` · ${harmony.detail} · ${imagery.detail} · ${alerts.detail} · ${bloom.detail} · ${cattle.detail}` +
       dailyProblem,
   }
 }

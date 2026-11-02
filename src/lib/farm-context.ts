@@ -14,7 +14,7 @@ const DEFAULT_PROVINCE = 'AB'
 /** A calendar year, until Farm setup says otherwise (the migration's default too). */
 const DEFAULT_FISCAL_END_MONTH = 12
 
-let client: { name?: string; tz?: string; province?: string; description?: string; retailer?: string; district?: string; river?: string; mainRanchId?: string; fiscalEndMonth?: number } = {}
+let client: { name?: string; tz?: string; province?: string; description?: string; retailer?: string; district?: string; mainRanchId?: string; fiscalEndMonth?: number } = {}
 
 export function setFarmContext(c: {
   name?: string | null
@@ -23,7 +23,6 @@ export function setFarmContext(c: {
   description?: string | null
   retailer?: string | null
   district?: string | null
-  river?: string | null
   mainRanchId?: string | null
   fiscalEndMonth?: number | null
 }) {
@@ -34,7 +33,6 @@ export function setFarmContext(c: {
     description: c.description?.trim() || undefined,
     retailer: c.retailer?.trim() || undefined,
     district: c.district?.trim() || undefined,
-    river: c.river?.trim() || undefined,
     mainRanchId: c.mainRanchId || undefined,
     fiscalEndMonth: c.fiscalEndMonth || undefined,
   }
@@ -82,8 +80,6 @@ export const farmRetailer = (): string => env('FARM_RETAILER') ?? client.retaile
 /** The farm's irrigation district; generic until Farm setup names one. */
 export const farmDistrict = (): string => env('FARM_DISTRICT') ?? client.district ?? 'Irrigation district'
 
-/** The river the farm pumps from under its own licences; generic until Farm setup names one. */
-export const farmRiver = (): string => env('FARM_RIVER') ?? client.river ?? 'River'
 
 /** The ranch to use where only one fits, by id; null to fall back to the first. */
 export const farmMainRanchId = (): string | null => env('FARM_MAIN_RANCH_ID') ?? client.mainRanchId ?? null

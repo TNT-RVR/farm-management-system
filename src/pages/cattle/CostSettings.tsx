@@ -3,13 +3,12 @@ import type React from 'react'
 import { Calculator, RotateCcw } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import {
+  AB_COW_CALF_COP_SOURCE,
   COW_CALF_BENCHMARK_COSTS,
-  COW_CALF_BENCHMARK_SOURCE,
-  benchmarkTotalPerCow,
+  abCowCostLines,
+  abCowCostPerYear,
   breakEven,
-  ownGrass,
   useCattleCosts,
-  useCostBenchmark,
   useSaveCattleCosts,
   type CattleCosts,
 } from '@/lib/cattleEconomics'
@@ -37,8 +36,9 @@ const numOrNull = (s: string) => {
 const COST_ROWS: { key: keyof CattleCosts; label: string; hint: string }[] = [
   { key: 'cow_cost_per_head', label: 'Cow cost', hint: 'herd replacement, bull, cow depreciation, interest' },
   { key: 'feed_cost_per_head', label: 'Winter feed', hint: 'forage, grain, minerals, straw' },
-  // No rent: the farm owns its grass (Sam, 1 Oct 2026).
-  { key: 'pasture_cost_per_head', label: 'Pasture', hint: 'operating, fencing, water — no rent, we own it' },
+  // We pay no rent (Sam, 1 Oct 2026), but the grass we own is still worth
+  // something to carry a cow on, and the Alberta benchmark counts it.
+  { key: 'pasture_cost_per_head', label: 'Pasture', hint: 'operating, fencing, water, and the grass we own' },
   { key: 'vet_cost_per_head', label: 'Vet and medicine', hint: '' },
   { key: 'other_cost_per_head', label: 'Everything else', hint: 'labour, fuel, machinery, insurance, hauling' },
 ]
@@ -110,24 +110,15 @@ function CostForm({
   isManager: boolean
 }) {
   const { data: saved, isLoading } = useCattleCosts(ranch, year)
-  const { data: live } = useCostBenchmark()
   const save = useSaveCattleCosts()
 
-  // The published Manitoba budget, carried to this quarter by the refresh. The
-  // compiled-in copy is the fallback if that has never run.
-  const published: Record<string, number> = live
-    ? Object.fromEntries(live.lines.map((l) => [l.key, l.current]))
-    : { ...COW_CALF_BENCHMARK_COSTS }
-  // The farm owns its grass, so the rent comes out of the pasture line it is
-  // offered — both as the placeholder and in the "fill" draft.
-  const bench: Record<string, number> = {
-    ...published,
-    pasture_cost_per_head: ownGrass(published.pasture_cost_per_head ?? 0),
-  }
-  const benchTotal =
-    (live?.total_per_cow ?? benchmarkTotalPerCow) -
-    ((published.pasture_cost_per_head ?? 0) - bench.pasture_cost_per_head)
-  const benchSource = live?.source ?? COW_CALF_BENCHMARK_SOURCE
+  // The benchmark this form offers is Alberta's (Sam, 29 Oct 2026: "repoint
+  // it to Alberta's total"), split across the five lines by abCowCostLines.
+  // It used to be a Manitoba budget, which was the only one with line items —
+  // that is still where the SHAPE comes from, but the size is Alberta's now.
+  const bench: Record<string, number> = abCowCostLines(year)
+  const benchTotal = abCowCostPerYear(year)
+  const benchSource = AB_COW_CALF_COP_SOURCE
   const carriedFrom = saved?.carriedFrom ?? null
   // Keyed on the ranch by the caller's remount, so switching ranch reloads.
   const [d, setD] = useState<Record<string, string> | null>(null)
@@ -233,14 +224,13 @@ function CostForm({
           className="mt-2 flex items-center gap-1.5 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
         >
           <RotateCcw className="h-3.5 w-3.5" />
-          Fill with the Manitoba cost-of-production benchmark
+          Fill with the Alberta cost-of-production benchmark
         </button>
       )}
 
       <div className="mt-3 space-y-1.5">
         {COST_ROWS.map((r) => {
           const benchValue = bench[r.key] as number | undefined
-          const line = live?.lines.find((l) => l.key === r.key)
           return (
             <label key={r.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
               <span className="w-full shrink-0 text-gray-700 sm:w-44">
@@ -256,27 +246,11 @@ function CostForm({
                 onChange={(e) => setD({ ...current, [r.key]: e.target.value })}
               />
               {benchValue != null && (
-                <span className="text-[11px] text-gray-400">
+                <span
+                  className="text-[11px] text-gray-400"
+                  title={`Alberta's benchmark total for ${year}, split across the five lines in the proportions of the only published Prairie budget that has line items`}
+                >
                   benchmark {money(benchValue)}
-                  {r.key === 'pasture_cost_per_head' && (
-                    <span title="The published budget's pasture line includes rent; ours doesn't">
-                      {' '}
-                      (rent taken out of {money(published.pasture_cost_per_head ?? 0)})
-                    </span>
-                  )}
-                  {line?.escalated && line.factor !== 1 && (
-                    <span title="Carried forward on Statistics Canada's national farm input price index">
-                      {' '}
-                      ({line.factor! < 1 ? '↓' : '↑'}
-                      {Math.abs((line.factor! - 1) * 100).toFixed(0)}% since {live!.base_year})
-                    </span>
-                  )}
-                  {line && !line.escalated && (
-                    <span title="No price index matches this line, so it is carried as published">
-                      {' '}
-                      (as published)
-                    </span>
-                  )}
                 </span>
               )}
             </label>
@@ -411,20 +385,19 @@ function CostForm({
       </label>
 
       <HelpNote className="mt-2" summary={`Benchmark: ${benchSource}.`} title="About the benchmark">
-        <p>
-          Benchmark: {benchSource}.
-          {live?.index_as_of && (
-            <>
-              {' '}
-              Written for the {live.base_year} production year and carried forward on Statistics
-              Canada&rsquo;s national farm input price index, currently {live.index_as_of.slice(0, 7)},
-              refreshed each quarter. Alberta&rsquo;s own AgriProfit$ figures are built from real farm
-              records and would be better, but its newest edition covers 2018&ndash;22 — four years
-              is too far back to price calves against.
-            </>
-          )}{' '}
-          A first draft to correct, not a figure to rely on: it is a Manitoba budget for a hay-ration
-          herd, not an Alberta figure, and your ground is not average.
+        <p>Benchmark: {benchSource}</p>
+        <p className="mt-1.5">
+          That is a total, not five lines: the Network reports cash, depreciation and opportunity
+          cost, which cut across all of them. So the split you see beside each box is the shape of
+          Manitoba Agriculture&rsquo;s 2026 Beef Cow-Calf budget — the only published Prairie budget
+          with line items — scaled to Alberta&rsquo;s total for {year}. Alberta&rsquo;s own
+          AgriProfit$ figures are built from real farm records and would be better still, but its
+          newest edition covers 2018&ndash;22, too far back to price calves against.
+        </p>
+        <p className="mt-1.5">
+          A first draft to correct, not a figure to rely on. It is a provincial average and your
+          ground is not average — and there is no southern Alberta benchmark at all, because the
+          Network has no farms in the south of the province.
         </p>
       </HelpNote>
 

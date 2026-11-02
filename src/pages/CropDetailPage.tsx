@@ -12,7 +12,7 @@ import { CropPlanterSettings } from '@/pages/crops/CropPlanterSettings'
 import { Fold } from '@/components/Fold'
 import { supabase } from '@/lib/supabase'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
-import { usePartnerCrops } from '@/lib/partner-view'
+import { usePartnerCropShares } from '@/lib/partner-view'
 import { useCropYear } from '@/lib/crop-year'
 import {
   useCropVarieties,
@@ -789,13 +789,14 @@ export function CropDetailPage() {
   const { profile } = useAuth()
   const { data: crops } = useCrops()
   const crop = crops?.find((c) => c.id === id)
-  // A crop-share partner edits the crops he grows and opens no other; our
-  // input costs and planters stay ours (lib/partner-view.ts).
-  const partnerCrops = usePartnerCrops()
-  const partner = partnerCrops != null
-  const readonly = !hasManagerAccess(profile?.role) && !(id && partnerCrops?.has(id))
+  // A partner opens only the crops shared with his company and its own, and
+  // edits those not shared read-only; our input costs and planters stay ours
+  // (lib/partner-view.ts).
+  const partnerShares = usePartnerCropShares()
+  const partner = partnerShares != null
+  const readonly = !hasManagerAccess(profile?.role) && !(id && partnerShares?.editable.has(id))
 
-  if (partnerCrops && crop && !partnerCrops.has(crop.id)) return <Navigate to="/crops" replace />
+  if (partnerShares && crop && !partnerShares.shared.has(crop.id)) return <Navigate to="/crops" replace />
   if (!crop) {
     return <div className="p-6 text-sm text-gray-500">{crops ? 'Crop not found.' : 'Loading…'}</div>
   }

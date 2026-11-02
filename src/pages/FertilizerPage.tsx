@@ -48,10 +48,12 @@ import { useCropYear } from '@/lib/crop-year'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { HelpNote } from '@/components/HelpNote'
 import { AdminOnly } from '@/components/TechnicalDetails'
-import { useFarmSettings, useFeature } from '@/lib/farm-setup'
+import { useFeature } from '@/lib/farm-setup'
 import { TabSuspense } from '@/components/TabSuspense'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { usePartnerView } from '@/lib/partner-view'
+import { isPartnerTab } from '@/lib/partner'
+import { useRetailerName } from '@/lib/products'
 
 // Each tab is its own chunk, so opening one view does not load every view's maps and charts.
 const SavingsTab = lazy(() => import('@/pages/fertilizer/savings/SavingsTab').then((m) => ({ default: m.SavingsTab })))
@@ -929,9 +931,9 @@ function SoilView({ isManager }: { isManager: boolean }) {
 }
 
 function PlanView() {
-  // Spreading cost is our hauling; not a crop-share partner's.
-  const partner = usePartnerView()
-  const { tab, setTab, shown } = useViewTab('plan', useFeature('hauling') && !partner ? [] : ['spreading'])
+  // Spreading cost is our hauling; not a partner's.
+  const ours = usePartnerView() && !isPartnerTab('/fertilizer/plan', 'spreading')
+  const { tab, setTab, shown } = useViewTab('plan', useFeature('hauling') && !ours ? [] : ['spreading'])
   return (
     <ViewShell
       view="plan"
@@ -943,11 +945,11 @@ function PlanView() {
 }
 
 function PricesView({ isManager }: { isManager: boolean }) {
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const retailerOn = useFeature('retailer_invoices')
   // The retailer's invoices are our account with them.
-  const partner = usePartnerView()
-  const { tab, setTab, shown } = useViewTab('prices', retailerOn && !partner ? [] : ['retailer'])
+  const ours = usePartnerView() && !isPartnerTab('/fertilizer/prices', 'retailer')
+  const { tab, setTab, shown } = useViewTab('prices', retailerOn && !ours ? [] : ['retailer'])
   const tabs = shown.map((t) => (t.key === 'retailer' ? { key: t.key, label: retailerName } : t))
   return (
     <ViewShell
@@ -963,7 +965,7 @@ function PricesView({ isManager }: { isManager: boolean }) {
         // on Market, which made the farm's own prices a three-tab hunt;
         // Market is the market now and this is what we pay.
         <div className="space-y-4">
-          {retailerOn && !partner && <IciPrices isManager={isManager} />}
+          {retailerOn && !ours && <IciPrices isManager={isManager} />}
           <ProductPrices category="fertilizer" />
           <SavingsHere ids={[2]} className="space-y-2" />
         </div>

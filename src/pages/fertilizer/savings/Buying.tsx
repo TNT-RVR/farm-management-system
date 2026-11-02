@@ -5,7 +5,7 @@ import { rowClick, type EditField } from '@/components/RecordEditor'
 import { Select } from '@/components/Select'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { withCurrent } from '@/lib/record-detail'
-import { useProductPurchases, useJdProducts } from '@/lib/products'
+import { useProductPurchases, useJdProducts, useRetailerName } from '@/lib/products'
 import { canonicalProduct, totalsByProduct } from '@/lib/fertilizer-plan'
 import { parseAnalysis } from '@/lib/fertilizer-analysis'
 import {
@@ -21,7 +21,7 @@ import { InvoiceViewer } from '@/components/InvoiceViewer'
 import { cn } from '@/lib/utils'
 import { useReportSaving, useSavings } from './context'
 import { S } from './sources'
-import { useBrand, useFarmSettings } from '@/lib/farm-setup'
+import { useBrand } from '@/lib/farm-setup'
 import { BuyWindowDetail } from './BuyWindowDetail'
 import { AdderNote, adderText } from './AdderNote'
 import { Empty, Table, ToolCard, button, ghost, input, money, n0, n1, perLbFmt, td, tdNum } from './ui'
@@ -238,7 +238,7 @@ export function BuyWindowCard() {
 
 export function NutrientCostCard() {
   const { inputs } = useSavings()
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const dtnNow = useMemo(() => new Map(inputs.priced.dtn.map((d) => [d.key, d])), [inputs.priced.dtn])
 
   // The saving: every requirement line bought as the cheapest source of its nutrient.
@@ -315,7 +315,7 @@ export function NutrientCostCard() {
 
 export function BlendPremiumCard() {
   const { inputs } = useSavings()
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const { data: products } = useJdProducts()
   const { data: purchases } = useProductPurchases()
   const quotes = useFertMutations('fert_quotes')
@@ -425,7 +425,7 @@ export function BlendPremiumCard() {
 
 export function NeedVsBookedCard() {
   const { inputs } = useSavings()
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const positions = usePositions()
   const m = useFertMutations('fert_bookings')
   const { data: bookings } = useFertRows('fert_bookings', inputs.cropYear)
@@ -557,7 +557,7 @@ export function NeedVsBookedCard() {
 
 export function QuoteSheetCard() {
   const { inputs } = useSavings()
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const { farmName } = useBrand()
   const positions = usePositions()
   const { data: quotes } = useFertRows('fert_quotes', inputs.cropYear)
@@ -744,7 +744,7 @@ export function QuoteSheetCard() {
 
 export function ProgramsCard() {
   const { inputs } = useSavings()
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const positions = usePositions()
   const { data: programs } = useFertRows('fert_programs')
   const m = useFertMutations('fert_programs')
@@ -883,7 +883,7 @@ export function ProgramsCard() {
 
 export function ServiceAuditCard() {
   const { inputs } = useSavings()
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const { data: purchases } = useProductPurchases()
   const save = useSaveFertSetting()
   const own = inputs.settings.get('own_application_per_acre')

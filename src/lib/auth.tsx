@@ -4,11 +4,19 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { isSupabaseConfigured, supabase } from './supabase'
 import { clearOfflineCache } from './offline'
 import type { MenuPrefs } from './nav-tree'
+// The partner
+import { useSyncExternalStore } from 'react'
+import { setPartnerMode } from './partner'
+import { getPartnerPreview, setPartnerPreview, subscribePartnerPreview } from './partner-preview'
 
 export type AppRole =
   | 'admin'
   | 'manager'
   | 'user'
+  // A partner, who sees and records only on the fields he
+  // grows on (lib/partner.ts, partner_fields). Not staff: is_active() is
+  // false for him in the database.
+  | 'partner'
 
 /**
  * Admins are managers plus user administration, so every manager-gated screen
@@ -58,6 +66,8 @@ export type UserProfile = {
   finance_access?: boolean
   /** The company (farms) this person belongs to; null for the home farm's own people. */
   farm_id?: string | null
+  // A partner who runs his company's people and setup
+  partner_admin?: boolean
 }
 
 type AuthState = {
@@ -113,16 +123,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   })
 
+  // Before any child renders, so the first fields/crops query already
+  // goes to the right place (lib/partner.ts).
+  setPartnerMode(Boolean(userId && profile?.role === 'partner'))
   const profileReady = !userId || !profilePending || profileFailed
 
   const own = (userId && profile) || null
   let shown: UserProfile | null = own
+  // Viewing as a partner, admins only, and the profile wears his role.
+  const preview = useSyncExternalStore(subscribePartnerPreview, getPartnerPreview, () => null)
+  if (own && preview && own.role === 'admin') {
+    shown = { ...own, role: 'partner', is_owner: false, finance_access: false, denied_views: [] }
+  }
 
   const signOut = async () => {
     await supabase.auth.signOut()
     // The saved cache is farm data sitting in the browser profile of whatever
     // phone or truck laptop this is. Signing out has to take it with it.
     await clearOfflineCache()
+    // A View-as-partner preview ends with the session.
+    setPartnerPreview(null)
     qc.clear()
   }
 
@@ -164,8 +184,11 @@ export async function deleteUser(id: string): Promise<{ email: string; full_name
   return { email: body.email ?? '', full_name: body.full_name ?? '' }
 }
 
-/** Admin-only: invite a new user by email (server-side, service role). */
-export async function inviteUser(email: string, role: AppRole): Promise<void> {
+/**
+ * Admin-only: invite a new user by email (server-side, service role). `joins`
+ * carries what invite-user.mts accepts beyond the role.
+ */
+export async function inviteUser(email: string, role: AppRole, joins: Record<string, unknown> = {}): Promise<void> {
   const {
     data: { session },
   } = await supabase.auth.getSession()
@@ -176,7 +199,7 @@ export async function inviteUser(email: string, role: AppRole): Promise<void> {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${session.access_token}`,
     },
-    body: JSON.stringify({ email, role }),
+    body: JSON.stringify({ email, role, ...joins }),
   })
   const body = (await res.json().catch(() => ({}))) as { error?: string }
   if (!res.ok) throw new Error(body.error ?? 'Invite failed')

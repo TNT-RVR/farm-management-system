@@ -60,7 +60,11 @@ import { TaskWidgetCard } from '@/pages/settings/TaskWidgetCard'
 import { ProfilePicture } from '@/pages/settings/ProfilePicture'
 import { SignatureCard } from '@/pages/settings/SignatureCard'
 import { askConfirm } from '@/components/askConfirm'
+// The partner
+import { PartnersAdmin } from '@/pages/settings/Partners'
+import { PartnerFarmSetup, PartnerPeople } from '@/pages/settings/PartnerCompany'
 import { usePartnerView } from '@/lib/partner-view'
+import { isPartnerTab } from '@/lib/partner'
 import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
 type ManagedUser = {
@@ -102,11 +106,14 @@ const ROLE_HELP: Record<AppRole, string> = {
   admin: 'Everything a manager can do, plus inviting and deleting people.',
   manager: 'Full access to the farm data. Cannot invite or delete people.',
   user: 'Day-to-day use. Cannot change settings or other people.',
+  partner:
+    'Another farm company: sees its own records, plus the fields, crops and screens its company is given on the Partners tab. Nothing else of ours.',
 }
 
 const ROLE_PILL: Partial<Record<AppRole, string>> = {
   admin: 'bg-brand-100 text-brand-800',
   manager: 'bg-blue-100 text-blue-800',
+  partner: 'bg-amber-100 text-amber-800',
 }
 
 type InviteStatus = { id: string; invited_at: string | null; last_sign_in_at: string | null }
@@ -198,6 +205,7 @@ function InviteForm() {
           { value: 'user', label: 'User' },
           { value: 'manager', label: 'Manager' },
           { value: 'admin', label: 'Admin' },
+          { value: 'partner', label: 'Partner' },
         ]}
       />
       <button
@@ -266,6 +274,7 @@ function UserRow({
       ? [
           { value: 'manager', label: 'Manager' },
           { value: 'admin', label: 'Admin' },
+          { value: 'partner', label: 'Partner' },
         ]
       : []),
   ]
@@ -682,15 +691,13 @@ const ACCOUNT_LABELS: Record<AccountTab, string> = {
   device: 'This device & apps',
 }
 
-const PARTNER_ACCOUNT_TABS: readonly AccountTab[] = ['profile', 'security', 'notifications']
-
 /** Your own profile, how you get notified, your home screen and this device. */
 function MyAccount({ head }: { head: ViewHead }) {
   const [picked, pick] = useTab('settings-account', ACCOUNT_TABS, accountAlias)
   const { profile } = useAuth()
-  // A crop-share partner has no home screen, menu or farm apps to set up.
+  // A partner has no home screen, menu or farm apps to set up (his preset, lib/partner.ts).
   const partner = usePartnerView()
-  const tabs = partner ? ACCOUNT_TABS.filter((k) => PARTNER_ACCOUNT_TABS.includes(k)) : ACCOUNT_TABS
+  const tabs = partner ? ACCOUNT_TABS.filter((k) => isPartnerTab('/settings/account', k)) : ACCOUNT_TABS
   const section = tabs.includes(picked) ? picked : 'profile'
   const queryClient = useQueryClient()
   const [name, setName] = useState<string | null>(null)
@@ -832,7 +839,11 @@ const VIEWS: {
   { key: 'farm', label: 'Farm setup', icon: Tractor, access: 'admin' },
 ]
 
-const PEOPLE_LABELS: Record<PeopleTab, string> = { users: 'Users', access: 'Access' }
+const PEOPLE_LABELS: Record<PeopleTab, string> = {
+  users: 'Users',
+  access: 'Access',
+  partners: 'Partners',
+}
 
 /** Users (managers) and Access (admins only: managers do not see who can open what). */
 function UsersAndAccess({ head, isAdmin }: { head: ViewHead; isAdmin: boolean }) {
@@ -851,7 +862,10 @@ function UsersAndAccess({ head, isAdmin }: { head: ViewHead; isAdmin: boolean })
           />
         ),
       )}
-      {tab === 'access' ? <AccessMatrix /> : <UsersAdmin />}
+      {tab === 'access' && <AccessMatrix />}
+      {/* Partner companies (docs/partners.md) */}
+      {tab === 'partners' && <PartnersAdmin />}
+      {tab === 'users' && <UsersAdmin />}
     </>
   )
 }
@@ -873,7 +887,10 @@ export function SettingsPage({ view }: { view: SettingsView }) {
   const seasonMenu = useMenuEnabled()
   const isManager = hasManagerAccess(profile?.role)
   const isAdmin = hasAdminAccess(profile?.role)
+  // A partner, his own account, his company's people and its setup
+  const partner = usePartnerView()
   const allowed = (v: (typeof VIEWS)[number]) =>
+    partner ? v.key !== 'connections' :
     v.access === 'all' || (v.access === 'manager' ? isManager : isAdmin)
   const meta = VIEWS.find((v) => v.key === view)!
 
@@ -908,6 +925,15 @@ export function SettingsPage({ view }: { view: SettingsView }) {
     </div>
   )
 
+  // His company's people and setup, not ours
+  if (partner && view !== 'account') {
+    return (
+      <div>
+        {view === 'people' ? <PartnerPeople head={head} /> : <PartnerFarmSetup head={head} />}
+        <BuiltOn />
+      </div>
+    )
+  }
 
   return (
     <div>

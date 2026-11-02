@@ -490,6 +490,16 @@ export const COW_CALF_BENCHMARK_COSTS = {
   cost_of_gain_per_lb: 1.4,
 } as const
 
+/** The five cost lines, in the order the form shows them. */
+export const COST_LINE_KEYS = [
+  'cow_cost_per_head',
+  'feed_cost_per_head',
+  'pasture_cost_per_head',
+  'vet_cost_per_head',
+  'other_cost_per_head',
+] as const
+export type CostLineKey = (typeof COST_LINE_KEYS)[number]
+
 /** Says Manitoba in so many words: the figure is easy to mistake for Alberta's. */
 export const COW_CALF_BENCHMARK_SOURCE =
   'Manitoba 2026 Cost of Production, Beef Cow-Calf — 150 cow herd, hay ration (Manitoba Agriculture, September 2025) — not an Alberta figure'
@@ -501,6 +511,34 @@ export const benchmarkTotalPerCow =
   COW_CALF_BENCHMARK_COSTS.pasture_cost_per_head +
   COW_CALF_BENCHMARK_COSTS.vet_cost_per_head +
   COW_CALF_BENCHMARK_COSTS.other_cost_per_head
+
+/**
+ * The Alberta total, split across our five cost lines.
+ *
+ * Nothing published breaks an Alberta cow into these lines — the Cost of
+ * Production Network reports cash, depreciation and opportunity cost, which
+ * cut across all five. So the split is taken from Manitoba Agriculture's 2026
+ * Beef Cow-Calf budget, the only published Prairie budget with line items, and
+ * scaled so the five add to Alberta's total. The shape is Manitoba's; the size
+ * is Alberta's; neither is a measurement of any particular ranch, which is why
+ * the form offers these as a draft to correct rather than saving them itself.
+ *
+ * The pasture line keeps its full value here, rent and all. On an Alberta
+ * basis what the farm's own grass is worth is a real cost of carrying a cow,
+ * whether or not a cheque is written for it — unlike the Manitoba line, which
+ * charged rent the farm genuinely does not pay.
+ */
+export function abCowCostLines(year: number): Record<CostLineKey, number> {
+  const total = abCowCostPerYear(year)
+  const scale = total / benchmarkTotalPerCow
+  const out = {} as Record<CostLineKey, number>
+  for (const k of COST_LINE_KEYS) out[k] = Math.round(COW_CALF_BENCHMARK_COSTS[k] * scale)
+  // Rounding five lines rarely lands on the total; the remainder goes on the
+  // biggest, vaguest line rather than leaving the sum a dollar or two out.
+  const drift = total - COST_LINE_KEYS.reduce((a, k) => a + out[k], 0)
+  out.other_cost_per_head += drift
+  return out
+}
 
 /**
  * The pasture rental inside the benchmark's pasture line ($59.38 of $138).

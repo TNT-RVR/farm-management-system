@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from './supabase'
+import { progressSource } from './partner'
 import type { ProgressField } from './fieldProgress'
 
 /**
@@ -33,7 +34,7 @@ export function seasonProgressQuery(year: number) {
     queryKey: ['field_season_progress', year],
     queryFn: async (): Promise<ProgressField[]> => {
       const { data, error } = await supabase
-        .from('field_season_progress')
+        .from(progressSource())
         .select('*')
         .eq('crop_year', year)
       if (error) throw error

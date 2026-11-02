@@ -41,15 +41,28 @@ export default async (req: Request) => {
     .single()
   // The company an invite joins, when the caller runs a partner company.
   let partnerFarm: string | null = null
+  // A partner who runs his company invites its people (29 Oct 2026)
+  if (profile?.active && profile.role === 'partner') {
+    const { data: lead } = await admin.from('users').select('farm_id, partner_admin').eq('id', caller.user.id).single()
+    if (lead?.partner_admin && lead.farm_id) partnerFarm = lead.farm_id as string
+  }
   if (!profile || !profile.active || (profile.role !== 'admin' && !partnerFarm)) {
     return json({ error: 'Only admins can invite users' }, 403)
   }
 
-  const body = (await req.json().catch(() => ({}))) as { email?: string; role?: string }
+  const body = (await req.json().catch(() => ({}))) as {
+    email?: string
+    role?: string
+    // An admin's invite into a partner company
+    farm_id?: string
+    partner_admin?: boolean
+  }
   const email = (body.email ?? '').trim().toLowerCase()
   const ROLES = [
     'admin',
     'manager',
+    // A partner, his fields only (lib/partner.ts)
+    'partner',
   ]
   // A partner company's invite is always to that company, as a partner.
   const role = partnerFarm ? ROLES[ROLES.length - 1] : ROLES.includes(body.role ?? '') ? body.role! : 'user'
@@ -57,10 +70,20 @@ export default async (req: Request) => {
     return json({ error: 'A valid email is required' }, 400)
   }
 
+  // The company the person joins, and whether they run it.
+  const joins: Record<string, unknown> = {}
+  // An admin invites a partner company's people (Settings → Partners, 30 Oct 2026)
+  if (partnerFarm) joins.farm_id = partnerFarm
+  else if (role === 'partner' && body.farm_id) {
+    const { data: farm } = await admin.from('farms').select('id, is_home').eq('id', body.farm_id).maybeSingle()
+    if (!farm || farm.is_home) return json({ error: 'No such partner company' }, 400)
+    Object.assign(joins, { farm_id: farm.id, partner_admin: Boolean(body.partner_admin) })
+  }
+
   const { error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
     // `invite: true` is read by the handle_new_user trigger to activate the
     // account immediately (invited_at isn't set yet at insert time).
-    data: { role, invite: true, ...(partnerFarm ? { farm_id: partnerFarm } : {}) },
+    data: { role, invite: true, ...joins },
     redirectTo: process.env.SITE_URL || 'https://your-farm.example',
   })
   if (inviteErr) return json({ error: inviteErr.message }, 400)

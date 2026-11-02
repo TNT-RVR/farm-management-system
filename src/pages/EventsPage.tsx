@@ -25,6 +25,7 @@ import {
   useUpdateEvent,
 } from '@/lib/events-data'
 import type { Database } from '@/lib/database.types'
+import { usePartnerView } from '@/lib/partner-view'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { fmtMoney } from '@/lib/applied'
 import { cn } from '@/lib/utils'
@@ -67,12 +68,15 @@ const monthLabel = (m: string) => {
 function EventCard({
   series,
   canEdit,
+  canStatus,
   onStatus,
   onDelete,
   onOpen,
 }: {
   series: NextEdition
   canEdit: boolean
+  /** Status only: a partner tracks his own, and changes nothing else. */
+  canStatus: boolean
   onStatus: (s: EventStatus) => void
   onDelete: () => void
   /** Open the event to change it. */
@@ -206,7 +210,7 @@ function EventCard({
             Event page <ExternalLink className="h-3 w-3" />
           </a>
         )}
-        {canEdit && (
+        {(canEdit || canStatus) && (
           <>
             <Select
               value={e.status}
@@ -215,6 +219,7 @@ function EventCard({
               onChange={(s) => onStatus(s as EventStatus)}
               options={STATUSES.map((s) => ({ value: s.key, label: s.label }))}
             />
+            {canEdit && (
             <button
               onClick={async () => {
                 if (await askConfirm(`Remove ${e.name}?`, { confirmLabel: 'Remove' })) onDelete()
@@ -224,6 +229,7 @@ function EventCard({
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
+            )}
           </>
         )}
       </div>
@@ -241,6 +247,7 @@ function EventCard({
 export function EventsPage() {
   const { profile } = useAuth()
   const canEdit = hasManagerAccess(profile?.role)
+  const partner = usePartnerView()
   const { data: events, isLoading } = useEvents()
   const save = useSaveEvent()
   const update = useUpdateEvent()
@@ -402,6 +409,7 @@ export function EventsPage() {
                     key={s.event?.id}
                     series={s}
                     canEdit={canEdit}
+                    canStatus={partner}
                     onStatus={(next) =>
                       s.event && update.mutate({ id: s.event.id, status: next })
                     }

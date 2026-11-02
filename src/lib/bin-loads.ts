@@ -144,6 +144,11 @@ export type LoadInput = {
   /** A guessed weight, nobody weighed it (Sam, 9 Oct 2026). Counts like any load, labelled as an estimate. */
   estimated?: boolean
   load_count?: number | null
+  /** Weights taken off the yard scale (scale_captures). The database holds each weight to its capture. */
+  full_capture_id?: string | null
+  empty_capture_id?: string | null
+  /** Never weighed out: the empty weight is a best guess. */
+  empty_guessed?: boolean
   /** Moisture at the scale, %. Shrinks the field yield to the crop's dry standard. */
   moisture_pct?: number | null
   /** Protein off the elevator ticket, %. Wheat and durum: an after-the-fact N check. */

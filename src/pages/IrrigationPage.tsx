@@ -39,7 +39,9 @@ import { PivotDepthChecks } from '@/pages/irrigation/PivotDepthChecks'
 import { PivotTab, PumpTab } from '@/pages/irrigation/PivotPumpTabs'
 import { IrrigationOverview } from '@/pages/irrigation/IrrigationOverview'
 import { RIVER_RANCHES, RIVER_TABS, riverTabFromKey, riverTabKey, type RiverRanch, type RiverTab } from '@/lib/river'
+import { useFarmSettings, useSaveFarmSetup } from '@/lib/farm-setup'
 import { useMainRanch } from '@/lib/ranches'
+import { usePartnerView } from '@/lib/partner-view'
 import { cn } from '@/lib/utils'
 import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 
@@ -305,6 +307,8 @@ function Setup({ isManager, focusField }: { isManager: boolean; focusField: stri
   const { upsert } = useSeasonMutations(cropYear)
   const setMode = useSetFarmKcMode()
   const setSoil = useSetFieldSoil()
+  const { districtName } = useFarmSettings()
+  const saveFarm = useSaveFarmSetup()
 
   // Arriving from a "set the planting date" link: that field's row, in view.
   const fieldsLoaded = Boolean(fields)
@@ -376,6 +380,23 @@ function Setup({ isManager, focusField }: { isManager: boolean; focusField: stri
     <>
     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
       <p className="text-xs text-gray-500">Set a planting date to schedule a field; the crop comes from the Crop Plan.</p>
+      {/* The district's name used to be on Farm setup, in a box of unrelated
+          names nobody opened (Sam, 30 Oct 2026). It labels the allotment
+          every canal pivot is judged against, so it is set here, with the
+          other farm-wide irrigation settings. */}
+      <label key={districtName} className="flex items-center gap-1.5 text-xs text-gray-500">
+        Irrigation district
+        <input
+          disabled={!isManager}
+          defaultValue={districtName}
+          placeholder="SMRID"
+          onBlur={(e) => {
+            const v = e.target.value.trim()
+            if (v !== districtName) saveFarm.mutate({ irrigation_district_name: v || null })
+          }}
+          className="w-28 rounded-md border border-gray-300 px-2 py-1 text-sm disabled:border-transparent disabled:bg-transparent"
+        />
+      </label>
       <button
         type="button"
         onClick={() => setAdvanced((a) => !a)}
@@ -818,12 +839,16 @@ export function IrrigationPage({ section = 'aimm' }: { section?: IrrigationSecti
   // an old ?view=records or ?view=allocation link lands on the Graph.
   // Overview by default; a link with ?field= (or an old ?view=graph, records or
   // allocation) opens the Detailed View on that field.
-  const [aimmTab, setAimmTab] = useState<AimmTab>(() => {
+  const [askedTab, setAimmTab] = useState<AimmTab>(() => {
     const v = params.get('view')
     if (v === 'setup') return 'setup'
     if (v === 'overview') return 'overview'
     return params.get('field') || (v && v !== 'overview') ? 'detail' : 'overview'
   })
+  // A partner reads the model on his fields; its setup is ours.
+  const partner = usePartnerView()
+  const aimmTabs = partner ? AIMM_TABS.filter((t) => t.key !== 'setup') : AIMM_TABS
+  const aimmTab: AimmTab = partner && askedTab === 'setup' ? 'overview' : askedTab
   const [detailField, setDetailField] = useState<string>(() => params.get('field') ?? '')
   // A "set the planting date" link from inside the page (an empty graph)
   // changes ?view= without remounting; follow it to Setup.
@@ -876,7 +901,7 @@ export function IrrigationPage({ section = 'aimm' }: { section?: IrrigationSecti
           things that fit beside the tabs. */}
       {tab === 'aimm' && (
         <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50 px-4 pt-3 md:px-6 print:hidden">
-          <PillTabs tabs={AIMM_TABS} value={aimmTab} onChange={setAimmTab} className="border-b-0 pb-0" />
+          <PillTabs tabs={aimmTabs} value={aimmTab} onChange={setAimmTab} className="border-b-0 pb-0" />
           <div className="flex flex-wrap items-center gap-2 pb-2">
             <UnitToggle />
             {isManager && (

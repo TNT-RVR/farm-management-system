@@ -34,3 +34,8 @@ scripts/_sessions_probe.mjs
 research_notes/
 # Anchored to the root: src/lib/reports and src/pages/reports are app code.
 /reports/
+
+# Research library catalogues are rewritten by every search; the record of
+# where a paper came from lives on its research_papers row (scripts/research-sources/README.md).
+scripts/research-sources/*-journals.json
+scripts/research-sources/*-alberta.json

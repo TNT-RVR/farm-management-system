@@ -124,7 +124,7 @@ export const tabFor = (section: FieldSection): FieldSection => (section === 'not
  */
 export function FieldTabBar({ fieldId, active }: { fieldId: string; active: FieldSection }) {
   const base = `/fields/${fieldId}`
-  // A crop-share partner records on our field but does not set it up; his
+  // A partner records on our field but does not set it up; his
   // company's own fields he does.
   const { partner, own } = usePartnerYears(fieldId)
   const tabs = FIELD_TABS.filter((t) => !(partner && !own && t.key === 'settings')).map((t) => ({ to: base + t.path, label: t.label, end: t.path === '' }))
@@ -139,7 +139,7 @@ export function FieldTabBar({ fieldId, active }: { fieldId: string; active: Fiel
 /** "Fertilizer ↗ Chemical ↗" — the same subject for every field. */
 export function FarmWideLinks({ section }: { section: FieldSection }) {
   const links = FIELD_TABS.find((t) => t.key === tabFor(section))?.links ?? []
-  // The whole farm is not a crop-share partner's to open.
+  // The whole farm is not a partner's to open.
   const partner = usePartnerView()
   if (!links.length || partner) return null
   return (

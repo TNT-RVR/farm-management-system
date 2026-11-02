@@ -13,7 +13,7 @@
  * language model invent the programme; now these produce the numbers and the
  * model explains them.
  */
-import { farmDistrict, farmRiver } from '../farm-context'
+import { farmDistrict } from '../farm-context'
 
 export type SoilZone = 'Brown' | 'Dark Brown'
 
@@ -268,13 +268,14 @@ export const WATER_S_BY_SOURCE = {
 export type WaterSource = keyof typeof WATER_S_BY_SOURCE
 
 /**
- * The source's name for this farm: its own river and district from Farm
- * setup ("Oldman River (pumped)", "SMRID canal" here), not this farm's built
- * in. The figures above stay the measured Alberta ones until a farm's own
- * samples replace them.
+ * The source's name for this farm: its own district from Farm setup ("SMRID
+ * canal" here). The river line is any river, named that way on purpose — a
+ * farm pumps from more than one, and a pivot says which on its own record
+ * (lib/water-source-names). The figures above stay the measured Alberta ones
+ * until a farm's own samples replace them.
  */
 export const waterSourceLabel = (k: WaterSource): string =>
-  k === 'oldman' ? `${farmRiver()} (pumped)` : k === 'smrid' ? `${farmDistrict()} canal` : WATER_S_BY_SOURCE[k].label
+  k === 'oldman' ? 'River water (pumped)' : k === 'smrid' ? `${farmDistrict()} canal` : WATER_S_BY_SOURCE[k].label
 
 /** The default: most irrigated ground here is on SMRID water. */
 export const WATER_S_LB_PER_INCH = WATER_S_BY_SOURCE.smrid.lbPerInch

@@ -76,8 +76,9 @@ createRoot(document.getElementById('root')!).render(
         maxAge: OFFLINE_MAX_AGE,
         // Bump when a query's stored shape changes, so a restored cache from an
         // older build is thrown away rather than fed to code that cannot read
-        // it.
-        buster: 'v1',
+        // it. v2 (30 Oct 2026): throws away caches saved during a partner
+        // preview, which held only his fields (lib/offline.ts).
+        buster: 'v2',
         dehydrateOptions: { shouldDehydrateQuery: shouldPersistQuery },
       }}
       // ['fields'] is read off ['fields', 'all'] now; an older build's copy

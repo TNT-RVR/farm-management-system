@@ -8,6 +8,7 @@ type UserRole =
   | 'admin'
   | 'manager'
   | 'user'
+  | 'partner'
 type BoundarySource = 'kml' | 'drawn' | 'jd_import' | 'fah_import' | 'file_import'
 type LayerType = 'boundary' | 'utility' | 'pipeline' | 'pivot' | 'well' | 'custom'
 type FieldFileKind = 'soil_test' | 'fertility_map' | 'rx' | 'photo' | 'doc'
@@ -1314,6 +1315,9 @@ export type Database = {
           evi2_mean: number | string | null
           ndre_mean: number | string | null
           ndmi_mean: number | string | null
+          /** Share of the clear pixels that look like canola petals (canola-bloom.ts). */
+          yellow_fraction: number | string | null
+          blue_mean: number | string | null
           s1_vv_mean: number | string | null
           s1_vh_mean: number | string | null
         }
@@ -1416,6 +1420,8 @@ export type Database = {
           show_truck_forecast: boolean
           /** The company (farms) a person belongs to; null for the home farm's own people. */
           farm_id: string | null
+          // The partner
+          partner_admin: boolean
         }
         Insert: {
           id: string
@@ -1430,6 +1436,8 @@ export type Database = {
           tile_prefs?: Json | null
           menu_prefs?: Json | null
           farm_id?: string | null
+          // The partner
+          partner_admin?: boolean
         }
         Update: {
           id?: string
@@ -1449,6 +1457,8 @@ export type Database = {
           avatar_url?: string | null
           show_truck_forecast?: boolean
           farm_id?: string | null
+          // The partner
+          partner_admin?: boolean
         }
         Relationships: []
       }
@@ -1652,6 +1662,190 @@ export type Database = {
        * per week is what makes the choice stable for everybody at the meeting.
        * Written only through assign_meeting_fact.
        */
+      /** A weight taken off the yard truck scale (another project's scale_captures), copied here by /api/scale. */
+      scale_captures: {
+        Row: {
+          id: string
+          device_id: string
+          kind: string
+          weight_kg: number
+          mode: string
+          reading_at: string
+          captured_by: string | null
+          load_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id: string
+          device_id: string
+          kind: string
+          weight_kg: number
+          mode: string
+          reading_at: string
+          captured_by?: string | null
+          load_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          device_id?: string
+          kind?: string
+          weight_kg?: number
+          mode?: string
+          reading_at?: string
+          captured_by?: string | null
+          load_id?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      /** A subject in the research library: a crop, a variety, an active ingredient or an irrigation topic. */
+      research_folders: {
+        Row: {
+          id: string
+          slug: string
+          name: string
+          kind: string
+          parent_id: string | null
+          /** crops.name values this folder covers. */
+          crop_names: string[]
+          /** PMRA numbers of our products containing this active. */
+          registration_numbers: string[]
+          actives: string[]
+          /** Trade names and other search terms. */
+          aliases: string[]
+          sort: number
+          note: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          slug: string
+          name: string
+          kind: string
+          parent_id?: string | null
+          crop_names?: string[]
+          registration_numbers?: string[]
+          actives?: string[]
+          aliases?: string[]
+          sort?: number
+          note?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          slug?: string
+          name?: string
+          kind?: string
+          parent_id?: string | null
+          crop_names?: string[]
+          registration_numbers?: string[]
+          actives?: string[]
+          aliases?: string[]
+          sort?: number
+          note?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      /** One paper: the citation, how close to home it was done, and its PDF's path. */
+      research_papers: {
+        Row: {
+          id: string
+          folder_id: string
+          title: string
+          authors: string | null
+          year: number | null
+          source: string | null
+          doi: string | null
+          source_url: string | null
+          pdf_url: string | null
+          /** research-library path. Null unless status is 'stored'. */
+          storage_path: string | null
+          file_bytes: number | null
+          pages: number | null
+          sha256: string | null
+          /** Nearest first: southern_alberta, alberta, prairies, canada, northern_plains, other. */
+          region: string
+          /** 1-5, how much it bears on our fields. */
+          relevance: number
+          licence: string | null
+          abstract: string | null
+          tags: string[]
+          /** 'stored' = the PDF is here. 'link_only' = free to read, not downloadable. */
+          status: string
+          fetch_note: string | null
+          added_by: string | null
+          created_at: string
+          /** Generated: title, authors, source and abstract. Filtered on, never selected. */
+          fts: string | null
+        }
+        Insert: {
+          id?: string
+          folder_id: string
+          title: string
+          authors?: string | null
+          year?: number | null
+          source?: string | null
+          doi?: string | null
+          source_url?: string | null
+          pdf_url?: string | null
+          storage_path?: string | null
+          file_bytes?: number | null
+          pages?: number | null
+          sha256?: string | null
+          region?: string
+          relevance?: number
+          licence?: string | null
+          abstract?: string | null
+          tags?: string[]
+          status?: string
+          fetch_note?: string | null
+          added_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          folder_id?: string
+          title?: string
+          authors?: string | null
+          year?: number | null
+          source?: string | null
+          doi?: string | null
+          source_url?: string | null
+          pdf_url?: string | null
+          storage_path?: string | null
+          file_bytes?: number | null
+          pages?: number | null
+          sha256?: string | null
+          region?: string
+          relevance?: number
+          licence?: string | null
+          abstract?: string | null
+          tags?: string[]
+          status?: string
+          fetch_note?: string | null
+          added_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      /** The extra folders a paper also belongs in, besides its home folder. */
+      research_paper_folders: {
+        Row: {
+          paper_id: string
+          folder_id: string
+        }
+        Insert: {
+          paper_id: string
+          folder_id: string
+        }
+        Update: {
+          paper_id?: string
+          folder_id?: string
+        }
+        Relationships: []
+      }
       /** One delivered load, read off the buyer's ticket and summed into its contract by trigger. */
       scale_tickets: {
         Row: {
@@ -3721,6 +3915,88 @@ export type Database = {
         }
         Relationships: []
       }
+      // The partner
+      partner_farm_setup: {
+        Row: {
+          id: string
+          farm_id: string
+          farm_name: string | null
+          farm_description: string | null
+          province: string | null
+          time_zone: string | null
+          units: string | null
+          map_center_lat: number | null
+          map_center_lng: number | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: Partial<Database['public']['Tables']['partner_farm_setup']['Row']> & { farm_id: string }
+        Update: Partial<Database['public']['Tables']['partner_farm_setup']['Row']>
+        Relationships: []
+      }
+      partner_fields: {
+        Row: {
+          id: string
+          farm_id: string
+          field_id: string
+          crop_year: number
+          created_by: string | null
+          created_at: string
+        }
+        Insert: Partial<Database['public']['Tables']['partner_fields']['Row']> & { farm_id: string; field_id: string; crop_year: number }
+        Update: Partial<Database['public']['Tables']['partner_fields']['Row']>
+        Relationships: []
+      }
+      partner_crops: {
+        Row: {
+          farm_id: string
+          crop_id: string
+          can_edit: boolean
+          created_at: string
+        }
+        Insert: Partial<Database['public']['Tables']['partner_crops']['Row']> & { farm_id: string; crop_id: string }
+        Update: Partial<Database['public']['Tables']['partner_crops']['Row']>
+        Relationships: []
+      }
+      partner_access: {
+        Row: {
+          farm_id: string
+          preset: string
+          views: Json
+          extras: string[]
+          updated_at: string
+        }
+        Insert: Partial<Database['public']['Tables']['partner_access']['Row']> & { farm_id: string }
+        Update: Partial<Database['public']['Tables']['partner_access']['Row']>
+        Relationships: []
+      }
+      crop_share_fields: {
+        Row: {
+          id: string
+          user_id: string
+          field_id: string
+          crop_year: number
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          field_id: string
+          crop_year: number
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          field_id?: string
+          crop_year?: number
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       crop_history: {
         Row: {
           herbicide_trait: string | null
@@ -5617,6 +5893,28 @@ export type Database = {
         Update: Partial<Database['public']['Tables']['farm_yards']['Insert']>
         Relationships: []
       }
+      /** A canola field's flowering season from the satellite, kept by netlify/shared/canola-bloom.ts. */
+      canola_bloom: {
+        Row: {
+          field_id: string
+          crop_year: number
+          status: 'waiting' | 'watching' | 'flowering' | 'over'
+          seeded_on: string | null
+          gdd: number | string | null
+          last_clear_on: string | null
+          yellow_now: number | string | null
+          started_on: string | null
+          peak_fraction: number | string | null
+          peak_on: string | null
+          ended_on: string | null
+          notified_start_at: string | null
+          notified_end_at: string | null
+          updated_at: string
+        }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
       /** A custom manure hauler's invoice line, tied to the spread it paid for. Amount is before GST. */
       manure_haul_invoices: {
         Row: {
@@ -6808,6 +7106,12 @@ export type Database = {
           weighed_in_by: string | null
           /** Who put the empty weight in. Null for a net or a bin total. */
           weighed_out_by: string | null
+          /** The yard-scale capture the full weight came from. Null = typed or read from a photo. */
+          full_capture_id: string | null
+          /** The yard-scale capture the empty weight came from. */
+          empty_capture_id: string | null
+          /** The truck was not weighed out; the empty weight is a best guess. */
+          empty_guessed: boolean
           driver_id: string | null
           driver: string | null
           note: string | null
@@ -6845,6 +7149,9 @@ export type Database = {
           empty_at?: string | null
           weighed_in_by?: string | null
           weighed_out_by?: string | null
+          full_capture_id?: string | null
+          empty_capture_id?: string | null
+          empty_guessed?: boolean
           driver_id?: string | null
           driver?: string | null
           note?: string | null
@@ -6882,6 +7189,9 @@ export type Database = {
           empty_at?: string | null
           weighed_in_by?: string | null
           weighed_out_by?: string | null
+          full_capture_id?: string | null
+          empty_capture_id?: string | null
+          empty_guessed?: boolean
           driver_id?: string | null
           driver?: string | null
           note?: string | null
@@ -8525,6 +8835,62 @@ export type Database = {
        * field's year one row per crop (its areas' acres and crop_area_yields
        * figure). Migration 20261009030000. Read-only.
        */
+      /**
+       * research_folders with the number of papers in the folder and in
+       * everything under it. Migration 20261031120000. Read-only.
+       */
+      research_folders_v: {
+        Row: {
+          id: string
+          slug: string
+          name: string
+          kind: string
+          parent_id: string | null
+          crop_names: string[]
+          registration_numbers: string[]
+          actives: string[]
+          aliases: string[]
+          sort: number
+          note: string | null
+          created_at: string
+          papers_here: number
+          papers_below: number
+        }
+        Relationships: []
+      }
+      /**
+       * Every paper on every folder it belongs to. home = false means it is
+       * cross-filed there and lives elsewhere. Migration 20261101120000.
+       */
+      research_shelf_v: {
+        Row: {
+          folder_slug: string
+          folder_name: string
+          folder_kind: string
+          home: boolean
+          id: string
+          folder_id: string
+          title: string
+          authors: string | null
+          year: number | null
+          source: string | null
+          doi: string | null
+          source_url: string | null
+          pdf_url: string | null
+          storage_path: string | null
+          file_bytes: number | null
+          pages: number | null
+          region: string
+          relevance: number
+          licence: string | null
+          abstract: string | null
+          tags: string[]
+          status: string
+          fetch_note: string | null
+          created_at: string
+        }
+        Relationships: []
+      }
       crop_yields_v: {
         Row: {
           id: string
@@ -9342,6 +9708,26 @@ export type Database = {
       }
     }
     Functions: {
+      /**
+       * Passages from the research library that answer a question, with the
+       * work done nearest here weighted up. One passage per paper.
+       */
+      research_search: {
+        Args: { q: string; max_rows?: number }
+        Returns: {
+          paper_id: string
+          title: string
+          authors: string | null
+          year: number | null
+          source: string | null
+          region: string
+          folder_name: string
+          /** "p. 12" or "pp. 12-13"; null when the PDF gave no page numbers. */
+          pages: string | null
+          passage: string
+          rank: number
+        }[]
+      }
       /** Any active hand: switch a bin's fan or heater on or off, and nothing else on the bin. */
       fn_set_bin_run: {
         Args: { p_bin: string; p_aeration?: boolean | null; p_heater?: boolean | null }
@@ -9494,6 +9880,13 @@ export type Database = {
        */
       retire_meeting_fact: { Args: { p_id: string }; Returns: undefined }
       is_manager: { Args: Record<string, never>; Returns: boolean }
+      // Partner companies (20261031090000)
+      partner_companies: {
+        Args: Record<string, never>
+        Returns: { id: string; name: string; preset: string; views: Json; extras: string[] }[]
+      }
+      add_partner_company: { Args: { p_name: string }; Returns: string }
+      rename_partner_company: { Args: { p_id: string; p_name: string }; Returns: undefined }
       is_admin: { Args: Record<string, never>; Returns: boolean }
       is_owner: { Args: Record<string, never>; Returns: boolean }
       can_see_finances: { Args: Record<string, never>; Returns: boolean }

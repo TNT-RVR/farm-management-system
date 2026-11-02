@@ -8,8 +8,8 @@ import { buyWindow } from '@/lib/fert-savings/tools'
 import { useMarketPrices, useMarketSeries } from '@/lib/markets'
 import { totalsByProduct, type ProductTotal } from '@/lib/fertilizer-plan'
 import { cn } from '@/lib/utils'
-import { useFarmSettings } from '@/lib/farm-setup'
 import { money as fmtMoney, pct as fmtPct } from '@/lib/format'
+import { useRetailerName } from '@/lib/products'
 
 const ZOOMS = [
   { label: '1y', years: 1 },
@@ -35,7 +35,7 @@ const SHORT_TONS_PER_TONNE = 1.10231
 const usdTonToCadTonne = (usd: number, fx: number) => usd * SHORT_TONS_PER_TONNE * fx
 
 export function MarketTab({ isManager }: { isManager: boolean }) {
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const { data: everySeries } = useMarketSeries(['fertilizer', 'fx'])
   // The exchange rate rides along for the CAD/tonne equivalent and is not a
   // fertilizer series.

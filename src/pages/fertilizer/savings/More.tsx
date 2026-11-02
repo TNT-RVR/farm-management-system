@@ -31,7 +31,7 @@ import {
   type SpreadVerdict,
 } from '@/lib/fert-savings/more'
 import { cn } from '@/lib/utils'
-import { useFarmSettings } from '@/lib/farm-setup'
+import { useRetailerName } from '@/lib/products'
 import { useReportSaving, useSavings } from './context'
 import { useSoilFindings } from './Applying'
 import { S } from './sources'
@@ -49,7 +49,7 @@ const nameOf = (key: string) => straightByKey(key)?.label ?? key
  */
 export function PriceCheckCard() {
   const { inputs } = useSavings()
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const { data: bookings } = useFertRows('fert_bookings')
   const { data: quotes } = useFertRows('fert_quotes')
   const [invoice, setInvoice] = useState<string | null>(null)

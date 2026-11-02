@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from './database.types'
+// View as partner
+import { partnerFetch } from './partner-preview'
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
@@ -41,5 +43,8 @@ export const supabase: SupabaseClient<Database> = createClient<Database>(
   anonKey ?? 'not-configured',
   {
     auth: { storage: authStorage, persistSession: true, autoRefreshToken: true },
+    // Answers as a partner's rules would while an admin views
+    // as one (lib/partner-preview.ts); otherwise plain fetch.
+    global: { fetch: partnerFetch },
   },
 )

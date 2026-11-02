@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { cropsSource, fieldsSource } from './partner'
 import { cleanFieldName } from './field-name'
-import { REFERENCE_STALE_MS } from './stale'
+import { referenceStale } from './stale'
 import type { Database } from './database.types'
 
 export type FieldRow = Database['public']['Tables']['fields']['Row']
@@ -336,7 +336,7 @@ export function allFieldsQuery() {
       if (error) throw error
       return [...data].sort((a, b) => compareFieldNames(a.name, b.name))
     },
-    staleTime: REFERENCE_STALE_MS,
+    staleTime: referenceStale,
   }
 }
 
@@ -353,7 +353,7 @@ export function allBoundariesQuery() {
       if (error) throw error
       return data
     },
-    staleTime: REFERENCE_STALE_MS,
+    staleTime: referenceStale,
   }
 }
 
@@ -408,7 +408,7 @@ export function usersQuery() {
       if (error) throw error
       return data
     },
-    staleTime: REFERENCE_STALE_MS,
+    staleTime: referenceStale,
   }
 }
 
@@ -538,7 +538,7 @@ export function cropsQuery() {
       if (error) throw error
       return data
     },
-    staleTime: REFERENCE_STALE_MS,
+    staleTime: referenceStale,
   }
 }
 

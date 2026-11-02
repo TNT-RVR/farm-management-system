@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { farmDistrict, farmRiver } from '../../src/lib/farm-context.ts'
+import { farmDistrict } from '../../src/lib/farm-context.ts'
 import { STATION_COLUMNS, stationOf, type WaterStation, type WaterStationRow } from '../../src/lib/water-stations.ts'
 
 /**
@@ -75,7 +75,7 @@ export async function syncWaterDaily(sb: SupabaseClient, days: number, chunkDays
           kind: s.kind,
           station: s.key,
           name: s.name,
-          feeds: s.section === 'river' ? `${farmRiver()} licences` : farmDistrict(),
+          feeds: s.section === 'river' ? 'River licences' : farmDistrict(),
           observed_on: last.day,
           value: last.value,
           unit: s.kind === 'reservoir' ? '% full' : 'mm SWE',

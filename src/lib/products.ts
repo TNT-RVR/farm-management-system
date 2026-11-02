@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { supabase } from './supabase'
+import { referenceStale } from './stale'
 import type { Database } from './database.types'
 import type { ProductResolver } from './applied'
 
@@ -318,6 +319,53 @@ export function useRemoveProductDocument() {
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['product_documents'] }),
   })
+}
+
+/**
+ * Who the farm actually buys fertilizer and chemical from, busiest first.
+ *
+ * This used to be one name typed on Farm setup. A farm buys from more than one
+ * retailer — and does not want to maintain a list of them by hand — so the
+ * names come off the invoices instead (Sam, 30 Oct 2026: "it should just
+ * pull from the invoices as we sometimes buy from multiple"). A new supplier
+ * on a bill names itself; one nobody buys from any more falls away.
+ *
+ * Ranked by how many invoice lines each has, because that is what "the main
+ * one" means on a bill, with the most recent invoice breaking a tie.
+ */
+export type Retailer = { name: string; lines: number; lastOn: string | null }
+
+export function useRetailers() {
+  return useQuery({
+    queryKey: ['product_purchase_suppliers'],
+    queryFn: async (): Promise<Retailer[]> => {
+      const { data, error } = await supabase.from('product_purchases').select('supplier, invoice_date')
+      if (error) throw error
+      const by = new Map<string, Retailer>()
+      for (const row of data ?? []) {
+        const name = row.supplier?.trim()
+        if (!name) continue
+        const r = by.get(name) ?? { name, lines: 0, lastOn: null }
+        r.lines++
+        if (row.invoice_date && (!r.lastOn || row.invoice_date > r.lastOn)) r.lastOn = row.invoice_date
+        by.set(name, r)
+      }
+      return [...by.values()].sort((a, b) => b.lines - a.lines || (b.lastOn ?? '').localeCompare(a.lastOn ?? ''))
+    },
+    staleTime: referenceStale,
+  })
+}
+
+/**
+ * The retailer a screen names when only one fits: the busiest on the invoices.
+ *
+ * 'Retailer' while the invoices are still loading or there are none — the same
+ * generic word the typed setting fell back to, so a farm with no invoices yet
+ * reads exactly as it did.
+ */
+export function useRetailerName(): string {
+  const { data } = useRetailers()
+  return data?.[0]?.name || 'Retailer'
 }
 
 export type ProductApplication = Database['public']['Views']['product_applications']['Row']

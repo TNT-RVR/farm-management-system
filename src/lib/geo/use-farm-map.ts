@@ -39,6 +39,13 @@ export type FarmMapOptions = {
   onCreate?: (map: maplibregl.Map) => void
   /** On 'load', before `ready` turns true: sources and layers that live for the map's life. */
   onReady?: (map: maplibregl.Map) => void
+  /**
+   * When `ready` turns true. 'tiles' (the default) is MapLibre's 'load': the
+   * style AND every base tile in view, which on a slow tile day is many
+   * seconds. 'style' is as soon as layers can be added, for maps that draw
+   * their own layer and need not wait for the photo under it.
+   */
+  readyWhen?: 'tiles' | 'style'
 }
 
 type Container = RefObject<HTMLElement | null> | HTMLElement | null
@@ -86,7 +93,7 @@ export function useFarmMap(container: Container, options: FarmMapOptions = {}, d
     if (o.controls?.geolocate) m.addControl(new maplibregl.GeolocateControl(o.controls.geolocate), 'top-right')
     if (o.controls?.scale) m.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
     o.onCreate?.(m)
-    m.on('load', () => {
+    m.once(o.readyWhen === 'style' ? 'style.load' : 'load', () => {
       if (o.bounds) m.fitBounds(o.bounds, { padding: o.fitPadding ?? 0, duration: 0 })
       o.onReady?.(m)
       setReady(true)

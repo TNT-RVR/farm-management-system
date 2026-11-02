@@ -2,6 +2,7 @@ import { runFieldnetSync } from '../shared/fieldnet-sync-core'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { adminOrNull } from '../shared/supabase-admin.ts'
 import { farmClock } from '../shared/dates.ts'
+import { fieldnetOffSeason, fieldnetOffSeasonSlot } from '../../src/lib/fieldnetSchedule.ts'
 
 // Auto-refresh: pulls live FieldNET status on a schedule so pivot state stays
 // current without anyone clicking "Sync now". Runs server-side with the real
@@ -18,7 +19,8 @@ export default async () => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
   const { hour, minute, month } = farmClock()
-  if ((month >= 11 || month <= 3) && (hour % 3 !== 0 || minute >= 30)) {
+  // The health monitor allows for this gap via the same helpers.
+  if (fieldnetOffSeason(month) && !fieldnetOffSeasonSlot(hour, minute)) {
     return new Response(JSON.stringify({ skipped: 'off-season: every 3 hours' }), { status: 200 })
   }
   const sb = adminOrNull()

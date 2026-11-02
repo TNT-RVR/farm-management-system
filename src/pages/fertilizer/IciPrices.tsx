@@ -17,9 +17,9 @@ import {
   useCreateQuotedProduct,
   type JdProduct,
   type ProductPurchase,
+  useRetailerName,
 } from '@/lib/products'
 import { cn } from '@/lib/utils'
-import { useFarmSettings } from '@/lib/farm-setup'
 import { STRAIGHTS, straightKeyOf } from '@/lib/fert-savings/straights'
 import { money as fmtMoney } from '@/lib/format'
 import { TABLE_HEAD } from '@/lib/table-style'
@@ -61,7 +61,7 @@ type Row = {
 }
 
 export function IciPrices({ isManager }: { isManager: boolean }) {
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const { data: products } = useJdProducts()
   const { data: purchases } = useProductPurchases()
   const { data: apps } = useProductApplications()

@@ -85,7 +85,7 @@ export function ManageRanches({ isManager }: { isManager: boolean }) {
                 className="bg-gray-50 px-9 py-2 text-xs"
                 rows={[
                   ['Place', r.latitude != null && r.longitude != null ? `${Number(r.latitude).toFixed(4)}, ${Number(r.longitude).toFixed(4)}` : 'Not set — weather lookups need it'],
-                  ['Main ranch', main?.id === r.id ? 'Yes (Farm setup)' : null],
+                  ['Main ranch', main?.id === r.id ? 'Yes' : null],
                   ['Google My Map', r.mymaps_url],
                 ]}
               />

@@ -4,10 +4,13 @@ import {
   compareStrategies,
   lockInSignals,
   valueOfGain,
+  COST_LINE_KEYS,
   COW_CALF_BENCHMARK_COSTS,
   abCowCashCostPerYear,
+  abCowCostLines,
   abCowCostPerYear,
   benchmarkTotalPerCow,
+  ownGrass,
   type CattleCosts,
 } from './cattleEconomics'
 
@@ -177,6 +180,24 @@ describe('what a cow costs for a year in Alberta', () => {
 
   it('never indexes backwards', () => {
     expect(abCowCostPerYear(2019)).toBe(1738)
+  })
+
+  it('splits into five lines that add to the total', () => {
+    const lines = abCowCostLines(2026)
+    const total = COST_LINE_KEYS.reduce((a, k) => a + lines[k], 0)
+    expect(total).toBe(abCowCostPerYear(2026))
+    // Manitoba's shape at Alberta's size: feed is still the biggest single line.
+    expect(lines.feed_cost_per_head).toBeGreaterThan(lines.cow_cost_per_head)
+    expect(lines.vet_cost_per_head).toBeLessThan(lines.pasture_cost_per_head)
+    // The pasture line keeps the grass's worth; it is not the rent-stripped one.
+    expect(lines.pasture_cost_per_head).toBeGreaterThan(ownGrass(COW_CALF_BENCHMARK_COSTS.pasture_cost_per_head))
+  })
+
+  it('adds up at every year it could be asked for', () => {
+    for (const y of [2024, 2025, 2026, 2030, 2040]) {
+      const lines = abCowCostLines(y)
+      expect(COST_LINE_KEYS.reduce((a, k) => a + lines[k], 0)).toBe(abCowCostPerYear(y))
+    }
   })
 
   it('stays in the range a Prairie cow-calf budget would recognise', () => {

@@ -183,6 +183,41 @@ export const SETUP_KEYS: SetupKey[] = [
     help: 'The email you sign in to resend.com with, kept here as a reminder. Resend sends the sign-in emails; its key is saved in Supabase (Authentication → Emails → SMTP), not here.',
     link: 'https://resend.com/login',
   },
+  // A truck scale whose live weight is streamed through another Supabase
+  // project (the yard scale shared with Grand Forks Gravel). The address and
+  // its public anon key only let the app watch the weight; the scale key
+  // takes a weight off it, so it stays on the server.
+  {
+    env: 'GRAVEL_SUPABASE_URL',
+    label: 'Scale project address',
+    group: 'Yard truck scale',
+    secret: false,
+    shown: true,
+    help: 'The https://….supabase.co address of the project the scale reports to.',
+  },
+  {
+    env: 'GRAVEL_SUPABASE_ANON_KEY',
+    label: 'Scale project public key',
+    group: 'Yard truck scale',
+    secret: false,
+    help: "That project's public anon key. It only lets the app watch the live weight.",
+  },
+  {
+    env: 'GRAVEL_SCALE_KEY',
+    label: 'Scale key',
+    group: 'Yard truck scale',
+    secret: true,
+    help: 'The key the scale’s owner issued to this farm. Taking a weight off the scale needs it; it never leaves the server.',
+  },
+  {
+    env: 'GRAVEL_SCALE_DEVICE',
+    label: 'Scale name',
+    group: 'Yard truck scale',
+    secret: false,
+    optional: true,
+    shown: true,
+    help: 'The scale’s id in that project. Leave empty for yard-scale.',
+  },
 ]
 
 export const SETUP_KEY_NAMES = new Set(SETUP_KEYS.map((k) => k.env))

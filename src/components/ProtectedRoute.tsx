@@ -5,7 +5,7 @@ import { hasAdminAccess, useAuth } from '@/lib/auth'
 import { isPathOff, useDisabledPaths } from '@/lib/farm-setup'
 import { isViewDenied } from '@/lib/nav'
 import { PARTNER_HOME, isPartnerPath } from '@/lib/partner'
-import { usePartnerView } from '@/lib/partner-view'
+import { usePartnerView, usePartnerViewsReady } from '@/lib/partner-view'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { useMfaGate } from '@/lib/mfa'
 import { MfaChallenge } from '@/components/Mfa'
@@ -19,6 +19,7 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   const off = useDisabledPaths()
   const mfa = useMfaGate(session?.user.id ?? null, session?.expires_at)
   const partnerView = usePartnerView()
+  const partnerViewsReady = usePartnerViewsReady()
 
   if (!isSupabaseConfigured) {
     return (
@@ -53,6 +54,8 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   // The role decides which screens exist and where fields are read from
   // (lib/partner.ts), so nothing renders until it is known.
   if (!profileReady) return <div className="flex h-full items-center justify-center text-gray-500">Loading…</div>
+  // A partner's screens follow his company's preset and ticks (lib/partner.ts).
+  if (!partnerViewsReady) return <div className="flex h-full items-center justify-center text-gray-500">Loading…</div>
 
   if (profile && !profile.active) {
     return (
@@ -64,7 +67,7 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
     )
   }
 
-  // A crop-share partner has his fields and his account, nothing else. The
+  // A partner has his fields and his account, nothing else. The
   // database keeps him out of the rest regardless; this keeps him off screens
   // that would only show empty farm-wide lists.
   if (profile && partnerView && !isPartnerPath(pathname)) {

@@ -4,13 +4,12 @@ import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Pencil, Search, Trash2 } from 'lucide-react'
 import { RecordEditModal, type EditField } from '@/components/RecordEditor'
 import { supabase } from '@/lib/supabase'
-import { useJdProducts } from '@/lib/products'
+import { useJdProducts, useRetailerName } from '@/lib/products'
 import { useAllBoundaries, useFields } from '@/lib/queries'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { L_PER_US_GAL, currentAcres, inPacks, shedStock, type InvAdjustment, type InvOp, type InvPurchase, type StockLine } from '@/lib/chem-inventory'
 import { InfoPopover } from '@/components/InfoPopover'
 import { cn } from '@/lib/utils'
-import { useFarmSettings } from '@/lib/farm-setup'
 import { askConfirm } from '@/components/askConfirm'
 import { TABLE_HEAD } from '@/lib/table-style'
 
@@ -97,7 +96,7 @@ const qtyFmt = (v: number) => v.toLocaleString('en-CA', { maximumFractionDigits:
  * came in.
  */
 export function InventoryTab() {
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const { profile } = useAuth()
   const isMgr = hasManagerAccess(profile?.role)
   const { data, isLoading, error } = useInventoryData()

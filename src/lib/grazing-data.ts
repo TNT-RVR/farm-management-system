@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { GrazingData, GrazingRule } from './grazing-restrictions'
+import { cropsSource, fieldsSource } from './partner-mode'
 
 /**
  * Everything grazingPicture needs, read with whichever client the caller has:
@@ -45,14 +46,14 @@ export async function loadGrazingData(sb: SupabaseClient, today: string): Promis
     all<{ registration_number: string; grazing_rules_status: string | null }>((a, b) =>
       sb.from('chemical_labels').select('registration_number, grazing_rules_status').order('registration_number').range(a, b),
     ),
-    all<GrazingData['crops'][number]>((a, b) => sb.from('crops').select('id, name, feed_dm_pct').order('id').range(a, b)),
+    all<GrazingData['crops'][number]>((a, b) => sb.from(cropsSource()).select('id, name, feed_dm_pct').order('id').range(a, b)),
     all<GrazingData['fieldCrops'][number]>((a, b) =>
       sb.from('crop_plans').select('field_id, crop_year, crop_id').gte('crop_year', year - 1).lte('crop_year', year + 1).order('id').range(a, b),
     ),
     all<GrazingData['fieldCrops'][number]>((a, b) =>
       sb.from('crop_yields_v').select('field_id, crop_year, crop_id').gte('crop_year', year - 1).lte('crop_year', year).order('id').range(a, b),
     ),
-    all<GrazingData['fields'][number]>((a, b) => sb.from('fields').select('id, name, grazed_after_harvest, open_to_pasture').order('name').range(a, b)),
+    all<GrazingData['fields'][number]>((a, b) => sb.from(fieldsSource()).select('id, name, grazed_after_harvest, open_to_pasture').order('name').range(a, b)),
     all<GrazingData['pastures'][number]>((a, b) => sb.from('pastures').select('id, name').order('name').range(a, b)),
     all<GrazingData['pastureSprays'][number]>((a, b) =>
       sb.from('pasture_sprays').select('id, pasture_id, applied_on, product, registration_number').gte('applied_on', since).order('id').range(a, b),

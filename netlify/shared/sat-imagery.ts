@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { bboxOf, getToken, logApiCall, numOrNull, unitsSpent } from './sat-ingest.ts'
+import { canolaWatchFields } from './canola-bloom.ts'
 
 // The most recent actual picture of each field.
 //
@@ -72,6 +73,31 @@ function tone(v) {
 }
 function evaluatePixel(s) {
   return [tone(s.B04), tone(s.B03), tone(s.B02), s.dataMask];
+}`
+
+/**
+ * The canola-flower map: every 10 m pixel that passes the yellow test painted
+ * gold, everything else left clear so the photograph shows through.
+ *
+ * The same test, cut for cut, as the yellow share in sat-ingest.ts, so the
+ * gold on the screen is exactly what the number counted. Drawn on top of the
+ * true-colour picture of the same day; a cloud-masked pixel is left clear too,
+ * because "no flowers seen" and "not seen" must not look alike.
+ */
+const YELLOW_EVALSCRIPT = `//VERSION=3
+function setup() {
+  return {
+    input: [{ bands: ["B02", "B03", "B04", "B08", "SCL", "CLP", "dataMask"] }],
+    output: { bands: 4, sampleType: "AUTO" }
+  };
+}
+function evaluatePixel(s) {
+  var bad = [0, 1, 3, 8, 9, 10, 11].indexOf(s.SCL) >= 0;
+  var clp = s.CLP > 1 ? s.CLP / 255 : s.CLP;
+  if (s.dataMask !== 1 || bad || clp > 0.4) return [0, 0, 0, 0];
+  var ndvi = (s.B08 - s.B04) / (s.B08 + s.B04);
+  var yellow = ndvi > 0.4 && s.B04 / s.B03 > 0.65 && s.B02 / s.B03 < 0.6;
+  return yellow ? [1, 0.84, 0, 1] : [0, 0, 0, 0];
 }`
 
 /**
@@ -235,6 +261,115 @@ export function rasterSize(
   return { width: clamp(widthM / metresPerPixel), height: clamp(heightM / metresPerPixel) }
 }
 
+export type ImageKind = 'truecolour' | 'ndvi' | 'ndvi_field' | 'ndre' | 'yellow'
+
+/**
+ * Draw one picture of one subject on one day, store it and record it.
+ * Null when done, otherwise what went wrong. Shared by the regular capture
+ * and the canola bloom backfill (canola-bloom.ts).
+ */
+export async function captureImage(
+  sb: SupabaseClient,
+  token: string,
+  subjectType: 'field' | 'pasture',
+  s: { field_id: string; name: string },
+  row: { scene_id: string; sensed_on: string },
+  kind: ImageKind,
+  geom: { coordinates: number[][][][] },
+  bbox: [number, number, number, number],
+  bounds: NdviScale | null,
+): Promise<string | null> {
+  // The flower map is a data layer too: native 10 m, never smoothed.
+  const isNdvi = kind !== 'truecolour'
+  // NDVI renders at the sensor's real 10 m and is NOT smoothed: smoothing a
+  // photograph is cosmetic, smoothing a data layer invents values nobody
+  // measured. The photograph keeps its fixed size and bicubic.
+  const size = isNdvi ? rasterSize(bbox) : { width: IMAGE_SIZE, height: IMAGE_SIZE }
+
+  const res = await fetch(PROCESS_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      input: {
+        bounds: {
+          geometry: geom,
+          properties: { crs: 'http://www.opengis.net/def/crs/EPSG/0/4326' },
+        },
+        data: [
+          {
+            type: 'sentinel-2-l2a',
+            dataFilter: {
+              // The exact day of the observation, so the picture and the
+              // number on the map are the same look at the same field.
+              timeRange: {
+                from: `${row.sensed_on}T00:00:00Z`,
+                to: `${row.sensed_on}T23:59:59Z`,
+              },
+              mosaickingOrder: 'leastCC',
+            },
+            // Bicubic for the photograph, where smoothing is cosmetic.
+            // NEAREST for NDVI: a data layer must not show intermediate
+            // values that were never measured.
+            processing: isNdvi
+              ? { upsampling: 'NEAREST', downsampling: 'NEAREST' }
+              : { upsampling: 'BICUBIC', downsampling: 'BICUBIC' },
+          },
+        ],
+      },
+      output: {
+        width: size.width,
+        height: size.height,
+        responses: [{ identifier: 'default', format: { type: 'image/png' } }],
+      },
+      evalscript:
+        kind === 'yellow'
+          ? YELLOW_EVALSCRIPT
+          : isNdvi
+            ? ndviRasterEvalscript(bounds!.lo, bounds!.hi, kind === 'ndre' ? 'ndre' : 'ndvi')
+            : TRUE_COLOUR_EVALSCRIPT,
+    }),
+  })
+  if (!res.ok) {
+    const msg = `${s.name} ${kind}: process ${res.status} ${(await res.text()).slice(0, 110)}`
+    await logApiCall(sb, 'process', false, msg)
+    return msg
+  }
+  await logApiCall(sb, 'process', true, `${s.name} ${kind} ${row.sensed_on}`, unitsSpent(res))
+
+  const bytes = new Uint8Array(await res.arrayBuffer())
+  const path = `${subjectType}/${s.field_id}/${row.sensed_on}-${kind}.png`
+  const { error: upErr } = await sb.storage
+    .from('satellite-images')
+    .upload(path, bytes, { contentType: 'image/png', upsert: true })
+  if (upErr) {
+    return `${s.name} ${kind}: upload ${upErr.message.slice(0, 80)}`
+  }
+
+  const { error: rowErr } = await sb.from('sat_images').upsert(
+    {
+      subject_type: subjectType,
+      subject_id: s.field_id,
+      scene_id: row.scene_id,
+      sensed_on: row.sensed_on,
+      kind,
+      storage_path: path,
+      width: size.width,
+      height: size.height,
+      stretch_min: bounds ? Number(bounds.lo.toFixed(4)) : null,
+      stretch_max: bounds ? Number(bounds.hi.toFixed(4)) : null,
+      west: bbox[0],
+      south: bbox[1],
+      east: bbox[2],
+      north: bbox[3],
+    },
+    { onConflict: 'subject_type,subject_id,scene_id,kind' },
+  )
+  if (rowErr) {
+    return `${s.name} ${kind}: row ${rowErr.message.slice(0, 80)}`
+  }
+  return null
+}
+
 export type ImageryResult = { captured: number; skipped: number; detail: string }
 
 /**
@@ -274,6 +409,9 @@ export async function runImageryCapture(
   const scale: NdviScale = scaleRow
     ? { lo: Number((scaleRow as { lo: number }).lo), hi: Number((scaleRow as { hi: number }).hi) }
     : DEFAULT_NDVI_SCALE
+
+  // Canola fields get a fifth picture, the flower map, in June to August.
+  const flowering = subjectType === 'field' ? await canolaWatchFields(sb, new Date()) : new Set<string>()
 
   let captured = 0
   let skipped = 0
@@ -354,9 +492,10 @@ export async function runImageryCapture(
       // It renders on a fixed scale rather than a per-field one: NDRE exists to
       // be compared between fields late in the season, and stretching each
       // field to its own range would remove exactly that comparison.
-      const wanted = (['truecolour', 'ndvi', 'ndvi_field', 'ndre'] as const)
+      const wanted = (['truecolour', 'ndvi', 'ndvi_field', 'ndre', 'yellow'] as const)
         .filter((k) => !have.has(k))
         .filter((k) => k !== 'ndvi_field' || own != null)
+        .filter((k) => k !== 'yellow' || flowering.has(s.field_id))
       if (!wanted.length) {
         skipped++
         continue
@@ -371,96 +510,11 @@ export async function runImageryCapture(
       if (!bbox) continue
 
       for (const kind of wanted) {
-      const isNdvi = kind !== 'truecolour'
-      // NDVI renders at the sensor's real 10 m and is NOT smoothed: smoothing a
-      // photograph is cosmetic, smoothing a data layer invents values nobody
-      // measured. The photograph keeps its fixed size and bicubic.
-      const size = isNdvi ? rasterSize(bbox) : { width: IMAGE_SIZE, height: IMAGE_SIZE }
-      const bounds =
-        kind === 'ndvi' ? scale : kind === 'ndre' ? DEFAULT_NDRE_SCALE : kind === 'ndvi_field' ? own : null
-
-      const res = await fetch(PROCESS_URL, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: {
-            bounds: {
-              geometry: geom,
-              properties: { crs: 'http://www.opengis.net/def/crs/EPSG/0/4326' },
-            },
-            data: [
-              {
-                type: 'sentinel-2-l2a',
-                dataFilter: {
-                  // The exact day of the observation, so the picture and the
-                  // number on the map are the same look at the same field.
-                  timeRange: {
-                    from: `${row.sensed_on}T00:00:00Z`,
-                    to: `${row.sensed_on}T23:59:59Z`,
-                  },
-                  mosaickingOrder: 'leastCC',
-                },
-                // Bicubic for the photograph, where smoothing is cosmetic.
-                // NEAREST for NDVI: a data layer must not show intermediate
-                // values that were never measured.
-                processing: isNdvi
-                  ? { upsampling: 'NEAREST', downsampling: 'NEAREST' }
-                  : { upsampling: 'BICUBIC', downsampling: 'BICUBIC' },
-              },
-            ],
-          },
-          output: {
-            width: size.width,
-            height: size.height,
-            responses: [{ identifier: 'default', format: { type: 'image/png' } }],
-          },
-          evalscript: isNdvi
-            ? ndviRasterEvalscript(bounds!.lo, bounds!.hi, kind === 'ndre' ? 'ndre' : 'ndvi')
-            : TRUE_COLOUR_EVALSCRIPT,
-        }),
-      })
-      if (!res.ok) {
-        const msg = `${s.name} ${kind}: process ${res.status} ${(await res.text()).slice(0, 110)}`
-        problems.push(msg)
-        await logApiCall(sb, 'process', false, msg)
-        continue
-      }
-      await logApiCall(sb, 'process', true, `${s.name} ${kind} ${row.sensed_on}`, unitsSpent(res))
-
-      const bytes = new Uint8Array(await res.arrayBuffer())
-      const path = `${subjectType}/${s.field_id}/${row.sensed_on}-${kind}.png`
-      const { error: upErr } = await sb.storage
-        .from('satellite-images')
-        .upload(path, bytes, { contentType: 'image/png', upsert: true })
-      if (upErr) {
-        problems.push(`${s.name} ${kind}: upload ${upErr.message.slice(0, 80)}`)
-        continue
-      }
-
-      const { error: rowErr } = await sb.from('sat_images').upsert(
-        {
-          subject_type: subjectType,
-          subject_id: s.field_id,
-          scene_id: row.scene_id,
-          sensed_on: row.sensed_on,
-          kind,
-          storage_path: path,
-          width: size.width,
-          height: size.height,
-          stretch_min: bounds ? Number(bounds.lo.toFixed(4)) : null,
-          stretch_max: bounds ? Number(bounds.hi.toFixed(4)) : null,
-          west: bbox[0],
-          south: bbox[1],
-          east: bbox[2],
-          north: bbox[3],
-        },
-        { onConflict: 'subject_type,subject_id,scene_id,kind' },
-      )
-      if (rowErr) {
-        problems.push(`${s.name} ${kind}: row ${rowErr.message.slice(0, 80)}`)
-        continue
-      }
-      captured++
+        const bounds =
+          kind === 'ndvi' ? scale : kind === 'ndre' ? DEFAULT_NDRE_SCALE : kind === 'ndvi_field' ? own : null
+        const problem = await captureImage(sb, token, subjectType, s, row, kind, geom, bbox as [number, number, number, number], bounds)
+        if (problem) problems.push(problem)
+        else captured++
       }
     } catch (e) {
       problems.push(`${s.name}: ${(e as Error).message.slice(0, 100)}`)

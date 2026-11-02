@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { isOwner, useAuth } from '@/lib/auth'
 import { useVisibleReports } from '@/lib/reports/visible'
+import { usePartnerView } from '@/lib/partner-view'
 import { farmTz } from '@/lib/farm-context'
 import { useUnitSystem } from '@/lib/units'
 import type { GatherContext } from '@/lib/reports/framework'
@@ -37,10 +38,14 @@ const GROUPS: { title: string; ids: string[] }[] = [
 /** Every report id this tab shows, for the test that keeps them in the catalogue. */
 export const HARVEST_REPORT_IDS = GROUPS.flatMap((g) => g.ids)
 
+/** A partner's: his loads, yields and moisture. The bins, seed and money reports are ours. */
+const PARTNER_REPORTS = new Set(['deliveries', 'yield-history', 'yield-vs-estimate', 'moisture-log'])
+
 export function HarvestReportsTab({ cropYear }: { cropYear: number }) {
   const { profile } = useAuth()
   const units = useUnitSystem()
   const { viewOff, reports, isAdmin, isManager } = useVisibleReports()
+  const partner = usePartnerView()
   const ctx = useMemo<GatherContext>(
     () => ({
       today: new Date().toLocaleDateString('en-CA', { timeZone: farmTz() }),
@@ -57,7 +62,10 @@ export function HarvestReportsTab({ cropYear }: { cropYear: number }) {
   return (
     <div className="space-y-5">
       {GROUPS.map((g) => {
-        const here = g.ids.map((id) => reports.find((r) => r.id === id)).filter((r) => r != null)
+        const here = g.ids
+          .filter((id) => !partner || PARTNER_REPORTS.has(id))
+          .map((id) => reports.find((r) => r.id === id))
+          .filter((r) => r != null)
         if (!here.length) return null
         return (
           <section key={g.title}>

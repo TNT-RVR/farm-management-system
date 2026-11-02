@@ -8,6 +8,8 @@ import { useBins } from '@/lib/bins'
 import { isOpenLoad, useBinLoads, useDeliverySites, weighTime, type BinLoad } from '@/lib/bin-loads'
 import { driverName, filterTickets, type TicketFilters, type TicketRow, type TicketSort } from '@/lib/weigh-scale'
 import { WeighInForm } from '@/pages/bins/WeighIn'
+import { LiveScaleCard } from '@/pages/bins/LiveScale'
+import { usePartnerLoads } from '@/lib/partner-view'
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD } from '@/lib/table-style'
 
@@ -42,6 +44,9 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
   const [sort, setSort] = useState<TicketSort>('when')
   const [desc, setDesc] = useState(true)
   const [shown, setShown] = useState(50)
+  // Partner companies' loads show with ours, and can be hidden (Sam, 29 Oct 2026).
+  const isPartnerLoad = usePartnerLoads()
+  const [hidePartner, setHidePartner] = useState(false)
 
   const byId = useMemo(() => new Map((loads ?? []).map((l) => [l.id, l])), [loads])
   const rows: TicketRow[] = useMemo(() => {
@@ -54,6 +59,7 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
         : ((bins ?? []).find((b) => b.id === l.bin_id)?.name.replace(/^Main Yard\s*-\s*/i, '') ?? (isOpenLoad(l) ? 'not weighed out' : '—'))
     return (loads ?? [])
       .filter((l) => year === 'all' || l.crop_year === cropYear)
+      .filter((l) => !(hidePartner && isPartnerLoad?.(l)))
       .map((l) => ({
         id: l.id,
         when: l.full_at ?? `${l.loaded_on}T12:00:00`,
@@ -66,7 +72,7 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
         truck: l.truck?.trim() || '—',
         to: where(l),
       }))
-  }, [loads, fields, crops, sites, bins, users, year, cropYear])
+  }, [loads, fields, crops, sites, bins, users, year, cropYear, hidePartner, isPartnerLoad])
   const shownRows = useMemo(() => filterTickets(rows, filters, sort, desc), [rows, filters, sort, desc])
   const options = (k: 'field' | 'crop' | 'driver' | 'truck', all: string) => [
     { value: '', label: all },
@@ -93,6 +99,8 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
   }
   const weighedOut = (r: TicketRow) => {
     const l = byId.get(r.id)
+    // Never weighed out: the empty is a best guess, and says so.
+    if (l?.empty_guessed) return 'not weighed (guess)'
     if (l?.empty_at) return weighTime(l.empty_at)
     return l && l.entry_kind === 'weighed' && isOpenLoad(l) ? 'waiting' : '—'
   }
@@ -100,6 +108,7 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
 
   return (
     <div className="space-y-4 p-4 md:p-6">
+      <LiveScaleCard />
       <section className="rounded-lg border border-gray-200 bg-white">
         <div className="space-y-2 border-b border-gray-200 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -136,6 +145,11 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
               aria-label="Search scale tickets"
               className="min-w-0 flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm"
             />
+            {isPartnerLoad && (
+              <label className="flex items-center gap-1">
+                <input type="checkbox" checked={hidePartner} onChange={(e) => setHidePartner(e.target.checked)} /> Hide partner loads
+              </label>
+            )}
             {filtered && (
               <button type="button" onClick={() => setFilters({})} className="flex items-center gap-1 text-brand-700 underline">
                 <X className="h-3.5 w-3.5" /> Clear
@@ -182,7 +196,7 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
                   return (
                     <tr key={r.id} onClick={() => l && setOpen(l)} className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-gray-50">
                       <td className="whitespace-nowrap px-3 py-2 tabular-nums text-gray-700">{weighedIn(r)}</td>
-                      <td className={cn('whitespace-nowrap px-3 py-2 tabular-nums', weighedOut(r) === 'waiting' ? 'text-amber-700' : 'text-gray-700')}>{weighedOut(r)}</td>
+                      <td className={cn('whitespace-nowrap px-3 py-2 tabular-nums', weighedOut(r) === 'waiting' || weighedOut(r) === 'not weighed (guess)' ? 'text-amber-700' : 'text-gray-700')}>{weighedOut(r)}</td>
                       <td className="px-3 py-2 font-medium text-gray-900">{r.field}</td>
                       <td className="px-3 py-2 text-gray-700">{r.crop}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums font-semibold text-gray-900">

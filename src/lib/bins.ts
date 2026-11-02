@@ -3,7 +3,7 @@ import { currentFill, type FillMove } from './bin-fill'
 import { loadInBin } from './bin-loads'
 import { supabase } from './supabase'
 import type { Database } from './database.types'
-import { REFERENCE_STALE_MS } from './stale'
+import { referenceStale } from './stale'
 import type { CropPlanRow, CropRow } from './queries'
 import { cutFor, cutLabel, estimateYield, type EstimatedYield, type YieldCut } from './yield-estimate'
 import { applyVarietyToCrop, varietyLookup, type VarietySettingRow } from './crop-variety-settings'
@@ -814,7 +814,7 @@ export function binsQuery() {
       // tester's bin picker, the air alerts — agrees without each remembering.
       return [...data].sort(byYardThenNumber)
     },
-    staleTime: REFERENCE_STALE_MS,
+    staleTime: referenceStale,
   }
 }
 

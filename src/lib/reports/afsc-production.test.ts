@@ -206,7 +206,7 @@ describe('whose report a field is on', () => {
     deals: [
       deal({ landlord: 'Moreau', field_ids: ['st1', 'st2'] }),
       deal({ landlord: 'Whitfield', field_ids: ['hd'] }),
-      deal({ landlord: 'Ehren Schutter', field_ids: ['es'], direction: 'out' }),
+      deal({ landlord: 'Evan Moore', field_ids: ['es'], direction: 'out' }),
     ],
   })
   const names = (party: string) => insurableAreas(basics, ins(party)).kept.map((k) => k.field.name)
@@ -215,7 +215,7 @@ describe('whose report a field is on', () => {
     const r = insurableAreas(basics, ins(''))
     expect(r.kept.map((k) => k.field.name)).toEqual(['Home'])
     expect(r.left).toContain('BASF Canola on Moreaus NE (the joint venture with Moreau: its own report)')
-    expect(r.left).toContain('Potato on Field 2 (Ehren Schutter’s crop and inputs on our land)')
+    expect(r.left).toContain('Potato on Field 2 (Evan Moore’s crop and inputs on our land)')
   })
 
   it('a joint venture’s report holds its own fields, whole', () => {

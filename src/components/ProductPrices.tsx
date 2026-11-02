@@ -135,7 +135,7 @@ export function ProductPrices({
   const { data, isLoading } = useJdProducts()
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
-  // A crop-share partner keeps the fertilizer prices with us; deleting a
+  // A partner keeps the fertilizer prices with us; deleting a
   // product stays ours (lib/partner-view.ts).
   const partner = usePartnerView()
   const canEdit = isManager || (partner && category === 'fertilizer')

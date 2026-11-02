@@ -14,11 +14,11 @@ import { lbInTonne, straightKeyOf } from '@/lib/fert-savings/straights'
 import { useFertMutations, useFertRows } from '@/lib/fert-savings/data'
 import type { FieldRequirement } from '@/lib/fertilizer-plan'
 import { cn } from '@/lib/utils'
-import { useFarmSettings } from '@/lib/farm-setup'
 import { useReportSaving, useSavings } from './context'
 import { S } from './sources'
 import { Empty, FieldLink, Table, ToolCard, ghost, input, money, n0, perLbFmt, td, tdNum } from './ui'
 import { fertYieldGoal } from '@/lib/yield-goal'
+import { useRetailerName } from '@/lib/products'
 
 /** Pounds an acre of one nutrient across a requirement's lines. */
 function lineLb(r: FieldRequirement, nutrient: 'N' | 'P' | 'K' | 'S'): number {
@@ -654,7 +654,7 @@ export function TissueGateCard() {
 
 export function EnhancedCard() {
   const { inputs } = useSavings()
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const planned = usePlanned()
   const esn = inputs.priced.currentOf('44-0-0')
   const urea = inputs.priced.currentOf('46-0-0')

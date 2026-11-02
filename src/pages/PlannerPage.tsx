@@ -11,6 +11,7 @@ import { Select } from '@/components/Select'
 import { PromptDialog } from '@/components/Modal'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { usePartnerAccess } from '@/lib/partner-view'
+import { isPartnerTab } from '@/lib/partner'
 import { useCropYear } from '@/lib/crop-year'
 import { supabase } from '@/lib/supabase'
 import { useCropVarietyMutations, useYearUnlocks, type CropVarietyRow } from '@/lib/queries'
@@ -132,9 +133,6 @@ function VarietyCell({
 // Farm costs is the fixed expense every budget here carries, so it is set here.
 const PLAN_TABS = ['plan', 'budget', 'breakeven', 'actuals', 'field work', 'farm costs'] as const
 type PlanTab = (typeof PLAN_TABS)[number]
-// A crop-share partner plans his fields; the farm's fixed costs and our
-// books (actuals) are not his.
-const PARTNER_PLAN_TABS: readonly PlanTab[] = PLAN_TABS.filter((t) => t !== 'actuals' && t !== 'farm costs')
 
 export function PlannerPage() {
   const { profile } = useAuth()
@@ -146,7 +144,7 @@ export function PlannerPage() {
   // are ordinary state, and the URL is not rewritten on every click.
   const [params, setParams] = useSearchParams()
   const { partner, canWrite } = usePartnerAccess()
-  const tabs = partner ? PARTNER_PLAN_TABS : PLAN_TABS
+  const tabs = partner ? PLAN_TABS.filter((t) => isPartnerTab('/plan', t)) : PLAN_TABS
   const [tab, setTab] = useTab<PlanTab>('planner', tabs)
 
   // A crop id in the URL narrows the plan to that crop. The bin estimator links

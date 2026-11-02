@@ -52,6 +52,8 @@ import { openQbAttachment } from '@/lib/quickbooks'
 import { cn } from '@/lib/utils'
 import { useCropYear } from '@/lib/crop-year'
 import { useFeature } from '@/lib/farm-setup'
+import { usePartnerView } from '@/lib/partner-view'
+import { isPartnerTab } from '@/lib/partner'
 import { useTab } from '@/lib/useTab'
 import { PUBLIC_COPY } from '@/config/edition'
 import { FuelTab } from './hauling/FuelTab'
@@ -191,7 +193,12 @@ function FuelView() {
   const { cropYear } = useCropYear()
   const basics = useBasics()
   const hauling = useFeature('hauling')
-  const tabs = useMemo(() => TABS.filter((t) => hauling || !HAULING_TABS.has(t.key)), [hauling])
+  // A partner reads the prices and the roads to his fields; our tanks are ours.
+  const partner = usePartnerView()
+  const tabs = useMemo(
+    () => TABS.filter((t) => (hauling || !HAULING_TABS.has(t.key)) && !(partner && !isPartnerTab('/fuel', t.key))),
+    [hauling, partner],
+  )
   // An old ?tab=silage (search, a saved link) lands where the silage haul is
   // now, under Trucking cost, and scrolls to it.
   const [params] = useSearchParams()

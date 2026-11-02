@@ -15,7 +15,7 @@ import type { Straight } from '@/lib/fert-savings/straights'
 import type { buyWindow } from '@/lib/fert-savings/tools'
 import type { DtnPoint } from '@/lib/fert-savings/data'
 import { cn } from '@/lib/utils'
-import { useFarmSettings } from '@/lib/farm-setup'
+import { useRetailerName } from '@/lib/products'
 import { useSavings } from './context'
 import { money, n0, n1 } from './ui'
 import { AdderMonths, adderText } from './AdderNote'
@@ -46,7 +46,7 @@ export function BuyWindowDetail({
   onClose: () => void
 }) {
   const { inputs } = useSavings()
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const last = points[points.length - 1]
   const fx = inputs.priced.fx
   const adderUsed = inputs.priced.adderOf(straight.key)

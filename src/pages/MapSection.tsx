@@ -8,12 +8,10 @@ import { ProfitLossPage } from '@/pages/ProfitLossPage'
 import { ComparePage } from '@/pages/map/ComparePage'
 import { cn } from '@/lib/utils'
 import { usePartnerView } from '@/lib/partner-view'
+import { isPartnerTab } from '@/lib/partner'
 
 const TABS = ['map', 'topography', 'profit', 'compare'] as const
 type Tab = (typeof TABS)[number]
-// A crop-share partner gets the map of his fields; topography and the
-// profit map are the whole farm's.
-const PARTNER_TABS: readonly Tab[] = ['map']
 
 /**
  * The Map section: the farm map, and the topography built from Deere's
@@ -27,7 +25,8 @@ const PARTNER_TABS: readonly Tab[] = ['map']
  * several fields through one.
  */
 export function MapSection() {
-  const tabs = usePartnerView() ? PARTNER_TABS : TABS
+  // A partner gets the tabs his company's preset and ticks allow (lib/partner.ts).
+  const tabs = usePartnerView() ? TABS.filter((t) => isPartnerTab('/map', t)) : TABS
   const [tab, setTab] = useTab<Tab>('map', tabs)
   return (
     <div className="flex h-full flex-col">

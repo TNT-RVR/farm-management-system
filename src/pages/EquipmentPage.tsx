@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ClipboardCheck, Gauge, RefreshCw, Search, ShieldCheck, Tractor, Wrench } from 'lucide-react'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
+import { usePartnerView } from '@/lib/partner-view'
 import {
   categoryRank,
   engineHoursLabel,
@@ -132,6 +133,8 @@ function EquipmentRow({
 export function EquipmentPage() {
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
+  // A partner keeps his own company's machines, added by hand.
+  const partner = usePartnerView()
   const [showArchived, setShowArchived] = useState(false)
   const [q, setQ] = useState('')
   const [adding, setAdding] = useState(false)
@@ -219,10 +222,11 @@ export function EquipmentPage() {
             )}
           </p>
         </div>
-        {isManager && (
+        {(isManager || partner) && (
           <div className="flex flex-wrap items-center gap-2">
             {/* For what Deere does not know about: the shop tractor, an auger, a trailer. */}
             <AddButton label="Add by hand" onClick={() => setAdding(true)} />
+            {isManager && (
             <button
               onClick={() => sync.mutate()}
               disabled={sync.isPending}
@@ -231,6 +235,7 @@ export function EquipmentPage() {
               <RefreshCw className={cn('h-4 w-4', sync.isPending && 'animate-spin')} />
               Sync from Deere
             </button>
+            )}
           </div>
         )}
       </div>
@@ -297,7 +302,9 @@ export function EquipmentPage() {
           <Wrench className="mx-auto h-6 w-6 text-gray-300" />
           <p className="mt-2 text-sm text-gray-500">
             No equipment yet.{' '}
-            {isManager
+            {partner
+              ? 'Press "Add by hand" for each machine.'
+              : isManager
               ? 'Press "Sync from Deere" to bring it in.'
               : 'A manager can sync it from Deere.'}
           </p>

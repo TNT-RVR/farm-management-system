@@ -177,7 +177,7 @@ function BlendTable({
 export function BlendsTab() {
   const { profile } = useAuth()
   const isMgr = hasManagerAccess(profile?.role)
-  // A crop-share partner saves blends for his own field-years; the product
+  // A partner saves blends for his own field-years; the product
   // list stays ours (lib/partner-view.ts).
   const { partner, canWrite } = usePartnerAccess()
   // He prices and adds products too (fertilizer prices are his in full); deleting stays ours.

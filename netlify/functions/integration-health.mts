@@ -1,4 +1,6 @@
 import { judgeProbe } from '../../src/lib/probeHealth.ts'
+import { heartbeatStaleAfterMin } from '../../src/lib/fieldnetSchedule.ts'
+import { farmClock } from '../shared/dates.ts'
 import { MANAGER_ROLES } from './_jd.mts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
@@ -149,11 +151,13 @@ async function handle(req: Request | null) {
         }
       } else {
         // Heartbeat sources: healthy if our job reported success recently enough.
+        // The FieldNET sync runs every three hours in winter, not every half hour.
         const age = minutesSince(r.last_success_at)
+        const staleAfter = heartbeatStaleAfterMin(r.source_key, r.stale_after_min, farmClock().month)
         if (age == null) {
           status = 'unknown' // never reported yet — don't alert
           detail = 'Awaiting first successful run'
-        } else if (age > r.stale_after_min) {
+        } else if (age > staleAfter) {
           status = 'stale'
           detail = `No successful run in ${Math.round(age / 60)} h`
         } else {

@@ -21,7 +21,12 @@ export const SETTINGS_PATHS: Record<SettingsView, string> = {
 export const ACCOUNT_TABS = ['profile', 'security', 'notifications', 'home', 'menu', 'device'] as const
 export type AccountTab = (typeof ACCOUNT_TABS)[number]
 
-export const PEOPLE_TABS = ['users', 'access'] as const
+export const PEOPLE_TABS = [
+  'users',
+  'access',
+  // Partner companies (docs/partners.md)
+  'partners',
+] as const
 export type PeopleTab = (typeof PEOPLE_TABS)[number]
 
 /**

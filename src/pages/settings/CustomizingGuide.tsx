@@ -131,7 +131,7 @@ check by hand against my chart: <crop>, reading <..> at <..> °C should be <..> 
   {
     key: 'district',
     title: 'Irrigation district',
-    what: 'Name your district in Names and defaults above, or switch “Irrigation district allotment” off. Two things don’t follow that switch yet — the canal section of the soil-moisture PDF and the end-of-April allotment reminder — and the season’s allotment is read from the original district’s website.',
+    what: 'Name your district on Irrigation › Soil moisture › Setup, or switch “Irrigation district allotment” off. Two things don’t follow that switch yet — the canal section of the soil-moisture PDF and the end-of-April allotment reminder — and the season’s allotment is read from the original district’s website.',
     gather: [
       { text: 'Whether you are in an irrigation district at all.' },
       { text: 'If you are: where it publishes the season’s allotment (a web page, a letter, an email) and your contracted inches per acre.' },

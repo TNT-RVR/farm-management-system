@@ -50,7 +50,7 @@ export function WaterSupplyList({ rows }: { rows: Row[] }) {
   const [editing, setEditing] = useState<Partial<WaterStationRow> | null>(null)
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
-  const { districtName, riverName } = useFarmSettings()
+  const { districtName } = useFarmSettings()
   const { data: stored, isLoading } = useWaterStations()
   const qc = useQueryClient()
   const latest = new Map(rows.map((r) => [r.station, r]))
@@ -82,7 +82,7 @@ export function WaterSupplyList({ rows }: { rows: Row[] }) {
         .filter((section) => stations.some((x) => x.s.section === section))
         .map((section) => (
         <div key={section}>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{sectionLabel(section, { river: riverName, district: districtName })}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{sectionLabel(section, { river: 'River', district: districtName })}</p>
           <ul className="mt-0.5 divide-y divide-gray-100">
             {stations.filter((x) => x.s.section === section).map(({ row, s }) => {
               const r = latest.get(s.key)

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
+import { grantsSource } from './partner'
 import type { Database } from './database.types'
 import { farmName, farmProvinceName } from './farm-context'
 
@@ -59,7 +60,7 @@ export function useGrants() {
     queryKey: ['grants'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('grants')
+        .from(grantsSource())
         .select('*')
         .order('closes_on', { nullsFirst: false })
       if (error) throw error
@@ -103,7 +104,7 @@ export function useGrantMutations() {
   })
   const update = useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: Database['public']['Tables']['grants']['Update'] }) => {
-      const { error } = await supabase.from('grants').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id)
+      const { error } = await supabase.from(grantsSource()).update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id)
       if (error) throw error
     },
     onSuccess: invalidate,

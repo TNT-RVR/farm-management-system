@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
+import { eventsSource } from './partner'
 import type { Database } from './database.types'
 import type { FarmEvent } from './events'
 
@@ -10,7 +11,7 @@ export function useEvents() {
     queryKey: ['events'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('events')
+        .from(eventsSource())
         .select('*')
         // Undated events sort last rather than first, which is where a nulls-
         // first default would put them.
@@ -38,7 +39,7 @@ export function useUpdateEvent() {
   return useMutation({
     mutationFn: async ({ id, ...patch }: { id: string } & Record<string, unknown>) => {
       const { error } = await supabase
-        .from('events')
+        .from(eventsSource())
         .update({ ...patch, updated_at: new Date().toISOString() })
         .eq('id', id)
       if (error) throw error

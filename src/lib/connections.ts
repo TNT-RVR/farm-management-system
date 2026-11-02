@@ -305,6 +305,15 @@ export const CONNECTIONS: ConnectionDef[] = [
     about: 'Tank levels from the TELUS Farm Inventory gauges every 15 minutes, onto the Fuel page tanks. Telus has no published API, so it signs in as the farm and reads what its own site reads.',
     keywords: 'fuel tanks diesel gas level gauge telus farm inventory smart dock',
   },
+  {
+    id: 'yard_scale',
+    name: 'Yard truck scale',
+    category: 'Sensors & PLC',
+    keyGroup: 'Yard truck scale',
+    about:
+      'The live weight off the yard truck scale, shown on Weigh scale and in the weigh-in form, where a load’s full and empty weights can be taken straight off it. The scale reports to the project of the business that owns it; this farm watches with its public key and takes weights with its own scale key, which stays on the server.',
+    keywords: 'weigh scale truck weighbridge live weight gravel capture',
+  },
   // ---- Email & messages
   {
     id: 'inbound_email',

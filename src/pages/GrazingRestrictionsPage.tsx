@@ -6,6 +6,7 @@ import { DeleteButton, EditButton, RecordEditModal, rowClick } from '@/component
 import { RestrictionLines } from '@/components/GrazingRestrictions'
 import { FieldLivestockAccess } from '@/pages/cattle/FieldLivestockAccess'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
+import { usePartnerView } from '@/lib/partner-view'
 import { useChemicalSearch } from '@/lib/chemicals'
 import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { activeRestrictions, blocking, fmtDay, headlineFor, untilWord } from '@/lib/grazing-restrictions'
@@ -28,6 +29,8 @@ export function GrazingRestrictionsPage() {
   const { picture, today, isLoading, error } = useGrazingPicture()
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
+  // A partner has his fields' restrictions; the cattle and pastures are ours.
+  const partner = usePartnerView()
 
   if (isLoading) return <p className="p-6 text-sm text-gray-400">Loading…</p>
   if (error || !picture) return <p className="p-6 text-sm text-red-600">Could not load the spray records: {(error as Error | null)?.message}</p>
@@ -99,9 +102,9 @@ export function GrazingRestrictionsPage() {
         )}
       </section>
 
-      <FieldLivestockAccess isManager={isManager} />
+      {!partner && <FieldLivestockAccess isManager={isManager} />}
 
-      <PastureSprays pastures={picture.places.filter((p) => p.kind === 'pasture').map((p) => ({ id: p.id, name: p.name }))} isManager={isManager} />
+      {!partner && <PastureSprays pastures={picture.places.filter((p) => p.kind === 'pasture').map((p) => ({ id: p.id, name: p.name }))} isManager={isManager} />}
 
       {(picture.unread.length > 0 || picture.unmatched.length > 0) && (
         <section className="overflow-hidden rounded-lg border border-amber-300 bg-amber-50 text-xs text-amber-900">

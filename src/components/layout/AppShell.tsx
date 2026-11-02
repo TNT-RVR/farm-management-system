@@ -12,7 +12,7 @@ import { usePushSync } from '@/lib/push'
 import { MOBILE_BAR_COUNT, isViewDenied, useNavLayout } from '@/lib/nav'
 import { useMenuEnabled } from '@/lib/menu-prefs'
 import { SidebarNav } from './SidebarNav'
-import { SeasonSidebar } from './SeasonSidebar'
+import { SeasonRail, SeasonSidebar } from './SeasonSidebar'
 import { SeasonPhoneNav } from './SeasonPhoneNav'
 import { PhoneSearchSheet } from './PhoneSearchSheet'
 import { useTrackViewUsage } from '@/lib/view-usage'
@@ -24,6 +24,9 @@ import { useOnlineUsers } from '@/lib/presence'
 import { cn } from '@/lib/utils'
 import { isPathOff, useApplyFarmSetup, useBrand, useDisabledPaths, useFirstRunRedirect } from '@/lib/farm-setup'
 import { DriveBackupScheduler } from '@/components/DriveBackupScheduler'
+// The partner's frame
+import { usePartnerView } from '@/lib/partner-view'
+import { PartnerShell } from './PartnerShell'
 
 /** Ctrl+K (⌘K), or / when not typing in a box, opens the search from anywhere. */
 function useSearchShortcut(open: () => void) {
@@ -88,6 +91,9 @@ function useSidebarHidden() {
 }
 
 export function AppShell() {
+  // A partner gets his own small frame
+  // (lib/partner.ts), as does an admin viewing as one (lib/partner-preview.ts).
+  if (usePartnerView()) return <PartnerShell />
   return <StaffShell />
 }
 
@@ -133,14 +139,45 @@ function StaffShell() {
   const seasonMenu = useMenuEnabled()
   const trail = useHasTrail() && seasonMenu
   const [sidebarHidden, toggleSidebar] = useSidebarHidden()
+  /** The section whose icon was clicked on the narrow bar, to open as the menu widens. */
+  const [openFirst, setOpenFirst] = useState<string | null>(null)
+  const expand = (section?: string) => {
+    setOpenFirst(section ?? null)
+    toggleSidebar()
+  }
 
   return (
     <div className="flex h-full bg-gray-50">
       {/* The Google Drive backup of every report, for the owners and the accountant; renders nothing. */}
       <DriveBackupScheduler />
       {/* Desktop sidebar, full height with the farm's logo at its top (Sam,
-          29 Oct 2026). The tab halfway down its right edge tucks it away to
-          the left; hidden, the same tab sits on the screen's left edge. */}
+          29 Oct 2026). The tab halfway down its right edge narrows it to a bar
+          of icons (Sam, 30 Oct 2026); a click anywhere on that bar widens it again. */}
+      {sidebarHidden && (
+        <aside
+          onClick={() => expand()}
+          title="Show menu"
+          className="relative hidden w-14 shrink-0 cursor-pointer flex-col border-r border-gray-200 bg-white md:flex print:hidden"
+        >
+          <div className="flex h-14 shrink-0 items-center justify-center">
+            <NavLink to="/" title="Home" onClick={(e) => e.stopPropagation()}>
+              <img src={BRAND.logo} alt={BRAND.farmName} className="h-9 w-auto" />
+            </NavLink>
+          </div>
+          <span
+            className="absolute right-0 top-1/2 z-10 -translate-y-1/2 translate-x-1/2 rounded-full border border-gray-200 bg-white p-1 text-gray-400 shadow-sm hover:text-gray-700"
+            aria-hidden="true"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </span>
+          <nav className="min-h-0 flex-1 overflow-y-auto py-3" aria-label="Menu">
+            <ErrorBoundary>{seasonMenu ? <SeasonRail onExpand={expand} /> : null}</ErrorBoundary>
+          </nav>
+          <button type="button" className="sr-only" onClick={() => expand()}>
+            Show menu
+          </button>
+        </aside>
+      )}
       {!sidebarHidden && (
         <aside className={cn('relative hidden shrink-0 flex-col border-r border-gray-200 bg-white md:flex print:hidden', seasonMenu ? 'w-60' : 'w-52')}>
           <div className="flex h-14 shrink-0 items-center px-3">
@@ -151,8 +188,8 @@ function StaffShell() {
           <button
             onClick={toggleSidebar}
             className="absolute right-0 top-1/2 z-10 -translate-y-1/2 translate-x-1/2 rounded-full border border-gray-200 bg-white p-1 text-gray-400 shadow-sm hover:text-gray-700"
-            aria-label="Hide menu"
-            title="Hide menu"
+            aria-label="Narrow the menu"
+            title="Narrow the menu"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -164,7 +201,7 @@ function StaffShell() {
                 worse to diagnose, since the address bar still says you are on a
                 page that renders fine. */}
             <ErrorBoundary>
-              {seasonMenu ? <SeasonSidebar /> : <SidebarNav />}
+              {seasonMenu ? <SeasonSidebar openFirst={openFirst} /> : <SidebarNav />}
             </ErrorBoundary>
           </nav>
         </aside>
@@ -172,24 +209,13 @@ function StaffShell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 print:hidden">
-          {sidebarHidden && (
-            <button
-              onClick={toggleSidebar}
-              className="fixed left-0 top-1/2 z-30 hidden -translate-y-1/2 rounded-r-full border border-l-0 border-gray-200 bg-white py-1 pl-0.5 pr-1 text-gray-400 shadow-sm hover:text-gray-700 md:block print:hidden"
-              aria-label="Show menu"
-              title="Show menu"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          )}
-          {/* The logo lives in the sidebar on a desktop; on a phone, or with the
-              sidebar hidden, it is here. On a phone the trail's back arrow takes its place.
+          {/* The logo lives in the sidebar on a desktop (wide or narrow); on a phone it is here. On a phone the trail's back arrow takes its place.
               Wherever it is, it goes home, as the logo on a website does (Sam, 29 Oct 2026). */}
           <NavLink
             to="/dashboard"
             title="Home"
             aria-label="Home"
-            className={cn('shrink-0 rounded-md', trail && 'hidden', sidebarHidden ? 'md:block' : 'md:hidden')}
+            className={cn('shrink-0 rounded-md md:hidden', trail && 'hidden')}
           >
             <img src={BRAND.logo} alt={BRAND.farmName} className="h-9 w-auto" />
           </NavLink>

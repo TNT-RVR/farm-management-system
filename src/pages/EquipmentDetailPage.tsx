@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Gauge, Save, Tractor } from 'lucide-react'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
+import { usePartnerView } from '@/lib/partner-view'
 import { EquipmentMaintenance } from '@/components/EquipmentMaintenance'
 import { EquipmentWarranty } from '@/components/EquipmentWarranty'
 import { EquipmentServiceLog } from '@/components/EquipmentServiceLog'
@@ -68,7 +69,9 @@ function Field({ label, value }: { label: string; value: string | null }) {
 export function EquipmentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { profile } = useAuth()
-  const canEdit = hasManagerAccess(profile?.role)
+  // A partner reads only his own company's machines, and keeps them.
+  const partner = usePartnerView()
+  const canEdit = hasManagerAccess(profile?.role) || partner
   const { data: e, isLoading } = useEquipmentItem(id)
   // The fleet, to tell this machine's silence from the whole sync's (lib/stale-hours.ts).
   const { data: fleet } = useEquipment()

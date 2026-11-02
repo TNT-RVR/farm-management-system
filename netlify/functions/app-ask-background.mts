@@ -43,10 +43,11 @@ You have read-only tools over the app. Work like someone who knows the app well:
 - A question about the farm's data: list_tables (search a word, e.g. "moisture", "bin", "spray") to see the tables and their columns, then query_table. Use sum and group_by to add up or count; never add up rows yourself.
 - Do several look-ups in one turn when they don't depend on each other. Time is short: someone is waiting on a phone.
 - The farm's own settings beat general knowledge: a crop's moisture limits, prices and rates are in its tables (crops, crop_inputs…); look them up rather than quoting a rule of thumb, and if you must use general knowledge, say that it is.
+- An agronomy question the records cannot answer — a rate, a timing, a threshold, a reason — goes to search_research before it goes to what you happen to know. Say where the answer came from, in the sentence rather than a footnote: "a Lethbridge trial found…", "Alberta Agriculture's sheet says…". Give the year when it matters, and prefer the work done nearest here when papers disagree. Never cite a paper search_research did not return, and never quote a figure that is not in the passage it gave you.
 - Never invent a figure. If the data can't answer it, or a look-up was refused (they may not have access), say so plainly.
 
 The answer is read on a phone and may be read aloud. Lead with the answer in one or two plain sentences. Then at most four short "- " bullets if they help. Under 120 words. No headings, no tables, no preamble. Bold at most the main figure with **.
-Link what you mention to where it lives in the app, as markdown [words](/path). Use only paths from find_pages or search_records, or a record's own page: /fields/<id>, /tasks/<id>, /cattle/<id>, /equipment/<id>, /crops/<id>. End with the one link that best opens the answer, on its own line, as [Open …](/path).`
+Link what you mention to where it lives in the app, as markdown [words](/path). Use only paths from find_pages, search_records or search_research (each paper carries its own path), or a record's own page: /fields/<id>, /tasks/<id>, /cattle/<id>, /equipment/<id>, /crops/<id>. Never name a paper in link text over a path that does not open it. End with the one link that best opens the answer, on its own line, as [Open …](/path).`
 
 const TOOLS = [
   {
@@ -58,6 +59,12 @@ const TOOLS = [
     name: 'search_records',
     description: 'Finds fields, contacts, tasks, cattle, checklists, crops, calendar events, equipment, bins, contracts and grants by name or text. Returns each with its group and the path of its page (ids are in the path).',
     input_schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+  },
+  {
+    name: 'search_research',
+    description:
+      "The farm's own research library: passages from 2,000 downloaded papers on the crops we grow, the active ingredients we spray and irrigation. Use it for an agronomy question the farm's records cannot answer — a rate, a timing, a threshold, why something happens — and cite what it returns. Work done nearest to southern Alberta is weighted up and says so. Search the words a paper would use (sclerotinia petal test timing, kochia dicamba resistance), not a whole sentence.",
+    input_schema: { type: 'object', properties: { search: { type: 'string' } }, required: ['search'] },
   },
   {
     name: 'list_tables',
@@ -160,6 +167,31 @@ export default async (req: Request) => {
       const hits = await runSearch(as, text)
       return { content: JSON.stringify(hits), summary: `Records for “${text}”: ${hits.length}` }
     }
+    if (name === 'search_research') {
+      const text = String(i.search ?? '').trim()
+      if (text.length < 3) return { content: 'Search for at least three letters.', summary: 'Research: too short' }
+      // As the asker, so the library follows the same access as everything else.
+      const { data, error } = await as.rpc('research_search', { q: text, max_rows: 8 })
+      if (error) throw error
+      const hits = (data ?? []) as Obj[]
+      if (!hits.length) return { content: 'No paper in the library mentions that.', summary: `Research for “${text}”: none` }
+      // Trimmed to what a citation needs: the model must not invent a source.
+      const cited = hits.map((h) => ({
+        title: h.title,
+        authors: h.authors,
+        year: h.year,
+        journal: h.source,
+        where_the_work_was_done: h.region,
+        folder: h.folder_name,
+        pages: h.pages,
+        passage: h.passage,
+        // Linking a paper by name to somewhere it is not is worse than not
+        // linking it, and the model has no other path to one: this reopens
+        // the library searched for that title, which puts it first.
+        path: `/research?tab=search&q=${encodeURIComponent(String(h.title ?? '').slice(0, 80))}`,
+      }))
+      return { content: cut(JSON.stringify(cited)), summary: `Research for “${text}”: ${hits.length} papers` }
+    }
     if (name === 'list_tables') {
       const all = await tables()
       const q = String(i.search ?? '').trim().toLowerCase()
@@ -226,6 +258,7 @@ export default async (req: Request) => {
     search_records: 'Finding the records…',
     list_tables: 'Working out where that is kept…',
     query_table: 'Reading the records…',
+    search_research: 'Reading the research…',
   }
 
   const { data: who } = await sb.from('users').select('full_name').eq('id', row.asked_by).single()

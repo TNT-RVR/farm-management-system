@@ -446,7 +446,7 @@ export function RotationPlanner({
 }) {
   const { cropYear, setCropYear } = useCropYear()
   const navigate = useNavigate()
-  // A crop-share partner reads every one of our fields here and plans only
+  // A partner reads every one of our fields here and plans only
   // his own field-years (lib/partner-view.ts); staff get the usual list.
   const { data: fields } = useRotationFields()
   const { partner, canWrite } = usePartnerAccess()

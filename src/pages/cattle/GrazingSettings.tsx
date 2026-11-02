@@ -7,6 +7,7 @@ import { CalfSaleSettings, FarmCalfSaleDefault } from '@/pages/cattle/CalfSaleSe
 import { CattleSuppliers } from '@/pages/cattle/CattleSuppliers'
 import { useRanches } from '@/lib/ranches'
 import { ManageRanches } from '@/pages/cattle/ManageRanches'
+import { HerdDefaults } from '@/pages/cattle/HerdDefaults'
 import {
   CARRYING_CAPACITY_CALC_URL,
   FORAGE_YIELD_ESTIMATOR,
@@ -33,6 +34,8 @@ export function GrazingSettings({
           farm adds its second, renames or deletes one (Sam, 7 Oct 2026), so
           it sits above the per-ranch settings it adds to. */}
       <ManageRanches isManager={isManager} />
+
+      <HerdDefaults />
 
       <CostSettings ranches={ranches} isManager={isManager} />
 

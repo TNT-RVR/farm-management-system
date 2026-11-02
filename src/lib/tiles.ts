@@ -28,6 +28,7 @@ import {
   KeyRound,
   Landmark,
   Leaf,
+  Library,
   LineChart,
   ListChecks,
   Map as MapIcon,
@@ -321,6 +322,16 @@ export const TILES: Tile[] = [
     icon: Landmark,
     group: 'Fields & crop',
     section: '/plan',
+  },
+  // Partner's spray restrictions
+  {
+    key: 'spray-restrictions',
+    label: 'Spray restrictions',
+    hint: 'Which of your fields a spray keeps livestock off, and until when',
+    to: '/spray-restrictions',
+    icon: SprayCan,
+    group: 'Fields & crop',
+    section: '/spray-restrictions',
   },
   {
     key: 'hail',
@@ -813,6 +824,15 @@ export const TILES: Tile[] = [
     section: '/reports',
   },
   {
+    key: 'research',
+    label: 'Research',
+    hint: 'What the papers say about our crops, sprays and water',
+    to: '/research',
+    icon: Library,
+    group: 'Reference',
+    section: '/research',
+  },
+  {
     key: 'grants',
     label: 'Grants',
     hint: 'Funding open and deadlines',
@@ -919,7 +939,7 @@ export function useTiles() {
   const off = useDisabledPaths()
   // A tile goes with its section, and with the page it opens: the combine tile
   // sits under Equipment but opens /combine, which can be switched off alone.
-  // A crop-share partner's home holds only the pages he can open (lib/partner.ts).
+  // A partner's home holds only the pages he can open (lib/partner.ts).
   const partner = isPartner(profile?.role)
   const allowed = (t: Tile) =>
     !isViewDenied(profile, t.section) && !isPathOff(off, t.section) && !isPathOff(off, t.to) && (!partner || isPartnerPath(t.to))

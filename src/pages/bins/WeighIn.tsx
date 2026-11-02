@@ -20,6 +20,7 @@ import { Modal } from '@/components/Modal'
 import { Select, type SelectOption } from '@/components/Select'
 import { DateField } from '@/components/DateField'
 import { useAuth } from '@/lib/auth'
+import { usePartnerView } from '@/lib/partner-view'
 import { useCrops, useCropPlans, useFields } from '@/lib/queries'
 import { useAllCropZones } from '@/lib/cropZones'
 import { byYardThenNumber, useBinAllocations, useBinOnHand, useBins } from '@/lib/bins'
@@ -53,6 +54,8 @@ import {
 } from '@/lib/bin-loads'
 import { readScalePhoto, usableRead, type ScaleRead } from '@/lib/scale-photo-read'
 import { cn } from '@/lib/utils'
+import type { ScaleCapture } from '@/lib/scale-live'
+import { TakeScaleWeight } from '@/pages/bins/LiveScale'
 import { TruckForecastLine } from '@/pages/harvest/TruckForecast'
 import { useContacts, useContracts, type ContractRow } from '@/lib/sales'
 import { useMoistureTests } from '@/lib/moisture-queries'
@@ -140,6 +143,11 @@ type Form = {
   /** Who stood at the scale for each weight: whoever is signed in, until somebody picks. */
   weighedInBy: string
   weighedOutBy: string
+  /** A weight taken off the yard scale; only counts while its box still holds that weight. */
+  fullCapture: ScaleCapture | null
+  emptyCapture: ScaleCapture | null
+  /** The driver forgot to weigh out: the empty weight is a best guess (Sam, 29 Oct 2026). */
+  emptyGuessed: boolean
 }
 
 /** A scale photo on the form: none, one already saved, or one just taken. */
@@ -192,8 +200,21 @@ function formFrom(
     // in now would put today's reader at a scale they never stood at.
     weighedInBy: load ? (load.weighed_in_by ?? '') : (me ?? ''),
     weighedOutBy: load ? (load.weighed_out_by ?? '') : (me ?? ''),
+    fullCapture:
+      load?.full_capture_id && load.gross_kg != null
+        ? { id: load.full_capture_id, weightKg: Number(load.gross_kg), readingAt: load.full_at ?? load.created_at }
+        : null,
+    emptyCapture:
+      load?.empty_capture_id && load.tare_kg != null
+        ? { id: load.empty_capture_id, weightKg: Number(load.tare_kg), readingAt: load.empty_at ?? load.created_at }
+        : null,
+    emptyGuessed: load?.empty_guessed ?? false,
   }
 }
+
+/** The capture still stands only while its box holds the captured weight. */
+const heldCapture = (c: ScaleCapture | null, box: string): ScaleCapture | null =>
+  c && box.trim() !== '' && Number(box) === c.weightKg ? c : null
 
 /**
  * One truckload off the yard scale, asked in the order it happens: which
@@ -240,7 +261,12 @@ export function WeighInForm({
   const { data: contacts } = useContacts()
   const { data: tests } = useMoistureTests(cropYear)
 
-  const [form, setForm] = useState<Form>(() => formFrom(load, presetBinId, profile?.id ?? null))
+  // A partner's loads go to a plant, never into our bins (29 Oct 2026).
+  const partner = usePartnerView()
+  const [form, setForm] = useState<Form>(() => {
+    const f = formFrom(load, presetBinId, profile?.id ?? null)
+    return partner ? { ...f, dest: 'plant', bin_id: '' } : f
+  })
   const [editingId, setEditingId] = useState<string | null>(load?.id ?? null)
   // A finished load opened to correct it (Sam, 7 Oct 2026), not one waiting
   // for its second weight: saving it is the end, with no "next load" after.
@@ -554,6 +580,13 @@ export function WeighInForm({
   const net = both && !wrongWay ? gross - tare : null
   const bushels = net != null && lbPerBu ? bushelsFromKg(net, lbPerBu) : null
   const previousTare = lastTare(allLoads ?? [], truck || null, trailer || null)
+  // Weights taken off the yard scale, while their boxes still hold them.
+  const fullCap = single ? null : heldCapture(form.fullCapture, form.gross)
+  const emptyCap = single ? null : heldCapture(form.emptyCapture, form.tare)
+  // A guessed empty only for a load weighed in earlier and never weighed out
+  // (Sam, 29 Oct 2026): not a stand-in for weighing out.
+  const guessed = form.emptyGuessed && !single && tare != null && !emptyCap
+  const canGuessEmpty = !!load && isOpenLoad(load) && !single
 
   // More than the bin had room for (Sam, 20 Oct 2026): ask whether the rest
   // went into another bin. Nobody types how much: the first bin is filled to
@@ -748,6 +781,9 @@ export function WeighInForm({
         weighed_in_by: form.weighedInBy || null,
         // A net or a bin total was never weighed out; the database clears it either way.
         weighed_out_by: single ? null : form.weighedOutBy || null,
+        full_capture_id: fullCap?.id ?? null,
+        empty_capture_id: emptyCap?.id ?? null,
+        empty_guessed: guessed,
         overflow_bin_id: split ? form.overflowBin : null,
         first_bin_bu: split && firstBu != null ? Math.round(firstBu * 100) / 100 : null,
       },
@@ -1110,6 +1146,12 @@ export function WeighInForm({
                   placeholder="e.g. 61390"
                   className={numBox}
                 />
+                <TakeScaleWeight
+                  kind="full"
+                  loadId={editingId}
+                  taken={fullCap}
+                  onTaken={(c) => setForm((f) => ({ ...f, gross: String(c.weightKg), fullCapture: c }))}
+                />
                 <ScalePhoto
                   photo={form.fullPhoto}
                   onChange={(p) => set('fullPhoto', p)}
@@ -1208,7 +1250,7 @@ export function WeighInForm({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span>Going to</span>
                 <span className="inline-flex overflow-hidden rounded-md border border-gray-300 bg-white text-[11px]">
-                  {(['bin', 'plant'] as const).map((d) => (
+                  {(partner ? (['plant'] as const) : (['bin', 'plant'] as const)).map((d) => (
                     <button
                       key={d}
                       type="button"
@@ -1334,17 +1376,51 @@ export function WeighInForm({
                     inputMode="decimal"
                     value={form.tare}
                     onChange={(e) => set('tare', e.target.value)}
-                    placeholder="e.g. 20810"
+                    placeholder={form.emptyGuessed ? 'best guess' : 'e.g. 20810'}
                     className={numBox}
                   />
-                  {form.tare === '' && previousTare != null && (
-                    <button
-                      type="button"
-                      onClick={() => set('tare', String(Math.round(previousTare)))}
-                      className="mt-0.5 block text-left text-[11px] text-brand-700 underline decoration-dotted"
-                    >
-                      Last empty for this truck: {kg(previousTare)}
-                    </button>
+                  <TakeScaleWeight
+                    kind="empty"
+                    loadId={editingId}
+                    taken={emptyCap}
+                    onTaken={(c) =>
+                      setForm((f) => ({ ...f, tare: String(c.weightKg), emptyCapture: c, emptyGuessed: false }))
+                    }
+                  />
+                  {/* The remembered empty is only for a truck that was never
+                  weighed out (Sam, 29 Oct 2026), so drivers do not come to
+                  lean on it; the load is marked as a guess. */}
+                  {form.emptyGuessed ? (
+                    <span className="mt-1 block rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
+                      Not weighed out: the empty weight is a best guess, and the load is marked so.{' '}
+                      {form.tare === '' && previousTare != null && (
+                        <button
+                          type="button"
+                          onClick={() => set('tare', String(Math.round(previousTare)))}
+                          className="font-semibold underline decoration-dotted"
+                        >
+                          Use this truck&rsquo;s last empty, {kg(previousTare)}
+                        </button>
+                      )}{' '}
+                      <button
+                        type="button"
+                        onClick={() => set('emptyGuessed', false)}
+                        className="underline decoration-dotted"
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    canGuessEmpty &&
+                    form.tare === '' && (
+                      <button
+                        type="button"
+                        onClick={() => set('emptyGuessed', true)}
+                        className="mt-0.5 block text-left text-[11px] text-gray-500 underline decoration-dotted"
+                      >
+                        Truck left without weighing empty?
+                      </button>
+                    )
                   )}
                   <ScalePhoto
                     photo={form.emptyPhoto}

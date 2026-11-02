@@ -8,11 +8,11 @@ import { useCropYear } from '@/lib/crop-year'
 import { iciContractTerms, straightsCost, useIciReview, useIciReviews, useIciTermLines, type FieldIci, type Npks, type Straight } from '@/lib/ici-review'
 import { useFertSettings } from '@/lib/fert-savings/data'
 import { cn } from '@/lib/utils'
-import { useFarmSettings } from '@/lib/farm-setup'
 import { ImportHint } from '@/components/ImportHint'
 import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
 import { n0 } from '@/lib/format'
 import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { useRetailerName } from '@/lib/products'
 
 const $0 = (v: number) => `$${Math.round(v).toLocaleString('en-CA')}`
 
@@ -33,7 +33,7 @@ function Review({ text }: { text: string }) {
 
 /** Applied against the prescription and the soil test, nutrient by nutrient. */
 function NutrientCompare({ f }: { f: FieldIci }) {
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const keys: (keyof Npks)[] = ['N', 'P', 'K', 'S']
   const label: Record<keyof Npks, string> = { N: 'N', P: 'P₂O₅', K: 'K₂O', S: 'S' }
   const tone = (applied: number, ref: number | undefined) => {
@@ -92,7 +92,7 @@ function NutrientCompare({ f }: { f: FieldIci }) {
  * each choice was the best one.
  */
 export function IciTab({ isManager }: { isManager: boolean }) {
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const { cropYear } = useCropYear()
   const { data, isLoading, error } = useIciReview(cropYear)
   const { data: reviews } = useIciReviews(cropYear)

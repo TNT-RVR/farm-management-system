@@ -7,7 +7,7 @@ import { HoverTip } from '@/components/HoverTip'
 import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { destination } from '@/lib/geo/circle'
 import { haversineM } from '@/lib/geo/measure'
-import { boundariesForYear, useAllBoundaries, useFields } from '@/lib/queries'
+import { boundariesForYear, useAllBoundaries, useCropHistoryByYear, useCropPlans, useCrops, useFields } from '@/lib/queries'
 import { useCropYear } from '@/lib/crop-year'
 import { NDVI_RAMP, useFieldImagery } from '@/lib/pastures'
 import { FIELDNET_LEGEND, IRRIGATION_LEGEND, IRRIGATION_STATUS, LAYER_INFO, NOT_SCHEDULED_COLOUR } from '@/lib/map-layer-info'
@@ -59,6 +59,9 @@ export function ComparePage() {
   const { cropYear } = useCropYear()
   const { data: fields } = useFields()
   const { data: allBoundaries } = useAllBoundaries()
+  const { data: plans } = useCropPlans(cropYear)
+  const { data: history } = useCropHistoryByYear(cropYear)
+  const { data: crops } = useCrops()
   const [params] = useSearchParams()
   const asOf = asOfDay(params.get('on'), new Date().toLocaleDateString('en-CA'))
 
@@ -69,6 +72,32 @@ export function ComparePage() {
   }, [allBoundaries, cropYear])
   const mapped = useMemo(() => (fields ?? []).filter((f) => shapes.has(f.id)), [fields, shapes])
   const nameOf = (id: string) => mapped.find((f) => f.id === id)?.name ?? 'Field'
+
+  /**
+   * What is growing on each field this year. Comparing two fields through a
+   * layer says nothing until you know what is on them (Sam, 2 Nov 2026), so
+   * the panes name the crop, and the answer is the one the main map's field
+   * panel gives: this year's plan, falling back to the history where no plan
+   * was made. Nothing in the schema stops a field carrying two crops — none
+   * does today — so both are named rather than one quietly winning.
+   */
+  const cropForField = useMemo(() => {
+    const cropById = new Map(crops?.map((c) => [c.id, c.name]) ?? [])
+    const m = new Map<string, string[]>()
+    const add = (fieldId: string, cropId: string | null) => {
+      const name = cropId ? cropById.get(cropId) : null
+      if (!name) return
+      const on = m.get(fieldId) ?? []
+      if (!on.includes(name)) m.set(fieldId, [...on, name])
+    }
+    const planned = new Set((plans ?? []).map((p) => p.field_id))
+    history?.forEach((h) => !planned.has(h.field_id) && add(h.field_id, h.crop_id))
+    plans?.forEach((p) => add(p.field_id, p.crop_id))
+    return m
+  }, [plans, history, crops])
+  const cropOf = (id: string) => cropForField.get(id)?.join(' · ') ?? ''
+  /** "Westfield · Durum" where the crop is known, the bare name where it is not. */
+  const withCrop = (id: string, name: string) => (cropOf(id) ? `${name} · ${cropOf(id)}` : name)
 
   const [mode, setMode] = useState<'layers' | 'fields'>('layers')
   const [field, setField] = useState('')
@@ -116,7 +145,7 @@ export function ComparePage() {
             ))}
           </div>
           {mode === 'layers' ? (
-            <Select size="sm" ariaLabel="Field" value={oneField} onChange={setField} options={mapped.map((f) => ({ value: f.id, label: f.name }))} />
+            <Select size="sm" ariaLabel="Field" value={oneField} onChange={setField} options={mapped.map((f) => ({ value: f.id, label: withCrop(f.id, f.name) }))} />
           ) : (
             <HoverTip title={LAYER_INFO[layer].title} text={LAYER_INFO[layer].text}>
               <Select size="sm" ariaLabel="Layer" value={layer} onChange={(v) => setLayer(v as Layer)} options={LAYERS.map(([value, label]) => ({ value, label }))} />
@@ -138,7 +167,7 @@ export function ComparePage() {
           <div className="flex flex-wrap items-center gap-1.5">
             {pickedFields.map((f) => (
               <span key={f} className={cn(chip(true), 'flex items-center gap-1')}>
-                {nameOf(f)}
+                {withCrop(f, nameOf(f))}
                 <button type="button" aria-label={`Take ${nameOf(f)} out`} onClick={() => setPickedFields((p) => p.filter((x) => x !== f))}>
                   <X className="h-3 w-3" />
                 </button>
@@ -151,7 +180,7 @@ export function ComparePage() {
                 value=""
                 placeholder="Add a field…"
                 onChange={(v) => v && setPickedFields((p) => (p.includes(v) ? p : [...p, v]))}
-                options={mapped.filter((f) => !pickedFields.includes(f.id)).map((f) => ({ value: f.id, label: f.name }))}
+                options={mapped.filter((f) => !pickedFields.includes(f.id)).map((f) => ({ value: f.id, label: withCrop(f.id, f.name) }))}
               />
             )}
           </div>
@@ -176,6 +205,7 @@ export function ComparePage() {
               key={`${p.fieldId}-${p.layer}`}
               fieldId={p.fieldId}
               name={nameOf(p.fieldId)}
+              crop={cropOf(p.fieldId)}
               layer={p.layer}
               shape={shapes.get(p.fieldId) ?? null}
               asOf={asOf}
@@ -200,17 +230,60 @@ function bounds(g: Geometry): maplibregl.LngLatBounds {
 
 type DrawProps = { map: maplibregl.Map; fieldId: string; shape: Geometry; asOf: string | null }
 
-function Pane({ fieldId, name, layer, shape, asOf }: { fieldId: string; name: string; layer: Layer; shape: Geometry | null; asOf: string | null }) {
+function Pane({ fieldId, name, crop, layer, shape, asOf }: { fieldId: string; name: string; crop: string; layer: Layer; shape: Geometry | null; asOf: string | null }) {
   const ref = useRef<HTMLDivElement>(null)
-  const { map, ready } = useFarmMap(ref, { zoom: 13, controls: { nav: false } })
+  // Made already framed on the field, and ready once the style is in: four
+  // maps each fetching the farm centre's tiles and then waiting for every one
+  // before drawing took twenty seconds to show anything.
+  const [frame] = useState(() => (shape ? bounds(shape) : null))
+  const { map, ready } = useFarmMap(ref, {
+    zoom: 13,
+    controls: { nav: false },
+    readyWhen: 'style',
+    mapOptions: frame && !frame.isEmpty() ? { bounds: frame, fitBoundsOptions: { padding: 12 } } : undefined,
+  })
+  /** Zoomed or panned by hand: framing stops for good. */
+  const touched = useRef(false)
 
-  // The field's outline, and the pane framed on it.
+  // MapLibre's own size watching missed the grid reflowing as panes were
+  // added: a map made at full width kept its 776 px canvas in a 386 px pane,
+  // showed only its top-left corner and fetched four times the tiles. Told
+  // here instead; resize() fires 'resize', which reframes the field below.
+  useEffect(() => {
+    const el = ref.current
+    if (!map || !el) return
+    const ro = new ResizeObserver(() => map.resize())
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [map])
+
+  // The field's outline, and the pane framed on it: the boundary just fitting
+  // the pane (Sam, 29 Oct 2026). Framed again whenever the pane changes size
+  // (adding a pane reflows the grid after this one has measured itself), but
+  // only until someone zooms or pans this pane. From then on it stays where
+  // they put it, so opening another pane never undoes their look.
   useEffect(() => {
     if (!map || !ready || !shape) return
-    map.addSource('cmp-field', { type: 'geojson', data: { type: 'Feature', geometry: shape, properties: {} } })
-    map.addLayer({ id: 'cmp-field-line', type: 'line', source: 'cmp-field', paint: { 'line-color': '#ffffff', 'line-width': 2 } })
+    if (!map.getSource('cmp-field')) {
+      map.addSource('cmp-field', { type: 'geojson', data: { type: 'Feature', geometry: shape, properties: {} } })
+      map.addLayer({ id: 'cmp-field-line', type: 'line', source: 'cmp-field', paint: { 'line-color': '#ffffff', 'line-width': 2 } })
+    }
     const b = bounds(shape)
-    if (!b.isEmpty()) map.fitBounds(b, { padding: 24, duration: 0 })
+    if (b.isEmpty()) return
+    const fit = () => {
+      if (!touched.current) map.fitBounds(b, { padding: 12, duration: 0 })
+    }
+    // A move the person made carries the mouse or touch event; fitBounds' own does not.
+    const onMove = (e: { originalEvent?: unknown }) => {
+      if (e.originalEvent) touched.current = true
+    }
+    fit()
+    map.on('movestart', onMove)
+    map.on('resize', fit)
+    return () => {
+      map.off('movestart', onMove)
+      map.off('resize', fit)
+    }
   }, [map, ready, shape])
 
   const draw = map && ready && shape ? { map, fieldId, shape, asOf } : null
@@ -218,7 +291,10 @@ function Pane({ fieldId, name, layer, shape, asOf }: { fieldId: string; name: st
     <div className="relative min-h-[60vw] overflow-hidden rounded bg-white md:min-h-0">
       <div ref={ref} className="h-full w-full" />
       <div className="pointer-events-none absolute left-2 top-2 z-10 max-w-[85%] rounded-lg border border-white/60 bg-white/80 px-2 py-1 text-xs shadow ring-1 ring-black/5 backdrop-blur-md">
-        <p className="font-semibold text-gray-900">{name}</p>
+        <p className="font-semibold text-gray-900">
+          {name}
+          {crop && <span className="ml-1.5 font-normal text-gray-600">{crop}</span>}
+        </p>
         <p className="text-gray-600">{LAYER_LABEL[layer]}</p>
         {draw && <Caption layer={layer} {...draw} />}
       </div>

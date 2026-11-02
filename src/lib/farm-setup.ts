@@ -138,9 +138,7 @@ FEATURES.push(
  * value where it has one, and otherwise what the app has always assumed.
  */
 export type FarmSettings = {
-  retailerName: string
   districtName: string
-  riverName: string
   mainRanchId: string | null
   calfSaleMonth: number
   calfSaleWeightLb: number
@@ -148,10 +146,7 @@ export type FarmSettings = {
 }
 
 export const settingsOf = (s: Partial<FarmSetup> | null | undefined): FarmSettings => ({
-  // Generic until the farm names its own; this farm's row carries ICI and SMRID.
-  retailerName: s?.retailer_name?.trim() || 'Retailer',
   districtName: s?.irrigation_district_name?.trim() || 'Irrigation district',
-  riverName: s?.river_name?.trim() || 'River',
   mainRanchId: s?.main_ranch_id ?? null,
   calfSaleMonth: s?.calf_sale_month ?? 12,
   calfSaleWeightLb: s?.calf_sale_weight_lb ?? 450,
@@ -381,9 +376,8 @@ export function useApplyFarmSetup() {
       description: data?.farm_description,
       retailer: data?.retailer_name,
       district: data?.irrigation_district_name,
-      river: data?.river_name,
       mainRanchId: data?.main_ranch_id,
       fiscalEndMonth: data?.fiscal_year_end_month,
     })
-  }, [data?.farm_name, data?.time_zone, data?.province, data?.farm_description, data?.retailer_name, data?.irrigation_district_name, data?.river_name, data?.main_ranch_id, data?.fiscal_year_end_month])
+  }, [data?.farm_name, data?.time_zone, data?.province, data?.farm_description, data?.retailer_name, data?.irrigation_district_name, data?.main_ranch_id, data?.fiscal_year_end_month])
 }

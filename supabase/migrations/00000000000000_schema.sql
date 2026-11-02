@@ -350,7 +350,8 @@ ALTER TYPE "public"."task_status" OWNER TO "postgres";
 CREATE TYPE "public"."user_role" AS ENUM (
     'manager',
     'user',
-    'admin'
+    'admin',
+    'partner'
 );
 
 
@@ -368,6 +369,29 @@ CREATE TYPE "public"."yield_unit" AS ENUM (
 
 
 ALTER TYPE "public"."yield_unit" OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."add_partner_company"("p_name" "text") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  v_id uuid;
+begin
+  if not (select public.is_manager()) then
+    raise exception 'Only managers add partner companies' using errcode = '42501';
+  end if;
+  if coalesce(btrim(p_name), '') = '' then
+    raise exception 'A company needs a name';
+  end if;
+  insert into public.farms (name, is_home) values (btrim(p_name), false) returning id into v_id;
+  insert into public.partner_access (farm_id) values (v_id);
+  return v_id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."add_partner_company"("p_name" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."anydo_claim_sync"("p_user" "uuid", "p_minutes" integer DEFAULT 14) RETURNS boolean
@@ -1115,7 +1139,7 @@ declare
   v_lot uuid;
   v_out text := 'none';
 begin
-  if not public.is_active() or not public.mfa_ok() then
+  if not (public.is_active() or public.is_partner()) or not public.mfa_ok() then
     raise exception 'Sign in first.' using errcode = '42501';
   end if;
   select created_by into v_by from public.field_work_records where id = p_id;
@@ -2005,6 +2029,80 @@ end $$;
 
 
 ALTER FUNCTION "public"."fn_bin_load_area_yield"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_bin_load_capture_link"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  update scale_captures set load_id = new.id
+   where id in (new.full_capture_id, new.empty_capture_id)
+     and load_id is distinct from new.id;
+  return null;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_bin_load_capture_link"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_bin_load_captures"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  c scale_captures;
+begin
+  -- A net or a bin total is one number, never a scale capture.
+  if new.entry_kind <> 'weighed' then
+    new.full_capture_id := null;
+    new.empty_capture_id := null;
+    new.empty_guessed := false;
+    return new;
+  end if;
+
+  -- Full weight.
+  if new.full_capture_id is not null then
+    if tg_op = 'INSERT' or new.full_capture_id is distinct from old.full_capture_id then
+      select * into c from scale_captures where id = new.full_capture_id;
+      if c.id is null then raise exception 'That scale weight was not found — take it off the scale again'; end if;
+      if c.mode <> 'gross' then raise exception 'The scale was showing a net weight — set the indicator to gross and take it again'; end if;
+      if new.gross_kg is distinct from c.weight_kg then
+        raise exception 'The full weight (% kg) is not the weight taken off the scale (% kg)', new.gross_kg, c.weight_kg;
+      end if;
+      new.full_at := c.reading_at;
+    elsif new.gross_kg is distinct from old.gross_kg then
+      -- Typed over: it is no longer the scale's number.
+      new.full_capture_id := null;
+    end if;
+  end if;
+
+  -- Empty weight.
+  if new.empty_capture_id is not null then
+    if tg_op = 'INSERT' or new.empty_capture_id is distinct from old.empty_capture_id then
+      select * into c from scale_captures where id = new.empty_capture_id;
+      if c.id is null then raise exception 'That scale weight was not found — take it off the scale again'; end if;
+      if c.mode <> 'gross' then raise exception 'The scale was showing a net weight — set the indicator to gross and take it again'; end if;
+      if new.tare_kg is distinct from c.weight_kg then
+        raise exception 'The empty weight (% kg) is not the weight taken off the scale (% kg)', new.tare_kg, c.weight_kg;
+      end if;
+      new.empty_at := c.reading_at;
+    elsif new.tare_kg is distinct from old.tare_kg then
+      new.empty_capture_id := null;
+    end if;
+  end if;
+
+  -- A weighed-out empty is not a guess; no empty weight is nothing to guess.
+  if new.empty_capture_id is not null or new.tare_kg is null then
+    new.empty_guessed := false;
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_bin_load_captures"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_bin_load_contract"() RETURNS "trigger"
@@ -3611,6 +3709,100 @@ end; $$;
 ALTER FUNCTION "public"."fn_notify_managers"("p_kind" "text", "p_title" "text", "p_body" "text", "p_link" "text", "p_details" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_partner_crop_keep"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if tg_op = 'UPDATE' and public.is_partner() and old.farm_id is distinct from public.partner_farm_id() then
+    new.margin_per_acre := old.margin_per_acre;
+    new.margin_source := old.margin_source;
+    new.sister_value_per_acre := old.sister_value_per_acre;
+    new.sister_value_note := old.sister_value_note;
+    new.farm_id := old.farm_id;
+  end if;
+  if tg_op = 'INSERT' and public.is_partner() then
+    new.farm_id := public.partner_farm_id();
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_partner_crop_keep"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_partner_event_track"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  insert into public.partner_event_tracking (farm_id, event_id, status, notes_md, travel_notes, assigned_to, updated_at)
+  values (public.partner_farm_id(), old.id, new.status, new.notes_md, new.travel_notes, new.assigned_to, now())
+  on conflict (farm_id, event_id) do update
+    set status = excluded.status, notes_md = excluded.notes_md, travel_notes = excluded.travel_notes,
+        assigned_to = excluded.assigned_to, updated_at = now();
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_partner_event_track"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_partner_field_farm"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if public.is_partner() then
+    new.farm_id := public.partner_farm_id();
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_partner_field_farm"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_partner_grant_track"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  insert into public.partner_grant_tracking (farm_id, grant_id, status, notes_md, assigned_to, updated_at)
+  values (public.partner_farm_id(), old.id, new.status::public.grant_status, new.notes_md, new.assigned_to, now())
+  on conflict (farm_id, grant_id) do update
+    set status = excluded.status, notes_md = excluded.notes_md, assigned_to = excluded.assigned_to, updated_at = now();
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_partner_grant_track"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_partner_user_keep"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if public.is_partner() then
+    new.role := old.role;
+    new.farm_id := old.farm_id;
+    if new.id = auth.uid() or not public.is_partner_admin() then
+      new.partner_admin := old.partner_admin;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_partner_user_keep"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_pl_op_grid_sums"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public', 'extensions'
@@ -4906,6 +5098,12 @@ CREATE OR REPLACE FUNCTION "public"."fn_year_guard"() RETURNS "trigger"
 declare
   v_current int := date_part('year', now())::int;
 begin
+  -- @partner{
+  if public.is_partner()
+     and (to_jsonb(coalesce(new, old)) ->> 'field_id')::uuid in (select public.partner_own_field_ids()) then
+    return coalesce(new, old);
+  end if;
+  -- @partner}
   if tg_op <> 'DELETE'
      and new.crop_year < v_current
      and not exists (select 1 from year_unlocks where crop_year = new.crop_year) then
@@ -5035,6 +5233,7 @@ begin
     when v_first then 'admin'::user_role
     when v_invited and new.raw_user_meta_data ->> 'role' = 'admin' then 'admin'::user_role
     when v_invited and new.raw_user_meta_data ->> 'role' = 'manager' then 'manager'::user_role
+    when v_invited and new.raw_user_meta_data ->> 'role' = 'partner' then 'partner'::user_role
     else 'user'::user_role
   end;
 
@@ -5063,10 +5262,14 @@ CREATE OR REPLACE FUNCTION "public"."handle_user_invited"() RETURNS "trigger"
     AS $$
 declare
   v_role user_role;
+  -- @partner{
+  v_farm uuid;
+  -- @partner}
 begin
   v_role := case new.raw_user_meta_data ->> 'role'
     when 'admin' then 'admin'::user_role
     when 'manager' then 'manager'::user_role
+    when 'partner' then 'partner'::user_role
     else 'user'::user_role
   end;
 
@@ -5074,12 +5277,32 @@ begin
      set role = v_role, active = true
    where id = new.id and role = 'user' and not active and new.last_sign_in_at is null;
 
+  -- @partner{
+  -- An invite into a company (invite-user.mts writes farm_id into it): the new
+  -- person joins that company, as its admin when the invite says so.
+  v_farm := case when v_role = 'partner' then nullif(new.raw_user_meta_data ->> 'farm_id', '')::uuid end;
+  if v_farm is not null then
+    update public.users
+       set farm_id = v_farm,
+           partner_admin = coalesce((new.raw_user_meta_data ->> 'partner_admin')::boolean, false)
+     where id = new.id and role = 'partner' and new.last_sign_in_at is null;
+  end if;
+  -- @partner}
   return new;
 end;
 $$;
 
 
 ALTER FUNCTION "public"."handle_user_invited"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."home_equipment_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$ select id from public.jd_equipment where farm_id is null $$;
+
+
+ALTER FUNCTION "public"."home_equipment_ids"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."home_farm_id"() RETURNS "uuid"
@@ -5102,6 +5325,15 @@ $$;
 
 
 ALTER FUNCTION "public"."home_field_ids"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."home_task_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$ select id from public.tasks where farm_id is null $$;
+
+
+ALTER FUNCTION "public"."home_task_ids"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."import_map_layer"("p_name" "text", "p_source" "text", "p_features" "jsonb") RETURNS "uuid"
@@ -5209,7 +5441,7 @@ CREATE OR REPLACE FUNCTION "public"."is_active"() RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
     AS $$
-  select exists (select 1 from users where id = auth.uid() and active);
+  select exists (select 1 from users where id = auth.uid() and active and role <> 'partner');
 $$;
 
 
@@ -5250,6 +5482,31 @@ $$;
 
 
 ALTER FUNCTION "public"."is_owner"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."is_partner"() RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select exists (select 1 from users where id = auth.uid() and active and role = 'partner');
+$$;
+
+
+ALTER FUNCTION "public"."is_partner"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."is_partner_admin"() RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select exists (
+    select 1 from users
+     where id = auth.uid() and active and role = 'partner' and partner_admin and farm_id is not null
+  );
+$$;
+
+
+ALTER FUNCTION "public"."is_partner_admin"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."jd_confirm_operation"("p_id" "uuid", "p_applied" boolean) RETURNS "void"
@@ -5692,6 +5949,730 @@ end $$;
 
 
 ALTER FUNCTION "public"."n_trial_strips"("p_trial" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."partner_companies"() RETURNS TABLE("id" "uuid", "name" "text", "preset" "text", "views" "jsonb", "extras" "text"[])
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select f.id, f.name, coalesce(a.preset, 'crop-share'), coalesce(a.views, '{}'::jsonb), coalesce(a.extras, '{}')
+    from public.farms f
+    left join public.partner_access a on a.farm_id = f.id
+   where not f.is_home and (select public.is_manager())
+   order by f.name;
+$$;
+
+
+ALTER FUNCTION "public"."partner_companies"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."partner_crop_edit_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select c.id from public.crops c where c.farm_id = public.partner_farm_id()
+  union
+  select pc.crop_id from public.partner_crops pc where pc.farm_id = public.partner_farm_id() and pc.can_edit;
+$$;
+
+
+ALTER FUNCTION "public"."partner_crop_edit_ids"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."partner_crop_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select c.id from public.crops c where c.farm_id = public.partner_farm_id()
+  union
+  select pc.crop_id from public.partner_crops pc where pc.farm_id = public.partner_farm_id();
+$$;
+
+
+ALTER FUNCTION "public"."partner_crop_ids"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."partner_equipment_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$ select id from public.jd_equipment where farm_id = public.partner_farm_id() $$;
+
+
+ALTER FUNCTION "public"."partner_equipment_ids"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."partner_extra"("p_name" "text") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select exists (
+    select 1 from public.partner_access a
+     where a.farm_id = public.partner_farm_id() and p_name = any(a.extras)
+  );
+$$;
+
+
+ALTER FUNCTION "public"."partner_extra"("p_name" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."partner_farm_id"() RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select u.farm_id from users u
+   where u.id = auth.uid() and u.active and u.role = 'partner' and u.farm_id is not null
+     and u.farm_id <> coalesce((select id from farms where is_home limit 1), '00000000-0000-0000-0000-000000000000');
+$$;
+
+
+ALTER FUNCTION "public"."partner_farm_id"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."partner_field_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select pf.field_id from public.partner_fields pf where pf.farm_id = public.partner_farm_id()
+  union
+  select id from public.partner_own_field_ids() as id;
+$$;
+
+
+ALTER FUNCTION "public"."partner_field_ids"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."partner_field_years"() RETURNS TABLE("field_id" "uuid", "crop_year" integer)
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select pf.field_id, pf.crop_year from public.partner_fields pf
+   where pf.farm_id = public.partner_farm_id()
+  union
+  select o.id, y::int
+    from public.partner_own_field_ids() as o(id)
+   cross join generate_series(1990, 2100) as y;
+$$;
+
+
+ALTER FUNCTION "public"."partner_field_years"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."partner_own_field_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select f.id from fields f where f.farm_id = public.partner_farm_id();
+$$;
+
+
+ALTER FUNCTION "public"."partner_own_field_ids"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."partner_rotation_field_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select id from public.fields
+   where (select public.partner_extra('rotation')) and farm_id = (select public.home_farm_id())
+  union
+  select public.partner_field_ids();
+$$;
+
+
+ALTER FUNCTION "public"."partner_rotation_field_ids"() OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."bin_loads" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "bin_id" "uuid",
+    "crop_id" "uuid" NOT NULL,
+    "variety" "text",
+    "crop_year" integer NOT NULL,
+    "field_id" "uuid",
+    "loaded_on" "date" NOT NULL,
+    "gross_kg" numeric,
+    "tare_kg" numeric,
+    "net_kg" numeric GENERATED ALWAYS AS (("gross_kg" - "tare_kg")) STORED,
+    "lb_per_bu" numeric NOT NULL,
+    "bushels" numeric GENERATED ALWAYS AS (((("gross_kg" - "tare_kg") * 2.20462262) / "lb_per_bu")) STORED,
+    "truck" "text",
+    "driver" "text",
+    "note" "text",
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "trailer" "text",
+    "driver_id" "uuid",
+    "last_from_field" boolean DEFAULT false NOT NULL,
+    "delivery_site_id" "uuid",
+    "contract_id" "uuid",
+    "entry_kind" "text" DEFAULT 'weighed'::"text" NOT NULL,
+    "load_count" integer,
+    "moisture_pct" numeric,
+    "protein_pct" numeric,
+    "estimated" boolean DEFAULT false NOT NULL,
+    "full_photo" "text",
+    "empty_photo" "text",
+    "overflow_bin_id" "uuid",
+    "first_bin_bu" numeric,
+    "full_at" timestamp with time zone,
+    "empty_at" timestamp with time zone,
+    "weighed_in_by" "uuid",
+    "weighed_out_by" "uuid",
+    "full_capture_id" "uuid",
+    "empty_capture_id" "uuid",
+    "empty_guessed" boolean DEFAULT false NOT NULL,
+    CONSTRAINT "bin_loads_bin_or_site" CHECK ((("bin_id" IS NULL) OR ("delivery_site_id" IS NULL))),
+    CONSTRAINT "bin_loads_bin_when_weighed" CHECK ((("bin_id" IS NOT NULL) OR ("delivery_site_id" IS NOT NULL) OR ("gross_kg" IS NULL) OR ("tare_kg" IS NULL))),
+    CONSTRAINT "bin_loads_check" CHECK (("gross_kg" > "tare_kg")),
+    CONSTRAINT "bin_loads_contract_plant" CHECK ((("contract_id" IS NULL) OR ("delivery_site_id" IS NOT NULL))),
+    CONSTRAINT "bin_loads_entry_kind_check" CHECK (("entry_kind" = ANY (ARRAY['weighed'::"text", 'net'::"text", 'bin_total'::"text"]))),
+    CONSTRAINT "bin_loads_first_bin_bu_check" CHECK (("first_bin_bu" >= (0)::numeric)),
+    CONSTRAINT "bin_loads_gross_kg_check" CHECK (("gross_kg" > (0)::numeric)),
+    CONSTRAINT "bin_loads_lb_per_bu_check" CHECK (("lb_per_bu" > (0)::numeric)),
+    CONSTRAINT "bin_loads_load_count_check" CHECK ((("load_count" IS NULL) OR ("load_count" > 0))),
+    CONSTRAINT "bin_loads_one_weight" CHECK ((("gross_kg" IS NOT NULL) OR ("tare_kg" IS NOT NULL))),
+    CONSTRAINT "bin_loads_overflow_other_bin" CHECK ((("overflow_bin_id" IS NULL) OR (("bin_id" IS NOT NULL) AND ("overflow_bin_id" <> "bin_id") AND ("first_bin_bu" IS NOT NULL)))),
+    CONSTRAINT "bin_loads_tare_kg_check" CHECK (("tare_kg" >= (0)::numeric)),
+    CONSTRAINT "load_moisture_sane" CHECK ((("moisture_pct" IS NULL) OR (("moisture_pct" >= (0)::numeric) AND ("moisture_pct" <= (60)::numeric))))
+);
+
+
+ALTER TABLE "public"."bin_loads" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."bin_loads"."full_photo" IS 'scale-photos path: the scale with the truck full, or the one number of a net or bin total.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."empty_photo" IS 'scale-photos path: the scale with the truck empty.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."overflow_bin_id" IS 'The bin the rest of the load went into once bin_id was full (Sam, 20 Oct 2026).';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."first_bin_bu" IS 'Bushels that went into bin_id before it was full: its estimated room when the load was saved. The rest is in overflow_bin_id.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."full_at" IS 'When it was weighed in: the full weight (or a net''s one number) was entered.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."empty_at" IS 'When it was weighed out: the empty weight was entered. Null for a net or a bin total.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."weighed_in_by" IS 'Who put the full weight (or a net''s one number) in.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."weighed_out_by" IS 'Who put the empty weight in. Null for a net or a bin total.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."full_capture_id" IS 'The yard-scale capture the full weight came from. Null = typed or read from a photo.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."empty_capture_id" IS 'The yard-scale capture the empty weight came from. Null = typed or read from a photo.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."empty_guessed" IS 'The truck was not weighed out; the empty weight is a best guess.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."crop_plans" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "crop_year" integer NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "crop_id" "uuid" NOT NULL,
+    "variety" "text",
+    "planned_acres" numeric(10,2),
+    "yield_per_acre_override" numeric,
+    "notes" "text",
+    "yield_basis" "text",
+    "harvest_method" "text",
+    "herbicide_trait" "text",
+    "yield_low" numeric,
+    "yield_high" numeric,
+    "goal_yield" numeric,
+    CONSTRAINT "crop_plans_goal_yield_positive" CHECK ((("goal_yield" IS NULL) OR ("goal_yield" > (0)::numeric))),
+    CONSTRAINT "crop_plans_harvest_method_check" CHECK ((("harvest_method" IS NULL) OR ("harvest_method" = ANY (ARRAY['swathed'::"text", 'straight'::"text"])))),
+    CONSTRAINT "crop_plans_herbicide_trait_check" CHECK ((("herbicide_trait" IS NULL) OR (("length"("btrim"("herbicide_trait")) >= 1) AND ("length"("btrim"("herbicide_trait")) <= 80)))),
+    CONSTRAINT "crop_plans_yield_basis_check" CHECK (("yield_basis" = ANY (ARRAY['clean'::"text", 'pre_clean'::"text"]))),
+    CONSTRAINT "crop_plans_yield_range_order" CHECK ((("yield_low" IS NULL) OR ("yield_high" IS NULL) OR ("yield_low" <= "yield_high")))
+);
+
+
+ALTER TABLE "public"."crop_plans" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."crop_plans"."harvest_method" IS 'swathed | straight. Null until someone sets it; the dry-down prediction then assumes straight-cut.';
+
+
+
+COMMENT ON COLUMN "public"."crop_plans"."herbicide_trait" IS 'A planned canola''s herbicide trait (liberty | roundup) where the crop contracts both; null = not chosen or the crop''s own.';
+
+
+
+COMMENT ON COLUMN "public"."crop_plans"."yield_low" IS 'Low end of this field''s estimated yield range, per acre. With no yield_per_acre_override the midpoint is the expected yield.';
+
+
+
+COMMENT ON COLUMN "public"."crop_plans"."yield_high" IS 'High end of this field''s estimated yield range, per acre.';
+
+
+
+COMMENT ON COLUMN "public"."crop_plans"."goal_yield" IS 'Goal yield for this field and crop year, per acre in the crop''s yield_unit. Typed; never written by the scale. Falls back to crops.goal_yield_per_acre.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."crops" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "default_yield_per_acre" numeric,
+    "yield_unit" "public"."yield_unit" DEFAULT 'bu'::"public"."yield_unit" NOT NULL,
+    "active" boolean DEFAULT true NOT NULL,
+    "color" "text",
+    "bin_policy" "public"."bin_policy" DEFAULT 'mixable'::"public"."bin_policy" NOT NULL,
+    "test_weight_lb_per_bu" numeric,
+    "cheatsheet_md" "text",
+    "crop_coefficient_id" "uuid",
+    "min_return_years" integer DEFAULT 0 NOT NULL,
+    "rotation_notes" "text",
+    "category" "text",
+    "notes_planting" "text",
+    "notes_growing" "text",
+    "notes_harvest" "text",
+    "notes_storage" "text",
+    "needs_bins" boolean DEFAULT true NOT NULL,
+    "counts_for_seeding" boolean DEFAULT true NOT NULL,
+    "counts_for_harvest" boolean DEFAULT true NOT NULL,
+    "progress_note" "text",
+    "moisture_chart_key" "text",
+    "moisture_dry_max" numeric,
+    "moisture_tough_max" numeric,
+    "moisture_damp_max" numeric,
+    "moisture_moist_max" numeric,
+    "moisture_note" "text",
+    "moisture_dry_min" numeric,
+    "moisture_tough_advice" "text",
+    "margin_per_acre" numeric,
+    "margin_source" "text",
+    "renter_only" boolean DEFAULT false NOT NULL,
+    "irrigation_need_in" numeric,
+    "max_in_a_row" integer DEFAULT 1 NOT NULL,
+    "stand_min_years" integer,
+    "stand_max_years" integer,
+    "own_use" boolean DEFAULT false NOT NULL,
+    "feed_dm_pct" numeric,
+    "sister_value_per_acre" numeric,
+    "sister_value_note" "text",
+    "land_rent_only" boolean DEFAULT false NOT NULL,
+    "irrigation_need_basis" "text",
+    "fixed_costs_apply" boolean DEFAULT true NOT NULL,
+    "herbicide_trait" "text",
+    "average_of" "uuid"[],
+    "afsc_insured" boolean DEFAULT true NOT NULL,
+    "yield_low_per_acre" numeric,
+    "yield_high_per_acre" numeric,
+    "days_to_maturity" integer,
+    "goal_yield_per_acre" numeric,
+    "on_combines" boolean DEFAULT true NOT NULL,
+    "weighed" boolean DEFAULT true NOT NULL,
+    "farm_id" "uuid",
+    CONSTRAINT "crops_category_new_check" CHECK (("category" = ANY (ARRAY['seed'::"text", 'commercial'::"text", 'own_use'::"text"]))),
+    CONSTRAINT "crops_days_to_maturity_check" CHECK ((("days_to_maturity" IS NULL) OR (("days_to_maturity" >= 1) AND ("days_to_maturity" <= 400)))),
+    CONSTRAINT "crops_feed_dm_pct_check" CHECK ((("feed_dm_pct" > (0)::numeric) AND ("feed_dm_pct" <= (100)::numeric))),
+    CONSTRAINT "crops_goal_yield_positive" CHECK ((("goal_yield_per_acre" IS NULL) OR ("goal_yield_per_acre" > (0)::numeric))),
+    CONSTRAINT "crops_herbicide_trait_check" CHECK ((("herbicide_trait" IS NULL) OR (("length"("btrim"("herbicide_trait")) >= 1) AND ("length"("btrim"("herbicide_trait")) <= 80)))),
+    CONSTRAINT "crops_irrigation_need_in_check" CHECK (("irrigation_need_in" >= (0)::numeric)),
+    CONSTRAINT "crops_max_in_a_row_check" CHECK ((("max_in_a_row" >= 1) AND ("max_in_a_row" <= 6))),
+    CONSTRAINT "crops_stand_max_years_check" CHECK ((("stand_max_years" >= 1) AND ("stand_max_years" <= 12))),
+    CONSTRAINT "crops_stand_min_years_check" CHECK ((("stand_min_years" >= 1) AND ("stand_min_years" <= 10))),
+    CONSTRAINT "crops_yield_range_order" CHECK ((("yield_low_per_acre" IS NULL) OR ("yield_high_per_acre" IS NULL) OR ("yield_low_per_acre" <= "yield_high_per_acre")))
+);
+
+
+ALTER TABLE "public"."crops" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."crops"."needs_bins" IS 'False where the crop never enters a bin — baled, or shipped direct from the field. Excluded from the storage estimate entirely.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."counts_for_seeding" IS 'Do WE seed this, so it belongs in the seeding progress target? False for summer fallow, for established perennials, and for crop-shared ground somebody else plants.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."counts_for_harvest" IS 'Do WE harvest this, so it belongs in the harvest progress target?';
+
+
+
+COMMENT ON COLUMN "public"."crops"."progress_note" IS 'Why a crop is exempt, in plain words. Shown on the progress screen so an exemption never looks like a mistake.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."moisture_chart_key" IS 'Which Model 919 conversion chart this crop is read on, e.g. canola6. The tables themselves ship in src/data/919-charts and the PDFs in public/919-charts; there is no chart table in the database.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."moisture_dry_max" IS 'Highest moisture that is still a straight grade. Above this the bin needs air. Seeded from the CGC tough/damp ranges and editable — it is a storage decision, not a fact about the grain.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."moisture_tough_max" IS 'Top of the tough band. Equal to moisture_dry_max where the crop has no tough range at all, which is how the CGC treats beans.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."moisture_damp_max" IS 'Retired 19 Oct 2026: moisture is dry / tough / wet. Always null.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."moisture_moist_max" IS 'Retired 19 Oct 2026: moisture is dry / tough / wet. Always null.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."moisture_note" IS 'Why these numbers, where they depart from the CGC.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."moisture_dry_min" IS 'Below this the sample is too dry — a floor, not a band. Null for crops that cannot be too dry.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."moisture_tough_advice" IS 'What to do with a tough sample of this crop, when "bin it with air on" is the wrong answer.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."renter_only" IS 'Grown here only by a renter: left out of the rotation recommendations, still plannable by hand.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."irrigation_need_in" IS 'Gross irrigation, inches at the pivot, in an average year. Seeded as an estimate for the Taber area; edit to the farm''s own experience.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."max_in_a_row" IS 'Years this crop may run on a field back to back (1 = never twice in a row).';
+
+
+
+COMMENT ON COLUMN "public"."crops"."stand_max_years" IS 'A perennial: taken out after this many years (stand_min_years = kept in at least that long).';
+
+
+
+COMMENT ON COLUMN "public"."crops"."own_use" IS 'Grown for the farm''s own feed, not sold: its price is a feed value (what it would cost to buy).';
+
+
+
+COMMENT ON COLUMN "public"."crops"."feed_dm_pct" IS 'Dry matter % of the crop as fed (hay 88, green feed 85, silage 35) — turns the herd''s dry-matter need into tonnes to grow.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."sister_value_per_acre" IS 'Value per acre that goes to a sister company (not counted in RVR''s margin).';
+
+
+
+COMMENT ON COLUMN "public"."crops"."land_rent_only" IS 'We rent the land out for this crop and are paid rent, not for the crop: no yield or price is expected (carrot seed, spinach seed).';
+
+
+
+COMMENT ON COLUMN "public"."crops"."irrigation_need_basis" IS 'alberta = from the Alberta Agriculture sheets (src/lib/crop-water-need.ts); farm = the farm''s own estimate.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."fixed_costs_apply" IS 'False: the farm''s fixed $/ac is not charged on this crop and its acres are left out of the spread.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."herbicide_trait" IS 'Canola only: the herbicide the crop is bred to survive (liberty = LibertyLink/glufosinate, roundup = Roundup Ready/glyphosate). Null = not set; the app asks for it rather than guessing.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."average_of" IS 'A planning stand-in (Unknown Canola): its price, input budget, normal yield and sister value are kept as the average of these crops'' by fn_crop_average_sync. Edit the member crops, not the stand-in.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."afsc_insured" IS 'False when the crop is insured some other way (e.g. a seed contract''s own cover), so it is left off the AFSC reports.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."yield_low_per_acre" IS 'Low end of the normal yield range, per acre in yield_unit. Used with yield_high_per_acre; the normal yield stays the expected figure.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."yield_high_per_acre" IS 'High end of the normal yield range, per acre in yield_unit.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."days_to_maturity" IS 'Typical days from seeding to harvest-ready, before the season''s weather adjusts it.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."goal_yield_per_acre" IS 'Default goal yield per acre for fields with no goal of their own (crop_plans.goal_yield). Separate from default_yield_per_acre, the normal yield an estimate falls back to.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."on_combines" IS 'Harvested with the combines: puts a field with this crop (plan or crop area) on the combine displays for the year.';
+
+
+
+COMMENT ON COLUMN "public"."crops"."weighed" IS 'Its loads are weighed at the scale (the weigh-in offers it and its fields). Off for potatoes, green feed and hay.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."field_boundaries" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "geom" "public"."geometry"(MultiPolygon,4326) NOT NULL,
+    "valid_from" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "valid_to" "date",
+    "source" "public"."boundary_source" NOT NULL,
+    "acres" numeric(10,2) GENERATED ALWAYS AS ("round"((("public"."st_area"(("geom")::"public"."geography") / (4046.8564224)::double precision))::numeric, 2)) STORED,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "boundary_analysis" "public"."geometry"(MultiPolygon,4326),
+    CONSTRAINT "field_boundaries_check" CHECK ((("valid_to" IS NULL) OR ("valid_to" > "valid_from")))
+);
+
+
+ALTER TABLE "public"."field_boundaries" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."field_work_records" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "zone_id" "uuid",
+    "crop_id" "uuid",
+    "work_type" "text" NOT NULL,
+    "work_type_other" "text",
+    "counts_as" "text",
+    "started_at" timestamp with time zone,
+    "finished_at" timestamp with time zone,
+    "hours" numeric,
+    "acres" numeric,
+    "machine_ids" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
+    "machines_at_once" integer,
+    "operator_ids" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
+    "other_people" "text",
+    "amount" numeric,
+    "amount_unit" "text",
+    "notes" "text",
+    "photo_paths" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "weather" "jsonb",
+    "weather_at" timestamp with time zone,
+    "weather_source" "text",
+    "weather_tried_at" timestamp with time zone,
+    "not_duplicate_of" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
+    "entered_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "created_by" "uuid" DEFAULT "auth"."uid"(),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "bale_type" "text",
+    "hay_cut" smallint,
+    "feed_type_id" "uuid",
+    "feed_ranch_id" "uuid",
+    "feed_storage" "text",
+    "field_finished" boolean DEFAULT false NOT NULL,
+    "from_bin_load" "uuid",
+    CONSTRAINT "field_work_records_acres_check" CHECK ((("acres" IS NULL) OR ("acres" >= (0)::numeric))),
+    CONSTRAINT "field_work_records_bale_type_check" CHECK ((("bale_type" IS NULL) OR ("bale_type" = ANY (ARRAY['round'::"text", 'big_square'::"text"])))),
+    CONSTRAINT "field_work_records_counts_as_check" CHECK (("counts_as" = ANY (ARRAY['seeding'::"text", 'harvest'::"text", 'tillage'::"text", 'application'::"text"]))),
+    CONSTRAINT "field_work_records_hay_cut_check" CHECK ((("hay_cut" IS NULL) OR (("hay_cut" >= 1) AND ("hay_cut" <= 5)))),
+    CONSTRAINT "field_work_records_hours_check" CHECK ((("hours" IS NULL) OR ("hours" >= (0)::numeric))),
+    CONSTRAINT "field_work_records_machines_at_once_check" CHECK ((("machines_at_once" IS NULL) OR ("machines_at_once" >= 1))),
+    CONSTRAINT "field_work_records_order" CHECK ((("started_at" IS NULL) OR ("finished_at" IS NULL) OR ("finished_at" >= "started_at"))),
+    CONSTRAINT "field_work_records_work_type_check" CHECK (("length"(TRIM(BOTH FROM "work_type")) > 0))
+);
+
+
+ALTER TABLE "public"."field_work_records" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."field_work_records" IS 'Field work entered by hand: jobs Operations Center never recorded. Weather is a snapshot taken when saved.';
+
+
+
+COMMENT ON COLUMN "public"."field_work_records"."field_finished" IS 'This harvest record says the field (or its crop area, zone_id) is finished. The first source of the harvest date.';
+
+
+
+COMMENT ON COLUMN "public"."field_work_records"."from_bin_load" IS 'The weigh-in whose "last load off this field" wrote this record. Cleared when that mark is.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."fields" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "farm_id" "uuid" NOT NULL,
+    "name" "text" NOT NULL,
+    "legal_land_description" "text",
+    "fah_field_id" integer,
+    "active" boolean DEFAULT true NOT NULL,
+    "notes_md" "text",
+    "pivot_start_instructions_md" "text",
+    "soil_notes_md" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "jd_field_id" "text",
+    "centroid" "public"."geography"(Point,4326),
+    "assigned_station_id" "uuid",
+    "assigned_station_distance_m" double precision,
+    "assignment_mode" "text" DEFAULT 'auto'::"text" NOT NULL,
+    "soil_texture" "text",
+    "soil_fc" double precision,
+    "soil_wp" double precision,
+    "satellite_enabled" boolean DEFAULT true NOT NULL,
+    "satellite_kc_enabled" boolean DEFAULT false NOT NULL,
+    "soil_source" "text",
+    "rented_out_acres" numeric(10,2),
+    "rented_out_to" "text",
+    "tenure_notes" "text",
+    "boundary_locked" boolean DEFAULT false NOT NULL,
+    "rented_out_crop" "text",
+    "rain_gauge_id" "uuid",
+    "grazed_after_harvest" boolean DEFAULT false NOT NULL,
+    "open_to_pasture" boolean DEFAULT false NOT NULL,
+    "grazing_note" "text",
+    "route_via" "text" DEFAULT 'auto'::"text" NOT NULL,
+    "route_through" "jsonb",
+    "ours_by_default" boolean DEFAULT true NOT NULL,
+    CONSTRAINT "fields_rented_out_acres_check" CHECK ((("rented_out_acres" IS NULL) OR ("rented_out_acres" >= (0)::numeric))),
+    CONSTRAINT "fields_route_via_check" CHECK (("route_via" = ANY (ARRAY['auto'::"text", 'trails'::"text"]))),
+    CONSTRAINT "fields_soil_source_check" CHECK ((("soil_source" IS NULL) OR ("soil_source" = ANY (ARRAY['survey'::"text", 'manual'::"text"]))))
+);
+
+
+ALTER TABLE "public"."fields" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."fields"."satellite_kc_enabled" IS 'Whether the water balance may use satellite-measured Kc instead of the crop table. Off until satellite and table Kc have been compared for a full season on this field (spec §12 phase 4).';
+
+
+
+COMMENT ON COLUMN "public"."fields"."soil_source" IS 'Origin of soil_fc/soil_wp: survey = AGRASID lookup, manual = set by a person. Never overwrite a manual row from an import.';
+
+
+
+COMMENT ON COLUMN "public"."fields"."rented_out_acres" IS 'Acres of this field farmed by someone else. The drawn boundary covers OUR part only, so the whole field is mapped acres plus this.';
+
+
+
+COMMENT ON COLUMN "public"."fields"."rented_out_to" IS 'Who farms the rented-out part.';
+
+
+
+COMMENT ON COLUMN "public"."fields"."boundary_locked" IS 'Keep the current boundary; the Deere sync will not replace it.';
+
+
+
+COMMENT ON COLUMN "public"."fields"."grazed_after_harvest" IS 'Cattle may graze whatever crop this field had once it is harvested; a spray restricting grazing or feeding here is alerted.';
+
+
+
+COMMENT ON COLUMN "public"."fields"."open_to_pasture" IS 'Not fenced off from the pasture around it: cattle in that pasture are on this field.';
+
+
+
+COMMENT ON COLUMN "public"."fields"."grazing_note" IS 'Anything about grazing this field (e.g. a grazing trial planned).';
+
+
+
+COMMENT ON COLUMN "public"."fields"."route_via" IS 'auto: the road where it reaches the field, else a farm trail; trails: the farm''s trails wherever they reach the field, even when the road is shorter.';
+
+
+
+COMMENT ON COLUMN "public"."fields"."route_through" IS 'Points the route from the yard must pass through, in order: [{lat, lng}]. Null for none.';
+
+
+
+COMMENT ON COLUMN "public"."fields"."ours_by_default" IS 'Is this field normally in our plan? False for a neighbour''s field we farm a year at a time: then only the years with a field_year_tenure row marked ours count.';
+
+
+
+CREATE OR REPLACE VIEW "public"."field_season_progress" WITH ("security_invoker"='true') AS
+ SELECT "f"."id" AS "field_id",
+    "f"."name" AS "field_name",
+    "p"."crop_year",
+    "b"."acres",
+    "c"."name" AS "crop_name",
+    COALESCE("c"."counts_for_seeding", true) AS "counts_for_seeding",
+    COALESCE("c"."counts_for_harvest", true) AS "counts_for_harvest",
+    "c"."progress_note",
+    ((EXISTS ( SELECT 1
+           FROM "public"."jd_field_operations" "o"
+          WHERE (("o"."field_id" = "f"."id") AND ("o"."crop_season" = "p"."crop_year") AND ("o"."operation_type" = 'seeding'::"text")))) OR (EXISTS ( SELECT 1
+           FROM "public"."field_work_records" "w"
+          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "p"."crop_year") AND ("w"."counts_as" = 'seeding'::"text"))))) AS "has_seeding",
+    ((EXISTS ( SELECT 1
+           FROM "public"."jd_field_operations" "o"
+          WHERE (("o"."field_id" = "f"."id") AND ("o"."crop_season" = "p"."crop_year") AND ("o"."operation_type" = 'harvest'::"text")))) OR (EXISTS ( SELECT 1
+           FROM "public"."field_work_records" "w"
+          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "p"."crop_year") AND ("w"."counts_as" = 'harvest'::"text"))))) AS "has_harvest",
+    ((EXISTS ( SELECT 1
+           FROM "public"."jd_field_operations" "o"
+          WHERE (("o"."field_id" = "f"."id") AND ("o"."crop_season" = "p"."crop_year")))) OR (EXISTS ( SELECT 1
+           FROM "public"."field_work_records" "w"
+          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "p"."crop_year"))))) AS "has_any_operation",
+    ((EXISTS ( SELECT 1
+           FROM "public"."jd_field_operations" "o"
+          WHERE (("o"."field_id" = "f"."id") AND ("o"."crop_season" = "p"."crop_year") AND ("o"."operation_type" = 'harvest'::"text")))) OR (EXISTS ( SELECT 1
+           FROM "public"."field_work_records" "w"
+          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "p"."crop_year") AND ("w"."counts_as" = 'harvest'::"text")))) OR (EXISTS ( SELECT 1
+           FROM "public"."bin_loads" "l"
+          WHERE (("l"."field_id" = "f"."id") AND ("l"."crop_year" = "p"."crop_year"))))) AS "harvest_started",
+    (EXISTS ( SELECT 1
+           FROM "public"."field_work_records" "w"
+          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "p"."crop_year") AND ("w"."counts_as" = 'harvest'::"text") AND "w"."field_finished"))) AS "harvest_finished",
+    ( SELECT "max"("l"."loaded_on") AS "max"
+           FROM "public"."bin_loads" "l"
+          WHERE (("l"."field_id" = "f"."id") AND ("l"."crop_year" = "p"."crop_year"))) AS "last_load_on",
+    ( SELECT "count"(*) AS "count"
+           FROM "public"."bin_loads" "l"
+          WHERE (("l"."field_id" = "f"."id") AND ("l"."crop_year" = "p"."crop_year"))) AS "loads"
+   FROM ((("public"."fields" "f"
+     JOIN "public"."field_boundaries" "b" ON ((("b"."field_id" = "f"."id") AND ("b"."valid_to" IS NULL))))
+     JOIN "public"."crop_plans" "p" ON (("p"."field_id" = "f"."id")))
+     LEFT JOIN "public"."crops" "c" ON (("c"."id" = "p"."crop_id")))
+  WHERE "f"."active";
+
+
+ALTER VIEW "public"."field_season_progress" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."field_season_progress" IS 'Per field and crop year: the acres, whether seeding and harvest are started and finished, and what the scale knows. harvest_finished is a person saying the field is off; harvest_started is only that somebody is at it.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."partner_season_progress"() RETURNS SETOF "public"."field_season_progress"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select p.field_id, p.field_name, p.crop_year, p.acres, p.crop_name,
+         p.counts_for_seeding or mine, p.counts_for_harvest or mine,
+         case when mine then null else p.progress_note end,
+         p.has_seeding, p.has_harvest, p.has_any_operation, p.harvest_started, p.harvest_finished,
+         p.last_load_on, p.loads
+    from public.field_season_progress p
+   cross join lateral (
+     select (p.field_id, p.crop_year) in (select * from public.partner_field_years()) as mine
+   ) m
+   where (select public.is_partner()) and (select public.mfa_ok())
+     and p.field_id in (select public.partner_field_ids());
+$$;
+
+
+ALTER FUNCTION "public"."partner_season_progress"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."partner_task_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$ select id from public.tasks where farm_id = public.partner_farm_id() $$;
+
+
+ALTER FUNCTION "public"."partner_task_ids"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."pasture_water_radius_m"() RETURNS numeric
@@ -6137,6 +7118,25 @@ $$;
 ALTER FUNCTION "public"."refresh_soil_input_hashes"("p_report_ids" "uuid"[]) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."rename_partner_company"("p_id" "uuid", "p_name" "text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if not (select public.is_manager()) then
+    raise exception 'Only managers rename partner companies' using errcode = '42501';
+  end if;
+  if coalesce(btrim(p_name), '') = '' then
+    raise exception 'A company needs a name';
+  end if;
+  update public.farms set name = btrim(p_name) where id = p_id and not is_home;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."rename_partner_company"("p_id" "uuid", "p_name" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."replace_boundary"("p_field_id" "uuid", "p_geojson" "jsonb", "p_source" "public"."boundary_source") RETURNS "uuid"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public', 'extensions'
@@ -6243,6 +7243,115 @@ $$;
 
 
 ALTER FUNCTION "public"."report_app_issue"("p_kind" "text", "p_fingerprint" "text", "p_title" "text", "p_message" "text", "p_details" "jsonb", "p_path" "text", "p_build" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."research_search"("q" "text", "max_rows" integer DEFAULT 10) RETURNS TABLE("paper_id" "uuid", "title" "text", "authors" "text", "year" integer, "source" "text", "region" "text", "folder_name" "text", "pages" "text", "passage" "text", "rank" real)
+    LANGUAGE "plpgsql" STABLE
+    SET "search_path" TO 'public', 'extensions'
+    SET "statement_timeout" TO '15s'
+    AS $$
+declare
+  words     text[];
+  tsqs      tsquery[];
+  selectors text[];
+  pairs     text;
+  tsq_sel   tsquery;
+  tsq_any   tsquery;
+  tsq_all   tsquery := websearch_to_tsquery('english', q);
+  found     integer;
+begin
+  words := array(
+    select x
+    from unnest(regexp_split_to_array(
+           lower(regexp_replace(coalesce(q, ''), '[^a-zA-Z0-9 ]', ' ', 'g')), '\s+')) as x
+    where length(x) >= 3 and numnode(plainto_tsquery('english', x)) > 0
+    limit 8
+  );
+  if cardinality(words) = 0 then return; end if;
+
+  tsqs := array(select plainto_tsquery('english', w) from unnest(words) as w);
+  tsq_any := to_tsquery('english', array_to_string(words, ' | '));
+
+  -- The four rarest words. The count gives up at 400: enough to tell "pinto"
+  -- from "rate", and cheap enough not to be the slowest thing here.
+  selectors := array(
+    select w from unnest(words) as w
+    order by (select count(*) from (select 1 from public.research_paper_chunks c
+                                     where c.fts @@ plainto_tsquery('english', w)
+                                     limit 400) t), w
+    limit 4
+  );
+
+  select string_agg(format('(%s & %s)', a.w, b.w), ' | ')
+    into pairs
+    from unnest(selectors) with ordinality as a(w, n)
+    join unnest(selectors) with ordinality as b(w, n) on b.n > a.n;
+  tsq_sel := coalesce(to_tsquery('english', pairs), to_tsquery('english', array_to_string(selectors, ' | ')));
+
+  select count(*) into found
+    from (select 1 from public.research_paper_chunks c where c.fts @@ tsq_sel limit 3) t;
+  if found < 3 then tsq_sel := tsq_any; end if;
+
+  return query
+  with raw as (
+    select c.paper_id, c.page_from, c.page_to, c.text, c.fts,
+           ts_rank_cd(c.fts, tsq_sel) as r
+    from public.research_paper_chunks c
+    where c.fts @@ tsq_sel
+    order by r desc
+    limit 200
+  ),
+  scored as (
+    select raw.paper_id, raw.page_from, raw.page_to, raw.text,
+           (raw.r
+             * power(
+                 (select count(*) from unnest(tsqs) as tq where raw.fts @@ tq)::real
+                   / greatest(cardinality(words), 1),
+                 2))::real as rank
+    from raw
+  ),
+  hits as (
+    select distinct on (s.paper_id) * from scored s order by s.paper_id, s.rank desc
+  ),
+  best as (
+    select h.*,
+           (h.rank * case p.region
+             when 'southern_alberta' then 1.8
+             when 'alberta' then 1.5
+             when 'prairies' then 1.35
+             when 'canada' then 1.2
+             when 'northern_plains' then 1.15
+             else 1.0
+           end)::real as weighted
+    from hits h join public.research_papers p on p.id = h.paper_id
+    where h.rank > 0
+    order by weighted desc
+    limit greatest(max_rows, 1)
+  )
+  select p.id, p.title, p.authors, p.year, p.source, p.region, f.name,
+         case
+           when b.page_from is null then null
+           when b.page_from = b.page_to then 'p. ' || b.page_from
+           else 'pp. ' || b.page_from || '-' || b.page_to
+         end,
+         regexp_replace(
+           ts_headline('english', b.text, coalesce(tsq_all, tsq_sel),
+                       'MaxWords=90, MinWords=40, MaxFragments=2'),
+           '</?b>', '', 'g'),
+         b.weighted
+  from best b
+  join public.research_papers p on p.id = b.paper_id
+  join public.research_folders f on f.id = p.folder_id
+  order by b.weighted desc;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."research_search"("q" "text", "max_rows" integer) OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."research_search"("q" "text", "max_rows" integer) IS 'Passages from the research library that answer a question, nearest work weighted up. One passage per paper.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."retire_meeting_fact"("p_id" "text") RETURNS "void"
@@ -7439,200 +8548,6 @@ CREATE TABLE IF NOT EXISTS "public"."bin_contents" (
 ALTER TABLE "public"."bin_contents" OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "public"."crops" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "name" "text" NOT NULL,
-    "default_yield_per_acre" numeric,
-    "yield_unit" "public"."yield_unit" DEFAULT 'bu'::"public"."yield_unit" NOT NULL,
-    "active" boolean DEFAULT true NOT NULL,
-    "color" "text",
-    "bin_policy" "public"."bin_policy" DEFAULT 'mixable'::"public"."bin_policy" NOT NULL,
-    "test_weight_lb_per_bu" numeric,
-    "cheatsheet_md" "text",
-    "crop_coefficient_id" "uuid",
-    "min_return_years" integer DEFAULT 0 NOT NULL,
-    "rotation_notes" "text",
-    "category" "text",
-    "notes_planting" "text",
-    "notes_growing" "text",
-    "notes_harvest" "text",
-    "notes_storage" "text",
-    "needs_bins" boolean DEFAULT true NOT NULL,
-    "counts_for_seeding" boolean DEFAULT true NOT NULL,
-    "counts_for_harvest" boolean DEFAULT true NOT NULL,
-    "progress_note" "text",
-    "moisture_chart_key" "text",
-    "moisture_dry_max" numeric,
-    "moisture_tough_max" numeric,
-    "moisture_damp_max" numeric,
-    "moisture_moist_max" numeric,
-    "moisture_note" "text",
-    "moisture_dry_min" numeric,
-    "moisture_tough_advice" "text",
-    "margin_per_acre" numeric,
-    "margin_source" "text",
-    "renter_only" boolean DEFAULT false NOT NULL,
-    "irrigation_need_in" numeric,
-    "max_in_a_row" integer DEFAULT 1 NOT NULL,
-    "stand_min_years" integer,
-    "stand_max_years" integer,
-    "own_use" boolean DEFAULT false NOT NULL,
-    "feed_dm_pct" numeric,
-    "sister_value_per_acre" numeric,
-    "sister_value_note" "text",
-    "land_rent_only" boolean DEFAULT false NOT NULL,
-    "irrigation_need_basis" "text",
-    "fixed_costs_apply" boolean DEFAULT true NOT NULL,
-    "herbicide_trait" "text",
-    "average_of" "uuid"[],
-    "afsc_insured" boolean DEFAULT true NOT NULL,
-    "yield_low_per_acre" numeric,
-    "yield_high_per_acre" numeric,
-    "days_to_maturity" integer,
-    "goal_yield_per_acre" numeric,
-    "on_combines" boolean DEFAULT true NOT NULL,
-    "weighed" boolean DEFAULT true NOT NULL,
-    "farm_id" "uuid",
-    CONSTRAINT "crops_category_new_check" CHECK (("category" = ANY (ARRAY['seed'::"text", 'commercial'::"text", 'own_use'::"text"]))),
-    CONSTRAINT "crops_days_to_maturity_check" CHECK ((("days_to_maturity" IS NULL) OR (("days_to_maturity" >= 1) AND ("days_to_maturity" <= 400)))),
-    CONSTRAINT "crops_feed_dm_pct_check" CHECK ((("feed_dm_pct" > (0)::numeric) AND ("feed_dm_pct" <= (100)::numeric))),
-    CONSTRAINT "crops_goal_yield_positive" CHECK ((("goal_yield_per_acre" IS NULL) OR ("goal_yield_per_acre" > (0)::numeric))),
-    CONSTRAINT "crops_herbicide_trait_check" CHECK ((("herbicide_trait" IS NULL) OR (("length"("btrim"("herbicide_trait")) >= 1) AND ("length"("btrim"("herbicide_trait")) <= 80)))),
-    CONSTRAINT "crops_irrigation_need_in_check" CHECK (("irrigation_need_in" >= (0)::numeric)),
-    CONSTRAINT "crops_max_in_a_row_check" CHECK ((("max_in_a_row" >= 1) AND ("max_in_a_row" <= 6))),
-    CONSTRAINT "crops_stand_max_years_check" CHECK ((("stand_max_years" >= 1) AND ("stand_max_years" <= 12))),
-    CONSTRAINT "crops_stand_min_years_check" CHECK ((("stand_min_years" >= 1) AND ("stand_min_years" <= 10))),
-    CONSTRAINT "crops_yield_range_order" CHECK ((("yield_low_per_acre" IS NULL) OR ("yield_high_per_acre" IS NULL) OR ("yield_low_per_acre" <= "yield_high_per_acre")))
-);
-
-
-ALTER TABLE "public"."crops" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."crops"."needs_bins" IS 'False where the crop never enters a bin — baled, or shipped direct from the field. Excluded from the storage estimate entirely.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."counts_for_seeding" IS 'Do WE seed this, so it belongs in the seeding progress target? False for summer fallow, for established perennials, and for crop-shared ground somebody else plants.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."counts_for_harvest" IS 'Do WE harvest this, so it belongs in the harvest progress target?';
-
-
-
-COMMENT ON COLUMN "public"."crops"."progress_note" IS 'Why a crop is exempt, in plain words. Shown on the progress screen so an exemption never looks like a mistake.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."moisture_chart_key" IS 'Which Model 919 conversion chart this crop is read on, e.g. canola6. The tables themselves ship in src/data/919-charts and the PDFs in public/919-charts; there is no chart table in the database.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."moisture_dry_max" IS 'Highest moisture that is still a straight grade. Above this the bin needs air. Seeded from the CGC tough/damp ranges and editable — it is a storage decision, not a fact about the grain.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."moisture_tough_max" IS 'Top of the tough band. Equal to moisture_dry_max where the crop has no tough range at all, which is how the CGC treats beans.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."moisture_damp_max" IS 'Retired 19 Oct 2026: moisture is dry / tough / wet. Always null.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."moisture_moist_max" IS 'Retired 19 Oct 2026: moisture is dry / tough / wet. Always null.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."moisture_note" IS 'Why these numbers, where they depart from the CGC.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."moisture_dry_min" IS 'Below this the sample is too dry — a floor, not a band. Null for crops that cannot be too dry.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."moisture_tough_advice" IS 'What to do with a tough sample of this crop, when "bin it with air on" is the wrong answer.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."renter_only" IS 'Grown here only by a renter: left out of the rotation recommendations, still plannable by hand.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."irrigation_need_in" IS 'Gross irrigation, inches at the pivot, in an average year. Seeded as an estimate for the Taber area; edit to the farm''s own experience.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."max_in_a_row" IS 'Years this crop may run on a field back to back (1 = never twice in a row).';
-
-
-
-COMMENT ON COLUMN "public"."crops"."stand_max_years" IS 'A perennial: taken out after this many years (stand_min_years = kept in at least that long).';
-
-
-
-COMMENT ON COLUMN "public"."crops"."own_use" IS 'Grown for the farm''s own feed, not sold: its price is a feed value (what it would cost to buy).';
-
-
-
-COMMENT ON COLUMN "public"."crops"."feed_dm_pct" IS 'Dry matter % of the crop as fed (hay 88, green feed 85, silage 35) — turns the herd''s dry-matter need into tonnes to grow.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."sister_value_per_acre" IS 'Value per acre that goes to a sister company (not counted in RVR''s margin).';
-
-
-
-COMMENT ON COLUMN "public"."crops"."land_rent_only" IS 'We rent the land out for this crop and are paid rent, not for the crop: no yield or price is expected (carrot seed, spinach seed).';
-
-
-
-COMMENT ON COLUMN "public"."crops"."irrigation_need_basis" IS 'alberta = from the Alberta Agriculture sheets (src/lib/crop-water-need.ts); farm = the farm''s own estimate.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."fixed_costs_apply" IS 'False: the farm''s fixed $/ac is not charged on this crop and its acres are left out of the spread.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."herbicide_trait" IS 'Canola only: the herbicide the crop is bred to survive (liberty = LibertyLink/glufosinate, roundup = Roundup Ready/glyphosate). Null = not set; the app asks for it rather than guessing.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."average_of" IS 'A planning stand-in (Unknown Canola): its price, input budget, normal yield and sister value are kept as the average of these crops'' by fn_crop_average_sync. Edit the member crops, not the stand-in.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."afsc_insured" IS 'False when the crop is insured some other way (e.g. a seed contract''s own cover), so it is left off the AFSC reports.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."yield_low_per_acre" IS 'Low end of the normal yield range, per acre in yield_unit. Used with yield_high_per_acre; the normal yield stays the expected figure.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."yield_high_per_acre" IS 'High end of the normal yield range, per acre in yield_unit.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."days_to_maturity" IS 'Typical days from seeding to harvest-ready, before the season''s weather adjusts it.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."goal_yield_per_acre" IS 'Default goal yield per acre for fields with no goal of their own (crop_plans.goal_yield). Separate from default_yield_per_acre, the normal yield an estimate falls back to.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."on_combines" IS 'Harvested with the combines: puts a field with this crop (plan or crop area) on the combine displays for the year.';
-
-
-
-COMMENT ON COLUMN "public"."crops"."weighed" IS 'Its loads are weighed at the scale (the weigh-in offers it and its fields). Off for potatoes, green feed and hay.';
-
-
-
 CREATE OR REPLACE VIEW "public"."bin_contents_current" WITH ("security_invoker"='true') AS
  SELECT "bc"."id",
     "bc"."bin_id",
@@ -7730,93 +8645,6 @@ CREATE OR REPLACE VIEW "public"."bin_grain_onhand" AS
 ALTER VIEW "public"."bin_grain_onhand" OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "public"."bin_loads" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "bin_id" "uuid",
-    "crop_id" "uuid" NOT NULL,
-    "variety" "text",
-    "crop_year" integer NOT NULL,
-    "field_id" "uuid",
-    "loaded_on" "date" NOT NULL,
-    "gross_kg" numeric,
-    "tare_kg" numeric,
-    "net_kg" numeric GENERATED ALWAYS AS (("gross_kg" - "tare_kg")) STORED,
-    "lb_per_bu" numeric NOT NULL,
-    "bushels" numeric GENERATED ALWAYS AS (((("gross_kg" - "tare_kg") * 2.20462262) / "lb_per_bu")) STORED,
-    "truck" "text",
-    "driver" "text",
-    "note" "text",
-    "created_by" "uuid",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "trailer" "text",
-    "driver_id" "uuid",
-    "last_from_field" boolean DEFAULT false NOT NULL,
-    "delivery_site_id" "uuid",
-    "contract_id" "uuid",
-    "entry_kind" "text" DEFAULT 'weighed'::"text" NOT NULL,
-    "load_count" integer,
-    "moisture_pct" numeric,
-    "protein_pct" numeric,
-    "estimated" boolean DEFAULT false NOT NULL,
-    "full_photo" "text",
-    "empty_photo" "text",
-    "overflow_bin_id" "uuid",
-    "first_bin_bu" numeric,
-    "full_at" timestamp with time zone,
-    "empty_at" timestamp with time zone,
-    "weighed_in_by" "uuid",
-    "weighed_out_by" "uuid",
-    CONSTRAINT "bin_loads_bin_or_site" CHECK ((("bin_id" IS NULL) OR ("delivery_site_id" IS NULL))),
-    CONSTRAINT "bin_loads_bin_when_weighed" CHECK ((("bin_id" IS NOT NULL) OR ("delivery_site_id" IS NOT NULL) OR ("gross_kg" IS NULL) OR ("tare_kg" IS NULL))),
-    CONSTRAINT "bin_loads_check" CHECK (("gross_kg" > "tare_kg")),
-    CONSTRAINT "bin_loads_contract_plant" CHECK ((("contract_id" IS NULL) OR ("delivery_site_id" IS NOT NULL))),
-    CONSTRAINT "bin_loads_entry_kind_check" CHECK (("entry_kind" = ANY (ARRAY['weighed'::"text", 'net'::"text", 'bin_total'::"text"]))),
-    CONSTRAINT "bin_loads_first_bin_bu_check" CHECK (("first_bin_bu" >= (0)::numeric)),
-    CONSTRAINT "bin_loads_gross_kg_check" CHECK (("gross_kg" > (0)::numeric)),
-    CONSTRAINT "bin_loads_lb_per_bu_check" CHECK (("lb_per_bu" > (0)::numeric)),
-    CONSTRAINT "bin_loads_load_count_check" CHECK ((("load_count" IS NULL) OR ("load_count" > 0))),
-    CONSTRAINT "bin_loads_one_weight" CHECK ((("gross_kg" IS NOT NULL) OR ("tare_kg" IS NOT NULL))),
-    CONSTRAINT "bin_loads_overflow_other_bin" CHECK ((("overflow_bin_id" IS NULL) OR (("bin_id" IS NOT NULL) AND ("overflow_bin_id" <> "bin_id") AND ("first_bin_bu" IS NOT NULL)))),
-    CONSTRAINT "bin_loads_tare_kg_check" CHECK (("tare_kg" >= (0)::numeric)),
-    CONSTRAINT "load_moisture_sane" CHECK ((("moisture_pct" IS NULL) OR (("moisture_pct" >= (0)::numeric) AND ("moisture_pct" <= (60)::numeric))))
-);
-
-
-ALTER TABLE "public"."bin_loads" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."bin_loads"."full_photo" IS 'scale-photos path: the scale with the truck full, or the one number of a net or bin total.';
-
-
-
-COMMENT ON COLUMN "public"."bin_loads"."empty_photo" IS 'scale-photos path: the scale with the truck empty.';
-
-
-
-COMMENT ON COLUMN "public"."bin_loads"."overflow_bin_id" IS 'The bin the rest of the load went into once bin_id was full (Sam, 20 Oct 2026).';
-
-
-
-COMMENT ON COLUMN "public"."bin_loads"."first_bin_bu" IS 'Bushels that went into bin_id before it was full: its estimated room when the load was saved. The rest is in overflow_bin_id.';
-
-
-
-COMMENT ON COLUMN "public"."bin_loads"."full_at" IS 'When it was weighed in: the full weight (or a net''s one number) was entered.';
-
-
-
-COMMENT ON COLUMN "public"."bin_loads"."empty_at" IS 'When it was weighed out: the empty weight was entered. Null for a net or a bin total.';
-
-
-
-COMMENT ON COLUMN "public"."bin_loads"."weighed_in_by" IS 'Who put the full weight (or a net''s one number) in.';
-
-
-
-COMMENT ON COLUMN "public"."bin_loads"."weighed_out_by" IS 'Who put the empty weight in. Null for a net or a bin total.';
-
-
-
 CREATE TABLE IF NOT EXISTS "public"."bin_monitor_readings" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "bin_id" "uuid" NOT NULL,
@@ -7911,7 +8739,8 @@ CREATE TABLE IF NOT EXISTS "public"."calendar_events" (
     "notes_md" "text",
     "source" "text" DEFAULT 'manual'::"text" NOT NULL,
     "created_by" "uuid" DEFAULT "auth"."uid"(),
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "farm_id" "uuid"
 );
 
 
@@ -7940,6 +8769,28 @@ CREATE TABLE IF NOT EXISTS "public"."cameras" (
 
 
 ALTER TABLE "public"."cameras" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."canola_bloom" (
+    "field_id" "uuid" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "status" "text" DEFAULT 'waiting'::"text" NOT NULL,
+    "seeded_on" "date",
+    "gdd" numeric,
+    "last_clear_on" "date",
+    "yellow_now" numeric,
+    "started_on" "date",
+    "peak_fraction" numeric,
+    "peak_on" "date",
+    "ended_on" "date",
+    "notified_start_at" timestamp with time zone,
+    "notified_end_at" timestamp with time zone,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "canola_bloom_status_check" CHECK (("status" = ANY (ARRAY['waiting'::"text", 'watching'::"text", 'flowering'::"text", 'over'::"text"])))
+);
+
+
+ALTER TABLE "public"."canola_bloom" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."canola_isolation_reports" (
@@ -9021,52 +9872,6 @@ COMMENT ON TABLE "public"."crop_plan_options" IS 'Other crops that could go on a
 
 
 
-CREATE TABLE IF NOT EXISTS "public"."crop_plans" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "crop_year" integer NOT NULL,
-    "field_id" "uuid" NOT NULL,
-    "crop_id" "uuid" NOT NULL,
-    "variety" "text",
-    "planned_acres" numeric(10,2),
-    "yield_per_acre_override" numeric,
-    "notes" "text",
-    "yield_basis" "text",
-    "harvest_method" "text",
-    "herbicide_trait" "text",
-    "yield_low" numeric,
-    "yield_high" numeric,
-    "goal_yield" numeric,
-    CONSTRAINT "crop_plans_goal_yield_positive" CHECK ((("goal_yield" IS NULL) OR ("goal_yield" > (0)::numeric))),
-    CONSTRAINT "crop_plans_harvest_method_check" CHECK ((("harvest_method" IS NULL) OR ("harvest_method" = ANY (ARRAY['swathed'::"text", 'straight'::"text"])))),
-    CONSTRAINT "crop_plans_herbicide_trait_check" CHECK ((("herbicide_trait" IS NULL) OR (("length"("btrim"("herbicide_trait")) >= 1) AND ("length"("btrim"("herbicide_trait")) <= 80)))),
-    CONSTRAINT "crop_plans_yield_basis_check" CHECK (("yield_basis" = ANY (ARRAY['clean'::"text", 'pre_clean'::"text"]))),
-    CONSTRAINT "crop_plans_yield_range_order" CHECK ((("yield_low" IS NULL) OR ("yield_high" IS NULL) OR ("yield_low" <= "yield_high")))
-);
-
-
-ALTER TABLE "public"."crop_plans" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."crop_plans"."harvest_method" IS 'swathed | straight. Null until someone sets it; the dry-down prediction then assumes straight-cut.';
-
-
-
-COMMENT ON COLUMN "public"."crop_plans"."herbicide_trait" IS 'A planned canola''s herbicide trait (liberty | roundup) where the crop contracts both; null = not chosen or the crop''s own.';
-
-
-
-COMMENT ON COLUMN "public"."crop_plans"."yield_low" IS 'Low end of this field''s estimated yield range, per acre. With no yield_per_acre_override the midpoint is the expected yield.';
-
-
-
-COMMENT ON COLUMN "public"."crop_plans"."yield_high" IS 'High end of this field''s estimated yield range, per acre.';
-
-
-
-COMMENT ON COLUMN "public"."crop_plans"."goal_yield" IS 'Goal yield for this field and crop year, per acre in the crop''s yield_unit. Typed; never written by the scale. Falls back to crops.goal_yield_per_acre.';
-
-
-
 CREATE TABLE IF NOT EXISTS "public"."crop_planter_profiles" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "crop_id" "uuid" NOT NULL,
@@ -9353,6 +10158,23 @@ CREATE TABLE IF NOT EXISTS "public"."crop_prices" (
 
 
 ALTER TABLE "public"."crop_prices" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."crop_share_fields" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "created_by" "uuid" DEFAULT "auth"."uid"(),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."crop_share_fields" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."crop_share_fields" IS 'Fields a crop-share partner (users.role = partner) grows on, per crop year. He reads every year of an assigned field and writes only in the assigned years.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."crop_succession_rules" (
@@ -10542,23 +11364,6 @@ CREATE TABLE IF NOT EXISTS "public"."fertility_rx_zones" (
 ALTER TABLE "public"."fertility_rx_zones" OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "public"."field_boundaries" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "field_id" "uuid" NOT NULL,
-    "geom" "public"."geometry"(MultiPolygon,4326) NOT NULL,
-    "valid_from" "date" DEFAULT CURRENT_DATE NOT NULL,
-    "valid_to" "date",
-    "source" "public"."boundary_source" NOT NULL,
-    "acres" numeric(10,2) GENERATED ALWAYS AS ("round"((("public"."st_area"(("geom")::"public"."geography") / (4046.8564224)::double precision))::numeric, 2)) STORED,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "boundary_analysis" "public"."geometry"(MultiPolygon,4326),
-    CONSTRAINT "field_boundaries_check" CHECK ((("valid_to" IS NULL) OR ("valid_to" > "valid_from")))
-);
-
-
-ALTER TABLE "public"."field_boundaries" OWNER TO "postgres";
-
-
 CREATE OR REPLACE VIEW "public"."field_boundaries_geojson" WITH ("security_invoker"='true') AS
  SELECT "id",
     "field_id",
@@ -10850,6 +11655,8 @@ CREATE TABLE IF NOT EXISTS "public"."sat_observations" (
     "resolution_m" numeric DEFAULT 10 NOT NULL,
     "ndvi_harmonized" numeric,
     "harmonization_source" "text",
+    "yellow_fraction" numeric,
+    "blue_mean" numeric,
     CONSTRAINT "sat_observations_quality_check" CHECK (("quality" = ANY (ARRAY['full'::"text", 'partial'::"text", 'rejected'::"text"]))),
     CONSTRAINT "sat_observations_subject_type_check" CHECK (("subject_type" = ANY (ARRAY['field'::"text", 'pasture'::"text", 'pasture_zone'::"text", 'n_strip'::"text"])))
 );
@@ -11043,93 +11850,6 @@ COMMENT ON COLUMN "public"."field_pivots"."operated_by" IS 'Somebody else runs t
 
 
 
-CREATE TABLE IF NOT EXISTS "public"."fields" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "farm_id" "uuid" NOT NULL,
-    "name" "text" NOT NULL,
-    "legal_land_description" "text",
-    "fah_field_id" integer,
-    "active" boolean DEFAULT true NOT NULL,
-    "notes_md" "text",
-    "pivot_start_instructions_md" "text",
-    "soil_notes_md" "text",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "jd_field_id" "text",
-    "centroid" "public"."geography"(Point,4326),
-    "assigned_station_id" "uuid",
-    "assigned_station_distance_m" double precision,
-    "assignment_mode" "text" DEFAULT 'auto'::"text" NOT NULL,
-    "soil_texture" "text",
-    "soil_fc" double precision,
-    "soil_wp" double precision,
-    "satellite_enabled" boolean DEFAULT true NOT NULL,
-    "satellite_kc_enabled" boolean DEFAULT false NOT NULL,
-    "soil_source" "text",
-    "rented_out_acres" numeric(10,2),
-    "rented_out_to" "text",
-    "tenure_notes" "text",
-    "boundary_locked" boolean DEFAULT false NOT NULL,
-    "rented_out_crop" "text",
-    "rain_gauge_id" "uuid",
-    "grazed_after_harvest" boolean DEFAULT false NOT NULL,
-    "open_to_pasture" boolean DEFAULT false NOT NULL,
-    "grazing_note" "text",
-    "route_via" "text" DEFAULT 'auto'::"text" NOT NULL,
-    "route_through" "jsonb",
-    "ours_by_default" boolean DEFAULT true NOT NULL,
-    CONSTRAINT "fields_rented_out_acres_check" CHECK ((("rented_out_acres" IS NULL) OR ("rented_out_acres" >= (0)::numeric))),
-    CONSTRAINT "fields_route_via_check" CHECK (("route_via" = ANY (ARRAY['auto'::"text", 'trails'::"text"]))),
-    CONSTRAINT "fields_soil_source_check" CHECK ((("soil_source" IS NULL) OR ("soil_source" = ANY (ARRAY['survey'::"text", 'manual'::"text"]))))
-);
-
-
-ALTER TABLE "public"."fields" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."fields"."satellite_kc_enabled" IS 'Whether the water balance may use satellite-measured Kc instead of the crop table. Off until satellite and table Kc have been compared for a full season on this field (spec §12 phase 4).';
-
-
-
-COMMENT ON COLUMN "public"."fields"."soil_source" IS 'Origin of soil_fc/soil_wp: survey = AGRASID lookup, manual = set by a person. Never overwrite a manual row from an import.';
-
-
-
-COMMENT ON COLUMN "public"."fields"."rented_out_acres" IS 'Acres of this field farmed by someone else. The drawn boundary covers OUR part only, so the whole field is mapped acres plus this.';
-
-
-
-COMMENT ON COLUMN "public"."fields"."rented_out_to" IS 'Who farms the rented-out part.';
-
-
-
-COMMENT ON COLUMN "public"."fields"."boundary_locked" IS 'Keep the current boundary; the Deere sync will not replace it.';
-
-
-
-COMMENT ON COLUMN "public"."fields"."grazed_after_harvest" IS 'Cattle may graze whatever crop this field had once it is harvested; a spray restricting grazing or feeding here is alerted.';
-
-
-
-COMMENT ON COLUMN "public"."fields"."open_to_pasture" IS 'Not fenced off from the pasture around it: cattle in that pasture are on this field.';
-
-
-
-COMMENT ON COLUMN "public"."fields"."grazing_note" IS 'Anything about grazing this field (e.g. a grazing trial planned).';
-
-
-
-COMMENT ON COLUMN "public"."fields"."route_via" IS 'auto: the road where it reaches the field, else a farm trail; trails: the farm''s trails wherever they reach the field, even when the road is shorter.';
-
-
-
-COMMENT ON COLUMN "public"."fields"."route_through" IS 'Points the route from the yard must pass through, in order: [{lat, lng}]. Null for none.';
-
-
-
-COMMENT ON COLUMN "public"."fields"."ours_by_default" IS 'Is this field normally in our plan? False for a neighbour''s field we farm a year at a time: then only the years with a field_year_tenure row marked ours count.';
-
-
-
 CREATE OR REPLACE VIEW "public"."field_points" WITH ("security_invoker"='true') AS
  SELECT "id",
     "name",
@@ -11233,123 +11953,6 @@ CREATE TABLE IF NOT EXISTS "public"."field_season_outlook" (
 
 
 ALTER TABLE "public"."field_season_outlook" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "public"."field_work_records" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "field_id" "uuid" NOT NULL,
-    "crop_year" integer NOT NULL,
-    "zone_id" "uuid",
-    "crop_id" "uuid",
-    "work_type" "text" NOT NULL,
-    "work_type_other" "text",
-    "counts_as" "text",
-    "started_at" timestamp with time zone,
-    "finished_at" timestamp with time zone,
-    "hours" numeric,
-    "acres" numeric,
-    "machine_ids" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
-    "machines_at_once" integer,
-    "operator_ids" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
-    "other_people" "text",
-    "amount" numeric,
-    "amount_unit" "text",
-    "notes" "text",
-    "photo_paths" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
-    "weather" "jsonb",
-    "weather_at" timestamp with time zone,
-    "weather_source" "text",
-    "weather_tried_at" timestamp with time zone,
-    "not_duplicate_of" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
-    "entered_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "created_by" "uuid" DEFAULT "auth"."uid"(),
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "bale_type" "text",
-    "hay_cut" smallint,
-    "feed_type_id" "uuid",
-    "feed_ranch_id" "uuid",
-    "feed_storage" "text",
-    "field_finished" boolean DEFAULT false NOT NULL,
-    "from_bin_load" "uuid",
-    CONSTRAINT "field_work_records_acres_check" CHECK ((("acres" IS NULL) OR ("acres" >= (0)::numeric))),
-    CONSTRAINT "field_work_records_bale_type_check" CHECK ((("bale_type" IS NULL) OR ("bale_type" = ANY (ARRAY['round'::"text", 'big_square'::"text"])))),
-    CONSTRAINT "field_work_records_counts_as_check" CHECK (("counts_as" = ANY (ARRAY['seeding'::"text", 'harvest'::"text", 'tillage'::"text", 'application'::"text"]))),
-    CONSTRAINT "field_work_records_hay_cut_check" CHECK ((("hay_cut" IS NULL) OR (("hay_cut" >= 1) AND ("hay_cut" <= 5)))),
-    CONSTRAINT "field_work_records_hours_check" CHECK ((("hours" IS NULL) OR ("hours" >= (0)::numeric))),
-    CONSTRAINT "field_work_records_machines_at_once_check" CHECK ((("machines_at_once" IS NULL) OR ("machines_at_once" >= 1))),
-    CONSTRAINT "field_work_records_order" CHECK ((("started_at" IS NULL) OR ("finished_at" IS NULL) OR ("finished_at" >= "started_at"))),
-    CONSTRAINT "field_work_records_work_type_check" CHECK (("length"(TRIM(BOTH FROM "work_type")) > 0))
-);
-
-
-ALTER TABLE "public"."field_work_records" OWNER TO "postgres";
-
-
-COMMENT ON TABLE "public"."field_work_records" IS 'Field work entered by hand: jobs Operations Center never recorded. Weather is a snapshot taken when saved.';
-
-
-
-COMMENT ON COLUMN "public"."field_work_records"."field_finished" IS 'This harvest record says the field (or its crop area, zone_id) is finished. The first source of the harvest date.';
-
-
-
-COMMENT ON COLUMN "public"."field_work_records"."from_bin_load" IS 'The weigh-in whose "last load off this field" wrote this record. Cleared when that mark is.';
-
-
-
-CREATE OR REPLACE VIEW "public"."field_season_progress" WITH ("security_invoker"='true') AS
- SELECT "f"."id" AS "field_id",
-    "f"."name" AS "field_name",
-    "p"."crop_year",
-    "b"."acres",
-    "c"."name" AS "crop_name",
-    COALESCE("c"."counts_for_seeding", true) AS "counts_for_seeding",
-    COALESCE("c"."counts_for_harvest", true) AS "counts_for_harvest",
-    "c"."progress_note",
-    ((EXISTS ( SELECT 1
-           FROM "public"."jd_field_operations" "o"
-          WHERE (("o"."field_id" = "f"."id") AND ("o"."crop_season" = "p"."crop_year") AND ("o"."operation_type" = 'seeding'::"text")))) OR (EXISTS ( SELECT 1
-           FROM "public"."field_work_records" "w"
-          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "p"."crop_year") AND ("w"."counts_as" = 'seeding'::"text"))))) AS "has_seeding",
-    ((EXISTS ( SELECT 1
-           FROM "public"."jd_field_operations" "o"
-          WHERE (("o"."field_id" = "f"."id") AND ("o"."crop_season" = "p"."crop_year") AND ("o"."operation_type" = 'harvest'::"text")))) OR (EXISTS ( SELECT 1
-           FROM "public"."field_work_records" "w"
-          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "p"."crop_year") AND ("w"."counts_as" = 'harvest'::"text"))))) AS "has_harvest",
-    ((EXISTS ( SELECT 1
-           FROM "public"."jd_field_operations" "o"
-          WHERE (("o"."field_id" = "f"."id") AND ("o"."crop_season" = "p"."crop_year")))) OR (EXISTS ( SELECT 1
-           FROM "public"."field_work_records" "w"
-          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "p"."crop_year"))))) AS "has_any_operation",
-    ((EXISTS ( SELECT 1
-           FROM "public"."jd_field_operations" "o"
-          WHERE (("o"."field_id" = "f"."id") AND ("o"."crop_season" = "p"."crop_year") AND ("o"."operation_type" = 'harvest'::"text")))) OR (EXISTS ( SELECT 1
-           FROM "public"."field_work_records" "w"
-          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "p"."crop_year") AND ("w"."counts_as" = 'harvest'::"text")))) OR (EXISTS ( SELECT 1
-           FROM "public"."bin_loads" "l"
-          WHERE (("l"."field_id" = "f"."id") AND ("l"."crop_year" = "p"."crop_year"))))) AS "harvest_started",
-    (EXISTS ( SELECT 1
-           FROM "public"."field_work_records" "w"
-          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "p"."crop_year") AND ("w"."counts_as" = 'harvest'::"text") AND "w"."field_finished"))) AS "harvest_finished",
-    ( SELECT "max"("l"."loaded_on") AS "max"
-           FROM "public"."bin_loads" "l"
-          WHERE (("l"."field_id" = "f"."id") AND ("l"."crop_year" = "p"."crop_year"))) AS "last_load_on",
-    ( SELECT "count"(*) AS "count"
-           FROM "public"."bin_loads" "l"
-          WHERE (("l"."field_id" = "f"."id") AND ("l"."crop_year" = "p"."crop_year"))) AS "loads"
-   FROM ((("public"."fields" "f"
-     JOIN "public"."field_boundaries" "b" ON ((("b"."field_id" = "f"."id") AND ("b"."valid_to" IS NULL))))
-     JOIN "public"."crop_plans" "p" ON (("p"."field_id" = "f"."id")))
-     LEFT JOIN "public"."crops" "c" ON (("c"."id" = "p"."crop_id")))
-  WHERE "f"."active";
-
-
-ALTER VIEW "public"."field_season_progress" OWNER TO "postgres";
-
-
-COMMENT ON VIEW "public"."field_season_progress" IS 'Per field and crop year: the acres, whether seeding and harvest are started and finished, and what the scale knows. harvest_finished is a person saying the field is off; harvest_started is only that somebody is at it.';
-
 
 
 CREATE TABLE IF NOT EXISTS "public"."water_balance_daily" (
@@ -12691,6 +13294,7 @@ CREATE TABLE IF NOT EXISTS "public"."jd_equipment" (
     "warranty_note" "text",
     "service_assignees" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
     "monitor" "jsonb",
+    "farm_id" "uuid",
     CONSTRAINT "jd_equipment_engine_hours_check" CHECK (("engine_hours" >= (0)::numeric)),
     CONSTRAINT "jd_equipment_monitor_object" CHECK ((("monitor" IS NULL) OR ("jsonb_typeof"("monitor") = 'object'::"text"))),
     CONSTRAINT "jd_equipment_receiver_height_in_check" CHECK ((("receiver_height_in" IS NULL) OR (("receiver_height_in" > (0)::numeric) AND ("receiver_height_in" < (400)::numeric)))),
@@ -13356,6 +13960,369 @@ CREATE TABLE IF NOT EXISTS "public"."operating_settings" (
 
 
 ALTER TABLE "public"."operating_settings" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."partner_access" (
+    "farm_id" "uuid" NOT NULL,
+    "preset" "text" DEFAULT 'crop-share'::"text" NOT NULL,
+    "views" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "extras" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."partner_access" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."partner_crops" (
+    "farm_id" "uuid" NOT NULL,
+    "crop_id" "uuid" NOT NULL,
+    "can_edit" boolean DEFAULT true NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."partner_crops" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."partner_crops_v" AS
+ SELECT "id",
+    "name",
+    "default_yield_per_acre",
+    "yield_unit",
+    "active",
+    "color",
+    "bin_policy",
+    "test_weight_lb_per_bu",
+    "cheatsheet_md",
+    "crop_coefficient_id",
+    "min_return_years",
+    "rotation_notes",
+    "category",
+    "notes_planting",
+    "notes_growing",
+    "notes_harvest",
+    "notes_storage",
+    "needs_bins",
+    "counts_for_seeding",
+    "counts_for_harvest",
+    "progress_note",
+    "moisture_chart_key",
+    "moisture_dry_max",
+    "moisture_tough_max",
+    "moisture_damp_max",
+    "moisture_moist_max",
+    "moisture_note",
+    "moisture_dry_min",
+    "moisture_tough_advice",
+        CASE
+            WHEN ("farm_id" = "public"."partner_farm_id"()) THEN "margin_per_acre"
+            ELSE NULL::numeric
+        END AS "margin_per_acre",
+        CASE
+            WHEN ("farm_id" = "public"."partner_farm_id"()) THEN "margin_source"
+            ELSE NULL::"text"
+        END AS "margin_source",
+    "renter_only",
+    "irrigation_need_in",
+    "max_in_a_row",
+    "stand_min_years",
+    "stand_max_years",
+    "own_use",
+    "feed_dm_pct",
+        CASE
+            WHEN ("farm_id" = "public"."partner_farm_id"()) THEN "sister_value_per_acre"
+            ELSE NULL::numeric
+        END AS "sister_value_per_acre",
+        CASE
+            WHEN ("farm_id" = "public"."partner_farm_id"()) THEN "sister_value_note"
+            ELSE NULL::"text"
+        END AS "sister_value_note",
+    "land_rent_only",
+    "irrigation_need_basis",
+    "fixed_costs_apply",
+    "herbicide_trait",
+    "average_of",
+    "afsc_insured",
+    "yield_low_per_acre",
+    "yield_high_per_acre",
+    "days_to_maturity",
+    "goal_yield_per_acre",
+    "on_combines",
+    "weighed",
+    "farm_id"
+   FROM "public"."crops" "c"
+  WHERE (( SELECT "public"."is_partner"() AS "is_partner") AND ( SELECT "public"."mfa_ok"() AS "mfa_ok") AND (("farm_id" IS NULL) OR ("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))));
+
+
+ALTER VIEW "public"."partner_crops_v" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."partner_event_tracking" (
+    "farm_id" "uuid" NOT NULL,
+    "event_id" "uuid" NOT NULL,
+    "status" "text" DEFAULT 'watching'::"text" NOT NULL,
+    "notes_md" "text",
+    "travel_notes" "text",
+    "assigned_to" "uuid",
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."partner_event_tracking" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."partner_events_v" AS
+ SELECT "e"."id",
+    "e"."name",
+    "e"."organiser",
+    "e"."url",
+    "e"."starts_on",
+    "e"."ends_on",
+    "e"."registration_deadline",
+    "e"."early_bird_deadline",
+    "e"."venue",
+    "e"."city",
+    "e"."region",
+    "e"."country",
+    "e"."lat",
+    "e"."lon",
+    "e"."cost",
+    "e"."early_bird_cost",
+    "e"."currency",
+    "e"."cost_notes",
+    "e"."categories",
+    "e"."why_go",
+    "e"."relevance",
+    COALESCE("t"."status", 'watching'::"text") AS "status",
+    "t"."assigned_to",
+    "t"."travel_notes",
+    "t"."notes_md",
+    "e"."source",
+    "e"."external_key",
+    "e"."created_at",
+    GREATEST("e"."updated_at", "t"."updated_at") AS "updated_at",
+    "e"."series_key",
+    "e"."recurrence"
+   FROM ("public"."events" "e"
+     LEFT JOIN "public"."partner_event_tracking" "t" ON ((("t"."event_id" = "e"."id") AND ("t"."farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id")))))
+  WHERE (( SELECT "public"."is_partner"() AS "is_partner") AND ( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+ALTER VIEW "public"."partner_events_v" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."partner_farm_setup" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "farm_id" "uuid" NOT NULL,
+    "farm_name" "text",
+    "farm_description" "text",
+    "province" "text",
+    "time_zone" "text",
+    "units" "text",
+    "map_center_lat" double precision,
+    "map_center_lng" double precision,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_by" "uuid" DEFAULT "auth"."uid"()
+);
+
+
+ALTER TABLE "public"."partner_farm_setup" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."partner_fields" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "farm_id" "uuid" NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "created_by" "uuid" DEFAULT "auth"."uid"(),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."partner_fields" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."partner_fields_v" AS
+ SELECT "id",
+    "farm_id",
+    "name",
+    "legal_land_description",
+    "fah_field_id",
+    "active",
+    "notes_md",
+    "pivot_start_instructions_md",
+    "soil_notes_md",
+    "created_at",
+    "jd_field_id",
+    "centroid",
+    "assigned_station_id",
+    "assigned_station_distance_m",
+    "assignment_mode",
+    "soil_texture",
+    "soil_fc",
+    "soil_wp",
+    "satellite_enabled",
+    "satellite_kc_enabled",
+    "soil_source",
+        CASE
+            WHEN ("farm_id" = "public"."partner_farm_id"()) THEN "rented_out_acres"
+            ELSE NULL::numeric
+        END AS "rented_out_acres",
+        CASE
+            WHEN ("farm_id" = "public"."partner_farm_id"()) THEN "rented_out_to"
+            ELSE NULL::"text"
+        END AS "rented_out_to",
+        CASE
+            WHEN ("farm_id" = "public"."partner_farm_id"()) THEN "tenure_notes"
+            ELSE NULL::"text"
+        END AS "tenure_notes",
+    "boundary_locked",
+        CASE
+            WHEN ("farm_id" = "public"."partner_farm_id"()) THEN "rented_out_crop"
+            ELSE NULL::"text"
+        END AS "rented_out_crop",
+    "rain_gauge_id",
+    "grazed_after_harvest",
+    "open_to_pasture",
+        CASE
+            WHEN ("farm_id" = "public"."partner_farm_id"()) THEN "grazing_note"
+            ELSE NULL::"text"
+        END AS "grazing_note",
+    "route_via",
+    "route_through"
+   FROM "public"."fields" "f"
+  WHERE (( SELECT "public"."is_partner"() AS "is_partner") AND ( SELECT "public"."mfa_ok"() AS "mfa_ok") AND ("id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+ALTER VIEW "public"."partner_fields_v" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."partner_grant_tracking" (
+    "farm_id" "uuid" NOT NULL,
+    "grant_id" "uuid" NOT NULL,
+    "status" "public"."grant_status" DEFAULT 'new'::"public"."grant_status" NOT NULL,
+    "notes_md" "text",
+    "assigned_to" "uuid",
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."partner_grant_tracking" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."partner_grants_v" AS
+ SELECT "id",
+    "title",
+    "funder",
+    "url",
+    NULL::"text" AS "status",
+    "amount_min",
+    "amount_max",
+    "eligibility_summary",
+    "summary",
+    NULL::"text" AS "notes_md",
+    "opens_on",
+    "closes_on",
+    "region",
+    "categories",
+    NULL::"uuid" AS "assigned_to",
+    "source",
+    "external_key",
+    "created_at",
+    "updated_at"
+   FROM "public"."grants" "g"
+  WHERE (( SELECT "public"."is_partner"() AS "is_partner") AND ( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+ALTER VIEW "public"."partner_grants_v" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."partner_rotation_fields_v" AS
+ SELECT "f"."id",
+    "f"."farm_id",
+    "f"."name",
+    "f"."legal_land_description",
+    "f"."fah_field_id",
+    "f"."active",
+        CASE
+            WHEN "m"."mine" THEN "f"."notes_md"
+            ELSE NULL::"text"
+        END AS "notes_md",
+        CASE
+            WHEN "m"."mine" THEN "f"."pivot_start_instructions_md"
+            ELSE NULL::"text"
+        END AS "pivot_start_instructions_md",
+        CASE
+            WHEN "m"."mine" THEN "f"."soil_notes_md"
+            ELSE NULL::"text"
+        END AS "soil_notes_md",
+    "f"."created_at",
+    "f"."jd_field_id",
+    "f"."centroid",
+    "f"."assigned_station_id",
+    "f"."assigned_station_distance_m",
+    "f"."assignment_mode",
+    "f"."soil_texture",
+    "f"."soil_fc",
+    "f"."soil_wp",
+    "f"."satellite_enabled",
+    "f"."satellite_kc_enabled",
+    "f"."soil_source",
+        CASE
+            WHEN ("f"."farm_id" = "public"."partner_farm_id"()) THEN "f"."rented_out_acres"
+            ELSE NULL::numeric
+        END AS "rented_out_acres",
+        CASE
+            WHEN ("f"."farm_id" = "public"."partner_farm_id"()) THEN "f"."rented_out_to"
+            ELSE NULL::"text"
+        END AS "rented_out_to",
+        CASE
+            WHEN ("f"."farm_id" = "public"."partner_farm_id"()) THEN "f"."tenure_notes"
+            ELSE NULL::"text"
+        END AS "tenure_notes",
+    "f"."boundary_locked",
+        CASE
+            WHEN ("f"."farm_id" = "public"."partner_farm_id"()) THEN "f"."rented_out_crop"
+            ELSE NULL::"text"
+        END AS "rented_out_crop",
+    "f"."rain_gauge_id",
+    "f"."grazed_after_harvest",
+    "f"."open_to_pasture",
+        CASE
+            WHEN ("f"."farm_id" = "public"."partner_farm_id"()) THEN "f"."grazing_note"
+            ELSE NULL::"text"
+        END AS "grazing_note",
+    "f"."route_via",
+    "f"."route_through"
+   FROM ("public"."fields" "f"
+     CROSS JOIN LATERAL ( SELECT ("f"."id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")) AS "mine") "m")
+  WHERE (( SELECT "public"."is_partner"() AS "is_partner") AND ( SELECT "public"."mfa_ok"() AS "mfa_ok") AND ("f"."id" IN ( SELECT "public"."partner_rotation_field_ids"() AS "partner_rotation_field_ids")));
+
+
+ALTER VIEW "public"."partner_rotation_fields_v" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."partner_season_progress_v" AS
+ SELECT "field_id",
+    "field_name",
+    "crop_year",
+    "acres",
+    "crop_name",
+    "counts_for_seeding",
+    "counts_for_harvest",
+    "progress_note",
+    "has_seeding",
+    "has_harvest",
+    "has_any_operation",
+    "harvest_started",
+    "harvest_finished",
+    "last_load_on",
+    "loads"
+   FROM "public"."partner_season_progress"() "partner_season_progress"("field_id", "field_name", "crop_year", "acres", "crop_name", "counts_for_seeding", "counts_for_harvest", "progress_note", "has_seeding", "has_harvest", "has_any_operation", "harvest_started", "harvest_finished", "last_load_on", "loads");
+
+
+ALTER VIEW "public"."partner_season_progress_v" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."pasture_biomass_calibration" (
@@ -14887,6 +15854,253 @@ CREATE TABLE IF NOT EXISTS "public"."report_favourites" (
 ALTER TABLE "public"."report_favourites" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."research_folders" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "slug" "text" NOT NULL,
+    "name" "text" NOT NULL,
+    "kind" "text" NOT NULL,
+    "parent_id" "uuid",
+    "crop_names" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "registration_numbers" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "actives" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "aliases" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "sort" integer DEFAULT 100 NOT NULL,
+    "note" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "research_folders_kind_check" CHECK (("kind" = ANY (ARRAY['section'::"text", 'crop'::"text", 'variety'::"text", 'chemical'::"text", 'topic'::"text"])))
+);
+
+
+ALTER TABLE "public"."research_folders" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."research_folders" IS 'Subjects in the research library: a crop, a variety, an active ingredient or an irrigation topic. Seeded here, added to by hand.';
+
+
+
+COMMENT ON COLUMN "public"."research_folders"."crop_names" IS 'crops.name values this folder covers (Corn holds Grain Corn, Silage Corn, High-Moisture Corn).';
+
+
+
+COMMENT ON COLUMN "public"."research_folders"."aliases" IS 'Other names to search for: trade names, older crop names, synonyms.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."research_papers" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "folder_id" "uuid" NOT NULL,
+    "title" "text" NOT NULL,
+    "authors" "text",
+    "year" integer,
+    "source" "text",
+    "doi" "text",
+    "source_url" "text",
+    "pdf_url" "text",
+    "storage_path" "text",
+    "file_bytes" bigint,
+    "pages" integer,
+    "sha256" "text",
+    "region" "text" DEFAULT 'other'::"text" NOT NULL,
+    "relevance" smallint DEFAULT 3 NOT NULL,
+    "licence" "text",
+    "abstract" "text",
+    "tags" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "status" "text" DEFAULT 'stored'::"text" NOT NULL,
+    "fetch_note" "text",
+    "added_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "fts" "tsvector" GENERATED ALWAYS AS ("to_tsvector"('"english"'::"regconfig", ((((((COALESCE("title", ''::"text") || ' '::"text") || COALESCE("authors", ''::"text")) || ' '::"text") || COALESCE("source", ''::"text")) || ' '::"text") || COALESCE("abstract", ''::"text")))) STORED,
+    "text_status" "text" DEFAULT 'pending'::"text" NOT NULL,
+    "text_chars" integer,
+    "text_chunks" integer,
+    "text_note" "text",
+    "text_read_at" timestamp with time zone,
+    CONSTRAINT "research_papers_region_check" CHECK (("region" = ANY (ARRAY['southern_alberta'::"text", 'alberta'::"text", 'prairies'::"text", 'canada'::"text", 'northern_plains'::"text", 'other'::"text"]))),
+    CONSTRAINT "research_papers_relevance_check" CHECK ((("relevance" >= 1) AND ("relevance" <= 5))),
+    CONSTRAINT "research_papers_status_check" CHECK (("status" = ANY (ARRAY['stored'::"text", 'pending'::"text", 'failed'::"text", 'link_only'::"text"]))),
+    CONSTRAINT "research_papers_stored_has_file" CHECK ((("status" <> 'stored'::"text") OR ("storage_path" IS NOT NULL))),
+    CONSTRAINT "research_papers_text_status_check" CHECK (("text_status" = ANY (ARRAY['pending'::"text", 'done'::"text", 'no_text'::"text", 'failed'::"text"]))),
+    CONSTRAINT "research_papers_year_check" CHECK ((("year" >= 1900) AND ("year" <= 2100)))
+);
+
+
+ALTER TABLE "public"."research_papers" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."research_papers" IS 'One paper in the library: the citation, how close to home the work was done, and the PDF''s path in research-library.';
+
+
+
+COMMENT ON COLUMN "public"."research_papers"."sha256" IS 'Hash of the file, so the same paper found twice lands once.';
+
+
+
+COMMENT ON COLUMN "public"."research_papers"."region" IS 'Where the work was done, nearest first: southern_alberta, alberta, prairies, canada, northern_plains (MT/ND/ID/WA), other.';
+
+
+
+COMMENT ON COLUMN "public"."research_papers"."relevance" IS '1-5, how much it bears on our fields. 5 = irrigated southern Alberta, our crop, our practice.';
+
+
+
+COMMENT ON COLUMN "public"."research_papers"."status" IS 'stored = the PDF is in the bucket. link_only = free to read but not downloadable; fetch_note says why.';
+
+
+
+COMMENT ON COLUMN "public"."research_papers"."text_status" IS 'done = split into chunks. no_text = the PDF is page images with no text layer (a scan). failed = text_note says why.';
+
+
+
+CREATE OR REPLACE VIEW "public"."research_folders_v" WITH ("security_invoker"='true') AS
+ WITH RECURSIVE "tree" AS (
+         SELECT "f_1"."id" AS "root_id",
+            "f_1"."id" AS "node_id"
+           FROM "public"."research_folders" "f_1"
+        UNION ALL
+         SELECT "t"."root_id",
+            "c"."id"
+           FROM ("tree" "t"
+             JOIN "public"."research_folders" "c" ON (("c"."parent_id" = "t"."node_id")))
+        )
+ SELECT "id",
+    "slug",
+    "name",
+    "kind",
+    "parent_id",
+    "crop_names",
+    "registration_numbers",
+    "actives",
+    "aliases",
+    "sort",
+    "note",
+    "created_at",
+    ( SELECT "count"(*) AS "count"
+           FROM "public"."research_papers" "p"
+          WHERE ("p"."folder_id" = "f"."id")) AS "papers_here",
+    ( SELECT "count"(*) AS "count"
+           FROM ("public"."research_papers" "p"
+             JOIN "tree" "t" ON (("t"."node_id" = "p"."folder_id")))
+          WHERE ("t"."root_id" = "f"."id")) AS "papers_below"
+   FROM "public"."research_folders" "f";
+
+
+ALTER VIEW "public"."research_folders_v" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."research_folders_v" IS 'research_folders with the number of papers in the folder and in everything under it.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."research_paper_chunks" (
+    "id" bigint NOT NULL,
+    "paper_id" "uuid" NOT NULL,
+    "idx" integer NOT NULL,
+    "page_from" integer,
+    "page_to" integer,
+    "text" "text" NOT NULL,
+    "fts" "tsvector" GENERATED ALWAYS AS ("to_tsvector"('"english"'::"regconfig", "text")) STORED
+);
+
+
+ALTER TABLE "public"."research_paper_chunks" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."research_paper_chunks" IS 'The readable text of each stored PDF, in pieces of about half a page, with the pages each piece spans.';
+
+
+
+CREATE SEQUENCE IF NOT EXISTS "public"."research_paper_chunks_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE "public"."research_paper_chunks_id_seq" OWNER TO "postgres";
+
+
+ALTER SEQUENCE "public"."research_paper_chunks_id_seq" OWNED BY "public"."research_paper_chunks"."id";
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."research_paper_folders" (
+    "paper_id" "uuid" NOT NULL,
+    "folder_id" "uuid" NOT NULL
+);
+
+
+ALTER TABLE "public"."research_paper_folders" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."research_paper_folders" IS 'Cross-filing: the extra folders a paper also belongs in, besides its home folder.';
+
+
+
+CREATE OR REPLACE VIEW "public"."research_shelf_v" WITH ("security_invoker"='true') AS
+ SELECT "f"."slug" AS "folder_slug",
+    "f"."name" AS "folder_name",
+    "f"."kind" AS "folder_kind",
+    true AS "home",
+    "p"."id",
+    "p"."folder_id",
+    "p"."title",
+    "p"."authors",
+    "p"."year",
+    "p"."source",
+    "p"."doi",
+    "p"."source_url",
+    "p"."pdf_url",
+    "p"."storage_path",
+    "p"."file_bytes",
+    "p"."pages",
+    "p"."region",
+    "p"."relevance",
+    "p"."licence",
+    "p"."abstract",
+    "p"."tags",
+    "p"."status",
+    "p"."fetch_note",
+    "p"."created_at"
+   FROM ("public"."research_papers" "p"
+     JOIN "public"."research_folders" "f" ON (("f"."id" = "p"."folder_id")))
+UNION ALL
+ SELECT "f"."slug" AS "folder_slug",
+    "f"."name" AS "folder_name",
+    "f"."kind" AS "folder_kind",
+    false AS "home",
+    "p"."id",
+    "p"."folder_id",
+    "p"."title",
+    "p"."authors",
+    "p"."year",
+    "p"."source",
+    "p"."doi",
+    "p"."source_url",
+    "p"."pdf_url",
+    "p"."storage_path",
+    "p"."file_bytes",
+    "p"."pages",
+    "p"."region",
+    "p"."relevance",
+    "p"."licence",
+    "p"."abstract",
+    "p"."tags",
+    "p"."status",
+    "p"."fetch_note",
+    "p"."created_at"
+   FROM (("public"."research_papers" "p"
+     JOIN "public"."research_paper_folders" "r" ON (("r"."paper_id" = "p"."id")))
+     JOIN "public"."research_folders" "f" ON (("f"."id" = "r"."folder_id")));
+
+
+ALTER VIEW "public"."research_shelf_v" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."research_shelf_v" IS 'Every paper on every folder it belongs to. home = false means it is cross-filed here and lives elsewhere.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."river_watch" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "upstream_station" "text" DEFAULT '05AA024'::"text" NOT NULL,
@@ -15129,7 +16343,7 @@ CREATE TABLE IF NOT EXISTS "public"."sat_images" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "stretch_min" numeric,
     "stretch_max" numeric,
-    CONSTRAINT "sat_images_kind_check" CHECK (("kind" = ANY (ARRAY['truecolour'::"text", 'ndvi'::"text", 'ndvi_field'::"text", 'ndre'::"text", 'ndre_field'::"text"])))
+    CONSTRAINT "sat_images_kind_check" CHECK (("kind" = ANY (ARRAY['truecolour'::"text", 'ndvi'::"text", 'ndvi_field'::"text", 'ndre'::"text", 'ndre_field'::"text", 'yellow'::"text"])))
 );
 
 
@@ -15294,6 +16508,24 @@ CREATE OR REPLACE VIEW "public"."sat_zone_readiness" WITH ("security_invoker"='t
 
 
 ALTER VIEW "public"."sat_zone_readiness" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."scale_captures" (
+    "id" "uuid" NOT NULL,
+    "device_id" "text" NOT NULL,
+    "kind" "text" NOT NULL,
+    "weight_kg" integer NOT NULL,
+    "mode" "text" NOT NULL,
+    "reading_at" timestamp with time zone NOT NULL,
+    "captured_by" "uuid",
+    "load_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "scale_captures_kind_check" CHECK (("kind" = ANY (ARRAY['in'::"text", 'out'::"text"]))),
+    CONSTRAINT "scale_captures_weight_kg_check" CHECK (("weight_kg" > 0))
+);
+
+
+ALTER TABLE "public"."scale_captures" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."scale_ticket_photos" (
@@ -15795,7 +17027,8 @@ CREATE TABLE IF NOT EXISTS "public"."tasks" (
     "source_ref" "uuid",
     "crop_year" integer DEFAULT ("date_part"('year'::"text", "now"()))::integer NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "equipment_id" "uuid"
+    "equipment_id" "uuid",
+    "farm_id" "uuid"
 );
 
 
@@ -15825,7 +17058,8 @@ CREATE TABLE IF NOT EXISTS "public"."users" (
     "show_truck_forecast" boolean DEFAULT true NOT NULL,
     "menu_prefs" "jsonb",
     "voice_reply" boolean DEFAULT false NOT NULL,
-    "farm_id" "uuid"
+    "farm_id" "uuid",
+    "partner_admin" boolean DEFAULT false NOT NULL
 );
 
 
@@ -16423,6 +17657,10 @@ CREATE TABLE IF NOT EXISTS "public"."year_unlocks" (
 ALTER TABLE "public"."year_unlocks" OWNER TO "postgres";
 
 
+ALTER TABLE ONLY "public"."research_paper_chunks" ALTER COLUMN "id" SET DEFAULT "nextval"('"public"."research_paper_chunks_id_seq"'::"regclass");
+
+
+
 ALTER TABLE ONLY "public"."ab_input_prices"
     ADD CONSTRAINT "ab_input_prices_item_key_observed_on_key" UNIQUE ("item_key", "observed_on");
 
@@ -16630,6 +17868,11 @@ ALTER TABLE ONLY "public"."calendar_events"
 
 ALTER TABLE ONLY "public"."cameras"
     ADD CONSTRAINT "cameras_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."canola_bloom"
+    ADD CONSTRAINT "canola_bloom_pkey" PRIMARY KEY ("field_id", "crop_year");
 
 
 
@@ -16910,6 +18153,16 @@ ALTER TABLE ONLY "public"."crop_prices"
 
 ALTER TABLE ONLY "public"."crop_prices"
     ADD CONSTRAINT "crop_prices_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."crop_share_fields"
+    ADD CONSTRAINT "crop_share_fields_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."crop_share_fields"
+    ADD CONSTRAINT "crop_share_fields_user_id_field_id_crop_year_key" UNIQUE ("user_id", "field_id", "crop_year");
 
 
 
@@ -17853,6 +19106,46 @@ ALTER TABLE ONLY "public"."operating_settings"
 
 
 
+ALTER TABLE ONLY "public"."partner_access"
+    ADD CONSTRAINT "partner_access_pkey" PRIMARY KEY ("farm_id");
+
+
+
+ALTER TABLE ONLY "public"."partner_crops"
+    ADD CONSTRAINT "partner_crops_pkey" PRIMARY KEY ("farm_id", "crop_id");
+
+
+
+ALTER TABLE ONLY "public"."partner_event_tracking"
+    ADD CONSTRAINT "partner_event_tracking_pkey" PRIMARY KEY ("farm_id", "event_id");
+
+
+
+ALTER TABLE ONLY "public"."partner_farm_setup"
+    ADD CONSTRAINT "partner_farm_setup_farm_id_key" UNIQUE ("farm_id");
+
+
+
+ALTER TABLE ONLY "public"."partner_farm_setup"
+    ADD CONSTRAINT "partner_farm_setup_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."partner_fields"
+    ADD CONSTRAINT "partner_fields_farm_id_field_id_crop_year_key" UNIQUE ("farm_id", "field_id", "crop_year");
+
+
+
+ALTER TABLE ONLY "public"."partner_fields"
+    ADD CONSTRAINT "partner_fields_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."partner_grant_tracking"
+    ADD CONSTRAINT "partner_grant_tracking_pkey" PRIMARY KEY ("farm_id", "grant_id");
+
+
+
 ALTER TABLE ONLY "public"."pasture_biomass_calibration"
     ADD CONSTRAINT "pasture_biomass_calibration_pkey" PRIMARY KEY ("id");
 
@@ -18148,6 +19441,36 @@ ALTER TABLE ONLY "public"."report_favourites"
 
 
 
+ALTER TABLE ONLY "public"."research_folders"
+    ADD CONSTRAINT "research_folders_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."research_folders"
+    ADD CONSTRAINT "research_folders_slug_key" UNIQUE ("slug");
+
+
+
+ALTER TABLE ONLY "public"."research_paper_chunks"
+    ADD CONSTRAINT "research_paper_chunks_paper_id_idx_key" UNIQUE ("paper_id", "idx");
+
+
+
+ALTER TABLE ONLY "public"."research_paper_chunks"
+    ADD CONSTRAINT "research_paper_chunks_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."research_paper_folders"
+    ADD CONSTRAINT "research_paper_folders_pkey" PRIMARY KEY ("paper_id", "folder_id");
+
+
+
+ALTER TABLE ONLY "public"."research_papers"
+    ADD CONSTRAINT "research_papers_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."river_watch"
     ADD CONSTRAINT "river_watch_pkey" PRIMARY KEY ("id");
 
@@ -18225,6 +19548,11 @@ ALTER TABLE ONLY "public"."sat_scenes"
 
 ALTER TABLE ONLY "public"."sat_scenes"
     ADD CONSTRAINT "sat_scenes_provider_collection_scene_id_key" UNIQUE ("provider", "collection", "scene_id");
+
+
+
+ALTER TABLE ONLY "public"."scale_captures"
+    ADD CONSTRAINT "scale_captures_pkey" PRIMARY KEY ("id");
 
 
 
@@ -18664,7 +19992,15 @@ CREATE INDEX "bin_loads_contract_idx" ON "public"."bin_loads" USING "btree" ("co
 
 
 
+CREATE UNIQUE INDEX "bin_loads_empty_capture_idx" ON "public"."bin_loads" USING "btree" ("empty_capture_id") WHERE ("empty_capture_id" IS NOT NULL);
+
+
+
 CREATE INDEX "bin_loads_field_year_idx" ON "public"."bin_loads" USING "btree" ("field_id", "crop_year");
+
+
+
+CREATE UNIQUE INDEX "bin_loads_full_capture_idx" ON "public"."bin_loads" USING "btree" ("full_capture_id") WHERE ("full_capture_id" IS NOT NULL);
 
 
 
@@ -19436,6 +20772,46 @@ CREATE INDEX "qb_questions_asked_by_created" ON "public"."qb_questions" USING "b
 
 
 
+CREATE INDEX "research_chunks_fts_idx" ON "public"."research_paper_chunks" USING "gin" ("fts");
+
+
+
+CREATE INDEX "research_chunks_paper_idx" ON "public"."research_paper_chunks" USING "btree" ("paper_id", "idx");
+
+
+
+CREATE INDEX "research_folders_parent_idx" ON "public"."research_folders" USING "btree" ("parent_id", "sort", "name");
+
+
+
+CREATE INDEX "research_paper_folders_folder_idx" ON "public"."research_paper_folders" USING "btree" ("folder_id");
+
+
+
+CREATE UNIQUE INDEX "research_papers_doi_idx" ON "public"."research_papers" USING "btree" ("lower"("doi")) WHERE ("doi" IS NOT NULL);
+
+
+
+CREATE INDEX "research_papers_folder_idx" ON "public"."research_papers" USING "btree" ("folder_id", "relevance" DESC, "year" DESC);
+
+
+
+CREATE INDEX "research_papers_fts_idx" ON "public"."research_papers" USING "gin" ("fts");
+
+
+
+CREATE UNIQUE INDEX "research_papers_pdf_url_idx" ON "public"."research_papers" USING "btree" ("pdf_url") WHERE ("pdf_url" IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX "research_papers_sha_idx" ON "public"."research_papers" USING "btree" ("sha256") WHERE ("sha256" IS NOT NULL);
+
+
+
+CREATE INDEX "research_papers_tags_idx" ON "public"."research_papers" USING "gin" ("tags");
+
+
+
 CREATE INDEX "rotation_advice_year_created" ON "public"."rotation_advice" USING "btree" ("crop_year", "created_at" DESC);
 
 
@@ -19477,6 +20853,10 @@ CREATE INDEX "sat_obs_subject_idx" ON "public"."sat_observations" USING "btree" 
 
 
 CREATE INDEX "sat_obs_zone_idx" ON "public"."sat_observations" USING "btree" ("subject_id", "zone_id", "sensed_on" DESC);
+
+
+
+CREATE INDEX "scale_captures_recent_idx" ON "public"."scale_captures" USING "btree" ("created_at" DESC);
 
 
 
@@ -19808,6 +21188,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."crop_share_fields" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."crop_succession_rules" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -20124,6 +21508,14 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."partner_farm_setup" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."partner_fields" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."pasture_sprays" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -20165,6 +21557,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."ranches" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."scale_captures" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -20316,6 +21712,14 @@ CREATE OR REPLACE TRIGGER "cameras_audit" AFTER INSERT OR DELETE OR UPDATE ON "p
 
 
 
+CREATE OR REPLACE TRIGGER "capture_link" AFTER INSERT OR UPDATE OF "full_capture_id", "empty_capture_id" ON "public"."bin_loads" FOR EACH ROW WHEN ((("new"."full_capture_id" IS NOT NULL) OR ("new"."empty_capture_id" IS NOT NULL))) EXECUTE FUNCTION "public"."fn_bin_load_capture_link"();
+
+
+
+CREATE OR REPLACE TRIGGER "captures" BEFORE INSERT OR UPDATE ON "public"."bin_loads" FOR EACH ROW EXECUTE FUNCTION "public"."fn_bin_load_captures"();
+
+
+
 CREATE OR REPLACE TRIGGER "cattle_costs_audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."cattle_cost_assumptions" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -20464,6 +21868,30 @@ CREATE OR REPLACE TRIGGER "notify_assignee" AFTER INSERT ON "public"."task_assig
 
 
 
+CREATE OR REPLACE TRIGGER "partner_crop_keep" BEFORE INSERT OR UPDATE ON "public"."crops" FOR EACH ROW EXECUTE FUNCTION "public"."fn_partner_crop_keep"();
+
+
+
+CREATE OR REPLACE TRIGGER "partner_farm" BEFORE INSERT ON "public"."calendar_events" FOR EACH ROW EXECUTE FUNCTION "public"."fn_partner_field_farm"();
+
+
+
+CREATE OR REPLACE TRIGGER "partner_farm" BEFORE INSERT ON "public"."jd_equipment" FOR EACH ROW EXECUTE FUNCTION "public"."fn_partner_field_farm"();
+
+
+
+CREATE OR REPLACE TRIGGER "partner_farm" BEFORE INSERT ON "public"."tasks" FOR EACH ROW EXECUTE FUNCTION "public"."fn_partner_field_farm"();
+
+
+
+CREATE OR REPLACE TRIGGER "partner_field_farm" BEFORE INSERT ON "public"."fields" FOR EACH ROW EXECUTE FUNCTION "public"."fn_partner_field_farm"();
+
+
+
+CREATE OR REPLACE TRIGGER "partner_user_keep" BEFORE UPDATE ON "public"."users" FOR EACH ROW EXECUTE FUNCTION "public"."fn_partner_user_keep"();
+
+
+
 CREATE OR REPLACE TRIGGER "pl_op_grid_sums" BEFORE INSERT OR UPDATE OF "cells" ON "public"."pl_op_grids" FOR EACH ROW EXECUTE FUNCTION "public"."fn_pl_op_grid_sums"();
 
 
@@ -20577,6 +22005,14 @@ CREATE OR REPLACE TRIGGER "touch" BEFORE UPDATE ON "public"."field_work_records"
 
 
 CREATE OR REPLACE TRIGGER "touch" BEFORE UPDATE ON "public"."yield_adjustments" FOR EACH ROW EXECUTE FUNCTION "public"."fn_touch_updated_at_yield_adjustments"();
+
+
+
+CREATE OR REPLACE TRIGGER "track" INSTEAD OF UPDATE ON "public"."partner_events_v" FOR EACH ROW EXECUTE FUNCTION "public"."fn_partner_event_track"();
+
+
+
+CREATE OR REPLACE TRIGGER "track" INSTEAD OF UPDATE ON "public"."partner_grants_v" FOR EACH ROW EXECUTE FUNCTION "public"."fn_partner_grant_track"();
 
 
 
@@ -20834,7 +22270,17 @@ ALTER TABLE ONLY "public"."bin_loads"
 
 
 ALTER TABLE ONLY "public"."bin_loads"
+    ADD CONSTRAINT "bin_loads_empty_capture_id_fkey" FOREIGN KEY ("empty_capture_id") REFERENCES "public"."scale_captures"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."bin_loads"
     ADD CONSTRAINT "bin_loads_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."bin_loads"
+    ADD CONSTRAINT "bin_loads_full_capture_id_fkey" FOREIGN KEY ("full_capture_id") REFERENCES "public"."scale_captures"("id") ON DELETE RESTRICT;
 
 
 
@@ -20874,12 +22320,22 @@ ALTER TABLE ONLY "public"."calendar_events"
 
 
 ALTER TABLE ONLY "public"."calendar_events"
+    ADD CONSTRAINT "calendar_events_farm_id_fkey" FOREIGN KEY ("farm_id") REFERENCES "public"."farms"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."calendar_events"
     ADD CONSTRAINT "calendar_events_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE SET NULL;
 
 
 
 ALTER TABLE ONLY "public"."cameras"
     ADD CONSTRAINT "cameras_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."canola_bloom"
+    ADD CONSTRAINT "canola_bloom_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
 
 
 
@@ -21205,6 +22661,21 @@ ALTER TABLE ONLY "public"."crop_planter_profiles"
 
 ALTER TABLE ONLY "public"."crop_prices"
     ADD CONSTRAINT "crop_prices_crop_id_fkey" FOREIGN KEY ("crop_id") REFERENCES "public"."crops"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."crop_share_fields"
+    ADD CONSTRAINT "crop_share_fields_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."crop_share_fields"
+    ADD CONSTRAINT "crop_share_fields_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."crop_share_fields"
+    ADD CONSTRAINT "crop_share_fields_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE;
 
 
 
@@ -21958,6 +23429,11 @@ ALTER TABLE ONLY "public"."jd_equipment_alerts"
 
 
 
+ALTER TABLE ONLY "public"."jd_equipment"
+    ADD CONSTRAINT "jd_equipment_farm_id_fkey" FOREIGN KEY ("farm_id") REFERENCES "public"."farms"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."jd_field_operations"
     ADD CONSTRAINT "jd_field_operations_duplicate_of_fkey" FOREIGN KEY ("duplicate_of") REFERENCES "public"."jd_field_operations"("id") ON DELETE SET NULL;
 
@@ -22183,6 +23659,76 @@ ALTER TABLE ONLY "public"."operating_settings"
 
 
 
+ALTER TABLE ONLY "public"."partner_access"
+    ADD CONSTRAINT "partner_access_farm_id_fkey" FOREIGN KEY ("farm_id") REFERENCES "public"."farms"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."partner_crops"
+    ADD CONSTRAINT "partner_crops_crop_id_fkey" FOREIGN KEY ("crop_id") REFERENCES "public"."crops"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."partner_crops"
+    ADD CONSTRAINT "partner_crops_farm_id_fkey" FOREIGN KEY ("farm_id") REFERENCES "public"."farms"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."partner_event_tracking"
+    ADD CONSTRAINT "partner_event_tracking_assigned_to_fkey" FOREIGN KEY ("assigned_to") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."partner_event_tracking"
+    ADD CONSTRAINT "partner_event_tracking_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "public"."events"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."partner_event_tracking"
+    ADD CONSTRAINT "partner_event_tracking_farm_id_fkey" FOREIGN KEY ("farm_id") REFERENCES "public"."farms"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."partner_farm_setup"
+    ADD CONSTRAINT "partner_farm_setup_farm_id_fkey" FOREIGN KEY ("farm_id") REFERENCES "public"."farms"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."partner_farm_setup"
+    ADD CONSTRAINT "partner_farm_setup_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."partner_fields"
+    ADD CONSTRAINT "partner_fields_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."partner_fields"
+    ADD CONSTRAINT "partner_fields_farm_id_fkey" FOREIGN KEY ("farm_id") REFERENCES "public"."farms"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."partner_fields"
+    ADD CONSTRAINT "partner_fields_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."partner_grant_tracking"
+    ADD CONSTRAINT "partner_grant_tracking_assigned_to_fkey" FOREIGN KEY ("assigned_to") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."partner_grant_tracking"
+    ADD CONSTRAINT "partner_grant_tracking_farm_id_fkey" FOREIGN KEY ("farm_id") REFERENCES "public"."farms"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."partner_grant_tracking"
+    ADD CONSTRAINT "partner_grant_tracking_grant_id_fkey" FOREIGN KEY ("grant_id") REFERENCES "public"."grants"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."pasture_biomass_calibration"
     ADD CONSTRAINT "pasture_biomass_calibration_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id");
 
@@ -22393,6 +23939,36 @@ ALTER TABLE ONLY "public"."report_favourites"
 
 
 
+ALTER TABLE ONLY "public"."research_folders"
+    ADD CONSTRAINT "research_folders_parent_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "public"."research_folders"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."research_paper_chunks"
+    ADD CONSTRAINT "research_paper_chunks_paper_id_fkey" FOREIGN KEY ("paper_id") REFERENCES "public"."research_papers"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."research_paper_folders"
+    ADD CONSTRAINT "research_paper_folders_folder_id_fkey" FOREIGN KEY ("folder_id") REFERENCES "public"."research_folders"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."research_paper_folders"
+    ADD CONSTRAINT "research_paper_folders_paper_id_fkey" FOREIGN KEY ("paper_id") REFERENCES "public"."research_papers"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."research_papers"
+    ADD CONSTRAINT "research_papers_added_by_fkey" FOREIGN KEY ("added_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."research_papers"
+    ADD CONSTRAINT "research_papers_folder_id_fkey" FOREIGN KEY ("folder_id") REFERENCES "public"."research_folders"("id") ON DELETE RESTRICT;
+
+
+
 ALTER TABLE ONLY "public"."rotation_advice"
     ADD CONSTRAINT "rotation_advice_requested_by_fkey" FOREIGN KEY ("requested_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
 
@@ -22430,6 +24006,16 @@ ALTER TABLE ONLY "public"."sat_images"
 
 ALTER TABLE ONLY "public"."sat_observations"
     ADD CONSTRAINT "sat_observations_scene_id_fkey" FOREIGN KEY ("scene_id") REFERENCES "public"."sat_scenes"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."scale_captures"
+    ADD CONSTRAINT "scale_captures_captured_by_fkey" FOREIGN KEY ("captured_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."scale_captures"
+    ADD CONSTRAINT "scale_captures_load_id_fkey" FOREIGN KEY ("load_id") REFERENCES "public"."bin_loads"("id") ON DELETE SET NULL;
 
 
 
@@ -22620,6 +24206,11 @@ ALTER TABLE ONLY "public"."tasks"
 
 ALTER TABLE ONLY "public"."tasks"
     ADD CONSTRAINT "tasks_equipment_id_fkey" FOREIGN KEY ("equipment_id") REFERENCES "public"."jd_equipment"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."tasks"
+    ADD CONSTRAINT "tasks_farm_id_fkey" FOREIGN KEY ("farm_id") REFERENCES "public"."farms"("id") ON DELETE CASCADE;
 
 
 
@@ -22897,6 +24488,9 @@ CREATE POLICY "cameras_write" ON "public"."cameras" USING (( SELECT "public"."is
 
 
 
+ALTER TABLE "public"."canola_bloom" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."canola_isolation_reports" ENABLE ROW LEVEL SECURITY;
 
 
@@ -23081,6 +24675,9 @@ ALTER TABLE "public"."crop_planter_profiles" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."crop_prices" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."crop_share_fields" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."crop_succession_rules" ENABLE ROW LEVEL SECURITY;
@@ -23536,6 +25133,322 @@ ALTER TABLE "public"."hail_inspections" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."herd_counts" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "home_farm" ON "public"."abnormal_yield_years" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."bin_air_alerts" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."bin_allocations" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."bin_loads" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."calendar_events" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR (("farm_id" IS NULL) AND (("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR (("farm_id" IS NULL) AND (("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."cameras" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."canola_isolation_reports" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."combine_loss_checks" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."combine_monitor_names" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."combine_settings_used" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."crop_area_yields" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."crop_history" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."crop_plan_options" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."crop_plans" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."crop_weather_alerts" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."crops" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("farm_id" IS NULL) OR ("farm_id" = ( SELECT "public"."home_farm_id"() AS "home_farm_id")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("farm_id" IS NULL) OR ("farm_id" = ( SELECT "public"."home_farm_id"() AS "home_farm_id"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."farms" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR "is_home")) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR "is_home"));
+
+
+
+CREATE POLICY "home_farm" ON "public"."feed_inventory" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."fert_blends" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."fert_check_strips" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."fert_split_plans" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."fertility_rx" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."fertility_rx_map" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_boundaries" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_crop_seasons" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_crop_zones" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_entries" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_files" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_hail_events" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_haul_plans" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_inspections" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_pivots" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_rain_daily" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_season_outlook" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_soil_profiles" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_topo_cells" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_topo_surfaces" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_work_records" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_year_tenure" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."field_yield_zones" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."fieldnet_applied_bins" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."fieldnet_passes" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."fieldnet_systems" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."fields" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("farm_id" = ( SELECT "public"."home_farm_id"() AS "home_farm_id")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("farm_id" = ( SELECT "public"."home_farm_id"() AS "home_farm_id"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."financial_entries" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."grain_movements" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."grazing_restriction_alerts" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."hail_inspections" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."ici_field_lines" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."input_movements" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."irrigation_events" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."jd_dismissed_operations" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."jd_equipment" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("farm_id" IS NULL))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("farm_id" IS NULL)));
+
+
+
+CREATE POLICY "home_farm" ON "public"."jd_field_operations" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."jd_guidance_lines" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."manure_applications" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."manure_haul_invoices" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."map_features" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."moisture_tests" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."n_rich_strips" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."n_trials" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."pivot_depth_checks" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."pl_field_lines" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."pl_op_grids" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."rotation_feedback" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."scouting_notes" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."seed_reports" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."soil_moisture_measurements" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."soil_moisture_readings" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."soil_sample_sites" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."soil_test_reports" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."solar_sites" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."stubble_grazing" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."tasks" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR (("farm_id" IS NULL) AND (("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR (("farm_id" IS NULL) AND (("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."tissue_tests" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."water_balance_daily" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."water_balance_wedges" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."weed_patches" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
+CREATE POLICY "home_farm" ON "public"."yield_adjustments" AS RESTRICTIVE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") OR ("field_id" IS NULL) OR ("field_id" IN ( SELECT "public"."home_field_ids"() AS "home_field_ids"))));
+
+
+
 ALTER TABLE "public"."ici_fert_reviews" ENABLE ROW LEVEL SECURITY;
 
 
@@ -23889,6 +25802,10 @@ CREATE POLICY "mfa_required" ON "public"."cameras" AS RESTRICTIVE TO "authentica
 
 
 
+CREATE POLICY "mfa_required" ON "public"."canola_bloom" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
 CREATE POLICY "mfa_required" ON "public"."canola_isolation_reports" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
@@ -24054,6 +25971,10 @@ CREATE POLICY "mfa_required" ON "public"."crop_planter_profiles" AS RESTRICTIVE 
 
 
 CREATE POLICY "mfa_required" ON "public"."crop_prices" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."crop_share_fields" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -24561,6 +26482,30 @@ CREATE POLICY "mfa_required" ON "public"."operating_settings" AS RESTRICTIVE TO 
 
 
 
+CREATE POLICY "mfa_required" ON "public"."partner_access" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."partner_crops" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."partner_event_tracking" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."partner_farm_setup" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."partner_fields" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."partner_grant_tracking" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
 CREATE POLICY "mfa_required" ON "public"."pasture_biomass_calibration" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
@@ -24758,6 +26703,10 @@ CREATE POLICY "mfa_required" ON "public"."sat_observations" AS RESTRICTIVE TO "a
 
 
 CREATE POLICY "mfa_required" ON "public"."sat_scenes" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."scale_captures" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -25021,6 +26970,66 @@ CREATE POLICY "own_or_admin" ON "public"."anydo_connections" FOR SELECT TO "auth
 
 
 
+CREATE POLICY "own_parent" ON "public"."equipment_service_log" AS RESTRICTIVE TO "authenticated" USING ((("equipment_id" IS NULL) OR
+CASE
+    WHEN ( SELECT "public"."is_partner"() AS "is_partner") THEN ("equipment_id" IN ( SELECT "public"."partner_equipment_ids"() AS "partner_equipment_ids"))
+    ELSE ("equipment_id" IN ( SELECT "public"."home_equipment_ids"() AS "home_equipment_ids"))
+END)) WITH CHECK ((("equipment_id" IS NULL) OR
+CASE
+    WHEN ( SELECT "public"."is_partner"() AS "is_partner") THEN ("equipment_id" IN ( SELECT "public"."partner_equipment_ids"() AS "partner_equipment_ids"))
+    ELSE ("equipment_id" IN ( SELECT "public"."home_equipment_ids"() AS "home_equipment_ids"))
+END));
+
+
+
+CREATE POLICY "own_parent" ON "public"."equipment_service_plans" AS RESTRICTIVE TO "authenticated" USING ((("equipment_id" IS NULL) OR
+CASE
+    WHEN ( SELECT "public"."is_partner"() AS "is_partner") THEN ("equipment_id" IN ( SELECT "public"."partner_equipment_ids"() AS "partner_equipment_ids"))
+    ELSE ("equipment_id" IN ( SELECT "public"."home_equipment_ids"() AS "home_equipment_ids"))
+END)) WITH CHECK ((("equipment_id" IS NULL) OR
+CASE
+    WHEN ( SELECT "public"."is_partner"() AS "is_partner") THEN ("equipment_id" IN ( SELECT "public"."partner_equipment_ids"() AS "partner_equipment_ids"))
+    ELSE ("equipment_id" IN ( SELECT "public"."home_equipment_ids"() AS "home_equipment_ids"))
+END));
+
+
+
+CREATE POLICY "own_parent" ON "public"."task_assignees" AS RESTRICTIVE TO "authenticated" USING ((("task_id" IS NULL) OR
+CASE
+    WHEN ( SELECT "public"."is_partner"() AS "is_partner") THEN ("task_id" IN ( SELECT "public"."partner_task_ids"() AS "partner_task_ids"))
+    ELSE ("task_id" IN ( SELECT "public"."home_task_ids"() AS "home_task_ids"))
+END)) WITH CHECK ((("task_id" IS NULL) OR
+CASE
+    WHEN ( SELECT "public"."is_partner"() AS "is_partner") THEN ("task_id" IN ( SELECT "public"."partner_task_ids"() AS "partner_task_ids"))
+    ELSE ("task_id" IN ( SELECT "public"."home_task_ids"() AS "home_task_ids"))
+END));
+
+
+
+CREATE POLICY "own_parent" ON "public"."task_files" AS RESTRICTIVE TO "authenticated" USING ((("task_id" IS NULL) OR
+CASE
+    WHEN ( SELECT "public"."is_partner"() AS "is_partner") THEN ("task_id" IN ( SELECT "public"."partner_task_ids"() AS "partner_task_ids"))
+    ELSE ("task_id" IN ( SELECT "public"."home_task_ids"() AS "home_task_ids"))
+END)) WITH CHECK ((("task_id" IS NULL) OR
+CASE
+    WHEN ( SELECT "public"."is_partner"() AS "is_partner") THEN ("task_id" IN ( SELECT "public"."partner_task_ids"() AS "partner_task_ids"))
+    ELSE ("task_id" IN ( SELECT "public"."home_task_ids"() AS "home_task_ids"))
+END));
+
+
+
+CREATE POLICY "own_parent" ON "public"."truck_inspections" AS RESTRICTIVE TO "authenticated" USING ((("equipment_id" IS NULL) OR
+CASE
+    WHEN ( SELECT "public"."is_partner"() AS "is_partner") THEN ("equipment_id" IN ( SELECT "public"."partner_equipment_ids"() AS "partner_equipment_ids"))
+    ELSE ("equipment_id" IN ( SELECT "public"."home_equipment_ids"() AS "home_equipment_ids"))
+END)) WITH CHECK ((("equipment_id" IS NULL) OR
+CASE
+    WHEN ( SELECT "public"."is_partner"() AS "is_partner") THEN ("equipment_id" IN ( SELECT "public"."partner_equipment_ids"() AS "partner_equipment_ids"))
+    ELSE ("equipment_id" IN ( SELECT "public"."home_equipment_ids"() AS "home_equipment_ids"))
+END));
+
+
+
 CREATE POLICY "own_read" ON "public"."notification_push_queue" FOR SELECT TO "authenticated" USING (("user_id" = ( SELECT "auth"."uid"() AS "uid")));
 
 
@@ -25050,6 +27059,777 @@ CREATE POLICY "own_update" ON "public"."notifications" FOR UPDATE TO "authentica
 
 
 CREATE POLICY "own_write" ON "public"."user_signatures" TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") AND ("user_id" = ( SELECT "auth"."uid"() AS "uid")))) WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND ("user_id" = ( SELECT "auth"."uid"() AS "uid"))));
+
+
+
+ALTER TABLE "public"."partner_access" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "partner_admin_update" ON "public"."users" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_partner_admin"() AS "is_partner_admin") AND ("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id")) AND ("id" <> ( SELECT "auth"."uid"() AS "uid")))) WITH CHECK ((("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id")) AND ("role" = 'partner'::"public"."user_role")));
+
+
+
+ALTER TABLE "public"."partner_crops" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."partner_event_tracking" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."partner_farm_setup" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."partner_fields" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."partner_grant_tracking" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "partner_grown" ON "public"."crops" FOR SELECT TO "authenticated" USING (("id" IN ( SELECT "public"."partner_crop_ids"() AS "partner_crop_ids")));
+
+
+
+CREATE POLICY "partner_insert" ON "public"."bin_loads" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid")) AND ("bin_id" IS NULL) AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_insert" ON "public"."fert_blend_products" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_insert" ON "public"."field_work_records" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
+
+
+
+CREATE POLICY "partner_insert" ON "public"."irrigation_events" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
+
+
+
+CREATE POLICY "partner_insert" ON "public"."jd_products" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("category" = 'fertilizer'::"text")));
+
+
+
+CREATE POLICY "partner_insert" ON "public"."moisture_tests" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid")) AND ("bin_id" IS NULL) AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_insert" ON "public"."scouting_notes" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
+
+
+
+CREATE POLICY "partner_own" ON "public"."calendar_events" TO "authenticated" USING (("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))) WITH CHECK (("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id")));
+
+
+
+CREATE POLICY "partner_own" ON "public"."crop_history" FOR DELETE TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_own_field_ids"() AS "partner_own_field_ids")));
+
+
+
+CREATE POLICY "partner_own" ON "public"."crop_plans" TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_own_field_ids"() AS "partner_own_field_ids"))) WITH CHECK (("field_id" IN ( SELECT "public"."partner_own_field_ids"() AS "partner_own_field_ids")));
+
+
+
+CREATE POLICY "partner_own" ON "public"."crops" TO "authenticated" USING (("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))) WITH CHECK (("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id")));
+
+
+
+CREATE POLICY "partner_own" ON "public"."equipment_service_log" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("equipment_id" IN ( SELECT "public"."partner_equipment_ids"() AS "partner_equipment_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("equipment_id" IN ( SELECT "public"."partner_equipment_ids"() AS "partner_equipment_ids"))));
+
+
+
+CREATE POLICY "partner_own" ON "public"."equipment_service_plans" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("equipment_id" IN ( SELECT "public"."partner_equipment_ids"() AS "partner_equipment_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("equipment_id" IN ( SELECT "public"."partner_equipment_ids"() AS "partner_equipment_ids"))));
+
+
+
+CREATE POLICY "partner_own" ON "public"."field_boundaries" TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_own_field_ids"() AS "partner_own_field_ids"))) WITH CHECK (("field_id" IN ( SELECT "public"."partner_own_field_ids"() AS "partner_own_field_ids")));
+
+
+
+CREATE POLICY "partner_own" ON "public"."fields" TO "authenticated" USING (("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))) WITH CHECK (("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id")));
+
+
+
+CREATE POLICY "partner_own" ON "public"."jd_equipment" TO "authenticated" USING (("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))) WITH CHECK (("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id")));
+
+
+
+CREATE POLICY "partner_own" ON "public"."partner_event_tracking" TO "authenticated" USING (("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))) WITH CHECK (("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id")));
+
+
+
+CREATE POLICY "partner_own" ON "public"."partner_grant_tracking" TO "authenticated" USING (("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))) WITH CHECK (("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id")));
+
+
+
+CREATE POLICY "partner_own" ON "public"."soil_moisture_readings" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
+
+
+
+CREATE POLICY "partner_own" ON "public"."task_assignees" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("task_id" IN ( SELECT "public"."partner_task_ids"() AS "partner_task_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("task_id" IN ( SELECT "public"."partner_task_ids"() AS "partner_task_ids"))));
+
+
+
+CREATE POLICY "partner_own" ON "public"."task_files" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("task_id" IN ( SELECT "public"."partner_task_ids"() AS "partner_task_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("task_id" IN ( SELECT "public"."partner_task_ids"() AS "partner_task_ids"))));
+
+
+
+CREATE POLICY "partner_own" ON "public"."tasks" TO "authenticated" USING (("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))) WITH CHECK (("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id")));
+
+
+
+CREATE POLICY "partner_own" ON "public"."tissue_tests" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
+
+
+
+CREATE POLICY "partner_own" ON "public"."truck_inspections" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("equipment_id" IN ( SELECT "public"."partner_equipment_ids"() AS "partner_equipment_ids")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("equipment_id" IN ( SELECT "public"."partner_equipment_ids"() AS "partner_equipment_ids"))));
+
+
+
+CREATE POLICY "partner_read" ON "public"."ab_input_prices" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."bin_loads" FOR SELECT TO "authenticated" USING ((("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))));
+
+
+
+CREATE POLICY "partner_read" ON "public"."chemical_grazing_rules" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."chemical_label_crops" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."chemical_labels" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."chemical_recrop_overrides" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."chemical_recrop_rules" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."chemicals" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."contacts" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("id" IN ( SELECT "contracts"."buyer_contact_id"
+   FROM "public"."contracts"))));
+
+
+
+CREATE POLICY "partner_read" ON "public"."contracts" FOR SELECT TO "authenticated" USING ((( SELECT "public"."partner_extra"('contracts'::"text") AS "partner_extra") AND ("crop_id" IN ( SELECT "public"."partner_crop_ids"() AS "partner_crop_ids"))));
+
+
+
+CREATE POLICY "partner_read" ON "public"."crop_acre_limits" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."crop_area_yields" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."crop_coefficients" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."crop_history" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."crop_plans" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."crop_succession_rules" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."delivery_sites" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."farm_yards" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."farms" FOR SELECT TO "authenticated" USING (("id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."fert_blend_products" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."fert_blends" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."fert_check_strips" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."fert_settings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."fert_split_plans" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."fertility_rx" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."field_boundaries" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."field_crop_seasons" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."field_crop_zones" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."field_files" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."field_hail_events" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."field_haul_plans" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."field_pivots" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."field_season_outlook" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."field_soil_profiles" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."field_work_records" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."field_yield_zones" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."fieldnet_passes" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."hail_inspections" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."irrigation_events" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."jd_field_operations" FOR SELECT TO "authenticated" USING ((("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")) AND ("duplicate_of" IS NULL) AND (COALESCE("confirm_status", 'confirmed'::"text") = 'confirmed'::"text")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."jd_product_aliases" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."jd_products" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."manure_applications" FOR SELECT TO "authenticated" USING ((("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))));
+
+
+
+CREATE POLICY "partner_read" ON "public"."map_features" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."market_prices" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."market_series" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."moisture_tests" FOR SELECT TO "authenticated" USING ((("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))));
+
+
+
+CREATE POLICY "partner_read" ON "public"."n_rich_strips" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."n_trials" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."partner_farm_setup" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") OR ("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))));
+
+
+
+CREATE POLICY "partner_read" ON "public"."pivot_depth_checks" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."product_documents" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."product_purchases" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."pumps" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."rain_gauge_readings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."rain_gauges" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."road_routes" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."scale_tickets" FOR SELECT TO "authenticated" USING ((( SELECT "public"."partner_extra"('contracts'::"text") AS "partner_extra") AND ("crop_id" IN ( SELECT "public"."partner_crop_ids"() AS "partner_crop_ids"))));
+
+
+
+CREATE POLICY "partner_read" ON "public"."scouting_notes" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."soil_landscape_polygons" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."soil_moisture_readings" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."soil_test_assessments" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("report_id" IN ( SELECT "soil_test_reports"."id"
+   FROM "public"."soil_test_reports"))));
+
+
+
+CREATE POLICY "partner_read" ON "public"."soil_test_reports" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."soil_test_samples" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("report_id" IN ( SELECT "soil_test_reports"."id"
+   FROM "public"."soil_test_reports"))));
+
+
+
+CREATE POLICY "partner_read" ON "public"."tissue_tests" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."users" FOR SELECT TO "authenticated" USING ((("farm_id" IS NOT NULL) AND ("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))));
+
+
+
+CREATE POLICY "partner_read" ON "public"."water_balance_daily" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."water_balance_wedges" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
+
+
+
+CREATE POLICY "partner_read" ON "public"."weather_daily" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."weather_normals" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."weather_stations" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_rotation" ON "public"."crop_history" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_rotation_field_ids"() AS "partner_rotation_field_ids")));
+
+
+
+CREATE POLICY "partner_rotation" ON "public"."crop_plan_options" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_rotation_field_ids"() AS "partner_rotation_field_ids")));
+
+
+
+CREATE POLICY "partner_rotation" ON "public"."crop_plans" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_rotation_field_ids"() AS "partner_rotation_field_ids")));
+
+
+
+CREATE POLICY "partner_rotation" ON "public"."field_crop_zones" FOR SELECT TO "authenticated" USING (("field_id" IN ( SELECT "public"."partner_rotation_field_ids"() AS "partner_rotation_field_ids")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."bin_loads" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("bin_id" IS NULL) AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."crop_area_yields" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."crop_history" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_rotation_field_ids"() AS "partner_rotation_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."crop_plan_options" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_rotation_field_ids"() AS "partner_rotation_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."crop_plans" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_rotation_field_ids"() AS "partner_rotation_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."fert_blends" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."fert_check_strips" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."fert_split_plans" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."fertility_rx" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR false));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."field_boundaries" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_own_field_ids"() AS "partner_own_field_ids"))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."field_crop_seasons" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."field_crop_zones" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_rotation_field_ids"() AS "partner_rotation_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."field_files" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR false));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."field_hail_events" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."field_pivots" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR false));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."field_season_outlook" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."field_soil_profiles" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."field_work_records" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."field_yield_zones" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR false));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."fieldnet_passes" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR false));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."hail_inspections" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."irrigation_events" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", (EXTRACT("year" FROM "date"))::integer) IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."jd_field_operations" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR false));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."manure_applications" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."map_features" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR false));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."moisture_tests" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("bin_id" IS NULL) AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."n_rich_strips" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."n_trials" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."pivot_depth_checks" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."scouting_notes" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."soil_moisture_readings" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", (EXTRACT("year" FROM "read_on"))::integer) IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."soil_test_reports" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."tissue_tests" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."water_balance_daily" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR false));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."water_balance_wedges" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_update" ON "public"."bin_loads" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid")) AND ("bin_id" IS NULL) AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_update" ON "public"."crop_area_yields" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner")) WITH CHECK (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_update" ON "public"."crop_history" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))) WITH CHECK (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_update" ON "public"."crop_plans" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))) WITH CHECK (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_update" ON "public"."crops" FOR UPDATE TO "authenticated" USING (("id" IN ( SELECT "public"."partner_crop_edit_ids"() AS "partner_crop_edit_ids"))) WITH CHECK (("id" IN ( SELECT "public"."partner_crop_edit_ids"() AS "partner_crop_edit_ids")));
+
+
+
+CREATE POLICY "partner_update" ON "public"."fert_blend_products" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner")) WITH CHECK (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_update" ON "public"."field_crop_seasons" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner")) WITH CHECK (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_update" ON "public"."irrigation_events" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
+
+
+
+CREATE POLICY "partner_update" ON "public"."jd_product_aliases" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("product_id" IN ( SELECT "jd_products"."id"
+   FROM "public"."jd_products"
+  WHERE ("jd_products"."category" = 'fertilizer'::"text"))))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("product_id" IN ( SELECT "jd_products"."id"
+   FROM "public"."jd_products"
+  WHERE ("jd_products"."category" = 'fertilizer'::"text")))));
+
+
+
+CREATE POLICY "partner_update" ON "public"."jd_products" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("category" = 'fertilizer'::"text"))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("category" = 'fertilizer'::"text")));
+
+
+
+CREATE POLICY "partner_update" ON "public"."moisture_tests" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid")))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid")) AND ("bin_id" IS NULL) AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_write" ON "public"."crop_area_yields" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_write" ON "public"."crop_history" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_write" ON "public"."crop_plan_options" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_write" ON "public"."crop_plans" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_write" ON "public"."crop_prices" TO "authenticated" USING (("crop_id" IN ( SELECT "public"."partner_crop_edit_ids"() AS "partner_crop_edit_ids"))) WITH CHECK (("crop_id" IN ( SELECT "public"."partner_crop_edit_ids"() AS "partner_crop_edit_ids")));
+
+
+
+CREATE POLICY "partner_write" ON "public"."crop_succession_rules" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND (("prev_crop_id" IN ( SELECT "public"."partner_crop_edit_ids"() AS "partner_crop_edit_ids")) OR ("next_crop_id" IN ( SELECT "public"."partner_crop_edit_ids"() AS "partner_crop_edit_ids"))))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND (("prev_crop_id" IN ( SELECT "public"."partner_crop_edit_ids"() AS "partner_crop_edit_ids")) OR ("next_crop_id" IN ( SELECT "public"."partner_crop_edit_ids"() AS "partner_crop_edit_ids")))));
+
+
+
+CREATE POLICY "partner_write" ON "public"."crop_varieties" TO "authenticated" USING (("crop_id" IN ( SELECT "public"."partner_crop_edit_ids"() AS "partner_crop_edit_ids"))) WITH CHECK (("crop_id" IN ( SELECT "public"."partner_crop_edit_ids"() AS "partner_crop_edit_ids")));
+
+
+
+CREATE POLICY "partner_write" ON "public"."crop_variety_settings" TO "authenticated" USING (("crop_id" IN ( SELECT "public"."partner_crop_edit_ids"() AS "partner_crop_edit_ids"))) WITH CHECK (("crop_id" IN ( SELECT "public"."partner_crop_edit_ids"() AS "partner_crop_edit_ids")));
+
+
+
+CREATE POLICY "partner_write" ON "public"."fert_blends" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_write" ON "public"."fert_check_strips" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_write" ON "public"."fert_split_plans" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_write" ON "public"."field_crop_seasons" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_write" ON "public"."field_crop_zones" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_write" ON "public"."n_rich_strips" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_write" ON "public"."n_trials" TO "authenticated" USING ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year"))))) WITH CHECK ((( SELECT "public"."is_partner"() AS "is_partner") AND (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
+    "partner_field_years"."crop_year"
+   FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
+
+
+
+CREATE POLICY "partner_write" ON "public"."partner_farm_setup" TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR (( SELECT "public"."is_partner_admin"() AS "is_partner_admin") AND ("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR (( SELECT "public"."is_partner_admin"() AS "is_partner_admin") AND ("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id")))));
 
 
 
@@ -25428,6 +28208,10 @@ CREATE POLICY "read_all" ON "public"."calendar_events" FOR SELECT TO "authentica
 
 
 
+CREATE POLICY "read_all" ON "public"."canola_bloom" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."cash_bids" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -25565,6 +28349,12 @@ CREATE POLICY "read_all" ON "public"."crop_planter_profiles" FOR SELECT TO "auth
 
 
 CREATE POLICY "read_all" ON "public"."crop_prices" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."crop_share_fields" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") OR ("user_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("user_id" IN ( SELECT "users"."id"
+   FROM "public"."users"
+  WHERE ("users"."farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))))));
 
 
 
@@ -25928,6 +28718,18 @@ CREATE POLICY "read_all" ON "public"."operating_settings" FOR SELECT TO "authent
 
 
 
+CREATE POLICY "read_all" ON "public"."partner_access" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") OR ("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))));
+
+
+
+CREATE POLICY "read_all" ON "public"."partner_crops" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") OR ("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))));
+
+
+
+CREATE POLICY "read_all" ON "public"."partner_fields" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") OR ("farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))));
+
+
+
 CREATE POLICY "read_all" ON "public"."pasture_sprays" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -25964,6 +28766,22 @@ CREATE POLICY "read_all" ON "public"."ranches" FOR SELECT TO "authenticated" USI
 
 
 
+CREATE POLICY "read_all" ON "public"."research_folders" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."research_paper_chunks" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."research_paper_folders" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."research_papers" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."river_watch" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -25973,6 +28791,10 @@ CREATE POLICY "read_all" ON "public"."road_routes" FOR SELECT TO "authenticated"
 
 
 CREATE POLICY "read_all" ON "public"."road_snaps" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."scale_captures" FOR SELECT TO "authenticated" USING ("public"."is_active"());
 
 
 
@@ -26146,6 +28968,18 @@ CREATE POLICY "remove" ON "public"."checklist_photos" FOR DELETE TO "authenticat
 ALTER TABLE "public"."report_favourites" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."research_folders" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."research_paper_chunks" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."research_paper_folders" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."research_papers" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."river_watch" ENABLE ROW LEVEL SECURITY;
 
 
@@ -26237,6 +29071,9 @@ CREATE POLICY "sat_scenes_read" ON "public"."sat_scenes" FOR SELECT USING (( SEL
 
 CREATE POLICY "sat_scenes_write" ON "public"."sat_scenes" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
 
+
+
+ALTER TABLE "public"."scale_captures" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."scale_ticket_photos" ENABLE ROW LEVEL SECURITY;
@@ -26541,6 +29378,22 @@ CREATE POLICY "write_managers" ON "public"."product_documents" TO "authenticated
 
 
 
+CREATE POLICY "write_managers" ON "public"."research_folders" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."research_paper_chunks" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."research_paper_folders" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."research_papers" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
 CREATE POLICY "write_mgr" ON "public"."ab_input_prices" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
@@ -26574,6 +29427,10 @@ CREATE POLICY "write_mgr" ON "public"."bin_yards" TO "authenticated" USING (( SE
 
 
 CREATE POLICY "write_mgr" ON "public"."bins" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."canola_bloom" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -26686,6 +29543,10 @@ CREATE POLICY "write_mgr" ON "public"."crop_planter_profiles" TO "authenticated"
 
 
 CREATE POLICY "write_mgr" ON "public"."crop_prices" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."crop_share_fields" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -26982,6 +29843,18 @@ CREATE POLICY "write_mgr" ON "public"."n_trials" TO "authenticated" USING (( SEL
 
 
 CREATE POLICY "write_mgr" ON "public"."operating_settings" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."partner_access" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."partner_crops" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."partner_fields" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -27964,6 +30837,12 @@ GRANT ALL ON FUNCTION "public"."_st_within"("geom1" "public"."geometry", "geom2"
 
 
 
+REVOKE ALL ON FUNCTION "public"."add_partner_company"("p_name" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."add_partner_company"("p_name" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."add_partner_company"("p_name" "text") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."addauth"("text") TO "postgres";
 GRANT ALL ON FUNCTION "public"."addauth"("text") TO "anon";
 GRANT ALL ON FUNCTION "public"."addauth"("text") TO "authenticated";
@@ -28410,6 +31289,16 @@ GRANT ALL ON FUNCTION "public"."fn_bin_load_area_yield"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."fn_bin_load_capture_link"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_bin_load_capture_link"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_bin_load_captures"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_bin_load_captures"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_bin_load_contract"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_bin_load_contract"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_bin_load_contract"() TO "service_role";
@@ -28726,6 +31615,31 @@ GRANT ALL ON FUNCTION "public"."fn_notify"("p_user" "uuid", "p_kind" "text", "p_
 
 REVOKE ALL ON FUNCTION "public"."fn_notify_managers"("p_kind" "text", "p_title" "text", "p_body" "text", "p_link" "text", "p_details" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_notify_managers"("p_kind" "text", "p_title" "text", "p_body" "text", "p_link" "text", "p_details" "jsonb") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_partner_crop_keep"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_partner_crop_keep"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_partner_event_track"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_partner_event_track"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_partner_field_farm"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_partner_field_farm"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_partner_grant_track"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_partner_grant_track"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_partner_user_keep"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_partner_user_keep"() TO "service_role";
 
 
 
@@ -29741,6 +32655,12 @@ GRANT ALL ON FUNCTION "public"."handle_user_invited"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."home_equipment_ids"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."home_equipment_ids"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."home_equipment_ids"() TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."home_farm_id"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."home_farm_id"() TO "service_role";
 
@@ -29748,6 +32668,12 @@ GRANT ALL ON FUNCTION "public"."home_farm_id"() TO "service_role";
 
 GRANT ALL ON FUNCTION "public"."home_field_ids"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."home_field_ids"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."home_task_ids"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."home_task_ids"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."home_task_ids"() TO "service_role";
 
 
 
@@ -29805,6 +32731,16 @@ GRANT ALL ON FUNCTION "public"."is_manager"() TO "service_role";
 REVOKE ALL ON FUNCTION "public"."is_owner"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."is_owner"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."is_owner"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."is_partner"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."is_partner"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."is_partner_admin"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."is_partner_admin"() TO "service_role";
 
 
 
@@ -29990,6 +32926,115 @@ GRANT ALL ON FUNCTION "public"."overlaps_nd"("public"."gidx", "public"."gidx") T
 GRANT ALL ON FUNCTION "public"."overlaps_nd"("public"."gidx", "public"."gidx") TO "anon";
 GRANT ALL ON FUNCTION "public"."overlaps_nd"("public"."gidx", "public"."gidx") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."overlaps_nd"("public"."gidx", "public"."gidx") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."partner_companies"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."partner_companies"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."partner_companies"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."partner_crop_edit_ids"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."partner_crop_edit_ids"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."partner_crop_edit_ids"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."partner_crop_ids"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."partner_crop_ids"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."partner_equipment_ids"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."partner_equipment_ids"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."partner_equipment_ids"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."partner_extra"("p_name" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."partner_extra"("p_name" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."partner_extra"("p_name" "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."partner_farm_id"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."partner_farm_id"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."partner_field_ids"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."partner_field_ids"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."partner_field_years"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."partner_field_years"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."partner_own_field_ids"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."partner_own_field_ids"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."partner_rotation_field_ids"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."partner_rotation_field_ids"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."partner_rotation_field_ids"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."st_area"("geog" "public"."geography", "use_spheroid" boolean) TO "postgres";
+GRANT ALL ON FUNCTION "public"."st_area"("geog" "public"."geography", "use_spheroid" boolean) TO "anon";
+GRANT ALL ON FUNCTION "public"."st_area"("geog" "public"."geography", "use_spheroid" boolean) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."st_area"("geog" "public"."geography", "use_spheroid" boolean) TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."bin_loads" TO "authenticated";
+GRANT ALL ON TABLE "public"."bin_loads" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."crop_plans" TO "authenticated";
+GRANT ALL ON TABLE "public"."crop_plans" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."crops" TO "authenticated";
+GRANT ALL ON TABLE "public"."crops" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."field_boundaries" TO "authenticated";
+GRANT ALL ON TABLE "public"."field_boundaries" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."field_work_records" TO "authenticated";
+GRANT ALL ON TABLE "public"."field_work_records" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."fields" TO "authenticated";
+GRANT ALL ON TABLE "public"."fields" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."field_season_progress" TO "authenticated";
+GRANT ALL ON TABLE "public"."field_season_progress" TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."partner_season_progress"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."partner_season_progress"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."partner_season_progress"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."partner_task_ids"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."partner_task_ids"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."partner_task_ids"() TO "service_role";
 
 
 
@@ -30528,6 +33573,12 @@ GRANT ALL ON FUNCTION "public"."refresh_soil_input_hashes"("p_report_ids" "uuid"
 
 
 
+REVOKE ALL ON FUNCTION "public"."rename_partner_company"("p_id" "uuid", "p_name" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."rename_partner_company"("p_id" "uuid", "p_name" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."rename_partner_company"("p_id" "uuid", "p_name" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."replace_boundary"("p_field_id" "uuid", "p_geojson" "jsonb", "p_source" "public"."boundary_source") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."replace_boundary"("p_field_id" "uuid", "p_geojson" "jsonb", "p_source" "public"."boundary_source") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."replace_boundary"("p_field_id" "uuid", "p_geojson" "jsonb", "p_source" "public"."boundary_source") TO "service_role";
@@ -30543,6 +33594,11 @@ GRANT ALL ON FUNCTION "public"."replace_boundary_if_changed"("p_field_id" "uuid"
 REVOKE ALL ON FUNCTION "public"."report_app_issue"("p_kind" "text", "p_fingerprint" "text", "p_title" "text", "p_message" "text", "p_details" "jsonb", "p_path" "text", "p_build" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."report_app_issue"("p_kind" "text", "p_fingerprint" "text", "p_title" "text", "p_message" "text", "p_details" "jsonb", "p_path" "text", "p_build" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."report_app_issue"("p_kind" "text", "p_fingerprint" "text", "p_title" "text", "p_message" "text", "p_details" "jsonb", "p_path" "text", "p_build" "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."research_search"("q" "text", "max_rows" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."research_search"("q" "text", "max_rows" integer) TO "service_role";
 
 
 
@@ -30809,13 +33865,6 @@ GRANT ALL ON FUNCTION "public"."st_area"("public"."geometry") TO "postgres";
 GRANT ALL ON FUNCTION "public"."st_area"("public"."geometry") TO "anon";
 GRANT ALL ON FUNCTION "public"."st_area"("public"."geometry") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."st_area"("public"."geometry") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."st_area"("geog" "public"."geography", "use_spheroid" boolean) TO "postgres";
-GRANT ALL ON FUNCTION "public"."st_area"("geog" "public"."geography", "use_spheroid" boolean) TO "anon";
-GRANT ALL ON FUNCTION "public"."st_area"("geog" "public"."geography", "use_spheroid" boolean) TO "authenticated";
-GRANT ALL ON FUNCTION "public"."st_area"("geog" "public"."geography", "use_spheroid" boolean) TO "service_role";
 
 
 
@@ -33951,11 +37000,6 @@ GRANT ALL ON TABLE "public"."bin_contents" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."crops" TO "authenticated";
-GRANT ALL ON TABLE "public"."crops" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."bin_contents_current" TO "authenticated";
 GRANT ALL ON TABLE "public"."bin_contents_current" TO "service_role";
 
@@ -33968,11 +37012,6 @@ GRANT ALL ON TABLE "public"."grain_movements" TO "service_role";
 
 GRANT ALL ON TABLE "public"."bin_grain_onhand" TO "authenticated";
 GRANT ALL ON TABLE "public"."bin_grain_onhand" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."bin_loads" TO "authenticated";
-GRANT ALL ON TABLE "public"."bin_loads" TO "service_role";
 
 
 
@@ -34003,6 +37042,11 @@ GRANT ALL ON TABLE "public"."calendar_events" TO "service_role";
 
 GRANT ALL ON TABLE "public"."cameras" TO "authenticated";
 GRANT ALL ON TABLE "public"."cameras" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."canola_bloom" TO "authenticated";
+GRANT ALL ON TABLE "public"."canola_bloom" TO "service_role";
 
 
 
@@ -34226,11 +37270,6 @@ GRANT ALL ON TABLE "public"."crop_plan_options" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."crop_plans" TO "authenticated";
-GRANT ALL ON TABLE "public"."crop_plans" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."crop_planter_profiles" TO "authenticated";
 GRANT ALL ON TABLE "public"."crop_planter_profiles" TO "service_role";
 
@@ -34253,6 +37292,11 @@ GRANT ALL ON TABLE "public"."crop_position" TO "service_role";
 
 GRANT ALL ON TABLE "public"."crop_prices" TO "authenticated";
 GRANT ALL ON TABLE "public"."crop_prices" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."crop_share_fields" TO "authenticated";
+GRANT ALL ON TABLE "public"."crop_share_fields" TO "service_role";
 
 
 
@@ -34486,11 +37530,6 @@ GRANT ALL ON TABLE "public"."fertility_rx_zones" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."field_boundaries" TO "authenticated";
-GRANT ALL ON TABLE "public"."field_boundaries" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."field_boundaries_geojson" TO "authenticated";
 GRANT ALL ON TABLE "public"."field_boundaries_geojson" TO "service_role";
 
@@ -34566,11 +37605,6 @@ GRANT ALL ON TABLE "public"."field_pivots" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."fields" TO "authenticated";
-GRANT ALL ON TABLE "public"."fields" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."field_points" TO "authenticated";
 GRANT ALL ON TABLE "public"."field_points" TO "service_role";
 
@@ -34593,16 +37627,6 @@ GRANT ALL ON TABLE "public"."field_satellite" TO "service_role";
 
 GRANT ALL ON TABLE "public"."field_season_outlook" TO "authenticated";
 GRANT ALL ON TABLE "public"."field_season_outlook" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."field_work_records" TO "authenticated";
-GRANT ALL ON TABLE "public"."field_work_records" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."field_season_progress" TO "authenticated";
-GRANT ALL ON TABLE "public"."field_season_progress" TO "service_role";
 
 
 
@@ -35032,6 +38056,66 @@ GRANT ALL ON TABLE "public"."operating_settings" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."partner_access" TO "authenticated";
+GRANT ALL ON TABLE "public"."partner_access" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."partner_crops" TO "authenticated";
+GRANT ALL ON TABLE "public"."partner_crops" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."partner_crops_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."partner_crops_v" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."partner_event_tracking" TO "authenticated";
+GRANT ALL ON TABLE "public"."partner_event_tracking" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."partner_events_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."partner_events_v" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."partner_farm_setup" TO "authenticated";
+GRANT ALL ON TABLE "public"."partner_farm_setup" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."partner_fields" TO "authenticated";
+GRANT ALL ON TABLE "public"."partner_fields" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."partner_fields_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."partner_fields_v" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."partner_grant_tracking" TO "authenticated";
+GRANT ALL ON TABLE "public"."partner_grant_tracking" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."partner_grants_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."partner_grants_v" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."partner_rotation_fields_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."partner_rotation_fields_v" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."partner_season_progress_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."partner_season_progress_v" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."pasture_biomass_calibration" TO "authenticated";
 GRANT ALL ON TABLE "public"."pasture_biomass_calibration" TO "service_role";
 
@@ -35282,6 +38366,41 @@ GRANT ALL ON TABLE "public"."report_favourites" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."research_folders" TO "authenticated";
+GRANT ALL ON TABLE "public"."research_folders" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."research_papers" TO "authenticated";
+GRANT ALL ON TABLE "public"."research_papers" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."research_folders_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."research_folders_v" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."research_paper_chunks" TO "authenticated";
+GRANT ALL ON TABLE "public"."research_paper_chunks" TO "service_role";
+
+
+
+GRANT ALL ON SEQUENCE "public"."research_paper_chunks_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."research_paper_chunks_id_seq" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."research_paper_folders" TO "authenticated";
+GRANT ALL ON TABLE "public"."research_paper_folders" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."research_shelf_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."research_shelf_v" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."river_watch" TO "authenticated";
 GRANT ALL ON TABLE "public"."river_watch" TO "service_role";
 
@@ -35374,6 +38493,11 @@ GRANT ALL ON TABLE "public"."sat_season_coverage" TO "service_role";
 
 GRANT ALL ON TABLE "public"."sat_zone_readiness" TO "authenticated";
 GRANT ALL ON TABLE "public"."sat_zone_readiness" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."scale_captures" TO "authenticated";
+GRANT ALL ON TABLE "public"."scale_captures" TO "service_role";
 
 
 
@@ -35692,6 +38816,7 @@ insert into storage.buckets (id, name, public) values ('equipment-photos', 'equi
 insert into storage.buckets (id, name, public) values ('field-files', 'field-files', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('field-work-photos', 'field-work-photos', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('invoices', 'invoices', false) on conflict (id) do nothing;
+insert into storage.buckets (id, name, public) values ('research-library', 'research-library', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('satellite-images', 'satellite-images', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('scale-photos', 'scale-photos', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('scale-ticket-photos', 'scale-ticket-photos', false) on conflict (id) do nothing;
@@ -35741,6 +38866,20 @@ drop policy if exists "invoices readable by active users" on storage.objects;
 create policy "invoices readable by active users" on storage.objects as PERMISSIVE for SELECT to authenticated using (((bucket_id = 'invoices'::text) AND public.is_active()));
 drop policy if exists "invoices written by managers" on storage.objects;
 create policy "invoices written by managers" on storage.objects as PERMISSIVE for INSERT to authenticated with check (((bucket_id = 'invoices'::text) AND public.is_manager()));
+drop policy if exists partner_photos_insert on storage.objects;
+create policy partner_photos_insert on storage.objects as PERMISSIVE for INSERT to authenticated with check (((bucket_id = ANY (ARRAY['scouting-photos'::text, 'field-work-photos'::text])) AND ( SELECT public.is_partner() AS is_partner)));
+drop policy if exists partner_photos_read on storage.objects;
+create policy partner_photos_read on storage.objects as PERMISSIVE for SELECT to authenticated using (((bucket_id = ANY (ARRAY['scouting-photos'::text, 'field-work-photos'::text, 'field-files'::text])) AND ( SELECT public.is_partner() AS is_partner) AND ((owner = ( SELECT auth.uid() AS uid)) OR ((bucket_id = 'scouting-photos'::text) AND (EXISTS ( SELECT 1
+   FROM public.scouting_notes n
+  WHERE ((n.field_id IN ( SELECT public.partner_field_ids() AS partner_field_ids)) AND (objects.name = ANY (n.photo_paths)))))) OR ((bucket_id = 'field-work-photos'::text) AND (EXISTS ( SELECT 1
+   FROM public.field_work_records w
+  WHERE ((w.field_id IN ( SELECT public.partner_field_ids() AS partner_field_ids)) AND (objects.name = ANY (w.photo_paths)))))) OR ((bucket_id = 'field-files'::text) AND ((storage.foldername(name))[1] IN ( SELECT (public.partner_field_ids())::text AS partner_field_ids))))));
+drop policy if exists research_library_delete on storage.objects;
+create policy research_library_delete on storage.objects as PERMISSIVE for DELETE to authenticated using (((bucket_id = 'research-library'::text) AND ( SELECT public.is_manager() AS is_manager)));
+drop policy if exists research_library_insert on storage.objects;
+create policy research_library_insert on storage.objects as PERMISSIVE for INSERT to authenticated with check (((bucket_id = 'research-library'::text) AND ( SELECT public.is_manager() AS is_manager)));
+drop policy if exists research_library_read on storage.objects;
+create policy research_library_read on storage.objects as PERMISSIVE for SELECT to authenticated using (((bucket_id = 'research-library'::text) AND ( SELECT public.is_active() AS is_active)));
 drop policy if exists satellite_images_read on storage.objects;
 create policy satellite_images_read on storage.objects as PERMISSIVE for SELECT to authenticated using ((bucket_id = 'satellite-images'::text));
 drop policy if exists scale_photos_delete on storage.objects;

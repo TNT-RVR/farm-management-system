@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { useCropYear } from '@/lib/crop-year'
 import { useCropPlans, useCrops } from '@/lib/queries'
 import { productName, readable } from '@/lib/chemical-display'
+import { usePartnerView } from '@/lib/partner-view'
+import { isPartnerTab } from '@/lib/partner'
 import { useTab } from '@/lib/useTab'
 import {
   AlertTriangle,
@@ -35,9 +37,9 @@ import {
   type ChemicalListRow,
 } from '@/lib/chemicals'
 import { cn } from '@/lib/utils'
-import { useFarmSettings } from '@/lib/farm-setup'
 import { localDate } from '@/lib/date-range'
 import { useDebouncedValue } from '@/lib/useDebouncedValue'
+import { useRetailerName } from '@/lib/products'
 
 const SEARCH_PLACEHOLDER: Record<SearchField, string> = {
   any: 'Product, active ingredient, pest or crop…',
@@ -177,12 +179,14 @@ function ChemicalCard({ c, canEdit, farmCrops }: { c: ChemicalListRow; canEdit: 
   )
 }
 
+const CHEMICAL_TABS = ['registry', 'inventory', 'prices', 'spraycheck', 'reentry'] as const
+
 export function ChemicalsPage() {
   return <ChemicalsView />
 }
 
 function ChemicalsView() {
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
   const [term, setTerm] = useState('')
@@ -207,9 +211,12 @@ function ChemicalsView() {
   // Sam asked for them back here on 29 Oct. Saved /spraying links redirect.
   // 'pricing' was the Prices tab's key while it was called "Pricing settings";
   // saved links to it still land there.
+  // A partner reads the labels and the spray checks, not our shed or its prices
+  // (his preset, lib/partner.ts).
+  const partner = usePartnerView()
   const [tab, setTab] = useTab(
     'chemicals',
-    ['registry', 'inventory', 'prices', 'spraycheck', 'reentry'] as const,
+    CHEMICAL_TABS.filter((t) => !partner || isPartnerTab('/chemicals', t)),
     (asked) => (asked === 'pricing' ? 'prices' : undefined),
   )
 
@@ -256,8 +263,12 @@ function ChemicalsView() {
       <PillTabs
         tabs={[
           { key: 'registry', label: 'Registry' },
-          { key: 'inventory', label: 'Inventory' },
-          { key: 'prices', label: 'Prices' },
+          ...(partner
+            ? []
+            : [
+                { key: 'inventory' as const, label: 'Inventory' },
+                { key: 'prices' as const, label: 'Prices' },
+              ]),
           { key: 'spraycheck', label: 'Before spraying' },
           { key: 'reentry', label: 'Recently sprayed' },
         ]}

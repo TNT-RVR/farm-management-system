@@ -30,6 +30,7 @@ import { FieldFiles } from '@/components/FieldFiles'
 import { TabSuspense } from '@/components/TabSuspense'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useCropYear } from '@/lib/crop-year'
+import { CanolaBloomCard } from '@/pages/field/CanolaBloomCard'
 import { labelPointOf } from '@/lib/geo/area'
 import { reverseLld, sameParcel } from '@/lib/geo/ats'
 import { useTownshipTable } from '@/lib/geo/atsTownships'
@@ -85,7 +86,7 @@ function NotesEditor({
   fieldId: string
   column: 'notes_md' | 'soil_notes_md' | 'pivot_start_instructions_md'
   initial: string | null
-  /** A crop-share partner reads the field's own notes but cannot change the field. */
+  /** A partner reads the field's own notes but cannot change the field. */
   readOnly?: boolean
 }) {
   // Parent passes key={fieldId+column+initial} so state resets on data change.
@@ -732,7 +733,7 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
     if (!crop || !isCanola(crop.name)) return null
     return grownTrait(crop, companyOf(cropId, variety), crops ?? []) ?? { trait: null, from: null }
   }
-  // A crop-share partner: his own records in his years, our field itself
+  // A partner: his own records in his years, our field itself
   // read-only; his company's own fields are his in full (lib/partner-view.ts).
   const partner = usePartnerView()
   const partnerYears = usePartnerYears(id)
@@ -838,6 +839,8 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
             />
             <HarvestEstimateLine fieldId={field.id} cropYear={cropYear} />
           </div>
+
+          <CanolaBloomCard fieldId={field.id} cropYear={cropYear} />
 
           <FieldHailCard fieldId={field.id} />
 

@@ -45,7 +45,7 @@ export function FieldsPage() {
   const { data: seasons } = useFieldSeasons(cropYear)
   const { data: progress } = useSeasonProgress(cropYear)
   const isManager = hasManagerAccess(profile?.role)
-  // A crop-share partner adds and keeps his company's own fields; ours on his
+  // A partner adds and keeps his company's own fields; ours on his
   // list are his to record on, not to set up (lib/partner-view.ts).
   const { partner, isOwnField } = usePartnerAccess()
   const canAdd = isManager || partner

@@ -5,10 +5,11 @@ import { SettingsButton } from '@/components/SettingsButton'
 import { Select } from '@/components/Select'
 import { HelpNote } from '@/components/HelpNote'
 import { useCropYear } from '@/lib/crop-year'
-import { useBrand, useFarmSettings, useFeature } from '@/lib/farm-setup'
+import { useBrand, useFeature } from '@/lib/farm-setup'
 import { useSaveFertSetting, useWaterSCredit } from '@/lib/fert-savings/data'
 import { UPFRONT_SPLIT_DEFAULTS, WATER_S_BY_SOURCE, waterSourceLabel, type WaterSource } from '@/lib/fert-savings/alberta'
 import { SAVINGS_HOMES, savingsToolHref } from '@/lib/fert-savings/homes'
+import { useRetailerName } from '@/lib/products'
 import { SavingsProvider, ToolFocusProvider, useSavings, useToolFocus, type ToolFocus } from './context'
 import { ghost, input, money, perLbFmt } from './ui'
 import { SavingsTool } from './tools'
@@ -224,7 +225,7 @@ function WhereTheSavingsLive({
 function SettingsPanel() {
   const { inputs } = useSavings()
   const { farmName } = useBrand()
-  const { retailerName } = useFarmSettings()
+  const retailerName = useRetailerName()
   const save = useSaveFertSetting()
   const typedAdder = inputs.settings.get('dtn_adder_per_tonne')
   const [adder, setAdder] = useState(typedAdder == null ? '' : String(typedAdder))

@@ -59,13 +59,15 @@ export const CLOUD_PROBABILITY_MAX = 0.4
 const EVALSCRIPT = `//VERSION=3
 function setup() {
   return {
-    input: [{ bands: ["B03", "B04", "B05", "B08", "B11", "SCL", "CLP", "dataMask"] }],
+    input: [{ bands: ["B02", "B03", "B04", "B05", "B08", "B11", "SCL", "CLP", "dataMask"] }],
     output: [
       { id: "ndvi", bands: 1, sampleType: "FLOAT32" },
       { id: "ndre", bands: 1, sampleType: "FLOAT32" },
       { id: "evi2", bands: 1, sampleType: "FLOAT32" },
       { id: "ndmi", bands: 1, sampleType: "FLOAT32" },
       { id: "clp", bands: 1, sampleType: "FLOAT32" },
+      { id: "yellow", bands: 1, sampleType: "FLOAT32" },
+      { id: "blue", bands: 1, sampleType: "FLOAT32" },
       { id: "dataMask", bands: 1 }
     ]
   };
@@ -82,9 +84,13 @@ function evaluatePixel(s) {
   var ndre = (s.B08 - s.B05) / (s.B08 + s.B05);
   var evi2 = 2.5 * (s.B08 - s.B04) / (s.B08 + 2.4 * s.B04 + 1.0);
   var ndmi = (s.B08 - s.B11) / (s.B08 + s.B11);
+  // Canola petals (canola-bloom.ts): a plant, red high next to green (not
+  // plain leaves), blue low next to green (not soil between the rows). The
+  // mean of this over the clear pixels is the share of the field in flower.
+  var yellow = ndvi > 0.4 && s.B04 / s.B03 > 0.65 && s.B02 / s.B03 < 0.6 ? 1 : 0;
   return {
     ndvi: [ndvi], ndre: [ndre], evi2: [evi2], ndmi: [ndmi],
-    clp: [clp], dataMask: [valid]
+    clp: [clp], yellow: [yellow], blue: [s.B02], dataMask: [valid]
   };
 }`
 
@@ -232,6 +238,10 @@ export type Stat = {
   ndreMean: number | null
   evi2Mean: number | null
   ndmiMean: number | null
+  /** Share of the clear pixels that pass the canola-flower test. */
+  yellowFraction: number | null
+  /** Mean blue reflectance: high on a smoky day the cloud mask let through. */
+  blueMean: number | null
   raw: unknown
 }
 
@@ -374,6 +384,8 @@ export async function fetchStats(
       ndreMean: numOrNull(band('ndre')?.mean),
       evi2Mean: numOrNull(band('evi2')?.mean),
       ndmiMean: numOrNull(band('ndmi')?.mean),
+      yellowFraction: numOrNull(band('yellow')?.mean),
+      blueMean: numOrNull(band('blue')?.mean),
       raw: d.outputs,
     })
   }
@@ -428,7 +440,15 @@ export function unitsSpent(res: Response): number | null {
  */
 export async function runSatelliteIngest(
   sb: SupabaseClient,
-  opts: { days?: number; limitFields?: number; reprocess?: boolean; deadline?: number; subjectType?: 'field' | 'pasture' | 'pasture_zone' | 'n_strip' } = {},
+  opts: {
+    days?: number
+    limitFields?: number
+    reprocess?: boolean
+    deadline?: number
+    subjectType?: 'field' | 'pasture' | 'pasture_zone' | 'n_strip'
+    /** Only these subjects (the canola bloom backfill). */
+    onlyIds?: string[]
+  } = {},
 ): Promise<IngestResult> {
   if (process.env.SAT_INGEST_ENABLED !== 'true') {
     return { ok: false, fields: 0, scenes: 0, observations: 0, detail: 'SAT_INGEST_ENABLED is not true' }
@@ -484,7 +504,9 @@ export async function runSatelliteIngest(
   }
 
   let ranOutOfTime = 0
+  const only = opts.onlyIds ? new Set(opts.onlyIds) : null
   for (const s of subjects as Subject[]) {
+    if (only && !only.has(s.field_id)) continue
     // Stop cleanly rather than be killed mid-field. Netlify caps a function's
     // wall clock, and an ingest over every field can exceed it; the per-scene
     // skip means the next run resumes exactly where this one stopped, so a
@@ -592,6 +614,8 @@ export async function runSatelliteIngest(
             ndre_mean: st.ndreMean,
             evi2_mean: st.evi2Mean,
             ndmi_mean: st.ndmiMean,
+            yellow_fraction: st.yellowFraction,
+            blue_mean: st.blueMean,
             raw_stats: st.raw as never,
           },
           // Update rather than ignore: when the mask improves, the stored

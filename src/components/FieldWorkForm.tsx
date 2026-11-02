@@ -111,7 +111,7 @@ export function FieldWorkForm({
   const startIso = fromLocalInput(started)
   const finishIso = fromLocalInput(finished)
   const year = workCropYear({ started_at: startIso, finished_at: finishIso })
-  // A crop-share partner records only in the years the field is his (lib/partner-view.ts).
+  // A partner records only in the years the field is his (lib/partner-view.ts).
   const access = usePartnerAccess()
   const { data: plans } = useCropPlans(year)
   const fieldZones = (zones ?? []).filter((z) => z.field_id === fieldId && z.crop_year === year)

@@ -35,7 +35,7 @@ export function FieldFiles({ fieldId }: { fieldId: string }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [kind, setKind] = useState<FieldFileKind>('doc')
 
-  // A crop-share partner opens the field's files but does not add to them.
+  // A partner opens the field's files but does not add to them.
   const partner = usePartnerView()
 
   const canDelete = (f: FieldFileRow) =>

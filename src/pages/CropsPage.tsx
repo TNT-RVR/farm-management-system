@@ -9,7 +9,7 @@ import { Select } from '@/components/Select'
 const YIELD_UNITS = ['bu', 'lbs', 'cwt', 'ton', 'MT', 'ac'] as const
 import { ConfirmDialog, Modal } from '@/components/Modal'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
-import { usePartnerCrops, usePartnerFarmId } from '@/lib/partner-view'
+import { usePartnerCropShares, usePartnerFarmId } from '@/lib/partner-view'
 import { useCropYear } from '@/lib/crop-year'
 import { useCropMutations, useCropVarieties, useCrops, type CropRow } from '@/lib/queries'
 import { useAllCropInputs, useAllCropPrices, useYieldHistory } from '@/lib/forecast-data'
@@ -58,10 +58,11 @@ export function CropsPage() {
   const setWeighed = useSetCropWeighed()
   const setColour = useSetCropColour()
   const isManager = hasManagerAccess(profile?.role)
-  // A crop-share partner lists and edits only the crops he grows: his
-  // company's own, and ours on his fields, whose price and rules are then ours
+  // A partner lists only his company's crops and the ones shared with it, and
+  // edits those not shared read-only; a shared crop's price and rules are ours
   // too (one row each). Null for staff (lib/partner-view.ts).
-  const partnerCrops = usePartnerCrops()
+  const partnerShares = usePartnerCropShares()
+  const partnerCrops = partnerShares?.editable ?? null
   const partnerFarm = usePartnerFarmId()
   const canEditCrop = (id: string) => isManager || Boolean(partnerCrops?.has(id))
   const canAdd = isManager || partnerCrops != null
@@ -90,7 +91,7 @@ export function CropsPage() {
   const [deleting, setDeleting] = useState<CropRow | null>(null)
   const [adding, setAdding] = useState<{ name: string; unit: CropRow['yield_unit'] } | null>(null)
 
-  const shown = useMemo(() => (crops ?? []).filter((c) => !partnerCrops || partnerCrops.has(c.id)), [crops, partnerCrops])
+  const shown = useMemo(() => (crops ?? []).filter((c) => !partnerShares || partnerShares.shared.has(c.id)), [crops, partnerShares])
   const active = useMemo(() => shown.filter((c) => c.active), [shown])
   const archived = useMemo(() => shown.filter((c) => !c.active), [shown])
 

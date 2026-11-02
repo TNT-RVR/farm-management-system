@@ -43,6 +43,9 @@ const PreHarvestPage = lazy(() => import('@/pages/HarvestPage').then((m) => ({ d
 const HarvestReportsPage = lazy(() => import('@/pages/HarvestPage').then((m) => ({ default: m.HarvestReportsPage })))
 const ContactsPage = lazy(() => import('@/pages/ContactsPage').then((m) => ({ default: m.ContactsPage })))
 const GrantsPage = lazy(() => import('@/pages/GrantsPage').then((m) => ({ default: m.GrantsPage })))
+const ResearchPage = lazy(() =>
+  import('@/pages/ResearchPage').then((m) => ({ default: m.ResearchPage })),
+)
 const ScoutingPage = lazy(() => import('@/pages/ScoutingPage').then((m) => ({ default: m.ScoutingPage })))
 const LeasesPage = lazy(() => import('@/pages/LeasesPage').then((m) => ({ default: m.LeasesPage })))
 const EventsPage = lazy(() => import('@/pages/EventsPage').then((m) => ({ default: m.EventsPage })))
@@ -58,6 +61,8 @@ const CattlePage = lazy(() => import('@/pages/CattlePage').then((m) => ({ defaul
 const CattleRedirect = lazy(() => import('@/pages/CattlePage').then((m) => ({ default: m.CattleRedirect })))
 const CattleDetailPage = lazy(() => import('@/pages/CattleDetailPage').then((m) => ({ default: m.CattleDetailPage })))
 const WeatherPage = lazy(() => import('@/pages/WeatherPage').then((m) => ({ default: m.WeatherPage })))
+// Partner's spray restrictions
+const GrazingRestrictionsPage = lazy(() => import('@/pages/GrazingRestrictionsPage').then((m) => ({ default: m.GrazingRestrictionsPage })))
 const HailReportsPage = lazy(() => import('@/pages/HailReportsPage').then((m) => ({ default: m.HailReportsPage })))
 const CropComparePage = lazy(() => import('@/pages/CropComparePage').then((m) => ({ default: m.CropComparePage })))
 const RotationPage = lazy(() => import('@/pages/RotationPage').then((m) => ({ default: m.RotationPage })))
@@ -103,6 +108,8 @@ export default function App() {
         <Route path="/home" element={<Navigate to="/dashboard" replace />} />
         <Route path="/weather" element={<WeatherPage />} />
         <Route path="/hail" element={<HailReportsPage />} />
+        {/* Partner's spray restrictions */}
+        <Route path="/spray-restrictions" element={<GrazingRestrictionsPage />} />
         <Route path="/meeting" element={<MeetingPage />} />
         {/* What's new is a tab of the Monday meeting since 7 Oct 2026. */}
         <Route path="/whats-new" element={<Navigate to="/meeting?tab=whats-new" replace />} />
@@ -227,6 +234,8 @@ export default function App() {
         <Route path="/fuel" element={<FuelPage />} />
         <Route path="/calculator" element={<CalculatorPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        {/* The papers shelf: what research says about our crops, sprays and water. */}
+        <Route path="/research" element={<ResearchPage />} />
         {/* What's missing: one checklist of the inputs nobody has entered (16 Oct 2026). */}
         <Route path="/missing" element={<MissingPage />} />
         <Route path="/integrations" element={<SettingsRedirect from="integrations" />} />

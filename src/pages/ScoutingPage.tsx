@@ -130,7 +130,7 @@ function ScoutForm({ cropYear, initialField = null, spot = null, onClose }: { cr
   // Opened from a map click, the clicked spot is the pin: no need to ask the phone.
   const here = useHere(!spot)
   const { data: allFields } = useFields()
-  // A crop-share partner records only on his fields in his years (lib/partner-view.ts).
+  // A partner records only on his fields in his years (lib/partner-view.ts).
   const access = usePartnerAccess()
   const fields = access.partner ? (allFields ?? []).filter((f) => access.canWrite(f.id, cropYear)) : allFields
   const save = useSaveScoutNote()
@@ -507,7 +507,7 @@ function ScoutMap({
 export function FieldScouting({ fieldId }: { fieldId: string }) {
   const { data: notes, isLoading } = useFieldScoutNotes(fieldId)
   const { cropYear } = useCropYear()
-  // A crop-share partner adds notes only in the years the field is his.
+  // A partner adds notes only in the years the field is his.
   const access = usePartnerAccess()
   const [openId, setOpenId] = useState<string | null>(null)
   const open = notes?.find((n) => n.id === openId) ?? null

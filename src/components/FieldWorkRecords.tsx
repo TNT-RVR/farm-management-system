@@ -379,7 +379,7 @@ export function QueuedWorkCard({ item }: { item: OutboxItem }) {
 
 /** The Record work button, and the managers' list of extra work types beside it. */
 export function RecordWorkBar({ fieldId, fieldAcres, onSaved }: { fieldId: string; fieldAcres: number | null; onSaved?: (r: { queued: boolean }) => void }) {
-  // A crop-share partner records only on a field listed for him (lib/partner-view.ts).
+  // A partner records only on a field listed for him (lib/partner-view.ts).
   const access = usePartnerAccess()
   const { profile } = useAuth()
   const [adding, setAdding] = useState(false)

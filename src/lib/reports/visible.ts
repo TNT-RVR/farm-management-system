@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { canSeeFinances, hasAdminAccess, hasManagerAccess, useAuth } from '@/lib/auth'
 import { isViewDenied } from '@/lib/nav'
 import { isPathOff, useDisabledPaths } from '@/lib/farm-setup'
+import { isPartner, isPartnerPath } from '@/lib/partner'
 import { REPORTS } from './catalogue'
 
 const bare = (to: string) => to.split('?')[0]
@@ -19,7 +20,12 @@ export function useVisibleReports() {
   const isManager = hasManagerAccess(profile?.role)
   const finances = canSeeFinances(profile)
   // isPathOff gets the whole link: a switched-off feature can be one tab of a page.
-  const viewOff = useMemo(() => (path: string) => isPathOff(disabled, path) || isViewDenied(profile, bare(path)), [disabled, profile])
+  // A partner makes the reports of the pages he has, each narrowed to his rows by the database.
+  const partner = isPartner(profile?.role)
+  const viewOff = useMemo(
+    () => (path: string) => isPathOff(disabled, path) || isViewDenied(profile, bare(path)) || (partner && !isPartnerPath(path)),
+    [disabled, profile, partner],
+  )
   const reports = useMemo(
     () => REPORTS.filter((r) => !viewOff(r.from.to) && (!r.adminOnly || isAdmin) && (!r.managerOnly || isManager) && (!r.financeOnly || finances)),
     [viewOff, isAdmin, isManager, finances],

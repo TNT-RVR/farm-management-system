@@ -28,7 +28,7 @@ export const NOTIFICATION_GROUPS = [
     ],
   },
   { key: 'weather', label: 'Weather & frost', kinds: ['crop_weather', 'winterizing_freeze'] },
-  { key: 'crops', label: 'Crops & fields', kinds: ['spray_rotation_conflict', 'jd_boundary', 'combine_out_of_date', 'lease'] },
+  { key: 'crops', label: 'Crops & fields', kinds: ['canola_bloom', 'spray_rotation_conflict', 'jd_boundary', 'combine_out_of_date', 'lease'] },
   { key: 'bins', label: 'Bins', kinds: ['bin_needs_air', 'seed_bin_check'] },
   { key: 'cattle', label: 'Cattle & grazing', kinds: ['grazing_restriction', 'grazing_conflict', 'pasture_move', 'stock_return'] },
   {

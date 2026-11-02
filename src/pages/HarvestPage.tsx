@@ -15,6 +15,8 @@ import { moistureFormWasOpen } from '@/pages/harvest/useMoistureEntry'
 import { BinSettingsDialog } from '@/pages/bins/BinSettings'
 import { WeighInDialog } from '@/pages/bins/WeighIn'
 import { useCropYear } from '@/lib/crop-year'
+import { usePartnerView } from '@/lib/partner-view'
+import { isPartnerTab } from '@/lib/partner'
 import { TabSuspense } from '@/components/TabSuspense'
 
 // Each tab is its own chunk: the bin map and the charts load when their tab opens.
@@ -82,6 +84,8 @@ function HarvestShell({
 }) {
   const { cropYear } = useCropYear()
   const navigate = useNavigate()
+  // A partner has no bins of ours to air, and the moisture tester is on Bins.
+  const partner = usePartnerView()
   const [settings, setSettings] = useState(false)
   const [weighing, setWeighing] = useState(false)
   const iconBtn = 'flex h-11 w-11 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 hover:text-brand-700'
@@ -93,9 +97,11 @@ function HarvestShell({
           <GrainBin className="h-5 w-5 text-brand-700" /> {title} {cropYear}
         </h1>
 
-        <div>
-          <BinAirAlerts />
-        </div>
+        {!partner && (
+          <div>
+            <BinAirAlerts />
+          </div>
+        )}
 
         <div className="mb-1 flex flex-wrap items-center gap-3">
           {tabs}
@@ -104,6 +110,7 @@ function HarvestShell({
             <button type="button" onClick={() => setWeighing(true)} aria-label="Weigh in a load" title="Weigh in a load" className={iconBtn}>
               <Scale className="h-6 w-6" />
             </button>
+            {!partner && (
             <button
               type="button"
               onClick={onReading ?? (() => navigate('/harvest?tab=moisture&reading=1'))}
@@ -113,6 +120,7 @@ function HarvestShell({
             >
               <Percent className="h-6 w-6" />
             </button>
+            )}
             {binTools && (
               <>
                 <Link to="/calculator?tab=bushels" aria-label="Bushel calculator" title="Bushel calculator" className={iconBtn}>
@@ -214,11 +222,14 @@ type ScaleTab = (typeof SCALE_TABS)[number]['key']
 /** Weigh scale (/weigh-scale). 'scale' and 'stats' were these as Harvest tabs. */
 export function WeighScalePage() {
   const { cropYear } = useCropYear()
-  const [tab, choose] = useTab<ScaleTab>('weigh-scale', SCALE_TABS.map((t) => t.key), (a) =>
+  // Trucks & drivers are our fleet's figures.
+  const partner = usePartnerView()
+  const tabs = partner ? SCALE_TABS.filter((t) => isPartnerTab('/weigh-scale', t.key)) : SCALE_TABS
+  const [tab, choose] = useTab<ScaleTab>('weigh-scale', tabs.map((t) => t.key), (a) =>
     a === 'scale' ? 'weigh' : a === 'stats' ? 'trucks' : undefined,
   )
   return (
-    <HarvestShell title="Weigh scale" tabs={<PillTabs tabs={SCALE_TABS} value={tab} onChange={choose} />}>
+    <HarvestShell title="Weigh scale" tabs={tabs.length > 1 ? <PillTabs tabs={tabs} value={tab} onChange={choose} /> : undefined}>
       {tab === 'weigh' ? <WeighScaleTab cropYear={cropYear} /> : <ScaleStatsTab cropYear={cropYear} />}
     </HarvestShell>
   )
@@ -255,11 +266,14 @@ type ReportTab = (typeof REPORT_TABS)[number]['key']
  */
 export function HarvestReportsPage() {
   const { cropYear } = useCropYear()
-  const [tab, choose] = useTab<ReportTab>('harvest-reports', REPORT_TABS.map((t) => t.key), (a) =>
+  // The seed company's forms are about our seed canola.
+  const partner = usePartnerView()
+  const tabs = partner ? REPORT_TABS.filter((t) => isPartnerTab('/harvest-reports', t.key)) : REPORT_TABS
+  const [tab, choose] = useTab<ReportTab>('harvest-reports', tabs.map((t) => t.key), (a) =>
     a === 'reports' ? 'all' : a === 'seed-forms' ? 'seed-report' : undefined,
   )
   return (
-    <HarvestShell title="Harvest reports" tabs={<PillTabs tabs={REPORT_TABS} value={tab} onChange={choose} />}>
+    <HarvestShell title="Harvest reports" tabs={tabs.length > 1 ? <PillTabs tabs={tabs} value={tab} onChange={choose} /> : undefined}>
       <div className="mt-3">{tab === 'all' ? <HarvestReportsTab cropYear={cropYear} /> : tab === 'seed-report' ? <SeedReportTab /> : <BinTempsTab />}</div>
     </HarvestShell>
   )

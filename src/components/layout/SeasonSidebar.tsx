@@ -183,12 +183,15 @@ function SectionRow({
  * harvest wants Harvest to stay open while they glance into Cattle. The section
  * you are in opens by itself when you arrive by address or reload. Reordering
  * and hiding live in Settings → My account → Menu, not in drags here.
+ *
+ * `openFirst` is a section to open as it appears: the one whose icon was
+ * clicked on the narrow bar (SeasonRail).
  */
-export function SeasonSidebar() {
+export function SeasonSidebar({ openFirst }: { openFirst?: string | null }) {
   const menu = useMenu('desktop')
   const match = useMenuMatch()
   /** Open/closed by hand. Unset means "open if you are in it". */
-  const [toggled, setToggled] = useState<Record<string, boolean>>({})
+  const [toggled, setToggled] = useState<Record<string, boolean>>(() => (openFirst ? { [openFirst]: true } : {}))
   const [folded, setFolded] = useState<Record<string, boolean>>({})
   const isOpen = (s: MenuSection) => toggled[s.key] ?? match?.section.key === s.key
   const toggle = (s: MenuSection) => setToggled((t) => ({ ...t, [s.key]: !isOpen(s) }))
@@ -207,6 +210,51 @@ export function SeasonSidebar() {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * The sidebar tucked in (Sam, 30 Oct 2026): a narrow bar of the sections'
+ * icons. Home and Map (a single page) go straight there; a section's icon
+ * opens the full menu with that section open; anywhere else on the bar opens
+ * the menu as it was. The section you are in shows green, the page you are on
+ * filled, as in the full menu.
+ */
+export function SeasonRail({ onExpand }: { onExpand: (section?: string) => void }) {
+  const menu = useMenu('desktop')
+  const match = useMenuMatch()
+  const icon = (s: MenuSection) => {
+    const Icon = s.icon
+    const here = match?.section.key === s.key
+    const cls = cn(
+      'flex h-9 w-9 items-center justify-center rounded-md transition-colors',
+      here && isLeaf(s) ? 'bg-brand-800 text-white' : here ? 'text-brand-800 hover:bg-gray-100' : 'text-gray-600 hover:bg-gray-100',
+    )
+    return isLeaf(s) ? (
+      <Link key={s.key} to={s.to} onClick={(e) => e.stopPropagation()} className={cls} title={s.label} aria-label={s.label} aria-current={here ? 'page' : undefined}>
+        <Icon className="h-4 w-4" />
+      </Link>
+    ) : (
+      <button
+        key={s.key}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onExpand(s.key)
+        }}
+        className={cls}
+        title={s.label}
+        aria-label={`${s.label}: open the menu`}
+      >
+        <Icon className="h-4 w-4" />
+      </button>
+    )
+  }
+  return (
+    <div className="flex min-h-full flex-col items-center gap-1">
+      {menu.sections.map(icon)}
+      {menu.pinned.length > 0 && <div className="mt-auto flex flex-col items-center gap-1 border-t border-gray-200 pt-2">{menu.pinned.map(icon)}</div>}
     </div>
   )
 }

@@ -7,13 +7,11 @@ import { BRAND } from '@/config/brand'
 import {
   FEATURES,
   featureOn,
-  settingsOf,
   useBrand,
   useFarmSetup,
   useSaveFarmSetup,
   type FarmSetup,
 } from '@/lib/farm-setup'
-import { useRanches } from '@/lib/ranches'
 import { HelpNote } from '@/components/HelpNote'
 import { Select } from '@/components/Select'
 import { cn } from '@/lib/utils'
@@ -251,7 +249,6 @@ export function FarmSetupPanel({ part, go }: { part: Part; go: (p: Part) => void
   const { data: setup, isLoading } = useFarmSetup()
   const save = useSaveFarmSetup()
   const brand = useBrand()
-  const { data: ranches } = useRanches()
   const [draft, setDraft] = useState<Partial<FarmSetup> | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -280,8 +277,6 @@ export function FarmSetupPanel({ part, go }: { part: Part; go: (p: Part) => void
   const set = (patch: Partial<FarmSetup>) => setDraft((d) => ({ ...(d ?? {}), ...patch }))
   const dirty = draft != null && Object.keys(draft).length > 0
   const features = (setup?.features ?? FRESH_OFF) as Record<string, boolean>
-  // What each field falls back to when left empty, shown as its placeholder.
-  const settings = settingsOf(null)
 
   // The forecast places as they will be saved: the draft's, the saved list,
   // or — until someone edits — the built-in list, copied so editing starts
@@ -396,6 +391,25 @@ export function FarmSetupPanel({ part, go }: { part: Part; go: (p: Part) => void
                 )}
                 {uploadError && <span className="text-xs text-red-600">{uploadError}</span>}
               </div>
+              {/* The farm's outward-facing contact. It belongs with the name and
+                  logo because it travels with them: public_brand() serves all of
+                  it without a sign-in, for the legal pages Intuit reads. Nothing
+                  is seeded in a migration, so another farm's copy starts blank
+                  and its legal pages say "contact the owners" instead. */}
+              <label className={cn(label, 'mt-3 block')}>
+                Contact address for this app
+                <input
+                  type="email"
+                  className={field}
+                  placeholder="someone@yourfarm.com"
+                  value={v.support_email ?? ''}
+                  onChange={(e) => set({ support_email: e.target.value })}
+                />
+                <span className="mt-1 block text-[11px] font-normal text-gray-500">
+                  Named on the public privacy and terms pages, and on the QuickBooks card when its
+                  connection drops. Anyone can read it.
+                </span>
+              </label>
               <HelpNote
                 className="mt-2"
                 summary="The name and icon on a phone's home screen change after the next app update."
@@ -567,75 +581,16 @@ export function FarmSetupPanel({ part, go }: { part: Part; go: (p: Part) => void
               </div>
             </section>
 
-            <section id="setup-names" className={cn(card, 'lg:col-span-2')}>
-              <h2 className="text-sm font-semibold text-gray-900">Names and defaults</h2>
-              <p className="mt-0.5 text-xs text-gray-500">
-                What the screens call your suppliers and equipment, and what they assume when
-                nothing else says.
-              </p>
-              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-                <label className={label}>
-                  Fertilizer and chemical retailer
-                  <input
-                    className={field}
-                    placeholder={settings.retailerName}
-                    value={v.retailer_name ?? ''}
-                    onChange={(e) => set({ retailer_name: e.target.value })}
-                  />
-                </label>
-                <label className={label}>
-                  Support contact email
-                  <input
-                    className={field}
-                    type="email"
-                    placeholder="who people email about this app"
-                    value={v.support_email ?? ''}
-                    onChange={(e) => set({ support_email: e.target.value })}
-                  />
-                </label>
-                <label className={label}>
-                  Irrigation district
-                  <input
-                    className={field}
-                    placeholder={settings.districtName}
-                    value={v.irrigation_district_name ?? ''}
-                    onChange={(e) => set({ irrigation_district_name: e.target.value })}
-                  />
-                </label>
-                <label className={label}>
-                  River you pump from
-                  <input
-                    className={field}
-                    placeholder="e.g. Red Deer River"
-                    value={v.river_name ?? ''}
-                    onChange={(e) => set({ river_name: e.target.value })}
-                  />
-                </label>
-                <label className={label}>
-                  Main ranch{' '}
-                  <span className="font-normal text-gray-400">(used where only one fits)</span>
-                  <Select
-                    className="mt-1"
-                    value={v.main_ranch_id ?? ''}
-                    onChange={(id) => set({ main_ranch_id: id || null })}
-                    options={[
-                      { value: '', label: 'The first ranch' },
-                      ...(ranches ?? []).map((r) => ({ value: r.id, label: r.name })),
-                    ]}
-                  />
-                </label>
-                <label className={label}>
-                  Cattle breed
-                  <input
-                    className={field}
-                    placeholder={settings.cattleBreed}
-                    value={v.cattle_breed ?? ''}
-                    onChange={(e) => set({ cattle_breed: e.target.value })}
-                  />
-                </label>
-              </div>
-            </section>
-
+            {/* "Names and defaults" lived here: the retailer, the river, the
+                support email, the main ranch and the cattle breed, in one box
+                nobody went to (Sam, 30 Oct 2026). Each went where it belongs
+                instead — the retailer now reads itself off the invoices
+                (useRetailerName), the irrigation district is named on
+                Irrigation › Setup, the main ranch and breed are on Cattle
+                settings, and the support email sits with the farm name and logo
+                it is served alongside. The river went altogether: pivots name
+                their own water source, two rivers and plenty of ground on
+                neither. */}
             <section id="setup-about" className={cn(card, 'lg:col-span-2')}>
               <h2 className="text-sm font-semibold text-gray-900">About the farm</h2>
               <p className="mt-0.5 text-xs text-gray-500">

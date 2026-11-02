@@ -57,13 +57,13 @@ export function FieldYieldHistory({
   cropName: (id: string) => string
   canEdit: boolean
   /**
-   * A crop-share partner's years (lib/partner-view.ts): he types yields in
+   * A partner's years (lib/partner-view.ts): he types yields in
    * these and reads the rest. The managers' tools (loads, adding or deleting
    * a year, marks, the scale reset) stay on canEdit.
    */
   canEditYear?: (year: number) => boolean
   /**
-   * A crop-share partner's years on this field. His crop (potatoes) never
+   * A partner's years on this field. His crop (potatoes) never
    * crosses our scale, so no row appears by itself: he adds his own year's.
    */
   partnerYears?: number[]

@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import { farmDistrict, farmRiver, farmTz } from '@/lib/farm-context'
+import { farmDistrict, farmTz } from '@/lib/farm-context'
 import { GUIDELINES, IRRIGATION_MONTHS, SEASON_MM, USE_LABEL, bandsFor, concernsFrom, fmtWq, testedClear, type Concern, type SummaryRow } from '@/lib/water-concerns'
 import { soToLbSPerInch } from '@/lib/water-quality'
 import { fetchAll, num, type Cell, type GatherContext, type ParamValues, type ReportData, type ReportGroup } from './framework'
@@ -196,7 +196,7 @@ export async function gatherWaterQuality(p: ParamValues, ctx: GatherContext): Pr
   const onSource = new Set(stations.filter((s) => s.water_source).map((s) => s.station_id))
   const ours = samples.filter((s) => onSource.has(s.station_id))
   if (!ours.length) throw new Error(`No water samples since ${since} at a station linked to a water source.`)
-  const r = waterQualityGroups({ samples: ours, stations, district: farmDistrict(), river: farmRiver(), tz: farmTz() })
+  const r = waterQualityGroups({ samples: ours, stations, district: farmDistrict(), river: 'River', tz: farmTz() })
   const first = ours.reduce((m, s) => (s.sampled_at < m ? s.sampled_at : m), ours[0].sampled_at).slice(0, 10)
   const last = ours.reduce((m, s) => (s.sampled_at > m ? s.sampled_at : m), ours[0].sampled_at).slice(0, 10)
   const off = stations.filter((s) => !s.water_source).map((s) => s.name)

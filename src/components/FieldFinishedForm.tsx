@@ -92,7 +92,7 @@ export function FieldFinishedForm({
   const finishIso = fromLocalInput(finished)
   const startIso = fromLocalInput(started)
   const year = workCropYear({ started_at: startIso, finished_at: finishIso })
-  // A crop-share partner records only in the years the field is his (lib/partner-view.ts).
+  // A partner records only in the years the field is his (lib/partner-view.ts).
   const access = usePartnerAccess()
   const { data: plans } = useCropPlans(year)
   const { data: moisture } = useMoistureTests(year)

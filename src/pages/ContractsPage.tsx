@@ -9,6 +9,8 @@ import { useMemo, useState } from 'react'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useCropYear } from '@/lib/crop-year'
+import { usePartnerView } from '@/lib/partner-view'
+import { isPartnerTab } from '@/lib/partner'
 import { useTab } from '@/lib/useTab'
 import { useCrops } from '@/lib/queries'
 import { useScaleTickets } from '@/lib/scale-tickets'
@@ -77,9 +79,13 @@ export function ContractsPage() {
   const { create, update, remove } = useContractMutations(cropYear)
 
   // In the address, so the Markets page's "% sold" line can open Position.
+  // A partner reads the contracts of the crops he grows; our
+  // position and cash flow are ours.
+  const partner = usePartnerView()
+  const tabs = partner ? CONTRACT_TABS.filter((t) => isPartnerTab('/contracts', t.key)) : CONTRACT_TABS
   const [tab, setTab] = useTab<ContractTab>(
     'contracts',
-    CONTRACT_TABS.map((t) => t.key),
+    tabs.map((t) => t.key),
     // Scale tickets had a tab of its own until 27 Oct 2026; a load is read
     // inside the contract it is on, or under the contract list when it is on
     // none. Old ?tab=tickets links land on the contracts.
@@ -224,7 +230,7 @@ export function ContractsPage() {
         )}
       </div>
 
-      <PillTabs tabs={CONTRACT_TABS} value={tab} onChange={setTab} className="mb-3" />
+      <PillTabs tabs={tabs} value={tab} onChange={setTab} className="mb-3" />
 
       {tab === 'position' && (
         <div className="space-y-5">

@@ -63,7 +63,7 @@ function RotationRules({
   const setSettings = useSetCropRotationSettings()
   const { data: allCrops } = useCrops()
   const { setPreference } = useSuccessionMutations()
-  // A crop-share partner changes the rules of the crops he grows, and the
+  // A partner changes the rules of the crops he grows, and the
   // pairs that involve one; the rest he reads (lib/partner-view.ts).
   const partnerCrops = usePartnerCrops()
   const canRule = (...ids: string[]) => isManager || ids.some((id) => partnerCrops?.has(id))
