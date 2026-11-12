@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { grantsSource } from './partner'
 import type { Database } from './database.types'
-import { farmName, farmProvinceName } from './farm-context'
 
 export type GrantRow = Database['public']['Tables']['grants']['Row']
 export type GrantStatus = GrantRow['status']
@@ -87,6 +86,60 @@ export function useGrantsPull() {
       // Background job → refetch a couple of times as results land.
       setTimeout(() => qc.invalidateQueries({ queryKey: ['grants'] }), 45_000)
       setTimeout(() => qc.invalidateQueries({ queryKey: ['grants'] }), 120_000)
+    },
+  })
+}
+
+/**
+ * How many rows are a second listing of a grant already on the list.
+ *
+ * Drives whether the page offers to merge at all. The weekly pull sweeps on
+ * its way out, so the usual answer is none and the button stays away.
+ */
+export function useGrantDuplicateCount() {
+  return useQuery({
+    queryKey: ['grant_duplicates'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('grant_duplicate_count')
+      if (error) throw error
+      return data ?? 0
+    },
+  })
+}
+
+/**
+ * Fold every set of rows naming the same programme into one.
+ *
+ * The survivor keeps the fullest record and takes whatever the others held
+ * that it was missing — notes, the contact, the application form, who it is
+ * assigned to. Nothing is thrown away silently.
+ */
+export function useGrantDedupe() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.rpc('fn_dedupe_grants')
+      if (error) throw error
+      return data ?? 0
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['grants'] })
+      void qc.invalidateQueries({ queryKey: ['grant_duplicates'] })
+    },
+  })
+}
+
+/** Fold one grant into another by hand, for a pair only a person can spot. */
+export function useGrantMerge() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ keeper, loser }: { keeper: string; loser: string }) => {
+      const { error } = await supabase.rpc('fn_merge_grants', { p_keeper: keeper, p_loser: loser })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['grants'] })
+      void qc.invalidateQueries({ queryKey: ['grant_duplicates'] })
     },
   })
 }
@@ -201,21 +254,83 @@ export function useGrantTaskMutations(grantId: string) {
   return { add, update, remove }
 }
 
-/** A ready-to-paste prompt for drafting the application with Claude. */
-export function claudeGrantPrompt(g: GrantRow): string {
-  return [
-    `I'm applying for an agriculture grant for our farm/cattle operation in ${farmProvinceName()} (${farmName()}). Help me write a strong application.`,
-    ``,
-    `GRANT: ${g.title}`,
-    g.funder ? `Funder: ${g.funder}` : '',
-    g.url ? `Link: ${g.url}` : '',
-    g.eligibility_summary ? `Eligibility: ${g.eligibility_summary}` : '',
-    g.summary ? `Summary: ${g.summary}` : '',
-    g.closes_on ? `Closes: ${g.closes_on}` : '',
-    g.notes_md ? `\nOur notes:\n${g.notes_md}` : '',
-    ``,
-    `Please: 1) confirm what this grant funds and the key eligibility criteria, 2) ask me for the specific details you need about our operation, and 3) draft the application answers in a clear, compelling way. Start by listing what you need from me.`,
-  ]
-    .filter(Boolean)
-    .join('\n')
+// ---- acting on a grant (Sam, 2 Nov 2026): lib/grant-kit.ts has the words ----
+
+/** The signed-in person's token, for the site's own functions. */
+async function bearer(): Promise<string> {
+  const { data } = await supabase.auth.getSession()
+  return `Bearer ${data.session?.access_token ?? ''}`
+}
+
+/**
+ * Read the program's pages and fill the grant's blanks (deadline, share,
+ * contact, the application form). A background job: the grant refreshes a few
+ * times while it runs, typically a minute.
+ */
+export function useGrantDetailsLookup() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch('/api/grant-details-background', {
+        method: 'POST',
+        headers: { Authorization: await bearer(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      if (res.status >= 400) throw new Error('Could not start the lookup')
+    },
+    onSuccess: () => {
+      for (const ms of [30_000, 60_000, 100_000, 150_000]) setTimeout(() => qc.invalidateQueries({ queryKey: ['grants'] }), ms)
+    },
+  })
+}
+
+/** Send the meeting-request email from the app. notConfigured: no Resend key in Settings → Connections yet. */
+export function useSendGrantEmail() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (m: { grantId: string; to: string; subject: string; body: string }) => {
+      const res = await fetch('/api/grant-email', {
+        method: 'POST',
+        headers: { Authorization: await bearer(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(m),
+      })
+      const out = (await res.json().catch(() => ({}))) as { error?: string; notConfigured?: boolean; from?: string }
+      if (!res.ok) throw Object.assign(new Error(out.error ?? 'Could not send'), { notConfigured: Boolean(out.notConfigured) })
+      return out
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['grants'] }),
+  })
+}
+
+/** A link to the saved application form, good for an hour. */
+export function useGrantPdfUrl(path: string | null | undefined) {
+  return useQuery({
+    queryKey: ['grant_pdf', path],
+    enabled: Boolean(path),
+    staleTime: 50 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.storage.from('grant-docs').createSignedUrl(path!, 3600, { download: 'application.pdf' })
+      if (error) throw error
+      return data.signedUrl
+    },
+  })
+}
+
+/** Save someone's own copy of the application form, in place of any found one. */
+export function useUploadGrantPdf() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ grantId, file }: { grantId: string; file: File }) => {
+      if (file.type !== 'application/pdf') throw new Error('Choose a PDF file.')
+      const path = `${grantId}/application.pdf`
+      const { error } = await supabase.storage.from('grant-docs').upload(path, file, { contentType: 'application/pdf', upsert: true })
+      if (error) throw error
+      const { error: e2 } = await supabase.from('grants').update({ application_pdf_path: path, updated_at: new Date().toISOString() }).eq('id', grantId)
+      if (e2) throw e2
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['grants'] })
+      void qc.invalidateQueries({ queryKey: ['grant_pdf'] })
+    },
+  })
 }

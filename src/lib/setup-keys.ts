@@ -180,8 +180,28 @@ export const SETUP_KEYS: SetupKey[] = [
     secret: false,
     optional: true,
     shown: true,
-    help: 'The email you sign in to resend.com with, kept here as a reminder. Resend sends the sign-in emails; its key is saved in Supabase (Authentication → Emails → SMTP), not here.',
+    help: 'The email you sign in to resend.com with, kept here as a reminder. Resend sends the sign-in emails; that key is saved in Supabase (Authentication → Emails → SMTP).',
     link: 'https://resend.com/login',
+  },
+  // Emails people send from inside the app, such as a grant's meeting request
+  // (netlify/functions/grant-email.mts). A separate key from the sign-in one.
+  {
+    env: 'RESEND_API_KEY',
+    label: 'Resend API key (emails sent from the app)',
+    group: 'Email sender (Resend)',
+    secret: true,
+    optional: true,
+    help: 'Lets people send emails from the app, such as a grant’s meeting request. In Resend: API Keys → Create API key, with “Sending access”.',
+    link: 'https://resend.com/api-keys',
+  },
+  {
+    env: 'RESEND_DOMAIN',
+    label: 'Sending domain',
+    group: 'Email sender (Resend)',
+    secret: false,
+    optional: true,
+    shown: true,
+    help: 'The domain verified in Resend, e.g. example.com. Someone whose address is on it sends as themselves; anyone else sends from noreply@ it.',
   },
   // A truck scale whose live weight is streamed through another Supabase
   // project (the yard scale shared with Grand Forks Gravel). The address and

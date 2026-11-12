@@ -23,6 +23,10 @@ import { useAuth } from '@/lib/auth'
 import { usePartnerView } from '@/lib/partner-view'
 import { useCrops, useCropPlans, useFields } from '@/lib/queries'
 import { useAllCropZones } from '@/lib/cropZones'
+import { useAllCropPrices } from '@/lib/forecast-data'
+import { resolvePrice } from '@/lib/forecast'
+import { loadValue } from '@/lib/load-value'
+import type { YieldUnit } from '@/lib/fert-savings/checks'
 import { byYardThenNumber, useBinAllocations, useBinOnHand, useBins } from '@/lib/bins'
 import { hiddenYardNames, inHiddenYard, useBinYards } from '@/lib/bin-yards'
 import {
@@ -61,6 +65,7 @@ import { useContacts, useContracts, type ContractRow } from '@/lib/sales'
 import { useMoistureTests } from '@/lib/moisture-queries'
 import { cropForVariety } from '@/lib/crop-variety-settings'
 import { useCropVarietySettings } from '@/lib/crop-variety-settings-data'
+import { kgAside } from '@/lib/lbs-kg'
 
 /**
  * The driver picker's "Someone else": a temporary driver (Sam, 24 Oct 2026:
@@ -579,6 +584,16 @@ export function WeighInForm({
   const wrongWay = both && !(gross > tare)
   const net = both && !wrongWay ? gross - tare : null
   const bushels = net != null && lbPerBu ? bushelsFromKg(net, lbPerBu) : null
+  // What this truckload is worth at the crop's own price (Sam, 2 Nov 2026).
+  // The same price the rest of the app uses, named so nobody reads it as a
+  // sale: it is the load at the price on the crop's page, nothing more.
+  const { data: allPrices } = useAllCropPrices()
+  const priced =
+    crop && bushels != null
+      ? resolvePrice(crop.id, cropYear, allPrices ?? [], { currentYear: new Date().getFullYear() })
+      : null
+  const worth = loadValue({ bushels, lbPerBu, unit: crop?.yield_unit as YieldUnit | null, price: priced?.value ?? null })
+
   const previousTare = lastTare(allLoads ?? [], truck || null, trailer || null)
   // Weights taken off the yard scale, while their boxes still hold them.
   const fullCap = single ? null : heldCapture(form.fullCapture, form.gross)
@@ -1658,6 +1673,30 @@ export function WeighInForm({
                   ? `Weighed in ${load?.full_at ? weighTime(fromTimeInput(form.fullAt)) : 'now'} · weighed out ${load?.empty_at ? weighTime(fromTimeInput(form.emptyAt)) : tare != null ? 'now' : 'later'}`
                   : `Weighed ${load?.full_at ? weighTime(fromTimeInput(form.fullAt)) : 'now'}`}
               </p>
+              {/* Worth, not sold: the load at the crop's own price, which is
+                  set on the crop's page and linked to from here. */}
+              {worth && crop && (
+                <p className="text-xs text-gray-700">
+                  About{' '}
+                  <span className="font-semibold tabular-nums text-gray-900">
+                    {worth.dollars.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })}
+                  </span>{' '}
+                  <Link to={`/crops/${crop.id}`} className="text-brand-700 underline decoration-dotted">
+                    at {priced?.value?.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: priced.value < 10 ? 3 : 2 })}/
+                    {worth.unit}
+                  </Link>
+                  <span className="text-gray-400"> · {priced?.label}</span>
+                </p>
+              )}
+              {crop && bushels != null && !worth && (
+                <p className="text-[11px] text-gray-400">
+                  No price for {crop.name} yet —{' '}
+                  <Link to={`/crops/${crop.id}`} className="text-brand-700 underline decoration-dotted">
+                    set one
+                  </Link>{' '}
+                  to see what a load is worth.
+                </p>
+              )}
               {rigLine && <p className="text-[11px] text-gray-500">{rigLine}</p>}
               {/* Who stood at the scale, which is not always who drove. */}
               {(form.weighedInBy || form.weighedOutBy) && (
@@ -2475,7 +2514,7 @@ export function FieldYieldNote({ fieldId, cropYear }: { fieldId: string; cropYea
         <Flag className="h-3.5 w-3.5" /> {name} is done:{' '}
         {Math.round(Number(y.actual_yield_total)).toLocaleString('en-CA')} {unit} pre-clean
         {y.yield_per_acre != null
-          ? `, ${Number(y.yield_per_acre).toLocaleString('en-CA')} ${unit}/ac`
+          ? `, ${Number(y.yield_per_acre).toLocaleString('en-CA')} ${unit}/ac${kgAside(y.yield_per_acre, unit)}`
           : ''}
       </p>
       <p className="mt-0.5 text-[11px] text-green-900/80">

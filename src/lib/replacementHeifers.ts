@@ -37,6 +37,7 @@ export type HeiferInputs = {
   /** Heifer calves weaned this fall — the ones to keep or sell. */
   heiferCalves: number
   cullPct: number
+  /** Cows that die a year, % of the herd (cow_death_pct) — not calf loss. */
   deathPct: number
   /** Of heifers kept, the share that end up bred and calving. */
   pregPct: number
@@ -86,14 +87,42 @@ export type KeepRow = {
   netVsSellAll: number | null
 }
 
-/** Net per head for each sale option, less gain cost and death loss while holding. */
-export function priceSaleOptions(options: Omit<SaleOption, 'netPerHead'>[], deathPct: number): SaleOption[] {
-  return options.map((o, i) => {
+/**
+ * Months each option holds a calf past weaning (weaning Nov–Dec): wintered to
+ * Mar–Apr is about four months, a yearling off grass in Aug–Sep about nine.
+ */
+export const HOLD_MONTHS: Record<SaleOption['key'], number> = { weaning: 0, wintered: 4, yearling: 9 }
+
+/**
+ * Net per head for each sale option, less gain cost and death loss while holding.
+ *
+ * `lossPctPerYear` is the post-weaning death loss, % a year held, and it is
+ * charged for the months each option actually holds the calf (HOLD_MONTHS).
+ * It used to compound once per position in the list — a yearling paid two
+ * full years of loss for nine months — so reordering the options changed
+ * their prices.
+ */
+export function priceSaleOptions(options: (Omit<SaleOption, 'netPerHead'> & { monthsHeld?: number })[], lossPctPerYear: number): SaleOption[] {
+  return options.map((o) => {
     if (o.pricePerLb == null) return { ...o, netPerHead: null }
-    // Holding longer risks a death; weaning carries none of it.
-    const survive = i === 0 ? 1 : Math.pow(1 - deathPct / 100, i)
+    const months = o.monthsHeld ?? HOLD_MONTHS[o.key] ?? 0
+    const survive = Math.pow(1 - Math.min(100, Math.max(0, lossPctPerYear)) / 100, months / 12)
     return { ...o, netPerHead: o.weightLb * o.pricePerLb * survive - o.costPerHead }
   })
+}
+
+/**
+ * Bull calves bring less than steers of the same weight: a buyer has to cut
+ * them, and they gain and grade worse. 5% under the steer price when no market
+ * quoted bull calves at that weight — a planning figure, in the range Alberta
+ * auction reports show (bull calves typically $5–15/cwt under steers).
+ */
+export const BULL_CALF_DISCOUNT = 0.05
+
+/** A bull calf's $/lb: the market's bull-calf quote at its weight, else the steer price less BULL_CALF_DISCOUNT. */
+export function bullCalfPricePerLb(bullQuote: number | null, steerPrice: number | null): number | null {
+  if (bullQuote != null) return bullQuote
+  return steerPrice == null ? null : steerPrice * (1 - BULL_CALF_DISCOUNT)
 }
 
 export function planHeifers(inp: HeiferInputs): HeiferPlan {

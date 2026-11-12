@@ -2,7 +2,7 @@ import { runFieldnetSync } from '../shared/fieldnet-sync-core'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { adminOrNull } from '../shared/supabase-admin.ts'
 import { farmClock } from '../shared/dates.ts'
-import { fieldnetOffSeason, fieldnetOffSeasonSlot } from '../../src/lib/fieldnetSchedule.ts'
+import { fieldnetOffSeason, fieldnetOffSeasonDue } from '../../src/lib/fieldnetSchedule.ts'
 
 // Auto-refresh: pulls live FieldNET status on a schedule so pivot state stays
 // current without anyone clicking "Sync now". Runs server-side with the real
@@ -19,20 +19,25 @@ export default async () => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
   const { hour, minute, month } = farmClock()
-  // The health monitor allows for this gap via the same helpers.
-  if (fieldnetOffSeason(month) && !fieldnetOffSeasonSlot(hour, minute)) {
-    return new Response(JSON.stringify({ skipped: 'off-season: every 3 hours' }), { status: 200 })
-  }
   const sb = adminOrNull()
   if (!sb) return new Response('Not configured', { status: 500 })
   // Only run once FieldNET is connected (avoids noisy errors before OAuth).
   const { data: acct } = await sb
     .from('integration_accounts')
-    .select('status')
+    .select('status, last_sync_at')
     .eq('provider', 'fieldnet')
     .single()
   if (acct?.status !== 'connected') {
     return new Response(JSON.stringify({ skipped: 'not connected' }), { status: 200 })
+  }
+  // Off-season: every three hours, plus a catch-up tick if Netlify dropped a
+  // slot. The health monitor allows for this gap via the same helpers.
+  if (fieldnetOffSeason(month)) {
+    const last = acct.last_sync_at ? Date.parse(acct.last_sync_at) : NaN
+    const sinceSync = Number.isFinite(last) ? (Date.now() - last) / 60000 : null
+    if (!fieldnetOffSeasonDue(hour, minute, sinceSync)) {
+      return new Response(JSON.stringify({ skipped: 'off-season: every 3 hours' }), { status: 200 })
+    }
   }
   try {
     const r = await runFieldnetSync(sb, { applied: false })

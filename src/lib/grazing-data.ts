@@ -26,7 +26,7 @@ export async function loadGrazingData(sb: SupabaseClient, today: string): Promis
     return out
   }
 
-  const [ops, products, aliases, rules, labels, crops, plans, history, fields, pastures, pastureSprays, overlaps, stubble, events] = await Promise.all([
+  const [ops, products, aliases, rules, labels, crops, plans, history, fields, pastures, pastureSprays, overlaps, stubble, events, harvests] = await Promise.all([
     all<GrazingData['ops'][number]>((a, b) =>
       sb
         .from('jd_field_operations')
@@ -53,7 +53,7 @@ export async function loadGrazingData(sb: SupabaseClient, today: string): Promis
     all<GrazingData['fieldCrops'][number]>((a, b) =>
       sb.from('crop_yields_v').select('field_id, crop_year, crop_id').gte('crop_year', year - 1).lte('crop_year', year).order('id').range(a, b),
     ),
-    all<GrazingData['fields'][number]>((a, b) => sb.from(fieldsSource()).select('id, name, grazed_after_harvest, open_to_pasture').order('name').range(a, b)),
+    all<GrazingData['fields'][number]>((a, b) => sb.from(fieldsSource()).select('id, name, grazed_after_harvest, open_to_pasture, never_grazed').order('name').range(a, b)),
     all<GrazingData['pastures'][number]>((a, b) => sb.from('pastures').select('id, name').order('name').range(a, b)),
     all<GrazingData['pastureSprays'][number]>((a, b) =>
       sb.from('pasture_sprays').select('id, pasture_id, applied_on, product, registration_number').gte('applied_on', since).order('id').range(a, b),
@@ -67,6 +67,16 @@ export async function loadGrazingData(sb: SupabaseClient, today: string): Promis
         .from('grazing_events')
         .select('id, pasture_id, turned_in_on, moved_out_on, head_count')
         .or(`moved_out_on.is.null,moved_out_on.gte.${since}`)
+        .order('id')
+        .range(a, b),
+    ),
+    all<NonNullable<GrazingData['harvests']>[number]>((a, b) =>
+      sb
+        .from('field_work_records')
+        .select('field_id, crop_year, finished_at')
+        .eq('counts_as', 'harvest')
+        .eq('field_finished', true)
+        .gte('crop_year', year - 1)
         .order('id')
         .range(a, b),
     ),
@@ -90,5 +100,6 @@ export async function loadGrazingData(sb: SupabaseClient, today: string): Promis
     overlaps,
     stubble,
     events,
+    harvests,
   }
 }

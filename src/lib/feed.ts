@@ -6,7 +6,6 @@ export type FeedPlan = Database['public']['Tables']['feed_plans']['Row']
 
 export const LB_PER_TONNE = 2204.62 // metric tonne
 export const LB_PER_TON = 2000 // US short ton
-export const DEFAULT_AVG_WEIGHT_LB = 1300 // fallback herd weight if none set
 
 /** One persisted winter-feed plan per ranch (seeded by migration, so it exists). */
 export function useFeedPlan(ranchId: string | null | undefined) {
@@ -48,7 +47,7 @@ export function useSetFeedPlan() {
 /**
  * Feeding days from recurring month/day endpoints. Uses a fixed non-leap
  * reference year, and wraps the end into the following year when it falls
- * before the start (winter feeding spans the New Year, e.g. Dec 1 → Apr 15).
+ * before the start (winter feeding spans the New Year, e.g. Dec 1 â†’ Apr 15).
  */
 export function feedDays(
   startMonth: number | null,
@@ -62,70 +61,6 @@ export function feedDays(
   let end = new Date(Y, endMonth - 1, endDay)
   if (end.getTime() <= start.getTime()) end = new Date(Y + 1, endMonth - 1, endDay)
   return Math.round((end.getTime() - start.getTime()) / 86_400_000)
-}
-
-export type FeedHerdInput = { id: string; name: string; head: number; avgWeightLb: number }
-export type FeedHerdResult = FeedHerdInput & {
-  dailyDmLb: number
-  hayLb: number
-  silageLb: number
-}
-
-export type FeedResult = {
-  days: number
-  totalHead: number
-  dailyDmLb: number
-  totalDmLb: number
-  hayLb: number
-  silageLb: number
-  hayPerDayLb: number
-  silagePerDayLb: number
-  hayBales: number
-  perHerd: FeedHerdResult[]
-}
-
-/**
- * Winter feed requirement from a dry-matter-intake model: each animal eats
- * `dmiPct`% of body weight in dry matter per day. Hay and silage differ in
- * dry-matter content, so as-fed tonnage back-solves from the DM total; feeding
- * waste is added on top.
- */
-export function computeFeed(
-  herds: FeedHerdInput[],
-  plan: Pick<FeedPlan, 'dmi_pct' | 'hay_dm_pct' | 'silage_dm_pct' | 'waste_pct' | 'hay_bale_lb'>,
-  days: number,
-): FeedResult {
-  const wasteMult = 1 + plan.waste_pct / 100
-  const hayFrac = plan.hay_dm_pct / 100
-  const silageFrac = plan.silage_dm_pct / 100
-
-  const perHerd: FeedHerdResult[] = herds.map((h) => {
-    const dailyDmLb = h.head * h.avgWeightLb * (plan.dmi_pct / 100)
-    const dmLb = dailyDmLb * days * wasteMult
-    return {
-      ...h,
-      dailyDmLb,
-      hayLb: hayFrac > 0 ? dmLb / hayFrac : 0,
-      silageLb: silageFrac > 0 ? dmLb / silageFrac : 0,
-    }
-  })
-
-  const dailyDmLb = perHerd.reduce((a, h) => a + h.dailyDmLb, 0)
-  const totalDmLb = dailyDmLb * days
-  const hayLb = perHerd.reduce((a, h) => a + h.hayLb, 0)
-  const silageLb = perHerd.reduce((a, h) => a + h.silageLb, 0)
-  return {
-    days,
-    totalHead: herds.reduce((a, h) => a + h.head, 0),
-    dailyDmLb,
-    totalDmLb,
-    hayLb,
-    silageLb,
-    hayPerDayLb: days > 0 ? hayLb / days : 0,
-    silagePerDayLb: days > 0 ? silageLb / days : 0,
-    hayBales: plan.hay_bale_lb > 0 ? hayLb / plan.hay_bale_lb : 0,
-    perHerd,
-  }
 }
 
 export type FeedRationRow = Database['public']['Tables']['feed_ration']['Row']

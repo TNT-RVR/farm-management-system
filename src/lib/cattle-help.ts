@@ -153,7 +153,7 @@ export const CATTLE_HELP = {
     ],
     howLabel: 'The blank rows',
     how: [
-      'Blank rows read “over the grass — set its cost”: that herd is bigger than the grass carries, and until you say what a cow over the grass costs there is no honest total. Click those words, or set “A cow over the grass” in Assumptions — rented pasture, extra hay, whatever carrying her takes.',
+      'Rows reading “over grass” mean that herd is bigger than the grass carries, and until you say what a cow over the grass costs there is no honest total. Click “Set the cost of extra grass” under the table, or set “A cow over the grass” in Assumptions — rented pasture, extra hay, whatever carrying her takes.',
     ],
   },
 } satisfies Record<string, CattleHelp>

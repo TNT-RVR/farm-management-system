@@ -91,6 +91,40 @@ body,
   color: #fff;
 }
 
+/* Grey text sitting in a green header bar.
+ *
+ * The same move as the ⓘ above, for the words beside it. A HelpNote's summary
+ * is `text-gray-500` because it was written for white cards; on the brand-700
+ * bar that is 1.04:1 — not dim, invisible (Sam, 6 Nov 2026: the subtitle
+ * under "The forms" on the pasture insurance page). The lighter greys are no
+ * better; every one of them was picked to recede against white.
+ *
+ * Solid white, not a tint, because brand-700 (#15803d) is dark enough that
+ * white itself is only 5.02:1: 85% white is 4.09 and 90% is 4.39, both under
+ * the 4.5 these 11px lines need. The hierarchy inside the bar comes from size
+ * and weight instead — the title above is larger and semibold.
+ *
+ * Unlayered, like the rule above, so it beats Tailwind's utilities without
+ * !important. */
+.rvr-head .text-gray-300,
+.rvr-head .text-gray-400,
+.rvr-head .text-gray-500,
+.rvr-head .text-gray-600 {
+  color: #fff;
+}
+
+/* …except inside the panel a ⓘ in that bar opens.
+ *
+ * InfoPopover and ColumnHelp render their panel as a DOM descendant of the
+ * button, not through a portal (its own comment says so, and the fixed
+ * position is what frees it from the layout). So a panel opened from a green
+ * header is inside `.rvr-head`, and the rule above would paint its grey
+ * sentences white on its white card. These put the four greys back. */
+.rvr-head [role='dialog'] .text-gray-300 { color: #d1d5db; }
+.rvr-head [role='dialog'] .text-gray-400 { color: #9ca3af; }
+.rvr-head [role='dialog'] .text-gray-500 { color: #6b7280; }
+.rvr-head [role='dialog'] .text-gray-600 { color: #4b5563; }
+
 /* Weather page icons. Gentle, looping, and off for anyone who has asked their
    phone for less motion. */
 @keyframes wx-spin { to { transform: rotate(360deg); } }

@@ -12,11 +12,14 @@ import { companyOf } from '@/lib/crop-label'
 import { cropForVariety } from '@/lib/crop-variety-settings'
 import { useCropVarietySettings } from '@/lib/crop-variety-settings-data'
 import { bushelWeightFor, convertMass, MASS_UNITS, type MassUnit } from '@/lib/bushels'
-import { ALL_OF_IT_BU, destinationFromPlan, destinationReady, destinationText, shipmentRows, type Destination } from '@/lib/bin-shipping'
+import { ALL_OF_IT_BU, destinationFromPlan, destinationReady, destinationText, shipmentLoads, shipmentRows, type Destination } from '@/lib/bin-shipping'
 import { useShipOut } from '@/lib/bin-shipping-data'
+import { useBinLoads, useFarmPeople, useHaulUnits } from '@/lib/bin-loads'
 import { cn } from '@/lib/utils'
 
 const input = 'w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-brand-600 focus:outline-none'
+/** A driver who is not on the list of people: their name is kept on the load only. */
+const OTHER_DRIVER = '__other'
 const pill = (on: boolean) =>
   cn('flex-1 rounded-md border px-2 py-1.5 text-xs', on ? 'border-brand-700 bg-brand-700 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50')
 
@@ -80,26 +83,57 @@ export function ShipOut({ from, cropYear, onClose }: { from: BinRow; cropYear: n
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
 
+  /* ------------------------------------------------- the truck that took it */
+
+  // Who hauled it and what in, and the two weights if it crossed the scale
+  // (Sam, 2 Nov 2026). All optional: a shipment nobody weighed still saves,
+  // and then the kilograms are worked out from the bushels.
+  const { data: people } = useFarmPeople()
+  const { data: units } = useHaulUnits()
+  const { data: pastLoads } = useBinLoads()
+  const [driverId, setDriverId] = useState('')
+  const [driverName, setDriverName] = useState('')
+  const [truck, setTruck] = useState('')
+  const [grossKg, setGrossKg] = useState('')
+  const [tareKg, setTareKg] = useState('')
+  const otherDriver = driverId === OTHER_DRIVER
+  const gross = Number(grossKg)
+  const tare = Number(tareKg)
+  const weighed = grossKg.trim() !== '' && tareKg.trim() !== '' && gross > tare
+  const halfWeighed = (grossKg.trim() !== '') !== (tareKg.trim() !== '')
+  const backwards = grossKg.trim() !== '' && tareKg.trim() !== '' && gross <= tare
+  const scaleBu = weighed && lbPerBu ? ((gross - tare) * 2.20462262) / lbPerBu : null
+  // Names typed on earlier loads, offered again so a casual driver is spelt the same.
+  const typedDrivers = [...new Set((pastLoads ?? []).filter((l) => !l.driver_id && l.driver?.trim()).map((l) => l.driver!.trim()))].sort()
+  const driver = {
+    id: otherDriver ? null : driverId || null,
+    name: otherDriver ? driverName.trim() || null : ((people ?? []).find((p) => p.id === driverId)?.full_name ?? null),
+  }
+
   const siteName = (id: string) => (sites ?? []).find((s) => s.id === id)?.name ?? null
-  const valid = !!source && bushels != null && bushels > 0 && destinationReady(dest)
-  const over = !all && source != null && bushels != null && bushels > source.bushels + ALL_OF_IT_BU
+  // The scale decides how much left when the truck was weighed.
+  const leaving = scaleBu ?? bushels
+  const valid = !!source && leaving != null && leaving > 0 && destinationReady(dest) && !halfWeighed && !backwards
+  const over = !all && source != null && leaving != null && leaving > source.bushels + ALL_OF_IT_BU
 
   const save = () => {
-    if (!valid || !source || bushels == null || !dest) return
+    if (!valid || !source || leaving == null || !dest) return
     setError(null)
-    const rows = shipmentRows({
-      binId: from.id,
-      cropId: source.cropId,
-      cropYear,
-      bushels: Number(bushels.toFixed(2)),
-      on,
-      lots,
-      destination: dest,
-      ticket,
-      note: note || `Shipped ${Math.round(bushels).toLocaleString()} bu from ${from.name}, ${destinationText(dest, siteName)}`,
+    const text = note || `Shipped ${Math.round(leaving).toLocaleString()} bu from ${from.name}, ${destinationText(dest, siteName)}`
+    const shared = { binId: from.id, cropId: source.cropId, cropYear, bushels: Number(leaving.toFixed(2)), on, lots, destination: dest }
+    const rows = shipmentRows({ ...shared, ticket, note: text })
+    // A load where the crop has a bushel weight to write one with; the plain
+    // movements otherwise, as before.
+    const loads = shipmentLoads({
+      ...shared,
+      lbPerBu: lbPerBu ?? 0,
+      weights: weighed ? { grossKg: gross, tareKg: tare } : null,
+      driver,
+      truck,
+      note: text,
     })
     ship.mutate(
-      { rows, binId: from.id, cropYear, on, allOfIt, contentId: allOfIt ? (content?.id ?? null) : null },
+      { rows, loads, binId: from.id, cropYear, on, allOfIt, contentId: allOfIt ? (content?.id ?? null) : null },
       { onSuccess: onClose, onError: (e) => setError((e as Error).message) },
     )
   }
@@ -198,6 +232,90 @@ export function ShipOut({ from, cropYear, onClose }: { from: BinRow; cropYear: n
               )}
             </div>
 
+            {/* The truck, all of it optional. Weighing both ends is what turns
+                a shipment into a weighed load: the scale then says how much
+                left, not the box above. */}
+            <div>
+              <span className="text-xs text-gray-500">The truck that took it (optional)</span>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="text-[11px] text-gray-500">Driver</span>
+                  <Select
+                    value={driverId}
+                    ariaLabel="Driver"
+                    onChange={setDriverId}
+                    options={[
+                      { value: '', label: 'Not recorded' },
+                      ...(people ?? []).map((p) => ({ value: p.id, label: p.full_name })),
+                      { value: OTHER_DRIVER, label: 'Someone else (type a name)…' },
+                    ]}
+                  />
+                  {otherDriver && (
+                    <>
+                      <input
+                        value={driverName}
+                        onChange={(e) => setDriverName(e.target.value)}
+                        list="ship-typed-drivers"
+                        placeholder="Driver's name"
+                        aria-label="Driver's name"
+                        className={cn(input, 'mt-1')}
+                      />
+                      <datalist id="ship-typed-drivers">
+                        {typedDrivers.map((n) => (
+                          <option key={n} value={n} />
+                        ))}
+                      </datalist>
+                    </>
+                  )}
+                </label>
+                <label className="block">
+                  <span className="text-[11px] text-gray-500">Truck</span>
+                  <Select
+                    value={truck}
+                    ariaLabel="Truck"
+                    onChange={setTruck}
+                    options={[{ value: '', label: 'Not recorded' }, ...(units?.trucks ?? []).map((u) => ({ value: u.name, label: u.name }))]}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[11px] text-gray-500">Weigh in (full)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputMode="decimal"
+                    value={grossKg}
+                    onChange={(e) => setGrossKg(e.target.value)}
+                    placeholder="kg"
+                    aria-label="Weigh in, full"
+                    className={cn(input, 'tabular-nums')}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[11px] text-gray-500">Weigh out (empty)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputMode="decimal"
+                    value={tareKg}
+                    onChange={(e) => setTareKg(e.target.value)}
+                    placeholder="kg"
+                    aria-label="Weigh out, empty"
+                    className={cn(input, 'tabular-nums')}
+                  />
+                </label>
+              </div>
+              {halfWeighed && <p className="mt-1 text-xs text-amber-900">Both weights or neither — one on its own says nothing.</p>}
+              {backwards && <p className="mt-1 text-xs text-amber-900">The full weight has to be more than the empty one.</p>}
+              {weighed && scaleBu != null && (
+                <p className="mt-1 text-[11px] text-gray-600">
+                  Net {Math.round(gross - tare).toLocaleString()} kg · {Math.round(scaleBu).toLocaleString()} bu off the scale, which is what leaves the bin.
+                </p>
+              )}
+              {weighed && lbPerBu == null && <p className="mt-1 text-xs text-amber-900">{source.name} has no bushel weight set, so the scale cannot be turned into bushels.</p>}
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <label className="block">
                 <span className="text-xs text-gray-500">Date</span>
@@ -213,10 +331,10 @@ export function ShipOut({ from, cropYear, onClose }: { from: BinRow; cropYear: n
               <input value={note} onChange={(e) => setNote(e.target.value)} className={input} />
             </label>
 
-            {bushels != null && bushels > 0 && dest && destinationReady(dest) && (
+            {leaving != null && leaving > 0 && dest && destinationReady(dest) && (
               <p className="flex items-center gap-1.5 rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-700">
                 <Truck className="h-4 w-4 text-gray-400" />
-                {Math.round(bushels).toLocaleString()} bu {source.name}, {destinationText(dest, siteName)}
+                {Math.round(leaving).toLocaleString()} bu {source.name}, {destinationText(dest, siteName)}
                 {allOfIt && <span className="ml-auto text-xs text-gray-500">{from.name} will be empty and its plan cleared</span>}
               </p>
             )}

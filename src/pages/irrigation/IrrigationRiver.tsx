@@ -27,6 +27,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { useWheelZoom } from '@/lib/useWheelZoom'
 import { cn } from '@/lib/utils'
 import { WaterQualityCard } from './WaterQualityCard'
+import { RiverObjectiveCard } from './RiverObjectiveCard'
 import { CARD_HEAD } from '@/lib/table-style'
 
 // The two ranches sit on different water, so the River tab is split by ranch.
@@ -51,6 +52,13 @@ type RanchRiver = {
   typicalToHome: number | null
   /** East Ranch only: the mid reach carries its own editable threshold. */
   midThresholdColumn?: 'bow_alert_cms'
+  /**
+   * The river_wco_segments slug whose published objective governs this ranch's
+   * water. Only the Oldman's Segment 4 schedule is in the library, and Bow
+   * Island is on the South Saskatchewan below the confluence, so it has none --
+   * better no card than this segment's number on the wrong river.
+   */
+  wcoSegment?: string
   footnote: string
 }
 
@@ -64,6 +72,7 @@ const RANCH_RIVER: Record<string, RanchRiver> = {
     // From cross-correlating a year of flow (see git history).
     typicalToMid: 22,
     typicalToHome: 40,
+    wcoSegment: 'oldman-seg4',
     footnote:
       '“Combined inflow” is the summed dam-controlled flow of the Oldman (below its dam) plus the Belly, St. Mary and ' +
       'Waterton. Flow drops before Lethbridge because the irrigation districts divert water; watch the combined-inflow ' +
@@ -398,6 +407,10 @@ export function IrrigationRiver({ isManager, ranchName }: { isManager: boolean; 
           station={cfg.home.station}
         />
       </div>
+
+      {/* What the reach has to keep, beside what it is carrying: a low-flow
+          year is a delivery risk, not just a smaller number. */}
+      {cfg.wcoSegment && <RiverObjectiveCard segmentSlug={cfg.wcoSegment} />}
 
       {/* Pull-pumps status + thresholds */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3">

@@ -80,6 +80,8 @@ export type Spray = {
    * nothing says they will.
    */
   eatenBecause?: string[]
+  /** The day harvest of this crop was marked finished on this field, if it has been. */
+  harvestedOn?: string | null
 }
 
 export type Restriction = {
@@ -109,9 +111,54 @@ export type Restriction = {
   assumed: string | null
   /** The spray's reasons livestock eat from here (see Spray). */
   eatenBecause: string[]
+  /**
+   * A "do not graze the treated crop" on a combined crop: it lifts the day
+   * harvest is finished, when what is left is stubble, not the crop (Sam,
+   * 2 Nov 2026). Until harvest is recorded, `until` holds the spring after
+   * as a backstop.
+   */
+  endsAtHarvest: boolean
+  /** The harvest-finished day that lifted it, when it has. */
+  harvestedOn: string | null
 }
 
 export const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
+
+/**
+ * Crops whose straw the farm never bales (Sam, 2 Nov 2026: "we don't bale
+ * bean straw", then peas, carrots, spinach and canola). Once combined there
+ * is nothing of them left to cut or feed.
+ */
+const STRAW_NOT_BALED = new Set(['dry_bean', 'pea', 'carrot', 'spinach', 'canola'])
+
+/**
+ * A line about what harvest leaves behind (straw, residue, threshings,
+ * screenings) or about the ground itself ("graze in treated areas"): it does
+ * not end when the crop comes off.
+ */
+const AFTER_HARVEST_TOO = /screening|straw|residue|stubble|thresh|chaff|treated (area|field)/i
+
+/**
+ * Whether a "not at all" ends when the crop comes off. Grazing does: after
+ * the combine it is stubble, not the crop. Feeding only where the straw is not
+ * baled. Never a line that names the leftovers. Not forage either: cutting
+ * alfalfa leaves the treated crop growing back.
+ */
+const liftsAtHarvest = (kind: GrazingKind, s: Spray, rule: GrazingRule) => {
+  if (s.cropName === 'pasture' || s.cropKeys.some((k) => FORAGE.has(k))) return false
+  if (AFTER_HARVEST_TOO.test(`${rule.quote ?? ''} ${rule.condition ?? ''}`)) return false
+  if (kind === 'graze') return true
+  return kind === 'feed' && s.cropKeys.some((k) => STRAW_NOT_BALED.has(k))
+}
+
+/**
+ * A line for a post-harvest application (Zidua's "post-harvest treatment")
+ * says nothing about a spray put on the growing crop. A spray is post-harvest
+ * when it went on after harvest was finished, or, with no harvest recorded,
+ * from August on.
+ */
+const appliesTo = (r: GrazingRule, s: Spray) =>
+  !/post-?harvest/i.test(r.condition ?? '') || (s.harvestedOn ? s.appliedOn >= s.harvestedOn : s.appliedOn.slice(5) >= '08-01')
 
 /** Stricter first: "not at all", then the longest wait. */
 const strictness = (r: Pick<GrazingRule, 'never' | 'days'>) => (r.never ? 1e6 : (r.days ?? 0))
@@ -124,15 +171,20 @@ export function restrictionsFor(sprays: Spray[], rulesByReg: Map<string, Grazing
     const rules = rulesByReg.get(s.registration) ?? []
     const forCrop = (rs: GrazingRule[]) => (s.cropKeys.length ? rs.filter((r) => r.crop_key && s.cropKeys.includes(r.crop_key)) : [])
     for (const kind of GRAZING_KINDS) {
-      const mine = rules.filter((r) => r.kind === kind)
-      if (!mine.length) continue
+      const all = rules.filter((r) => r.kind === kind)
+      if (!all.length) continue
+      const mine = all.filter((r) => appliesTo(r, s))
       const specific = forCrop(mine)
       const general = mine.filter((r) => !r.crop_key)
+      // The label's general line is for another timing: it covers this crop
+      // and says nothing about this spray, so no other crop's line stands in.
+      if (!specific.length && !general.length && all.some((r) => !r.crop_key)) continue
+      if (!mine.length) continue
       // Grazing and feeding are both the animal eating the crop: a label
       // whose line for this crop covers only one of them (Delaro Complete's
       // beans: "7 days of cutting for forage") is closer to the truth for the
       // other than its strictest line for some other crop is.
-      const sibling = kind === 'graze' || kind === 'feed' ? forCrop(rules.filter((r) => r.kind === (kind === 'graze' ? 'feed' : 'graze'))) : []
+      const sibling = kind === 'graze' || kind === 'feed' ? forCrop(rules.filter((r) => r.kind === (kind === 'graze' ? 'feed' : 'graze') && appliesTo(r, s))) : []
       const pool = specific.length ? specific : general.length ? general : sibling.length ? sibling : mine
       const assumed =
         pool === sibling
@@ -143,8 +195,16 @@ export function restrictionsFor(sprays: Spray[], rulesByReg: Map<string, Grazing
       const rule = [...pool].sort((a, b) => strictness(b) - strictness(a))[0]
       // days 0 is the label saying there is no restriction for this crop.
       if (!rule.never && !(rule.days != null && rule.days > 0)) continue
+      const endsAtHarvest = rule.never && liftsAtHarvest(kind, s, rule)
+      const harvestedOn = endsAtHarvest && s.harvestedOn && s.harvestedOn >= s.appliedOn ? s.harvestedOn : null
       const until =
-        kind === 'slaughter' ? null : rule.never ? `${Number(s.appliedOn.slice(0, 4)) + 1}-05-01` : addDays(s.appliedOn, rule.days!)
+        kind === 'slaughter'
+          ? null
+          : harvestedOn
+            ? harvestedOn
+            : rule.never
+              ? `${Number(s.appliedOn.slice(0, 4)) + 1}-05-01`
+              : addDays(s.appliedOn, rule.days!)
       out.push({
         kind,
         product: s.product,
@@ -159,6 +219,8 @@ export function restrictionsFor(sprays: Spray[], rulesByReg: Map<string, Grazing
         quote: rule.quote,
         assumed,
         eatenBecause: s.eatenBecause ?? [],
+        endsAtHarvest,
+        harvestedOn,
       })
     }
   }
@@ -198,6 +260,14 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 /** "12 Jun 2026" — spelled out by hand: the server's and the phone's locale data word dates differently. */
 export const fmtDay = (iso: string) => `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`
 
+/** When a restriction lifts, in words: "9 Aug 2026", "harvest is finished", or "spring 2027". */
+export function untilPhrase(r: Restriction): string {
+  if (!r.never) return fmtDay(r.until!)
+  if (r.harvestedOn) return `harvest finished ${fmtDay(r.harvestedOn)}`
+  if (r.endsAtHarvest) return 'harvest is finished'
+  return `spring ${r.until!.slice(0, 4)}`
+}
+
 /** One line for a restriction: what, from which spray, until when. */
 export function describeRestriction(r: Restriction): string {
   return `${r.product}, sprayed ${fmtDay(r.appliedOn)}: ${restrictionText(r)}`
@@ -224,7 +294,13 @@ export function restrictionText(r: Restriction): string {
     r.kind === 'slaughter'
       ? ''
       : r.never
-        ? ' — not this crop at all (its stubble too, until next spring)'
+        ? r.endsAtHarvest
+          ? r.harvestedOn
+            ? ` — not the treated crop; lifted when harvest finished ${fmtDay(r.harvestedOn)}`
+            : ' — not the treated crop; lifts once harvest is finished'
+          : r.kind === 'feed'
+            ? ' — not this crop at all (its straw, bales and screenings too, until next spring)'
+            : ' — not this crop at all (its stubble too, until next spring)'
         : ` for ${r.days} days after spraying, until ${fmtDay(r.until!)}`
   return `${what}${when}${r.assumed ? ` — ${r.assumed}` : ''}`
 }
@@ -237,7 +313,8 @@ export const blocking = (rs: Restriction[], today: string) =>
 export function untilWord(rs: Restriction[]): string {
   const last = [...rs].filter((r) => r.until).sort((a, b) => (a.until! < b.until! ? 1 : -1))[0]
   if (!last) return ''
-  return last.never ? `spring ${last.until!.slice(0, 4)} (not this crop at all)` : fmtDay(last.until!)
+  if (last.never && last.endsAtHarvest && !last.harvestedOn) return 'harvest is finished (not the treated crop)'
+  return last.never ? `${untilPhrase(last)} (not this crop at all)` : fmtDay(last.until!)
 }
 
 /** One place's state, as a sentence: what is off and until when. */
@@ -264,12 +341,14 @@ export type GrazingData = {
   /** crop_plans and crop_history, together: what was on each field each year. */
   fieldCrops: { field_id: string; crop_year: number; crop_id: string | null }[]
   /** grazed_after_harvest: cattle graze whatever was grown once it is off; open_to_pasture: not fenced off from the pasture around it. */
-  fields: { id: string; name: string; grazed_after_harvest?: boolean | null; open_to_pasture?: boolean | null }[]
+  fields: { id: string; name: string; grazed_after_harvest?: boolean | null; open_to_pasture?: boolean | null; never_grazed?: boolean | null }[]
   pastures: { id: string; name: string }[]
   pastureSprays: { id: string; pasture_id: string; applied_on: string; product: string; registration_number: string | null }[]
   overlaps: { field_id: string; pasture_id: string; overlap_acres: number | string; field_acres: number | string }[]
   stubble: { id: string; field_id: string | null; name: string; start_date: string | null }[]
   events: { id: string; pasture_id: string; turned_in_on: string; moved_out_on: string | null; head_count: number | null }[]
+  /** Harvest marked finished (field_work_records), for "do not graze" lines that end when the crop is off. */
+  harvests?: { field_id: string; crop_year: number; finished_at: string | null }[]
 }
 
 export type Place = {
@@ -336,8 +415,21 @@ export function grazingPicture(d: GrazingData, today: string) {
     }
     return p
   }
-  for (const f of d.fields) placeFor('field', f.id, f.name)
+  // Fields cattle never go on (land farmed 50/50 for its owner) are left out:
+  // their sprays restrict nothing anybody does.
+  for (const f of d.fields) if (!f.never_grazed) placeFor('field', f.id, f.name)
   for (const p of d.pastures) placeFor('pasture', p.id, p.name).eaten.push('pasture')
+
+  // The day each field's harvest was marked finished, per crop year: the
+  // earliest finish recorded (a later one is a second look at the same field).
+  const harvestDone = new Map<string, string>()
+  for (const h of d.harvests ?? []) {
+    if (!h.finished_at) continue
+    const day = albertaDay(h.finished_at)
+    const k = `${h.field_id}:${h.crop_year}`
+    const had = harvestDone.get(k)
+    if (!had || day < had) harvestDone.set(k, day)
+  }
 
   /** Names Deere sent that the price book could not turn into a registration. */
   const unmatched = new Map<string, { name: string; passes: number; lastOn: string }>()
@@ -363,7 +455,8 @@ export function grazingPicture(d: GrazingData, today: string) {
         continue
       }
       if (place.sprays.some((s) => s.registration === hit.registration && s.appliedOn === on)) continue
-      place.sprays.push({ sourceId: o.id, product: hit.product, registration: hit.registration, appliedOn: on, cropName, cropKeys })
+      const harvestedOn = harvestDone.get(`${o.field_id}:${on.slice(0, 4)}`) ?? null
+      place.sprays.push({ sourceId: o.id, product: hit.product, registration: hit.registration, appliedOn: on, cropName, cropKeys, harvestedOn })
     }
   }
   for (const s of d.pastureSprays) {
@@ -393,7 +486,7 @@ export function grazingPicture(d: GrazingData, today: string) {
   const accessWhy = (fieldId: string) => {
     const f = fieldById.get(fieldId)
     const why: string[] = []
-    if (f?.open_to_pasture) why.push('it is open to the pasture around it')
+    if (f?.open_to_pasture) why.push('there is no fence between it and the pasture beside it')
     if (f?.grazed_after_harvest) why.push('cattle graze it after harvest')
     return why
   }

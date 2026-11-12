@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown } from 'lucide-react'
-import { MODAL_OPENED } from './Modal'
+import { LAYER, MODAL_OPENED } from './Modal'
 import { cn } from '@/lib/utils'
 
 export type SelectOption = {
@@ -135,7 +135,7 @@ export function Select({
               minWidth: rect.width,
               maxWidth: window.innerWidth - rect.left - 8,
             }}
-            className="z-[70] max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white p-1 shadow-lg"
+            className={cn(LAYER.menu, 'max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white p-1 shadow-lg')}
           >
             {options.map((o, i) => (
               <Fragment key={o.value}>

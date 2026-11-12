@@ -67,7 +67,7 @@ export function useRotationContext(cropYear: number) {
         supabase.from('land_leases').select('landlord, arrangement, field_ids, rent_per_acre, rent_total, our_share_pct, crop_share_pct, inputs_shared, active, start_date, end_date, direction, crop_ids'),
         supabase.from('water_supply').select('kind, station, name, feeds, observed_on, value, unit, pct_full, pct_full_last_year, pct_of_median, url').gte('observed_on', new Date(Date.now() - 400 * 86_400_000).toISOString().slice(0, 10)).order('observed_on', { ascending: false }),
         supabase.from('feed_plans').select('*'),
-        supabase.from('herd_counts').select('id, ranch_id, head_count, background_head, avg_weight_lb, feed_class, bcs, target_bcs, target_gain_lb'),
+        supabase.from('herd_counts').select('id, ranch_id, class_name, head_count, background_head, avg_weight_lb, feed_class, bcs, target_bcs, target_gain_lb, feeding_method'),
         supabase.from('feed_ration').select('id, ranch_id, crop_id, dm_share_pct'),
         // Expected yields: every yield on record by crop, split fields' crop
         // areas included (forecast.ts drops the planned ones and the years

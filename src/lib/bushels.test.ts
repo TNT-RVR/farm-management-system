@@ -31,6 +31,33 @@ describe('bushelWeightFor', () => {
   it('says nothing for a crop not sold by the bushel', () => {
     expect(bushelWeightFor('Potato', null)).toBeNull()
     expect(bushelWeightFor('Alfalfa', null)).toBeNull()
+    // Sold by the pound, every one of them. A bushel figure here would be made
+    // up, and a made-up figure is worse than a blank.
+    expect(bushelWeightFor('Grass', null)).toBeNull()
+    expect(bushelWeightFor('Quinoa', null)).toBeNull()
+    expect(bushelWeightFor('Spinach Seed', null)).toBeNull()
+    expect(bushelWeightFor('Phacelia', null)).toBeNull()
+  })
+
+  it('does not take ryegrass seed for cereal rye', () => {
+    expect(bushelWeightFor('Rye Grass Seed', null)).toBeNull()
+    expect(bushelWeightFor('Ryegrass', null)).toBeNull()
+    // The cereal still answers.
+    expect(bushelWeightFor('Fall Rye', null)?.lbPerBu).toBe(56)
+  })
+
+  it('weighs the alfalfa seed without weighing the hay', () => {
+    expect(bushelWeightFor('Alfalfa Seed', null)?.lbPerBu).toBe(60)
+    expect(bushelWeightFor('Alfalfa', null)).toBeNull()
+  })
+
+  it('names the crop the figure came from', () => {
+    // Both are 60 lb, so the number was never wrong -- the screen saying where
+    // it came from was.
+    expect(bushelWeightFor('Chickpeas', null)?.label).toBe('Chickpeas')
+    expect(bushelWeightFor('Peas', null)?.lbPerBu).toBe(60)
+    expect(bushelWeightFor('Sorghum', null)?.lbPerBu).toBe(56)
+    expect(bushelWeightFor('Triticale', null)?.lbPerBu).toBe(50)
   })
 
   it('ignores a nonsense recorded weight rather than dividing by it', () => {

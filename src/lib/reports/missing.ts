@@ -13,6 +13,7 @@ import { staleHoursDate, staleHoursMachines, type HoursRow } from '@/lib/stale-h
 import { expectedYield, YIELD_WINDOW, type YieldRecord } from '@/lib/forecast'
 import { changeList, changeSummary, type FieldChange } from '@/lib/combine-monitor'
 import { loadCombineStates } from '@/lib/combine-monitor-state'
+import { kgAside } from '@/lib/lbs-kg'
 
 /**
  * Missing information: everything the app still needs a person to fill in,
@@ -361,7 +362,7 @@ export const CHECKS: MissingCheck[] = [
           const e = expectedYield({ cropId: c.id, year: d.year - 1, unit, goal: normal, history: d.yieldHistory })
           if (e.basis !== 'goal') return null
           const n = fields.get(c.id)!.size
-          const figure = `${normal.toLocaleString('en-CA')}${unit ? ` ${unit}/ac` : ''}`
+          const figure = `${normal.toLocaleString('en-CA')}${unit ? ` ${unit}/ac` : ''}${kgAside(normal, unit)}`
           return {
             area: 'Crops',
             item: c.name,
@@ -463,7 +464,7 @@ export const CHECKS: MissingCheck[] = [
     title: "Herd weights still the starting figures",
     why: "needed for an accurate feed budget",
     area: 'Cattle',
-    path: '/herd?tab=herd',
+    path: '/herd?tab=animals',
     run: (d) => {
       const ranch = new Map(d.ranches.map((r) => [r.id, r.name]))
       const start = (c: string) => (/bull/i.test(c) ? 1700 : /heifer/i.test(c) ? 900 : /cal(f|ves)/i.test(c) ? 650 : /cow/i.test(c) ? 1400 : null)
@@ -474,7 +475,7 @@ export const CHECKS: MissingCheck[] = [
           item: `${ranch.get(h.ranch_id ?? '') ?? 'Ranch'} · ${h.class_name}`,
           missing: `Weight (${num(h.avg_weight_lb)?.toLocaleString('en-CA')} lb) and condition score (3) are still the starting figures`,
           where: 'Herd',
-          path: '/herd?tab=herd',
+          path: '/herd?tab=animals',
         }))
     },
   },
@@ -494,12 +495,12 @@ export const CHECKS: MissingCheck[] = [
     title: "Cattle cost assumptions missing",
     why: "needed for the cattle budget",
     area: 'Cattle',
-    path: '/cattle-settings',
+    path: '/cattle-settings?tab=costs',
     run: (d) =>
       d.ranches
         .map((r) => {
           const row = [...d.cattleCosts].filter((c) => c.ranch === r.name && c.crop_year <= d.year).sort((a, b) => b.crop_year - a.crop_year)[0]
-          if (!row) return { area: 'Cattle', item: `${r.name} costs`, missing: 'No cost assumptions (cow, feed, pasture, vet)', where: 'Cattle → Settings', path: '/cattle-settings' }
+          if (!row) return { area: 'Cattle', item: `${r.name} costs`, missing: 'No cost assumptions (cow, feed, pasture, vet)', where: 'Cattle → Settings', path: '/cattle-settings?tab=costs' }
           const named: [string, unknown][] = [
             ['cow cost', row.cow_cost_per_head],
             ['feed cost', row.feed_cost_per_head],
@@ -511,7 +512,7 @@ export const CHECKS: MissingCheck[] = [
           const tiny = named.filter(([, v]) => num(v) != null && num(v)! < 10).map(([k, v]) => `${k} $${num(v)}`)
           const gaps = [...(none.length ? [`no ${list(none)}`] : []), ...(tiny.length ? [`${list(tiny)} a head looks like a placeholder`] : [])]
           if (num(row.death_loss_pct) == null || num(row.weaning_rate_pct) == null) gaps.push('no death loss or weaning rate')
-          return gaps.length ? { area: 'Cattle', item: `${r.name} costs`, missing: sentence(gaps), where: 'Cattle → Settings', path: '/cattle-settings' } : null
+          return gaps.length ? { area: 'Cattle', item: `${r.name} costs`, missing: sentence(gaps), where: 'Cattle → Settings', path: '/cattle-settings?tab=costs' } : null
         })
         .filter((x): x is MissingItem => x != null),
   },

@@ -8,9 +8,13 @@ import { useHerdCounts } from '@/lib/cattle'
 import { abCowCashCostPerYear, abCowCostPerYear, useCattleCosts } from '@/lib/cattleEconomics'
 import { cwtToLb, derivePrice, useCattleSales, weightSlide } from '@/lib/cattleMarkets'
 import { parseSeriesCode } from '@/lib/auction-markets'
-import { computeHerd, computePasture, grazingRain, useGrazingHerd, useGrazingPastures, useRanchPrecip } from '@/lib/grazing'
+import { computeHerds, computePastures, grassBalance, grazingRain, useGrazingHerd, useGrazingPastures, usePastureFieldContext, usePastureSeasonFactors, useRanchPrecip } from '@/lib/grazing'
+import { useFeedPlan } from '@/lib/feed'
+import { saleWeightSource } from '@/lib/calf-sale'
+import { useCalfMoney } from '@/lib/ranch-summary'
 import type { Ranch } from '@/lib/ranches'
 import {
+  bullCalfPricePerLb,
   loadHeiferOverrides,
   planHeifers,
   priceSaleOptions,
@@ -33,19 +37,19 @@ function useFeederQuotes() {
   return useQuery({
     // 'auction': since 5 Oct 2026 only the four auction markets, not the
     // Alberta review's; a saved offline copy of the old set is not reused.
-    queryKey: ['feeder-quotes', 'auction'],
+    queryKey: ['feeder-quotes', 'auction', 'bulls'],
     staleTime: 3_600_000,
     queryFn: async () => {
       const since = new Date(Date.now() - 21 * 86_400_000).toISOString().slice(0, 10)
       const { data: series, error } = await supabase.from('market_series').select('id, code').like('code', 'ab.feeder.%')
       if (error) throw error
-      const out: Record<'heifers' | 'steers', Quote[]> = { heifers: [], steers: [] }
+      const out: Record<'heifers' | 'steers' | 'bulls', Quote[]> = { heifers: [], steers: [], bulls: [] }
       await Promise.all(
         (series ?? []).map(async (s) => {
           // Medicine Hat, Lethbridge, Calgary Stockyards and Team online only,
           // as on the Markets tab. Open-topped classes have no middle to slide from.
           const p = parseSeriesCode(s.code)
-          if (p?.cls !== 'feeder' || (p.kind !== 'heifers' && p.kind !== 'steers') || p.band?.hi == null) return
+          if (p?.cls !== 'feeder' || (p.kind !== 'heifers' && p.kind !== 'steers' && p.kind !== 'bulls') || p.band?.hi == null) return
           const m = [s.code, p.kind, String(p.band.lo), String(p.band.hi)]
           const { data } = await supabase
             .from('market_prices')
@@ -55,7 +59,7 @@ function useFeederQuotes() {
             .not('value', 'is', null)
             .order('observed_on', { ascending: false })
             .limit(1)
-          if (data?.[0]) out[m[1] as 'heifers' | 'steers'].push({ lo: Number(m[2]), hi: Number(m[3]), perCwt: Number(data[0].value) })
+          if (data?.[0]) out[m[1] as 'heifers' | 'steers' | 'bulls'].push({ lo: Number(m[2]), hi: Number(m[3]), perCwt: Number(data[0].value) })
         }),
       )
       return out
@@ -63,13 +67,15 @@ function useFeederQuotes() {
   })
 }
 
-/** $/lb at a weight: the quoted class it falls in, else slid from the nearest along the week's own slide. */
+/**
+ * $/lb at a weight: the quoted class it falls in; in a gap between two quoted
+ * classes, a straight line between the classes either side (at their middles);
+ * past either end, slid from the nearest along the week's own slide.
+ */
 function pricePerLb(quotes: Quote[], lb: number): number | null {
   if (!quotes.length) return null
   const inClass = quotes.filter((q) => lb >= q.lo && lb < q.hi)
   if (inClass.length) return cwtToLb(inClass.reduce((a, q) => a + q.perCwt, 0) / inClass.length)
-  const slide = weightSlide(quotes)
-  if (!slide) return null
   const classes = new Map<string, Quote & { n: number }>()
   for (const q of quotes) {
     const e = classes.get(`${q.lo}`) ?? { ...q, perCwt: 0, n: 0 }
@@ -78,28 +84,19 @@ function pricePerLb(quotes: Quote[], lb: number): number | null {
     classes.set(`${q.lo}`, e)
   }
   const avg = [...classes.values()].map((c) => ({ lo: c.lo, hi: c.hi, perCwt: c.perCwt / c.n })).sort((a, b) => a.lo - b.lo)
+  // In a gap: it used to take the heaviest class for any weight not quoted,
+  // so a 650 lb calf between 500–600 and 700–800 was priced off 900 lb cattle.
+  const below = [...avg].reverse().find((c) => c.hi <= lb)
+  const above = avg.find((c) => c.lo > lb)
+  if (below && above) {
+    const xb = (below.lo + below.hi) / 2
+    const xa = (above.lo + above.hi) / 2
+    return cwtToLb(below.perCwt + ((above.perCwt - below.perCwt) * (lb - xb)) / (xa - xb))
+  }
+  const slide = weightSlide(quotes)
+  if (!slide) return null
   const nearest = lb < avg[0].lo ? avg[0] : avg[avg.length - 1]
   return cwtToLb(derivePrice(lb, nearest, slide))
-}
-
-/**
- * Median of the ranch's recent sale weights for a class — its own weaning
- * weight. Per ranch, because the two calve months apart (East Ranch in March,
- * Home Ranch in May), so one ranch's calves say nothing about the other's.
- */
-function recentWeight(
-  sales: { ranch: string; animal_class: string; avg_weight_lb: number | null; crop_year: number }[],
-  ranchName: string,
-  cls: string,
-  fallback: number,
-) {
-  const w = sales
-    .filter((s) => s.ranch === ranchName && s.animal_class === cls && s.avg_weight_lb != null)
-    .sort((a, b) => b.crop_year - a.crop_year)
-    .slice(0, 4)
-    .map((s) => s.avg_weight_lb!)
-    .sort((a, b) => a - b)
-  return w.length ? Math.round(w[Math.floor(w.length / 2)]) : fallback
 }
 
 function Num({
@@ -145,6 +142,41 @@ function Num({
 }
 
 /**
+ * The figures that are this decision's own what-ifs, typed over here. The rest
+ * (cows, weaning rate, death loss, sale weights, cost of gain, cow cost, cull
+ * cheque) come from Cattle settings and the head count and are shown
+ * read-only: one home each, so a figure typed here cannot quietly disagree
+ * with Settings. An old override of one of those, saved in this browser
+ * before, is ignored.
+ */
+const DECISION_KEYS = new Set([
+  'cull',
+  'growth',
+  'preg',
+  'capacity',
+  'winterTo',
+  'yearlingTo',
+  'grassCost',
+  'dev',
+  'years',
+  'discount',
+  'overstock',
+])
+const decisionOnly = (o: HeiferOverrides): HeiferOverrides =>
+  Object.fromEntries(Object.entries(o).filter(([k]) => DECISION_KEYS.has(k)))
+
+/** A figure this page reads from Settings or the head count, shown but not typed over. */
+function Given({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="text-xs text-gray-600">
+      <span>{label}</span>
+      <span className="mt-0.5 block text-sm font-medium tabular-nums text-gray-900">{value}</span>
+      <span className="block text-[10px] text-gray-400">{hint}</span>
+    </div>
+  )
+}
+
+/**
  * Cattle → Herd: how many heifer calves to keep, what keeping more or fewer
  * gains or loses, and when to sell the rest — from the herd, the grass, the
  * ranch's costs and this week's Alberta prices.
@@ -153,10 +185,11 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
   // Read once: a clock read during render is impure.
   const [year] = useState(() => new Date().getFullYear())
   // The assumptions fold, and the one box inside it the table links to. A row
-  // that reads "over the grass — set its cost" has no total until that cost is
+  // that reads "over grass" has no total until that cost is
   // set, and the box was folded away where nobody found it (Sam, 29 Oct 2026:
   // "How do I set the over the grass cost?").
   const [assumptionsOpen, setAssumptionsOpen] = useState(false)
+  const [showAllRows, setShowAllRows] = useState(false)
   const overstockRef = useRef<HTMLInputElement>(null)
   const setOverstock = () => {
     setAssumptionsOpen(true)
@@ -174,29 +207,31 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
   const { data: pastures } = useGrazingPastures(ranch.id)
   const { data: herd } = useGrazingHerd(ranch.id)
   const { data: measured } = useRanchPrecip(ranch)
+  const { data: factors } = usePastureSeasonFactors(ranch.id)
+  const fieldCtx = usePastureFieldContext(ranch.id, herd)
   const { data: cowQuotes } = useCowQuotes()
+  const { data: feedPlan } = useFeedPlan(ranch.id)
 
   const cowsRow = counts?.find((c) => /cow/i.test(c.class_name))
   const cows = cowsRow?.head_count ?? 0
 
-  // What the ranch's own grass carries, counted the way the Grazing tab
-  // counts it: the pastures' supply, less what the classes WITH grazing dates
-  // eat (a class with no dates is not on grass there either), over a cow's
-  // season — the cows' own dates, or the grazing season set on another class.
+  // What the ranch's own grass carries: the Grazing tab's own sum
+  // (grassBalance), so "N cows over" here is that tab's shortfall ÷ what one
+  // cow and her calf need. Every class is on grass — one with no dates over
+  // the ranch's grazing season, as the Grazing tab counts it.
   const grass = useMemo(() => {
     if (!pastures?.length || !herd?.length) return null
-    // Planned on a normal season, the same figure the Grazing tab plans on.
-    const precip = grazingRain(ranch, measured).forecastMm
+    // This season, the same way the Grazing tab reads it: its projected rain,
+    // with a paddock's own measured growth in place of it where there is one.
+    const rain = grazingRain(ranch, measured)
     const util = ranch.grazing_utilization_rate ?? 0.8
-    const supply = pastures.map((p) => computePasture(p, precip, util)).reduce((a, p) => a + p.auds, 0)
-    const calc = herd.map(computeHerd)
-    const season = calc.find((h) => h.days > 0)?.days ?? 200
-    const others = calc.filter((h) => !/cow/i.test(h.class_name)).reduce((a, h) => a + h.audsRequired, 0)
-    const cow = calc.find((h) => /cow/i.test(h.class_name))
-    const days = cow?.days || season
-    const perCow = (cow?.au_equivalent ?? 1.4) * days
-    return perCow > 0 ? { capacity: Math.max(0, (supply - others) / perCow), supply, others, perCow, days } : null
-  }, [pastures, herd, measured, ranch])
+    const factorFor = new Map<string, number>()
+    for (const f of factors ?? []) if (f.factor != null) factorFor.set(f.grazing_pasture_id, f.factor)
+    const supply = computePastures(pastures, rain, util, fieldCtx.ctx(), factorFor).reduce((a, p) => a + p.auds, 0)
+    const calving = feedPlan ? { month: feedPlan.calving_month, day: feedPlan.calving_day } : null
+    const b = grassBalance(supply, computeHerds(herd, calving, ranch.weaning_date))
+    return b.perCow != null && b.capacityCows != null ? { capacity: b.capacityCows, supply, others: b.others, perCow: b.perCow, days: b.cowDays } : null
+  }, [pastures, herd, measured, factors, ranch, feedPlan, fieldCtx])
   const capacity = grass?.capacity ?? null
 
   const farmCost = costs
@@ -217,20 +252,24 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
   // Typed-over assumptions, kept per ranch in this browser so they survive a
   // reload. Tagged with the ranch they belong to: switching ranch without a
   // remount reads that ranch's own set rather than carrying this one across.
-  const storedForRanch = useMemo(() => loadHeiferOverrides(ranch.id), [ranch.id])
+  const storedForRanch = useMemo(() => decisionOnly(loadHeiferOverrides(ranch.id)), [ranch.id])
   const [edits, setEdits] = useState<{ ranchId: string; o: HeiferOverrides }>(() => ({ ranchId: ranch.id, o: storedForRanch }))
   const o = edits.ranchId === ranch.id ? edits.o : storedForRanch
   const keep = (next: HeiferOverrides) => {
-    setEdits({ ranchId: ranch.id, o: next })
-    saveHeiferOverrides(ranch.id, next)
+    const only = decisionOnly(next)
+    setEdits({ ranchId: ranch.id, o: only })
+    saveHeiferOverrides(ranch.id, only)
   }
   const v = (k: string, d: number | null) => (k in o ? o[k] : d)
   const set = (k: string) => (x: number | null) => keep({ ...o, [k]: x })
   const changed = Object.keys(o).length
 
-  // A sale weight typed for the ranch (East Ranch: 650 / 750 lb, 5 Oct 2026) wins over its sales.
-  const heiferWean = v('heiferWean', ranch.heifer_sale_weight_lb ?? recentWeight(sales ?? [], ranch.name, 'heifers', 430))!
-  const steerWean = v('steerWean', ranch.steer_sale_weight_lb ?? recentWeight(sales ?? [], ranch.name, 'bulls', 460))!
+  // The Markets tab's sale weights and prices for this ranch (ranchSale: typed
+  // for the ranch, else the head-weighted average of its last five years'
+  // sales), so a heifer sold at weaning here is the Markets tab's heifer.
+  const calfMoney = useCalfMoney(ranch, year)
+  const heiferWean = v('heiferWean', calfMoney.sale.heifers.lb)!
+  const steerWean = v('steerWean', calfMoney.sale.steers.lb)!
   // The cull cow cheque: today's market cow price × this ranch's cow weight.
   const cull = cullCowValue({
     quotes: cowQuotes,
@@ -241,8 +280,12 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
   const cog = v('cog', costs?.cost_of_gain_per_lb ?? 1.4)!
   const hq = quotes?.heifers ?? []
   const sq = quotes?.steers ?? []
-  const pHeifer = (lb: number) => pricePerLb(hq, lb)
-  const pSteer = (lb: number) => pricePerLb(sq, lb)
+  // Priced the Markets tab's way (headlinePrice: each nearby market's newest
+  // sale of the class over two weeks); this week's single quotes only where
+  // that has nothing.
+  const pHeifer = (lb: number) => calfMoney.priceAt('heifers', lb)?.perLb ?? pricePerLb(hq, lb)
+  const pSteer = (lb: number) =>
+    bullCalfPricePerLb(quotes?.bulls?.some((q) => lb >= q.lo && lb < q.hi) ? pricePerLb(quotes.bulls, lb) : null, calfMoney.priceAt('steers', lb)?.perLb ?? pricePerLb(sq, lb))
   const winterTo = v('winterTo', 600)!
   const yearlingTo = v('yearlingTo', 850)!
   // Nothing by default: the yearlings graze the farm's own land and no rent is paid (Sam, 7 Oct 2026).
@@ -266,14 +309,14 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
           costPerHead: Math.max(0, winterTo - heiferWean) * cog + grassCost,
         },
       ],
-      v('death', costs?.death_loss_pct ?? 2)!,
+      v('postWeaningLoss', costs?.post_weaning_loss_pct ?? 2)!,
     )
     const annualCowCost = v('cowCost', costLooksComplete ? farmCost : abCowCost)!
     return {
       cows: v('cows', cows)!,
       heiferCalves: v('heiferCalves', Math.round((cows * (costs?.weaning_rate_pct ?? 92)) / 100 / 2))!,
       cullPct: v('cull', 12)!,
-      deathPct: v('death', costs?.death_loss_pct ?? 2)!,
+      deathPct: v('death', costs?.cow_death_pct ?? 2)!,
       pregPct: v('preg', 88)!,
       weaningPct: v('weaning', costs?.weaning_rate_pct ?? 92)!,
       capacityCows: v('capacity', capacity == null ? null : Math.round(capacity)),
@@ -287,7 +330,7 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
       overstockCostPerCow: v('overstock', null),
       sale,
     }
-  }, [o, cows, costs, capacity, quotes, sales, farmCost, costLooksComplete, cull.cheque]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [o, cows, costs, capacity, quotes, sales, farmCost, costLooksComplete, cull.cheque, calfMoney.priceAt, calfMoney.sale]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const plan = inputs ? planHeifers(inputs) : null
 
@@ -302,6 +345,16 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
     return <p className="rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500">No Alberta feeder quotes in the last three weeks to price the calves from.</p>
 
   const bestKey = plan.best?.key
+  // The keep table runs 0, 5, 10… to every heifer calf — 26 rows at Bow
+  // Island, most of them "over grass". Show a few either side of the
+  // recommended and holds-herd rows; the rest are a tap away.
+  const marked = plan.rows.flatMap((r, i) => (r.keep === plan.recommended || r.keep === plan.maintain ? [i] : []))
+  const lo = Math.max(0, (marked.length ? Math.min(...marked) : 0) - 2)
+  const hi = Math.min(plan.rows.length - 1, Math.max(lo + 6, (marked.length ? Math.max(...marked) : 0) + 2))
+  const windowRows = plan.rows.slice(lo, hi + 1)
+  const canFold = windowRows.length < plan.rows.length
+  const shownRows = showAllRows ? plan.rows : windowRows
+  const firstOverGrass = plan.rows.find((r) => r.netVsSellAll == null)?.keep ?? null
   return (
     <section className="mt-6 space-y-3">
       <h2 className="flex items-center gap-2 text-base font-semibold text-gray-900">
@@ -321,14 +374,14 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
           {grass && !('capacity' in o) && (
             <HelpNote className="mt-1" summary={`Grass: ${n0(grass.supply)} animal-unit days this season.`} title="How the grass is counted">
               <p>
-                Pastures give {n0(grass.supply)} animal-unit days this season; the classes with grazing dates use {n0(grass.others)}; a cow needs{' '}
+                Pastures give {n0(grass.supply)} animal-unit days this season; the other classes use {n0(grass.others)} (the Grazing tab&apos;s herd table); a cow needs{' '}
                 {n0(grass.perCow)} over {grass.days} days. If the cows also graze rented land or crop aftermath, raise &ldquo;Cows the grass carries&rdquo; below.
               </p>
             </HelpNote>
           )}
           {inputs.cullCowValue === 0 && (
             <p className="mt-2 rounded-md bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-900">
-              Set the cull-cow cheque in the assumptions — at $0 it undervalues every heifer kept and can flip this answer.
+              Set the cull cow price in Cattle settings — at $0 it undervalues every heifer kept and can flip this answer.
             </p>
           )}
         </div>
@@ -407,7 +460,7 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {plan.rows.map((r) => (
+            {shownRows.map((r) => (
               <tr key={r.keep} className={cn(r.keep === plan.recommended ? 'bg-brand-50 font-semibold' : r.keep === plan.maintain ? 'bg-gray-50' : '')}>
                 <td className="px-3 py-1.5 tabular-nums">
                   {r.keep}
@@ -421,8 +474,8 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
                 <td className="px-3 py-1.5 text-right tabular-nums">{money(r.saleCash)}</td>
                 <td className={cn('px-3 py-1.5 text-right tabular-nums', r.netVsSellAll == null ? 'text-gray-400' : r.netVsSellAll >= 0 ? 'text-green-800' : 'text-red-700')}>
                   {r.netVsSellAll == null ? (
-                    <button type="button" onClick={setOverstock} className="font-medium text-brand-700 underline decoration-dotted underline-offset-2 hover:text-brand-900">
-                      over the grass — set its cost
+                    <button type="button" onClick={setOverstock} className="text-xs font-medium text-gray-500 underline decoration-dotted underline-offset-2 hover:text-brand-800">
+                      over grass
                     </button>
                   ) : (
                     `${r.netVsSellAll >= 0 ? '+' : ''}${money(r.netVsSellAll)}`
@@ -432,6 +485,26 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
             ))}
           </tbody>
         </table>
+        {(firstOverGrass != null || canFold) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-3 py-2 text-xs text-gray-600">
+            {firstOverGrass != null ? (
+              <span>
+                From {firstOverGrass} kept, the herd is more than the grass carries.{' '}
+                <button type="button" onClick={setOverstock} className="font-medium text-brand-700 underline decoration-dotted underline-offset-2 hover:text-brand-900">
+                  Set the cost of extra grass
+                </button>{' '}
+                to compare those rows.
+              </span>
+            ) : (
+              <span />
+            )}
+            {canFold ? (
+              <button type="button" onClick={() => setShowAllRows((s) => !s)} className="font-medium text-brand-700 hover:underline">
+                {showAllRows ? 'Show fewer' : `Show all ${plan.rows.length}`}
+              </button>
+            ) : null}
+          </div>
+        )}
       </div>
 
       <details
@@ -439,51 +512,16 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
         onToggle={(e) => setAssumptionsOpen(e.currentTarget.open)}
         className="rounded-xl border border-gray-200 bg-white p-3"
       >
-        <summary className="cursor-pointer text-sm font-semibold text-gray-800">Assumptions — change any of them</summary>
+        <summary className="cursor-pointer text-sm font-semibold text-gray-800">Assumptions — try what-ifs</summary>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Num label="Cows" value={inputs.cows} onChange={set('cows')} hint="from Herd counts" />
-          <Num label="Heifer calves weaned" value={inputs.heiferCalves} onChange={set('heiferCalves')} hint="half the calf crop" />
-          <Num label="Cows the grass carries" value={inputs.capacityCows} onChange={set('capacity')} hint="from the Grazing tab" />
-          <Num label="Years to grow into it" value={inputs.growthYears} onChange={set('growth')} />
           <Num label="Culled a year" value={inputs.cullPct} onChange={set('cull')} suffix="%" hint="typical 10–15%" info="cullRate" />
-          <Num label="Death loss" value={inputs.deathPct} onChange={set('death')} suffix="%" hint="from Cattle settings" />
+          <Num label="Years to grow into it" value={inputs.growthYears} onChange={set('growth')} />
           <Num label="Heifers that breed" value={inputs.pregPct} onChange={set('preg')} suffix="%" hint="typical 85–92%" info="heifersBreed" />
-          <Num label="Weaning rate" value={inputs.weaningPct} onChange={set('weaning')} suffix="%" hint="from Cattle settings" />
-          <Num label="Heifer weaning weight" value={heiferWean} onChange={set('heiferWean')} suffix="lb" hint={ranch.heifer_sale_weight_lb != null ? 'typed for this ranch' : 'your recent heifer sales'} />
-          <Num label="Steer weaning weight" value={steerWean} onChange={set('steerWean')} suffix="lb" hint={ranch.steer_sale_weight_lb != null ? 'typed for this ranch' : 'your recent steer-calf sales'} />
+          <Num label="Cows the grass carries" value={inputs.capacityCows} onChange={set('capacity')} hint="from the Grazing tab" />
           <Num label="Winter them to" value={winterTo} onChange={set('winterTo')} suffix="lb" hint="backgrounded heifers only" info="winterTo" />
           <Num label="Yearlings off grass at" value={yearlingTo} onChange={set('yearlingTo')} suffix="lb" hint="yearlings only" info="yearlingTo" />
-          <Num label="Cost of gain" value={cog} onChange={set('cog')} suffix="$/lb" step={0.05} hint="from Cattle settings" info="costOfGain" />
           <Num label="Summer grass per yearling" value={grassCost} onChange={set('grassCost')} suffix="$" hint="own grass: no rent paid" info="grassPerYearling" />
-          <Num
-            label="A cow for a year"
-            value={inputs.annualCowCost}
-            onChange={set('cowCost')}
-            suffix="$"
-            hint={
-              costLooksComplete
-                ? costs?.carriedFrom != null
-                  ? `from Cattle settings, carried from ${costs.carriedFrom} — review`
-                  : 'from Cattle settings'
-                : `Alberta benchmark — your settings add to ${money(farmCost)}`
-            }
-            info="cowForAYear"
-          />
           <Num label="Developing a heifer" value={inputs.devCostPerHeifer} onChange={set('dev')} suffix="$" hint="weaning to first calf; estimate" />
-          <Num
-            label="Cull cow cheque"
-            value={inputs.cullCowValue}
-            onChange={set('cullValue')}
-            suffix="$"
-            hint={
-              'cullValue' in o
-                ? 'typed here'
-                : cull.perCwt != null
-                  ? `$${cull.perCwt.toFixed(2)}/cwt × ${n0(Number(cowsRow.avg_weight_lb))} lb — ${cull.from === 'market' ? cull.line : 'typed in Cattle settings'}`
-                  : '0 until a price is known'
-            }
-            info="cullCow"
-          />
           <Num label="Cow's working years" value={inputs.productiveYears} onChange={set('years')} info="productiveYears" />
           <Num label="Discount rate" value={inputs.discountPct} onChange={set('discount')} suffix="%" hint="the interest money costs you" info="discountRate" />
           <Num
@@ -495,6 +533,39 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
             inputRef={overstockRef}
           />
         </div>
+        <div className="mt-4 flex flex-wrap items-baseline justify-between gap-2 border-t border-gray-100 pt-3">
+          <p className="text-xs font-semibold text-gray-700">From Cattle settings and the head count</p>
+          <SetupLink managerOnly to={SETUP_LINKS.cattleCosts(ranch.id)}>Change in Cattle settings</SetupLink>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Given label="Cows" value={n0(inputs.cows)} hint="head count, above" />
+          <Given label="Heifer calves weaned" value={n0(inputs.heiferCalves)} hint="half the calves weaned" />
+          <Given label="Death loss" value={`${inputs.deathPct}%`} hint={costs?.death_loss_pct != null ? 'Cattle settings' : 'not set — 2% assumed'} />
+          <Given label="Weaning rate" value={`${inputs.weaningPct}%`} hint={costs?.weaning_rate_pct != null ? 'Cattle settings' : 'not set — 92% assumed'} />
+          <Given label="Heifer weaning weight" value={`${n0(heiferWean)} lb`} hint={`as Markets: ${saleWeightSource(calfMoney.sale.heifers)}`} />
+          <Given label="Steer weaning weight" value={`${n0(steerWean)} lb`} hint={`as Markets: ${saleWeightSource(calfMoney.sale.steers)}`} />
+          <Given label="Cost of gain" value={`$${cog.toFixed(2)}/lb`} hint={costs?.cost_of_gain_per_lb != null ? 'Cattle settings' : 'not set — $1.40 assumed'} />
+          <Given
+            label="A cow for a year"
+            value={money(inputs.annualCowCost)}
+            hint={
+              costLooksComplete
+                ? costs?.carriedFrom != null
+                  ? `Cattle settings, carried from ${costs.carriedFrom}`
+                  : 'Cattle settings'
+                : 'Alberta benchmark'
+            }
+          />
+          <Given
+            label="Cull cow cheque"
+            value={money(inputs.cullCowValue)}
+            hint={
+              cull.perCwt != null
+                ? `$${cull.perCwt.toFixed(2)}/cwt × ${n0(Number(cowsRow.avg_weight_lb))} lb — ${cull.from === 'market' ? 'market' : 'Cattle settings'}`
+                : '0 until a price is known'
+            }
+          />
+        </div>
         {!costLooksComplete && (
           <HelpNote
             className="mt-2 text-amber-700"
@@ -504,7 +575,7 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
             <p>
               Your Cattle settings add up to {money(farmCost)} a cow a year, which looks incomplete, so the Alberta cow-calf benchmark is used instead:{' '}
               {money(abCowCost)} for {year}. That is everything a cow costs — cash, depreciation, and the opportunity cost of your own land, labour and
-              money. Out-of-pocket alone is about {money(abCowCash)}. Fill in Cattle settings or type your own figure above.{' '}
+              money. Out-of-pocket alone is about {money(abCowCash)}. Fill in Cattle settings to use your own.{' '}
               <SetupLink managerOnly to={SETUP_LINKS.cattleCosts(ranch.id)}>Cattle settings</SetupLink>
             </p>
           </HelpNote>

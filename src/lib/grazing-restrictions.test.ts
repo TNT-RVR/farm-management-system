@@ -73,8 +73,64 @@ describe('restrictionsFor', () => {
     expect(restrictionsFor([spray({ cropName: 'Alfalfa', cropKeys: ['alfalfa'] })], rules)).toEqual([])
     const beans = restrictionsFor([spray({ cropName: 'Beans', cropKeys: ['dry_bean'] })], rules)
     expect(beans[0].never).toBe(true)
-    // Not at all = the treated crop, to the spring after.
+    // Not at all = the treated crop: until harvest, with the spring after as the backstop.
     expect(beans[0].until).toBe('2027-05-01')
+    expect(beans[0].endsAtHarvest).toBe(true)
+  })
+
+  it('a "do not graze the treated crop" lifts the day harvest is finished (Viper ADV on beans)', () => {
+    const rules = by([rule({ kind: 'graze', crop: 'dry bean', crop_key: 'dry_bean', never: true }), rule({ kind: 'feed', crop: 'dry bean', crop_key: 'dry_bean', never: true })])
+    const beans = spray({ appliedOn: '2026-06-20', cropName: 'EDIBLE_BEANS', cropKeys: ['dry_bean'], harvestedOn: '2026-10-09' })
+    const rs = restrictionsFor([beans], rules)
+    const graze = rs.find((r) => r.kind === 'graze')!
+    expect(graze.until).toBe('2026-10-09')
+    // Bean straw is never baled, so once combined there is nothing left to feed either.
+    expect(rs.find((r) => r.kind === 'feed')!.until).toBe('2026-10-09')
+    expect(activeRestrictions(rs, '2026-11-02')).toEqual([])
+    // Still on before harvest is recorded.
+    expect(restrictionsFor([{ ...beans, harvestedOn: null }], rules).find((r) => r.kind === 'graze')!.until).toBe('2027-05-01')
+  })
+
+  it('a feeding "not at all" stays to spring where straw is baled, or when it is about screenings', () => {
+    const barleyRules = by([rule({ kind: 'feed', crop: 'barley', crop_key: 'barley', never: true })])
+    const barley = restrictionsFor([spray({ cropName: 'Barley', cropKeys: ['barley'], harvestedOn: '2026-08-30' })], barleyRules)[0]
+    expect(barley.until).toBe('2027-05-01')
+    const screenings = by([rule({ kind: 'feed', crop: 'dry bean', crop_key: 'dry_bean', never: true, quote: 'DO NOT feed seed screenings to livestock.' })])
+    const beans = restrictionsFor([spray({ cropName: 'EDIBLE_BEANS', cropKeys: ['dry_bean'], harvestedOn: '2026-10-09' })], screenings)[0]
+    expect(beans.until).toBe('2027-05-01')
+  })
+
+  it('peas, carrots, spinach and canola straw is not baled either; a line naming the residue stays to spring', () => {
+    const liberty = by([rule({ kind: 'feed', crop: 'Canola', crop_key: 'canola', never: true, condition: 'cut for hay' })])
+    expect(restrictionsFor([spray({ cropName: 'CANOLA', cropKeys: ['canola'], harvestedOn: '2026-09-25' })], liberty)[0].until).toBe('2026-09-25')
+    const certitude = by([
+      rule({ kind: 'graze', crop: 'canola', crop_key: 'canola', never: true, quote: 'Do not graze or feed other portions of the treated canola to livestock.', condition: 'other portions of treated canola (straw/residue), not grain/meal' }),
+    ])
+    const c = restrictionsFor([spray({ cropName: 'CANOLA', cropKeys: ['canola'], harvestedOn: '2026-09-25' })], certitude)[0]
+    expect([c.endsAtHarvest, c.until]).toEqual([false, '2027-05-01'])
+    const rambler = by([rule({ kind: 'graze', never: true, quote: 'Do not feed hay or threshings or allow livestock to graze in treated areas.' })])
+    expect(restrictionsFor([spray({ cropName: 'CANOLA', cropKeys: ['canola'], harvestedOn: '2026-09-25' })], rambler)[0].until).toBe('2027-05-01')
+  })
+
+  it("a post-harvest line says nothing about a spray on the growing crop (Zidua on corn in June)", () => {
+    const zidua = by([
+      rule({ kind: 'feed', never: true, condition: 'post-harvest treatment' }),
+      rule({ kind: 'feed', crop: 'peanut', crop_key: 'other', never: true }),
+      rule({ kind: 'feed', crop: 'carrot', crop_key: 'carrot', never: true }),
+    ])
+    expect(restrictionsFor([spray({ appliedOn: '2026-06-05', cropName: 'CORN_WET', cropKeys: ['corn'], harvestedOn: '2026-10-26' })], zidua)).toEqual([])
+    expect(restrictionsFor([spray({ appliedOn: '2026-06-05', cropName: 'CORN_WET', cropKeys: ['corn'] })], zidua)).toEqual([])
+    expect(restrictionsFor([spray({ appliedOn: '2026-10-30', cropName: 'CORN_WET', cropKeys: ['corn'], harvestedOn: '2026-10-26' })], zidua)).toHaveLength(1)
+    expect(restrictionsFor([spray({ appliedOn: '2026-06-05', cropName: 'CARROTS', cropKeys: ['carrot'] })], zidua)).toHaveLength(1)
+  })
+
+  it('does not end at harvest for a forage, which grows back, or a pasture', () => {
+    const rules = by([rule({ kind: 'graze', never: true })])
+    const alfalfa = restrictionsFor([spray({ cropName: 'Alfalfa', cropKeys: ['alfalfa'], harvestedOn: '2026-07-01' })], rules)[0]
+    expect(alfalfa.endsAtHarvest).toBe(false)
+    expect(alfalfa.until).toBe('2027-05-01')
+    const pasture = restrictionsFor([spray({ cropName: 'pasture', cropKeys: ['grass'] })], rules)[0]
+    expect(pasture.endsAtHarvest).toBe(false)
   })
 
   it('a label naming only other crops uses its strictest line, marked assumed', () => {
@@ -225,6 +281,14 @@ describe('grazingPicture and the alerts', () => {
     d.ops.push({ id: 'op9', field_id: 'f2', started_at: '2026-06-11T18:00:00Z', ended_at: null, products: [{ name: 'Centurion', productType: 'CHEMICAL' }], treated_crop: 'CANOLA' })
     const f2 = grazingPicture(d, '2026-06-12').places.find((p) => p.id === 'f2')!
     expect(f2.sprays.some((s) => (s.eatenBecause ?? []).includes('cattle graze it after harvest'))).toBe(true)
+  })
+
+  it('a field never grazed (farmed 50/50 for its owner) gets no restrictions', () => {
+    const d = base()
+    d.fields = d.fields.map((f) => (f.id === 'f1' ? { ...f, never_grazed: true } : f))
+    const pic = grazingPicture(d, '2026-06-12')
+    expect(pic.places.some((p) => p.id === 'f1')).toBe(false)
+    expect(planGrazingNotices(pic, new Set(), '2026-06-12').notices).toHaveLength(0)
   })
 
   it('a field mostly outside the pasture is not inside its fence', () => {

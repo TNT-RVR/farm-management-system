@@ -27,6 +27,8 @@ import { tempBarLayout } from './weather/tempBar'
 
 // recharts in its own chunk, only when the 24-hour tab is opened.
 const Next24 = lazyWithRetry(() => import('./weather/Next24'))
+// The radar tab carries maplibre and its own tiles; only loaded when opened.
+const RainRadar = lazyWithRetry(() => import('./weather/RainRadar'))
 
 /** ECMWF's global model on Open-Meteo — the one the farm goes by. */
 const MODEL = 'ecmwf_ifs025'
@@ -522,7 +524,7 @@ function TempBarKey({ lo, hi }: { lo: number | null; hi: number | null }) {
  * Weather: the three sites now, then one site's week with a spray call, a
  * bee-safe spray window and a fertilizer call for every day.
  */
-const WEATHER_VIEWS = ['day', 'week'] as const
+const WEATHER_VIEWS = ['day', 'week', 'radar'] as const
 
 export function WeatherPage() {
   const { sites, main } = useWeatherSites()
@@ -568,6 +570,7 @@ export function WeatherPage() {
           tabs={[
             { key: 'day', label: 'Next 24 hours' },
             { key: 'week', label: 'Week' },
+            { key: 'radar', label: 'Rain radar' },
           ]}
           value={view}
           onChange={pickView}
@@ -580,7 +583,15 @@ export function WeatherPage() {
           <SettingsButton label="Weather settings" onClick={() => setDialog('settings')} />
         </span>
       </div>
-      {view === 'day' ? <SiteDay key={site.name} site={site} show={shown} /> : <SiteWeek key={site.name} site={site} show={shown} />}
+      {view === 'radar' ? (
+        <Suspense fallback={<p className="py-10 text-center text-sm text-gray-400">Loading…</p>}>
+          <RainRadar />
+        </Suspense>
+      ) : view === 'day' ? (
+        <SiteDay key={site.name} site={site} show={shown} />
+      ) : (
+        <SiteWeek key={site.name} site={site} show={shown} />
+      )}
       {dialog === 'settings' && <SettingsDialog settings={settings} onChange={setSettings} onClose={() => setDialog(null)} />}
       {dialog === 'legend' && <LegendDialog weekLo={range?.[0] ?? null} weekHi={range?.[1] ?? null} onClose={() => setDialog(null)} />}
 

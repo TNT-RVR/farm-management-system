@@ -29,6 +29,8 @@ import { usePlanterProfiles } from '@/lib/planter-profiles'
 import { knownVarieties } from '@/lib/crop-variety-settings'
 import { useCropVarietySettings, useRecordedVarieties } from '@/lib/crop-variety-settings-data'
 import { VarietySettingsEditor, VarietySubRows, VarietyToggle } from '@/pages/crops/CropVarietyRows'
+import { KgAside } from '@/components/KgAside'
+import { kgAside } from '@/lib/lbs-kg'
 
 type Row = CropListRow
 
@@ -158,12 +160,13 @@ export function CropsPage() {
         if (r.land_rent_only) return <span className="text-xs text-gray-400">land rented out</span>
         const normal =
           r.default_yield_per_acre != null
-            ? `Normal yield: ${r.default_yield_per_acre.toLocaleString('en-CA')} ${r.yield_unit}/ac`
+            ? `Normal yield: ${r.default_yield_per_acre.toLocaleString('en-CA')} ${r.yield_unit}/ac${kgAside(r.default_yield_per_acre, r.yield_unit, '/ac', r.test_weight_lb_per_bu)}`
             : 'No normal yield set'
         if (r.expected.value == null) {
           return r.default_yield_per_acre != null ? (
             <span title={normal}>
               {r.default_yield_per_acre.toLocaleString('en-CA')} {r.yield_unit}/ac
+              <KgAside value={r.default_yield_per_acre} unit={r.yield_unit} lbPerBu={r.test_weight_lb_per_bu} />
             </span>
           ) : (
             '—'
@@ -172,6 +175,7 @@ export function CropsPage() {
         return (
           <span title={`${normal}\n${r.expected.label}`}>
             {(Math.round(r.expected.value * 10) / 10).toLocaleString('en-CA')} {r.yield_unit}/ac
+            <KgAside value={r.expected.value} unit={r.yield_unit} lbPerBu={r.test_weight_lb_per_bu} />
             <span className={`ml-1 text-[10px] uppercase ${r.expected.basis === 'goal' ? 'text-amber-700' : 'text-gray-400'}`}>
               {r.expected.basis === 'goal' ? 'crop default' : r.expected.basis === 'farm' ? 'farm avg' : 'field avg'}
             </span>

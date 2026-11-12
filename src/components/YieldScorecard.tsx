@@ -7,6 +7,7 @@ import { formatYield, scoreYield } from '@/lib/yield-goal'
 import { useSetPlanGoal, useTypedBeforeHarvest } from '@/lib/yield-goal-data'
 import { CropDefaultBadge, VersusBit } from '@/components/YieldScoreCells'
 import { AbnormalYearMark } from '@/components/AbnormalYearMark'
+import { KgAside } from '@/components/KgAside'
 
 type ZoneLite = { id: string; crop_id: string }
 
@@ -95,12 +96,14 @@ export function YieldScorecard({
                 <span className="text-sm tabular-nums text-gray-900">{score.goal.value != null ? formatYield(score.goal.value) : '—'}</span>
               )}
               <span className="font-normal text-gray-400">{unit}</span>
+              <KgAside value={score.goal.value} unit={crop.yield_unit} lbPerBu={crop.test_weight_lb_per_bu} />
             </label>
             <p className="text-xs text-gray-500">
               <span className="font-medium">Estimate </span>
               {score.estimate.value != null ? (
                 <span className="tabular-nums text-gray-900">
                   {formatYield(score.estimate.value)} {unit}
+                  <KgAside value={score.estimate.value} unit={crop.yield_unit} lbPerBu={crop.test_weight_lb_per_bu} />
                 </span>
               ) : (
                 '—'
@@ -119,6 +122,7 @@ export function YieldScorecard({
                 <span className="text-xs font-medium text-gray-500">Actual </span>
                 <span className="font-semibold tabular-nums text-gray-900">
                   {formatYield(score.actual.value)} {unit}
+                  <KgAside value={score.actual.value} unit={crop.yield_unit} lbPerBu={crop.test_weight_lb_per_bu} />
                 </span>
                 {!score.actual.clean && <span className="text-xs text-amber-700"> pre-clean</span>}
                 {(score.vsEstimate || score.vsGoal) && <span className="text-gray-400"> — </span>}

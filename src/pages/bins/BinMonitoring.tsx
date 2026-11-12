@@ -10,6 +10,7 @@ import {
   type MonitorRow,
 } from '@/lib/bin-monitor-data'
 import { levelsToForm } from '@/lib/record-edits'
+import { useCrops } from '@/lib/queries'
 import { rowClick } from '@/components/RecordEditor'
 import { cn } from '@/lib/utils'
 import { askConfirm } from '@/components/askConfirm'
@@ -68,11 +69,32 @@ export function BinMonitoring({
   const [adding, setAdding] = useState(false)
   // A saved reading opened to correct it (Sam, 7 Oct 2026).
   const [editing, setEditing] = useState<MonitorRow | null>(null)
-  const dryMax = crop?.moisture_dry_max != null ? Number(crop.moisture_dry_max) : null
   const canola = emcKind(crop?.name) === 'canola'
 
+  /**
+   * A reading is judged by the crop it was taken on, not by whatever is in
+   * the bin today (Sam, 2 Nov 2026: "the moisture results were for the
+   * canola but that was shipped out and now we have corn in there").
+   *
+   * Every reading already records its own crop; only this screen was reading
+   * them all against the bin's current contents, which meant canola at 7%
+   * being held against corn's dry limit. The bin's own crop is used where a
+   * reading names none, and it keeps the variety's dry level, which the
+   * crops list alone does not carry.
+   */
+  const { data: crops } = useCrops()
+  const readingCrop = (r: MonitorRow): Crop | null =>
+    !r.crop_id || r.crop_id === crop?.id ? crop : ((crops ?? []).find((c) => c.id === r.crop_id) ?? crop)
+  /** Taken on grain that has since left: it says nothing about what is in there now. */
+  const fromOldCrop = (r: MonitorRow) => Boolean(r.crop_id && crop?.id && r.crop_id !== crop.id)
+
   const latest = readings?.[0] ?? null
-  const flags = latest ? flagsFor(crop?.name, latest.levels, readings?.[1]?.levels ?? null, dryMax) : []
+  const latestCrop = latest ? readingCrop(latest) : null
+  const latestDryMax = latestCrop?.moisture_dry_max != null ? Number(latestCrop.moisture_dry_max) : null
+  // No warnings off a reading of grain that is gone: they would be about the
+  // last crop while the screen is describing this one.
+  const flags =
+    latest && !fromOldCrop(latest) ? flagsFor(latestCrop?.name, latest.levels, readings?.[1]?.levels ?? null, latestDryMax) : []
 
 
   return (
@@ -113,7 +135,9 @@ export function BinMonitoring({
           binId={binId}
           binName={binName}
           cropYear={editing.crop_year}
-          crop={crop}
+          // Corrected against the crop it was taken on, so the humidity it was
+          // read at still converts to the moisture it meant.
+          crop={readingCrop(editing)}
           lldDefault={editing.lld}
           lotDefault={editing.lot_number}
           levelsDefault={editing.levels.length}
@@ -167,6 +191,13 @@ export function BinMonitoring({
                 >
                   <td className="whitespace-nowrap px-2 py-1 text-gray-700">
                     {r.read_on}
+                    {/* What it was read on, said on the row itself when that is
+                        no longer what is in the bin. */}
+                    {fromOldCrop(r) && (
+                      <span className="block text-[10px] font-medium text-amber-700" title="Taken before this bin was emptied and refilled">
+                        {readingCrop(r)?.name ?? 'another crop'}, since shipped
+                      </span>
+                    )}
                     {r.source === 'screenshot' && <span className="block text-[10px] text-gray-400">from screenshot</span>}
                   </td>
                   {Array.from({ length: Math.max(...readings.map((x) => x.levels.length), 1) }, (_, i) => {

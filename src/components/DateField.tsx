@@ -65,6 +65,7 @@ export function DateField({
   min,
   max,
   placeholder = 'Choose a date',
+  disabled,
 }: {
   value: string
   onChange: (v: string) => void
@@ -75,6 +76,8 @@ export function DateField({
   min?: string
   max?: string
   placeholder?: string
+  /** Read-only: shows the date, opens no calendar. */
+  disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -168,13 +171,14 @@ export function DateField({
         aria-label={ariaLabel}
         aria-haspopup="dialog"
         aria-expanded={open}
+        disabled={disabled}
         onClick={() => {
           setBrowsed(null)
           setPos(null)
           setOpen((o) => !o)
         }}
         className={cn(
-          'flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 px-3 py-2 text-left text-sm',
+          'flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 px-3 py-2 text-left text-sm disabled:cursor-default',
           selected ? 'text-gray-900' : 'text-gray-400',
         )}
       >

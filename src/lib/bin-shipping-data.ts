@@ -1,25 +1,46 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { refreshMovements } from './inventory'
+import { refreshAfterLoad } from './bin-loads'
 import type { Database } from './database.types'
 
 type MovementInsert = Database['public']['Tables']['grain_movements']['Insert']
+type LoadInsert = Database['public']['Tables']['bin_loads']['Insert']
 
 /**
  * Write a shipment out of a bin. When it takes everything in the bin, the bin
  * is done with too: its plan for the year is removed, a seed report's bin is
  * marked shipped on that day (so the temperature reminders stop) and a
  * contents record kept by hand is closed.
+ *
+ * A shipment goes out as a load where the crop has a bushel weight to write
+ * one with (Sam, 2 Nov 2026), so it can carry the driver, the truck and the
+ * scale weights; the bin's movement is written from it by the database. The
+ * plain movements are still the path for a crop with no bushel weight set.
  */
 export function useShipOut() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (v: { rows: MovementInsert[]; binId: string; cropYear: number; on: string; allOfIt: boolean; contentId: string | null }) => {
+    mutationFn: async (v: {
+      rows: MovementInsert[]
+      /** Written instead of `rows` when the shipment is a truck load. */
+      loads?: LoadInsert[] | null
+      binId: string
+      cropYear: number
+      on: string
+      allOfIt: boolean
+      contentId: string | null
+    }) => {
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      const { error } = await supabase.from('grain_movements').insert(v.rows.map((r) => ({ ...r, created_by: user?.id ?? null })))
-      if (error) throw error
+      if (v.loads?.length) {
+        const { error } = await supabase.from('bin_loads').insert(v.loads.map((l) => ({ ...l, created_by: user?.id ?? null })))
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('grain_movements').insert(v.rows.map((r) => ({ ...r, created_by: user?.id ?? null })))
+        if (error) throw error
+      }
       if (!v.allOfIt) return
       // Nothing is planned into the bin any more (Sam, 26 Oct 2026): its
       // plan for the year goes, so it reads as empty and free again.
@@ -48,6 +69,8 @@ export function useShipOut() {
     },
     onSuccess: () => {
       refreshMovements(qc)
+      // A shipment written as a load touches what every other load touches.
+      refreshAfterLoad(qc)
       void qc.invalidateQueries({ queryKey: ['bin_contents_current'] })
       void qc.invalidateQueries({ queryKey: ['bin_allocations'] })
       void qc.invalidateQueries({ queryKey: ['seed_forms'] })

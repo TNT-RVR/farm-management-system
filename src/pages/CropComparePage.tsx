@@ -1,6 +1,6 @@
 import { PLANNING_ROLLOVER_MONTH } from '@/lib/fiscal-year'
 import { useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ArrowLeftRight, FileText, Loader2, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -603,7 +603,7 @@ function FarmCheck({
     for (const p of d.plans) {
       if (p.crop_id && !seen.has(p.field_id) && Number(p.planned_acres) > 0) rows.push({ fieldId: p.field_id, cropId: p.crop_id, acres: Number(p.planned_acres), actual: null, unit: null, source: null })
     }
-    const byCrop = new Map<string, { name: string; acres: number; total: number; estimated: boolean }>()
+    const byCrop = new Map<string, { name: string; acres: number; total: number; estimated: boolean; noCosts: boolean }>()
     let rentedOut = 0
     let unpriced = 0
     for (const r of rows) {
@@ -629,10 +629,16 @@ function FarmCheck({
         .filter((l) => !l.farm_fixed)
         .reduce((t, l) => t + (Number(l.cost_per_acre) || 0), 0)
       const perAcre = share.revShare * y * b.price - share.costShare * direct
-      const e = byCrop.get(r.cropId) ?? { name: crop.name, acres: 0, total: 0, estimated: false }
+      const e = byCrop.get(r.cropId) ?? { name: crop.name, acres: 0, total: 0, estimated: false, noCosts: false }
       e.acres += r.acres
       e.total += perAcre * r.acres
       e.estimated ||= !real
+      // We pay this field's inputs but the crop has no input budget to take
+      // off, so "over inputs" is the whole income (Sam, 2 Nov 2026: "some
+      // crops are not showing the cost per acre. Ex. Great Northerns"). A
+      // crop somebody else pays the inputs on is not this: its costShare is
+      // nought on purpose, and its margin really is the share of the gross.
+      e.noCosts ||= share.costShare > 0 && direct === 0
       byCrop.set(r.cropId, e)
     }
     const list = [...byCrop.values()].sort((a, b) => b.total / b.acres - a.total / a.acres)
@@ -691,9 +697,14 @@ function FarmCheck({
                           est.
                         </span>
                       )}
+                      {c.noCosts && (
+                        <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-semibold uppercase text-amber-800" title="No input costs are budgeted for this crop, so nothing has been taken off its income">
+                          income only
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-1 text-right">{n0(c.acres)}</td>
-                    <td className={cn('px-3 py-1 text-right', fixed != null && pa < fixed ? 'text-amber-700' : 'text-green-700')}>{money(pa)}</td>
+                    <td className={cn('px-3 py-1 text-right', c.noCosts ? 'text-amber-700' : fixed != null && pa < fixed ? 'text-amber-700' : 'text-green-700')}>{money(pa)}</td>
                     <td className="px-3 py-1 text-right">{money(c.total)}</td>
                   </tr>
                 )
@@ -701,6 +712,16 @@ function FarmCheck({
             </tbody>
           </table>
         </div>
+        {result.list.some((c) => c.noCosts) && (
+          <p className="mt-1 text-[11px] leading-snug text-amber-700">
+            <b>Income only:</b> {result.list.filter((c) => c.noCosts).map((c) => c.name).join(', ')}{' '}
+            {result.list.filter((c) => c.noCosts).length === 1 ? 'has' : 'have'} no input costs budgeted, so nothing is taken off. Set them on{' '}
+            <Link to="/plan?tab=budget" className="underline">
+              the crop budget
+            </Link>{' '}
+            to compare fairly.
+          </p>
+        )}
         <p className="mt-1 text-[11px] text-gray-500">
           Amber: doesn't cover the fixed costs on its own. Yields are that year's harvest where recorded.
           {result.rentedOut > 0 && ` ${n0(result.rentedOut)} ac rented out not counted.`}

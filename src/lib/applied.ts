@@ -11,8 +11,21 @@ import { farmTz } from './farm-context'
 const L_PER_US_GAL = 3.785411784
 const KG_PER_LB = 0.45359237
 const KG_PER_OZ = 0.028349523125
+const ACRES_PER_HA = 2.4710538146716536
 
-export type Canonical = 'L' | 'kg'
+/**
+ * What a rate is counted in once it is comparable.
+ *
+ * `k seeds` is thousands of seeds, and it is here because corn, canola and
+ * beans are metered by seed count, not by weight: the planter writes
+ * `seeds1ac-1` and there is no grams-per-seed anywhere to turn that into mass.
+ * Thousands rather than single seeds because that is how seed is bought and
+ * talked about — a bag is 80 thousand, a price is dollars per thousand — and
+ * a field's total reads 36,019 instead of 36,018,731.
+ */
+export type Canonical = 'L' | 'kg' | 'k seeds'
+
+export const haToAcres = (ha: number) => ha * ACRES_PER_HA
 
 /** Deere unit id to a canonical per-acre amount. Null when unrecognised. */
 export function toCanonicalRate(
@@ -35,6 +48,46 @@ export function toCanonicalRate(
       return { rate: value / 1000, unit: 'kg' }
     case 'oz1ac-1':
       return { rate: value * KG_PER_OZ, unit: 'kg' }
+    // Per hectare. The Operations Data Export that replaces /fieldOps/ is
+    // asked for in METRIC (Sam, 9 Nov 2026), and METRIC moves the export's
+    // per-point APPLIEDRATE column to l1ha-1 where the old one gave gal1ac-1.
+    // It does NOT move the product rates in the metadata, which still arrive
+    // per acre — so only the rate that reaches pl_op_grids changes.
+    //
+    // Without these cases that rate falls to the default below and returns
+    // null, and `autoInputs` does `if (!conv) continue`: a seeding's whole
+    // input line would not go wrong, it would silently vanish from the
+    // Profit/Loss. Converting here is also what lets a field hold passes read
+    // under both systems without re-gridding any of them.
+    case 'l1ha-1':
+      return { rate: value / ACRES_PER_HA, unit: 'L' }
+    case 'ml1ha-1':
+      return { rate: value / 1000 / ACRES_PER_HA, unit: 'L' }
+    case 'kg1ha-1':
+      return { rate: value / ACRES_PER_HA, unit: 'kg' }
+    case 'g1ha-1':
+      return { rate: value / 1000 / ACRES_PER_HA, unit: 'kg' }
+    /*
+     * Seed, counted rather than weighed.
+     *
+     * The planter meters corn, canola and beans by seed, so `pl_op_grids` held
+     * 19 seeding layers in `seeds1ac-1` — every corn, canola and bean field on
+     * the farm — against 6 in `lb1ac-1`. Falling to the default below returned
+     * null, and `autoInputs` does `if (!conv) continue`, so the seed those
+     * fields went in with did not appear on the Profit/Loss at all: not as a
+     * wrong number, not as an unpriced line, as nothing. Seed is one of the
+     * largest costs on a corn or canola field, so "nothing" was the worst of
+     * the three.
+     *
+     * No grams-per-seed exists anywhere in the app, and a thousand-kernel
+     * weight varies by variety and lot, so this does NOT become mass. It stays
+     * counted, and the price book prices it per thousand seeds — which is how
+     * the invoice reads.
+     */
+    case 'seeds1ac-1':
+      return { rate: value / 1000, unit: 'k seeds' }
+    case 'seeds1ha-1':
+      return { rate: value / 1000 / ACRES_PER_HA, unit: 'k seeds' }
     default:
       // Null rather than a guess: an unrecognised unit surfaces as "unknown" in
       // the UI instead of quietly contributing a wrong number to a total.
@@ -142,9 +195,6 @@ export function toCanonicalTotal(
   }
 }
 
-const ACRES_PER_HA = 2.4710538146716536
-export const haToAcres = (ha: number) => ha * ACRES_PER_HA
-
 export type AppliedLine = {
   product: string
   unit: Canonical
@@ -172,6 +222,16 @@ export type AppliedLine = {
 export type ProductResolver = (deereName: string) => {
   name: string
   pricePerUnit: number | null
+  /**
+   * What the price is per, from the price book: 'L', 'kg' or 'k seeds'.
+   *
+   * Carried because nothing used to check it. A price is multiplied by a
+   * canonical total, and the two have to be the same thing — a seed priced per
+   * kilogram against a total counted in thousands of seeds is not a small
+   * error, it is a number with no meaning. Nothing in the live data disagrees
+   * today, which is exactly why it would have gone unnoticed.
+   */
+  unit?: string | null
 } | null
 
 /**
@@ -369,7 +429,7 @@ export function appliedByProduct(
   measuredOrphans: string[]
 } {
   const byProduct = new Map<string, AppliedLine>()
-  const prices = new Map<string, number | null>()
+  const prices = new Map<string, { price: number | null; unit: string | null }>()
   let waterL = 0
   let appliedAcresTotal = 0
   let passesWithArea = 0
@@ -382,7 +442,7 @@ export function appliedByProduct(
     const typed = rawName.trim() || 'unnamed product'
     const resolved = resolve?.(typed)
     const key = resolved?.name ?? typed
-    if (!prices.has(key)) prices.set(key, resolved?.pricePerUnit ?? null)
+    if (!prices.has(key)) prices.set(key, { price: resolved?.pricePerUnit ?? null, unit: resolved?.unit ?? null })
     const line =
       byProduct.get(key) ??
       ({
@@ -578,7 +638,11 @@ export function appliedByProduct(
   let measuredCosted = 0
   let measuredUncosted = 0
   for (const line of byProduct.values()) {
-    const price = prices.get(line.product) ?? null
+    const priced = prices.get(line.product)
+    // A price in one unit cannot be multiplied by a total in another. Null
+    // means the price book does not say, which is every price entered before
+    // the unit travelled with it, so those are left as they were.
+    const price = priced && (priced.unit == null || priced.unit === line.unit) ? priced.price : null
     // A line with an unconvertible rate has an understated total, so pricing it
     // would understate the cost too. Left uncosted rather than quietly low.
     if (price != null && line.unknownUnits.length === 0) {

@@ -41,9 +41,11 @@ export const SETUP_LINKS = {
   /** The main Map, whose Layers → Farm layers copies a My Map folder in. */
   farmMap: () => '/map?tab=map',
   /** Cattle → Herd on that ranch (group head counts). */
-  cattleHerd: (ranchId?: string | null) => `/herd?tab=herd${ranchId ? `&ranch=${ranchId}` : ''}`,
+  cattleHerd: (ranchId?: string | null) => `/herd?tab=animals${ranchId ? `&ranch=${ranchId}` : ''}`,
   /** Cattle → Feed on that ranch (each group's ration). */
   cattleFeed: (ranchId?: string | null) => `/feed?tab=plan${ranchId ? `&ranch=${ranchId}` : ''}`,
-  /** Cattle settings, the costs form opened on that ranch. */
-  cattleCosts: (ranchId?: string | null) => `/cattle-settings${ranchId ? `?ranch=${ranchId}` : ''}`,
+  /** Cattle settings → Costs, every ranch's form side by side. */
+  cattleCosts: (ranchId?: string | null) => `/cattle-settings?tab=costs${ranchId ? `&ranch=${ranchId}` : ''}`,
+  /** Cattle settings → Ranches (add, rename, delete). */
+  cattleRanches: (ranchId?: string | null) => `/cattle-settings?tab=ranches${ranchId ? `&ranch=${ranchId}` : ''}`,
 }

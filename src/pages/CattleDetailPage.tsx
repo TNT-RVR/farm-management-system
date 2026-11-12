@@ -1,9 +1,11 @@
 import { DateField } from '@/components/DateField'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, HeartCrack, Pencil, Plus, Tag, Trash2 } from 'lucide-react'
 import { Select } from '@/components/Select'
 import { RecordEditModal, type EditField } from '@/components/RecordEditor'
+import { Modal } from '@/components/Modal'
+import { useHerdTakeOff } from '@/pages/cattle/HerdTakeOff'
 import { useRanches } from '@/lib/ranches'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useUsers } from '@/lib/queries'
@@ -12,10 +14,9 @@ import {
   CATTLE_EVENT_TYPES,
   CATTLE_SEXES,
   CATTLE_STATUSES,
-  useCattle,
+  useAnimal,
   useCattleEventMutations,
   useCattleEvents,
-  useCattleGroups,
   useCattleMutations,
   type CattleEventRow,
   type CattleEventType,
@@ -42,16 +43,15 @@ export function CattleDetailPage() {
   const navigate = useNavigate()
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
-  const { data: cattle } = useCattle()
-  const { data: groups } = useCattleGroups()
+  const { data: animal, isLoading } = useAnimal(id)
   const { data: ranches } = useRanches()
   const { data: users } = useUsers()
   const { data: events } = useCattleEvents(id)
   const { update, remove } = useCattleMutations()
   const evMut = useCattleEventMutations()
   const [editEvent, setEditEvent] = useState<CattleEventRow | null>(null)
-
-  const animal = cattle?.find((c) => c.id === id)
+  const [recording, setRecording] = useState<'sale' | 'death' | null>(null)
+  const herdTakeOff = useHerdTakeOff()
   const [ev, setEv] = useState({
     event_type: 'vaccination' as (typeof CATTLE_EVENT_TYPES)[number],
     event_date: new Date().toISOString().slice(0, 10),
@@ -61,7 +61,7 @@ export function CattleDetailPage() {
   })
 
   if (!animal) {
-    return <div className="p-6 text-sm text-gray-500">{cattle ? 'Not found.' : 'Loading…'}</div>
+    return <div className="p-6 text-sm text-gray-500">{isLoading ? 'Loading…' : 'Not found.'}</div>
   }
 
   const field = <K extends keyof typeof animal>(key: K, value: (typeof animal)[K]) => {
@@ -73,7 +73,7 @@ export function CattleDetailPage() {
   return (
     <div className="mx-auto max-w-2xl p-4 md:p-6">
       {/* Back to the Herd page, where the animals are listed now. */}
-      <Link to="/herd?tab=herd" className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
+      <Link to="/herd?tab=animals" className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
         <ArrowLeft className="h-4 w-4" /> Herd
       </Link>
 
@@ -85,6 +85,25 @@ export function CattleDetailPage() {
           {animal.sex ?? '—'} · {ageFromBirth(animal.birth_date)}
         </span>
       </div>
+
+      {/* The two things that end an animal's time on the place: the event and
+          the status in one step, then the head count offered the same cut. */}
+      {isManager && animal.status === 'active' && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            onClick={() => setRecording('sale')}
+            className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800"
+          >
+            <Tag className="h-4 w-4" /> Record sale
+          </button>
+          <button
+            onClick={() => setRecording('death')}
+            className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <HeartCrack className="h-4 w-4" /> Record death
+          </button>
+        </div>
+      )}
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <label className="text-xs text-gray-500">
@@ -130,27 +149,11 @@ export function CattleDetailPage() {
           {/* DateField commits on selection rather than on blur — there is no
               blur to wait for when the value comes from a calendar tap. */}
           <DateField
+            disabled={!isManager}
             value={animal.birth_date ?? ''}
             onChange={(v) => v !== (animal.birth_date ?? '') && field('birth_date', v || null)}
             className="mt-1"
             ariaLabel="Birth date"
-          />
-        </label>
-        <label className="text-xs text-gray-500">
-          Group
-          <Select
-            disabled={!isManager}
-            value={animal.group_id ?? ''}
-            ariaLabel="Group"
-            className="mt-1"
-            placeholder="No group"
-            onChange={(v) => field('group_id', v || null)}
-            options={[
-              { value: '', label: 'No group' },
-              ...(groups ?? [])
-                .filter((g) => !animal.ranch_id || !g.ranch_id || g.ranch_id === animal.ranch_id)
-                .map((g) => ({ value: g.id, label: g.name })),
-            ]}
           />
         </label>
         <label className="text-xs text-gray-500">
@@ -160,7 +163,12 @@ export function CattleDetailPage() {
             value={animal.status}
             ariaLabel="Status"
             className="mt-1"
-            onChange={(v) => field('status', v as CattleStatus)}
+            onChange={(v) => {
+              field('status', v as CattleStatus)
+              // Off the place by the dropdown too: offer the head-count cut.
+              if (isManager && animal.status === 'active' && v !== 'active')
+                herdTakeOff.offer({ ranchId: animal.ranch_id, items: [{ head: 1, hint: animal.sex }], source: 'this animal' })
+            }}
             options={CATTLE_STATUSES.map((s) => ({ value: s, label: s }))}
           />
         </label>
@@ -178,6 +186,7 @@ export function CattleDetailPage() {
         <label className="text-xs text-gray-500">
           Bought / arrived
           <DateField
+            disabled={!isManager}
             value={animal.acquired_date ?? ''}
             onChange={(v) => v !== (animal.acquired_date ?? '') && field('acquired_date', v || null)}
             className="mt-1"
@@ -339,11 +348,35 @@ export function CattleDetailPage() {
         />
       )}
 
+      {recording && (
+        <RecordEndDialog
+          kind={recording}
+          onClose={() => setRecording(null)}
+          onSave={async ({ date, notes, weight }) => {
+            await evMut.create.mutateAsync({
+              cattle_id: animal.id,
+              event_type: recording,
+              event_date: date,
+              weight_lb: weight,
+              notes,
+            })
+            await update.mutateAsync({ id: animal.id, patch: { status: recording === 'sale' ? 'sold' : 'died' } })
+            setRecording(null)
+            herdTakeOff.offer({
+              ranchId: animal.ranch_id,
+              items: [{ head: 1, hint: animal.sex }],
+              source: recording === 'sale' ? 'this sale' : 'this death',
+            })
+          }}
+        />
+      )}
+      {herdTakeOff.node}
+
       {isManager && (
         <button
           onClick={async () => {
             if (await askConfirm('Delete this animal and its event history?'))
-              remove.mutate(animal.id, { onSuccess: () => navigate('/herd?tab=herd') })
+              remove.mutate(animal.id, { onSuccess: () => navigate('/herd?tab=animals') })
           }}
           className="mt-4 flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
         >
@@ -351,5 +384,74 @@ export function CattleDetailPage() {
         </button>
       )}
     </div>
+  )
+}
+
+/** Record sale / Record death: a date, optional notes (and a sale weight), saved as the event and the status together. */
+function RecordEndDialog({
+  kind,
+  onClose,
+  onSave,
+}: {
+  kind: 'sale' | 'death'
+  onClose: () => void
+  onSave: (v: { date: string; notes: string | null; weight: number | null }) => Promise<void>
+}) {
+  const [date, setDate] = useState(new Date().toLocaleDateString('en-CA'))
+  const [notes, setNotes] = useState('')
+  const [weight, setWeight] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const input = 'mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900'
+  return (
+    <Modal title={kind === 'sale' ? 'Record sale' : 'Record death'} onClose={onClose} layer="edit">
+      <form
+        className="space-y-3"
+        onSubmit={async (e) => {
+          e.preventDefault()
+          if (!date) return
+          setBusy(true)
+          setError(null)
+          try {
+            const w = Number(weight)
+            await onSave({ date, notes: notes.trim() || null, weight: weight.trim() && Number.isFinite(w) ? w : null })
+          } catch (err) {
+            setError((err as Error).message)
+          } finally {
+            setBusy(false)
+          }
+        }}
+      >
+        <div className="grid grid-cols-2 gap-2">
+          <label className="text-xs text-gray-500">
+            {kind === 'sale' ? 'Sold on' : 'Died on'}
+            <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} className={input} />
+          </label>
+          {kind === 'sale' && (
+            <label className="text-xs text-gray-500">
+              Weight (lb)
+              <input inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} className={input} />
+            </label>
+          )}
+        </div>
+        <label className="block text-xs text-gray-500">
+          {kind === 'sale' ? 'Buyer, price, notes' : 'Cause, notes'}
+          <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className={input} />
+        </label>
+        {error && <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={busy || !date}
+            className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
+          >
+            {busy ? 'Saving…' : kind === 'sale' ? 'Mark sold' : 'Mark died'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   )
 }

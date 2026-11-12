@@ -1,6 +1,9 @@
+import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './supabase'
+import { computePastures } from './forage-yield'
+import { useGrazingHerd, useGrazingPastures, usePastureFieldContext } from './grazing'
 
 // The satellite view of the pastures, for the cattle side (spec §9).
 //
@@ -282,6 +285,89 @@ export const READINESS_TONE: Record<RotationRow['readiness'], string> = {
   overgrazed: 'bg-red-100 text-red-800',
 }
 
+/** How much grass a paddock is carrying, said without jargon. */
+export type CoverLabel = {
+  /** The figure itself: '79%', or 'Most grass' for the paddock leading. */
+  value: string
+  /** What the figure is measured against, in words. */
+  note: string
+}
+
+/**
+ * "79% of best" in words a stranger can read (Sam, 11 Nov 2026).
+ *
+ * The old label was `Forage · 79% of best`, which assumes you know what the
+ * best is, that it is another paddock rather than this paddock's own
+ * potential, and that "forage" here means green cover and not pounds of feed.
+ * None of that is on the screen. So the baseline is named — "79% of
+ * Pasture C, the most" — and the paddock leading says so in words instead of
+ * reading "100% of best", which sounds like a full paddock rather than the
+ * top of today's list.
+ *
+ * `top` is the best of the paddocks SHOWN, worked out by the caller, not the
+ * database's farm-wide maximum: with the Ranch filter on, a percentage of a
+ * paddock that is not in the list compares a thing against a thing you cannot
+ * see.
+ *
+ * Nothing here is an amount. A drought where every paddock is bare still has
+ * a leader, and it still reads "Most grass".
+ */
+export function coverLabel(o: {
+  index: number | null
+  top: number | null
+  topName: string | null
+  /** How many paddocks the comparison ran over. */
+  compared: number
+}): CoverLabel | null {
+  const { index, top, topName, compared } = o
+  if (index == null || top == null || !(top > 0)) return null
+  if (index >= top)
+    return { value: 'Most grass', note: compared > 1 ? `of the ${compared} compared` : 'the only paddock compared' }
+  // Never 100% for a paddock that is not the leader: 99.6% of the best rounds
+  // to 100 and then two rows claim the top.
+  const pct = Math.min(99, Math.max(0, Math.round((index / top) * 100)))
+  return { value: `${pct}%`, note: topName ? `of ${topName}, the most` : 'of the paddock with the most' }
+}
+
+/**
+ * What a rotation card says: the readiness badge, the reason under it, and
+ * the trend in words.
+ *
+ * Outside the growing season every paddock browns off, so the forage index
+ * falls and the badges read Overgrazed or Not ready with the trend "going
+ * backwards" — alarming, and wrong: it is dormancy, not damage. Then the badge
+ * says Dormant in neutral grey and the fall is called seasonal. The forage
+ * comparison between paddocks is left as it is.
+ */
+export function cardVerdict(
+  row: Pick<RotationRow, 'readiness' | 'readiness_reason' | 'regrowth_per_day' | 'regrowth_points'>,
+  dormant: boolean,
+): { label: string; tone: string; reason: string; trend: string } {
+  const regrowth = row.regrowth_per_day
+  // Index units per day are meaningless to read. The DIRECTION is the decision
+  // -relevant part (§9.3), so it is stated in words and the number kept as a
+  // tooltip for anyone who wants it.
+  const trend =
+    regrowth == null || (row.regrowth_points ?? 0) < 2
+      ? 'not enough looks to say'
+      : regrowth > 0.002
+        ? 'growing'
+        : regrowth < -0.002
+          ? dormant
+            ? 'seasonal decline'
+            : 'going backwards'
+          : 'holding steady'
+  if (dormant) {
+    return {
+      label: 'Dormant',
+      tone: 'bg-stone-100 text-stone-600',
+      reason: 'Grass is dormant for the winter. Grass cover still compares the paddocks.',
+      trend,
+    }
+  }
+  return { label: READINESS_LABEL[row.readiness], tone: READINESS_TONE[row.readiness], reason: row.readiness_reason, trend }
+}
+
 /**
  * Record where a pasture's water is (spec §9.4).
  *
@@ -394,4 +480,34 @@ export function useWaterPoints() {
     },
     staleTime: 10 * 60_000,
   })
+}
+
+/**
+ * Total and grazeable acres for each mapped pasture, keyed by `pastures.id`.
+ *
+ * The map's pasture panel needs the same grazeable figure the Grazing tab
+ * prints, so it comes out of `computePastures` rather than being worked out a
+ * second way — "each number has one home". Neither of the acre figures depends
+ * on rain, utilisation or the season factor (those only move the pounds), so
+ * this passes a neutral season and still returns the Grazing tab's acres.
+ *
+ * Keyed by `pastures.id`, not `grazing_pastures.id`: the map draws the mapped
+ * pasture, and the grazing row points at it through `pasture_id`.
+ */
+export function useGrazeableAcres(ranchId: string | null | undefined) {
+  const { data: pastures } = useGrazingPastures(ranchId)
+  const { data: herd } = useGrazingHerd(ranchId)
+  const fieldCtx = usePastureFieldContext(ranchId, herd)
+  const seasonCtx = useMemo(() => fieldCtx.ctx(), [fieldCtx])
+  return useMemo(() => {
+    const out = new Map<string, { acres: number; grazeable: number }>()
+    if (!pastures?.length) return out
+    const calc = computePastures(pastures, { forecastMm: 0, projectedMm: null }, 1, seasonCtx)
+    for (const p of calc) {
+      const key = (p as unknown as { pasture_id?: string | null }).pasture_id
+      if (!key) continue
+      out.set(key, { acres: p.acres, grazeable: p.totalGrazeableAc })
+    }
+    return out
+  }, [pastures, seasonCtx])
 }

@@ -3,8 +3,12 @@ import { supabase } from './supabase'
 import type { Database } from './database.types'
 import {
   BARLEY,
+  LCT_C,
+  coldIntakeFactor,
   coldUplift,
+  conditionPerDay,
   effectiveTemp,
+  extraGainPerDay,
   solveRation,
   stubbleCowDays,
   tdnFromAdf,
@@ -12,10 +16,12 @@ import {
   type Conditions,
   type FeedCategory,
   type FeedValue,
+  type FeedingMethod,
   type GroupInput,
   type GroupRation,
   type RationLine,
 } from './cattle-nutrition'
+import { defaultWeightLb, weightFor } from './animal-units'
 
 /**
  * Winter feeding for one ranch: the data the calculator reads and writes, and
@@ -305,7 +311,10 @@ export function feedValues(types: FeedTypeRow[], tests: FeedTestRow[]): Map<stri
     const dm = num(t?.dm_pct) ?? num(ft.dm_pct) ?? 88
     const cp = num(t?.cp_pct) ?? num(ft.cp_pct) ?? 0
     let tdn = num(t?.tdn_pct)
-    if (tdn == null && t && num(t.adf_pct) != null) tdn = tdnFromAdf(cat, num(t.adf_pct)!, num(t.cp_pct), ft.legume)
+    // A test with ADF but no protein still has a protein to use: the book's.
+    // Passing the test's empty CP made the equation read it as 0% protein,
+    // which cost a hay or greenfeed test 8–14 points of TDN.
+    if (tdn == null && t && num(t.adf_pct) != null) tdn = tdnFromAdf(cat, num(t.adf_pct)!, num(t.cp_pct) ?? num(ft.cp_pct), ft.legume)
     tdn = tdn ?? num(ft.tdn_pct) ?? 0
     out.set(ft.id, {
       id: ft.id,
@@ -349,6 +358,27 @@ export function monthlyCold(history: { month: number; days: [number, number][] }
   return m
 }
 
+/**
+ * Free-choice appetite multiplier for the weather in each month: the average
+ * over the ranch's last five winters of each day's coldIntakeFactor.
+ */
+export function monthlyIntakeFactor(history: { month: number; days: [number, number][] }[] | undefined, sheltered: boolean): Map<number, number> {
+  const m = new Map<number, number>()
+  for (const h of history ?? []) {
+    if (!h.days.length) continue
+    m.set(h.month, h.days.reduce((s, [t, w]) => s + coldIntakeFactor(effectiveTemp(t, w, sheltered)), 0) / h.days.length)
+  }
+  return m
+}
+
+/**
+ * The appetite multiplier when only the month's cold allowance is known: the
+ * effective temperature that allowance stands for (LCT − cold ÷ 1.8% a °C).
+ */
+export function intakeFactorFromCold(cold: number, coat: Coat): number {
+  return coldIntakeFactor(LCT_C[coat] - Math.max(0, cold) / (coat === 'wet' ? 0.036 : 0.018))
+}
+
 export type PlanGroup = {
   id: string
   name: string
@@ -376,6 +406,24 @@ export type SeasonResult = {
   /** Days the ration's scarcest feed lasts. */
   bindingDays: number | null
   bindingFeed: string | null
+  /** Each group over the season: how it is fed and what that does to it. */
+  groups: Map<string, GroupSeason>
+}
+
+export type GroupSeason = {
+  feeding: FeedingMethod
+  /** Days the group is fed from `from`. */
+  days: number
+  /** Condition change over those days, Canadian score; null for growing cattle. */
+  bcsChange: number | null
+  /** Growing cattle: average gain over the target, lb a day. */
+  extraGainLb: number | null
+  /** Energy eaten ÷ energy needed over the season, %. */
+  energyPct: number
+  /** Everything put out for the group, lb as fed with waste (added grain included). */
+  offeredLb: number
+  /** What a measured ration — the need and no more — would put out over the same days. */
+  measuredLb: number
 }
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -389,8 +437,11 @@ export function seasonPlan(o: {
   stubble: PlanStubble[]
   /** Usable lb as fed on hand now, per feed id (after storage loss still to come). */
   onHand: Map<string, number>
+  /** Free-choice appetite for the weather by month (monthlyIntakeFactor); else worked from the cold allowance. */
+  intakeByMonth?: Map<number, number>
 }): SeasonResult {
   const needLb = new Map<string, number>()
+  const perGroup = new Map<string, GroupSeason & { tdnEaten: number; tdnNeed: number; gainSum: number }>()
   const saved = new Map<string, number>()
   const cumulative = new Map<string, number>()
   const runsOut = new Map<string, string>()
@@ -409,11 +460,16 @@ export function seasonPlan(o: {
       cold: o.coldByMonth.get(d.getMonth() + 1) ?? 0,
       muddy: o.settings.muddy,
     }
+    cond.intakeFactor = o.intakeByMonth?.get(d.getMonth() + 1) ?? intakeFactorFromCold(cond.cold, o.settings.coat)
     for (const g of o.groups) {
       if (g.group.head <= 0) continue
       // Calves at side until weaning are fed through the cows (the cow need carries a calf's share).
       if (g.from && iso(d) < g.from) continue
-      const r = solveRation(g.group, cond, g.lines)
+      // Free choice: the condition they have put on so far — a fatter cow eats
+      // less and needs no more condition. Measured groups stay as entered.
+      const sofar = perGroup.get(g.id)?.bcsChange
+      const free = g.group.feeding === 'free_choice' && sofar != null
+      const r = solveRation(free ? { ...g.group, bcs: Math.max(1, Math.min(5, g.group.bcs + sofar)) } : g.group, cond, g.lines)
       // On stalks today? A field in use, started, with grazing left and not crusted.
       const st = o.stubble.find((s) => s.groupId === g.id && (!s.start || s.start <= iso(d)) && (left.get(s.id) ?? 0) > 0 && s.state !== 'crust')
       const grazeShare = st ? (st.state === 'snow' ? 0.5 : 1) : 0
@@ -436,7 +492,39 @@ export function seasonPlan(o: {
       if (grain.id === BARLEY.id) extraGrainLb += addLb
       else needLb.set(grain.id, (needLb.get(grain.id) ?? 0) + addLb)
       dmLb += r.dmLb * g.group.head * (1 - grazeShare)
+
+      // The group's own season: condition, energy, and what a measured ration
+      // would have put out. Days on stalks are taken as fed to need.
+      const fed = 1 - grazeShare
+      const pg = perGroup.get(g.id) ?? { feeding: r.feeding, days: 0, bcsChange: null, extraGainLb: null, energyPct: 0, offeredLb: 0, measuredLb: 0, tdnEaten: 0, tdnNeed: 0, gainSum: 0 }
+      pg.days += 1
+      const offered = (r.lines.reduce((s, l) => s + l.groupOfferedLb, 0) + r.addGrainLb * g.group.head) * fed
+      pg.offeredLb += offered
+      pg.measuredLb +=
+        r.feeding === 'free_choice'
+          ? (() => {
+              const m = solveRation({ ...g.group, feeding: 'measured' }, cond, g.lines)
+              return (m.lines.reduce((s, l) => s + l.groupOfferedLb, 0) + m.addGrainLb * g.group.head) * fed
+            })()
+          : offered
+      pg.tdnNeed += r.need.tdnLb
+      pg.tdnEaten += r.need.tdnLb + r.surplusTdnLb * fed
+      // Condition can't go past the ends of the 1–5 scale.
+      if (r.bcsPerDay != null) {
+        const next = (pg.bcsChange ?? 0) + conditionPerDay(r.need, r.surplusTdnLb * fed)
+        pg.bcsChange = Math.max(1 - g.group.bcs, Math.min(5 - g.group.bcs, next))
+      }
+      if (r.extraGainLb != null) {
+        pg.gainSum += extraGainPerDay(r.need, r.surplusTdnLb * fed)
+        pg.extraGainLb = 0
+      }
+      perGroup.set(g.id, pg)
     }
+  }
+  const groups = new Map<string, GroupSeason>()
+  for (const [id, pg] of perGroup) {
+    const { tdnEaten, tdnNeed, gainSum, ...rest } = pg
+    groups.set(id, { ...rest, energyPct: tdnNeed > 0 ? (tdnEaten / tdnNeed) * 100 : 100, extraGainLb: rest.extraGainLb != null && pg.days > 0 ? gainSum / pg.days : null })
   }
   // The scarcest feed: days its usable stock lasts at the season's average rate.
   let bindingDays: number | null = null
@@ -450,7 +538,7 @@ export function seasonPlan(o: {
       bindingFeed = id
     }
   }
-  return { days, needLb, extraGrainLb, dmLb, stubbleCowDays, stubbleSavedLb: saved, runsOut, bindingDays, bindingFeed }
+  return { days, needLb, extraGrainLb, dmLb, stubbleCowDays, stubbleSavedLb: saved, runsOut, bindingDays, bindingFeed, groups }
 }
 
 /**
@@ -461,11 +549,18 @@ export function seasonPlan(o: {
 export const fedHead = (h: Pick<HerdCountRow, 'head_count' | 'background_head'>) => h.background_head ?? h.head_count
 
 /** A group's calculator input from its herd_counts row. */
-export function groupInput(h: HerdCountRow): GroupInput {
+export function groupInput(
+  h: Pick<HerdCountRow, 'feed_class' | 'class_name' | 'head_count' | 'background_head' | 'avg_weight_lb' | 'bcs' | 'target_bcs' | 'target_gain_lb'> & { feeding_method?: FeedingMethod | null },
+): GroupInput {
+  // No weight entered: the class's typical weight, not 1,300 lb for everything.
+  const w = weightFor(h)
   return {
+    // Free-choice bales unless the group is set to a measured amount (the column's default).
+    feeding: h.feeding_method === 'measured' ? 'measured' : 'free_choice',
     feedClass: h.feed_class,
     head: fedHead(h),
-    weightLb: Number(h.avg_weight_lb) || 1300,
+    weightLb: w.lb,
+    weightMissing: w.missing,
     bcs: Number(h.bcs ?? 3),
     targetBcs: Number(h.target_bcs ?? 3),
     targetGainLb: h.target_gain_lb == null ? null : Number(h.target_gain_lb),
@@ -485,6 +580,15 @@ export function rationLines(groupId: string, rows: GroupRationRow[], values: Map
 export function planSettings(plan: Pick<FeedPlanRow, 'calving_month' | 'calving_day' | 'coat' | 'sheltered' | 'muddy' | 'reserve_pct'>): Settings {
   return { calvingMonth: plan.calving_month, calvingDay: plan.calving_day, coat: plan.coat as Coat, sheltered: plan.sheltered, muddy: plan.muddy, reservePct: Number(plan.reserve_pct) }
 }
+
+/**
+ * The pile a need calls for with the reserve kept back. The reserve is a share
+ * of the PILE held back — a 15% reserve leaves 85% to feed — so the pile has
+ * to be need ÷ (1 − reserve). The yard planner keeps the same reserve
+ * (usable × (1 − reserve)), so the budget and the yard plan agree on when the
+ * reserve is being eaten into.
+ */
+export const withReserve = (needLb: number, reservePct: number) => needLb / (1 - Math.min(0.9, Math.max(0, reservePct / 100)))
 
 /**
  * What is in the yard, usable: left × (1 − storage loss still to come). Only
@@ -531,7 +635,7 @@ export function seasonInputs(
       groupId: s.herd_count_id,
       start: s.start_date,
       state: s.snow_state,
-      cowDays: stubbleCowDays(Number(s.acres), Number(s.yield_bu), Number(s.weather_loss_pct), g ? Number(g.avg_weight_lb) : 1300).cowDays,
+      cowDays: stubbleCowDays(Number(s.acres), Number(s.yield_bu), Number(s.weather_loss_pct), g ? weightFor(g).lb : defaultWeightLb('cow')).cowDays,
     }
   })
   return { groups, stubble: st }

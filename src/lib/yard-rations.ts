@@ -1,5 +1,5 @@
 import { lpMinimize, type Constraint } from './lp'
-import { defaultWaste, groupNeed, intakeCap, type Conditions, type FeedValue, type GroupInput } from './cattle-nutrition'
+import { defaultWaste, freeChoiceIntake, groupNeed, intakeCap, type Conditions, type FeedValue, type GroupInput } from './cattle-nutrition'
 
 /**
  * Rations built from what is in the yard.
@@ -13,7 +13,11 @@ import { defaultWaste, groupNeed, intakeCap, type Conditions, type FeedValue, ty
  *   no feed is used past what is in the yard, keeping the reserve if it can;
  *   no group eats more than it can hold; straw stays under 1.25% of body
  *   weight and 60% of the ration; grain under 0.5% (1% for calves);
- *   protein is met where it can be.
+ *   protein is met where it can be;
+ *   a group fed free choice eats its appetite from the yard, not just its
+ *   need — so the surplus goes to the plainest feed (straw, within its
+ *   limits) rather than to alfalfa. If the yard cannot fill every appetite,
+ *   that floor is dropped and the need still holds.
  *
  * What it minimises is energy fed weighted by how rich the feed is (TDN²):
  * meeting a need with straw and green feed "costs" less than meeting it with
@@ -68,13 +72,21 @@ export function planFromYard(o: {
   calvingDay: number
   muddy: boolean
   reservePct: number
+  /** Free-choice appetite for the weather by month (monthlyIntakeFactor). */
+  intakeByMonth?: Map<number, number>
 }): YardPlan | null {
   const days = Math.max(0, Math.round((o.to.getTime() - o.from.getTime()) / 86_400_000))
   const groups = o.groups.filter((g) => g.group.head > 0)
   const feeds = o.feeds.filter((f) => f.usableAsFedLb > 0 && f.tdnPct > 0 && f.dmPct > 0)
   if (!days || !groups.length || !feeds.length) return null
 
-  // Season totals for each group: energy, protein, how much it can eat.
+  // Free-choice appetite depends on how good the feed is: worked at the yard's
+  // forage as a whole (TDN weighted by the dry matter there is of each).
+  const forage = feeds.filter((f) => f.category !== 'grain' && f.category !== 'supplement')
+  const forageDm = forage.reduce((s, f) => s + f.usableAsFedLb * (f.dmPct / 100), 0)
+  const yardTdn = forageDm > 0 ? forage.reduce((s, f) => s + f.usableAsFedLb * (f.dmPct / 100) * f.tdnPct, 0) / forageDm : 56
+
+  // Season totals for each group: energy, protein, how much it can eat (and, fed free choice, will eat).
   const need = groups.map((g) => {
     let tdn = 0
     let cp = 0
@@ -82,16 +94,18 @@ export function planFromYard(o: {
     for (let i = 0; i < days; i++) {
       const d = new Date(o.from.getFullYear(), o.from.getMonth(), o.from.getDate() + i)
       const cond: Conditions = { onDate: d, calvingMonth: o.calvingMonth, calvingDay: o.calvingDay, daysToTurnout: days - i, cold: o.coldByMonth.get(d.getMonth() + 1) ?? 0, muddy: o.muddy }
+      const f = o.intakeByMonth?.get(d.getMonth() + 1)
+      if (f != null) cond.intakeFactor = f
       const n = groupNeed(g.group, cond)
       // A calf at side eats the same feed: about 60% TDN and 12% CP of what it eats.
       tdn += n.tdnLb + n.calfDmLb * 0.6
       cp += n.cpLb + n.calfDmLb * 0.12
-      cap += intakeCap(g.group, n, 56, cond) + n.calfDmLb
+      cap += (g.group.feeding === 'free_choice' ? freeChoiceIntake(g.group, n, yardTdn, cond) : intakeCap(g.group, n, 56, cond)) + n.calfDmLb
     }
     const headDays = g.group.head * days
     const onStalks = Math.min(0.95, (g.stubbleCowDays ?? 0) / headDays)
     const k = g.group.head * (1 - onStalks)
-    return { tdn: (tdn * k) / K, cp: (cp * k) / K, cap: (cap * k) / K, headDays: (headDays * (1 - onStalks)) / K }
+    return { tdn: (tdn * k) / K, cp: (cp * k) / K, cap: (cap * k) / K, headDays: (headDays * (1 - onStalks)) / K, freeChoice: g.group.feeding === 'free_choice' }
   })
 
   const G = groups.length
@@ -112,14 +126,16 @@ export function planFromYard(o: {
     cost[pi(g)] = 20
   }
 
-  const solve = (reserve: number) => {
+  const solve = (reserve: number, fillAppetite: boolean) => {
     const cons: Constraint[] = []
     const row = () => new Array(nv).fill(0)
     // The yard: offered as fed ≤ what is usable (less the reserve).
     for (let f = 0; f < F; f++) {
       const a = row()
       for (let g = 0; g < G; g++) a[xi(g, f)] = 1 / (feeds[f].dmPct / 100) / (1 - waste(g, f))
-      cons.push({ a, op: '<=', b: feeds[f].usableAsFedLb / (1 + reserve) / K })
+      // A 15% reserve keeps 15% of the pile back: usable × (1 − reserve).
+      // (÷ (1 + reserve) kept back only 13%.)
+      cons.push({ a, op: '<=', b: (feeds[f].usableAsFedLb * (1 - Math.min(1, Math.max(0, reserve)))) / K })
     }
     for (let g = 0; g < G; g++) {
       const W = Math.max(100, groups[g].group.weightLb)
@@ -157,6 +173,8 @@ export function planFromYard(o: {
       cons.push({ a: e, op: '>=', b: need[g].tdn })
       cons.push({ a: p, op: '>=', b: need[g].cp })
       cons.push({ a: cap, op: '<=', b: need[g].cap })
+      // Fed free choice they eat their appetite, not just their need.
+      if (fillAppetite && need[g].freeChoice) cons.push({ a: cap, op: '>=', b: need[g].cap * 0.98 })
       cons.push({ a: straw, op: '<=', b: 0.0125 * W * need[g].headDays })
       cons.push({ a: strawShare, op: '<=', b: 0 })
       cons.push({ a: grain, op: '<=', b: (growing ? 0.01 : 0.005) * W * need[g].headDays })
@@ -165,11 +183,19 @@ export function planFromYard(o: {
   }
 
   const reserve = o.reservePct / 100
-  let r = solve(reserve)
+  // Free-choice groups' appetite filled from the yard if it can be — with the
+  // reserve kept, else into the reserve — and if not, fed to need like the rest.
+  const fill = need.some((n) => n.freeChoice)
   let usesReserve = false
+  let r = fill ? solve(reserve, true) : null
+  if (fill && !r && reserve > 0) {
+    r = solve(0, true)
+    usesReserve = r != null
+  }
+  if (!r) r = solve(reserve, false)
   const short = (sol: { x: number[] } | null) => (sol ? groups.reduce((s, _, g) => s + sol.x[si(g)], 0) : Infinity)
   if (!r || short(r) > 1e-6) {
-    const full = solve(0)
+    const full = solve(0, false)
     if (full && short(full) < short(r) - 1e-6) {
       r = full
       usesReserve = true

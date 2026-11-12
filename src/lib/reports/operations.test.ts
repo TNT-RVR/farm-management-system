@@ -162,7 +162,8 @@ describe('herd inventory', () => {
     expect(calves[7]).toBe(1950)
     expect(calves[8]).toBe(19500)
     expect(r.unplacedMobs).toEqual(['Whitfields (15)'])
-    expect(r.au).toBeCloseTo(140 + 140 + 7)
+    // AU from weight: 1,400 lb cows and bulls 1.4 each, 650 lb calves 0.65 (their typed 0.7 isn't flagged as an override).
+    expect(r.au).toBeCloseTo(140 + 140 + 6.5)
   })
 })
 
@@ -209,8 +210,11 @@ describe('winter feed budget', () => {
   it('sets the need with the reserve against the yard, and says when a feed is not counted', () => {
     const season = { days: 90, needLb: new Map([['hay', 220_462], ['silage', 110_231]]), extraGrainLb: 0, dmLb: 0, stubbleCowDays: 0, stubbleSavedLb: new Map(), runsOut: new Map(), bindingDays: null, bindingFeed: null } as SeasonResult
     const r = budgetRows({ season, usable: new Map([['hay', 220_462]]), reservePct: 15, feedName: (id) => id, bale: (id) => (id === 'hay' ? { unit: 'round', lb: 1300 } : { unit: 'lb', lb: null }) })
-    expect(r.rows[0].slice(0, 5)).toEqual(['hay', 100, 115, '170 rounds', 100])
-    expect(r.rows[0][5]).toBeCloseTo(-15)
+    // A 15% reserve is 15% of the pile kept back: 100 t of need calls for 100 / 0.85 t.
+    expect(r.rows[0].slice(0, 2)).toEqual(['hay', 100])
+    expect(r.rows[0][2] as number).toBeCloseTo(100 / 0.85, 0)
+    expect(r.rows[0].slice(3, 5)).toEqual(['170 rounds', 100])
+    expect(r.rows[0][5] as number).toBeCloseTo(100 - 100 / 0.85, 0)
     expect(r.rows[1][4]).toBe('not counted')
     expect(r.short).toEqual(['hay'])
   })
@@ -245,7 +249,9 @@ describe('cost per cow', () => {
     const g = cowCostGroup({ ranch: 'Home Ranch', costs: c, bench, cows: 320, saleWeightLb: 450, year: 2027 })
     expect(g.totals).toEqual(['Total per cow', 120, 464 + 612 + 79 + 34 + 563, 120 - 1752, 120 * 320])
     expect(g.note).toContain('2026’s costs, carried to 2027')
-    expect(g.note).toContain('0.90 calves sold a cow')
+    // Weaning % is calves weaned ÷ cows exposed: no death loss taken off it again.
+    expect(g.note).toContain('weaning 92%')
+    expect(g.note).toContain('no cull price typed')
   })
 })
 

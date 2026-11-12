@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { CircleDollarSign, Fuel, Flower2, Beef, BookOpen, Bug, KeyRound, Calculator, CalendarDays, CheckSquare, ClipboardCheck, ClipboardList, Cloud, Container, Droplets, FileSignature, FileText, FlaskConical, Info, Landmark, LayoutDashboard, LineChart, Map as MapIcon, Presentation, Repeat, ArrowLeftRight, Scale, Timer, Settings, SprayCan, Sprout, Plug, Tractor, Truck, Users, Video, Waves, Wheat } from 'lucide-react'
+import { CircleDollarSign, Fence, Fuel, Flower2, Beef, BookOpen, Bug, KeyRound, Calculator, CalendarDays, CheckSquare, ClipboardCheck, ClipboardList, Cloud, Container, Droplets, FileSignature, FileText, FlaskConical, Info, Landmark, LayoutDashboard, LineChart, Map as MapIcon, Presentation, Repeat, ArrowLeftRight, Scale, Timer, Settings, SprayCan, Sprout, Plug, Tractor, Truck, Users, Video, Waves, Wheat } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { GrainBin } from '@/components/icons/GrainBin'
 import { supabase } from './supabase'
@@ -149,6 +149,7 @@ export const NAV_ITEMS: NavItem[] = [
       { to: '/herd', label: 'Herd', icon: Beef },
       { to: '/feed', label: 'Feed', icon: Container },
       { to: '/cattle-markets', label: 'Sales & paperwork', icon: LineChart },
+      { to: '/handling-system', label: 'Handling system', icon: Fence },
       { to: '/cattle-settings', label: 'Settings', icon: Settings },
     ],
   },

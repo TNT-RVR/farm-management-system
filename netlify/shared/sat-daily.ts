@@ -231,19 +231,35 @@ export async function rebuildDaily(
   sb: SupabaseClient,
   subjectType: 'field' | 'pasture' = 'field',
 ): Promise<{ subjects: number; days: number }> {
-  const { data, error } = await sb
-    .from('sat_observations')
-    .select('subject_id, zone_id, sensed_on, ndvi_harmonized, quality')
-    .eq('subject_type', subjectType)
-    .in('quality', ['full', 'partial'])
-    // Spec §4.5: never mix UNHARMONIZED sensors. Every sensor here is placed on
-    // the Sentinel-2 scale first — natively for Sentinel-2, by a published
-    // default for Landsat until this farm has 15 same-day pairs of its own.
-    // The series reads ndvi_harmonized for that reason and never ndvi_mean,
-    // which is kept as the untouched record of what the sensor said.
-    .eq('harmonized', true)
-    .order('sensed_on')
-  if (error) throw new Error(`reading observations: ${error.message}`)
+  // Paged, because PostgREST caps a response at 1,000 rows and says nothing
+  // about it. The pasture series crossed that line in September 2025: the read
+  // came back truncated, the fit was perfect on the rows it got, and every run
+  // since has reported its 8,663 pasture days while the newest day in the
+  // table stayed 26 Sep 2025. The crop side was under the cap, so the same
+  // code went on looking healthy there.
+  //
+  // Ordered by `id`, not by date: paging needs a total order and `sensed_on`
+  // has ties by the dozen, which would drop and repeat rows across pages.
+  // buildDailySeries sorts each subject's looks by date itself.
+  const data: unknown[] = []
+  for (let at = 0; ; at += 1000) {
+    const { data: page, error } = await sb
+      .from('sat_observations')
+      .select('subject_id, zone_id, sensed_on, ndvi_harmonized, quality')
+      .eq('subject_type', subjectType)
+      .in('quality', ['full', 'partial'])
+      // Spec §4.5: never mix UNHARMONIZED sensors. Every sensor here is placed
+      // on the Sentinel-2 scale first — natively for Sentinel-2, by a
+      // published default for Landsat until this farm has 15 same-day pairs of
+      // its own. The series reads ndvi_harmonized for that reason and never
+      // ndvi_mean, which is kept as the untouched record of what the sensor said.
+      .eq('harmonized', true)
+      .order('id')
+      .range(at, at + 999)
+    if (error) throw new Error(`reading observations: ${error.message}`)
+    data.push(...(page ?? []))
+    if (!page || page.length < 1000) break
+  }
 
   type Row = {
     subject_id: string
@@ -271,10 +287,20 @@ export async function rebuildDaily(
   // against the previous pass from the SAME orbit direction, and that window
   // function belongs in SQL rather than repeated here.
   const radarBySubject = new Map<string, RadarCheck[]>()
-  const { data: radar } = await sb
-    .from('sat_radar_change')
-    .select('subject_id, sensed_on, vv_change_db')
-    .eq('subject_type', subjectType)
+  // Paged for the same reason as the observations above.
+  const radar: unknown[] = []
+  for (let at = 0; ; at += 1000) {
+    const { data: page, error: radarErr } = await sb
+      .from('sat_radar_change')
+      .select('subject_id, sensed_on, vv_change_db')
+      .eq('subject_type', subjectType)
+      .order('subject_id')
+      .order('sensed_on')
+      .range(at, at + 999)
+    if (radarErr) throw new Error(`reading radar change: ${radarErr.message}`)
+    radar.push(...(page ?? []))
+    if (!page || page.length < 1000) break
+  }
   for (const r of (radar ?? []) as { subject_id: string; sensed_on: string; vv_change_db: number | string | null }[]) {
     const change = typeof r.vv_change_db === 'string' ? Number(r.vv_change_db) : r.vv_change_db
     const list = radarBySubject.get(r.subject_id) ?? []

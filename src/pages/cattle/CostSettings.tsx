@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import type React from 'react'
-import { Calculator, RotateCcw } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { ArrowRight, Calculator, RotateCcw } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   AB_COW_CALF_COP_SOURCE,
   COW_CALF_BENCHMARK_COSTS,
+  DEFAULT_CULL_PCT,
   abCowCostLines,
   abCowCostPerYear,
-  breakEven,
   useCattleCosts,
   useSaveCattleCosts,
   type CattleCosts,
@@ -17,7 +17,7 @@ import { useFarmSettings } from '@/lib/farm-setup'
 import { useMainRanch, useRanches } from '@/lib/ranches'
 import { HelpNote } from '@/components/HelpNote'
 import { useCattleSales } from '@/lib/cattleMarkets'
-import { ranchSale } from '@/lib/calf-sale'
+import { ranchSale, saleWeightSource } from '@/lib/calf-sale'
 import { cullCowValue, useCowQuotes } from '@/lib/cull-cow'
 import { useHerdCounts } from '@/lib/cattle'
 import { CattleInfo } from './CattleInfo'
@@ -57,9 +57,12 @@ const COST_ROWS: { key: keyof CattleCosts; label: string; hint: string }[] = [
  */
 export function CostSettings({
   ranches,
+  ranchId,
   isManager,
 }: {
   ranches: { id: string; name: string }[]
+  /** The ranch picked at the top of Cattle settings; hides this form's own switcher. */
+  ranchId?: string
   isManager: boolean
 }) {
   // Read once: a clock read during render is impure. The form saves into this
@@ -68,7 +71,7 @@ export function CostSettings({
   const mainRanch = useMainRanch()
   // A break-even's "Enter costs" link names its ranch (?ranch=<id>).
   const [params] = useSearchParams()
-  const asked = ranches.find((r) => r.id === params.get('ranch'))
+  const asked = ranches.find((r) => r.id === (ranchId ?? params.get('ranch')))
   const [ranch, setRanch] = useState(
     () => (asked ?? ranches.find((r) => r.id === mainRanch?.id) ?? ranches[0])?.name ?? mainRanch?.name ?? '',
   )
@@ -76,9 +79,9 @@ export function CostSettings({
     <section>
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-          <Calculator className="h-4 w-4 text-gray-400" /> Cattle costs &amp; break-even
+          <Calculator className="h-4 w-4 text-gray-400" /> Cattle costs{ranchId && ranch ? ` — ${ranch}` : ''}
         </h2>
-        {ranches.length > 1 && (
+        {!ranchId && ranches.length > 1 && (
           <div className="flex rounded-md border border-gray-200 p-0.5 text-xs">
             {ranches.map((r) => (
               <button
@@ -122,16 +125,13 @@ function CostForm({
   const carriedFrom = saved?.carriedFrom ?? null
   // Keyed on the ranch by the caller's remount, so switching ranch reloads.
   const [d, setD] = useState<Record<string, string> | null>(null)
-  // The ranch's own sale weight (steers and heifers averaged): typed on the
-  // ranch, else its sales, else Farm setup.
+  // The ranch's sale weights, shown read-only: they are set under Weaning and
+  // calf sale, and the break-even that uses them lives on Markets.
   const farm = useFarmSettings()
   const { data: ranchRows } = useRanches()
   const ranchRow = ranchRows?.find((r) => r.name === ranch) ?? null
   const { data: sales } = useCattleSales()
   const sale = ranchSale(ranchRow, sales ?? [], farm)
-  const saleWeight = Math.round((sale.steers.lb + sale.heifers.lb) / 2)
-  const [weightEdit, setWeight] = useState<string | null>(null)
-  const weight = weightEdit ?? String(saleWeight)
   // Today's cull cow price: the markets first, the typed price behind them.
   const { data: counts } = useHerdCounts(ranchRow?.id)
   const cowRow = (counts ?? []).find((c) => c.feed_class === 'cow' || /\bcows?\b/i.test(c.class_name))
@@ -144,6 +144,7 @@ function CostForm({
       for (const r of COST_ROWS) init[r.key] = saved?.[r.key] != null ? String(saved[r.key]) : ''
       init.weaning_rate_pct = saved?.weaning_rate_pct != null ? String(saved.weaning_rate_pct) : ''
       init.death_loss_pct = saved?.death_loss_pct != null ? String(saved.death_loss_pct) : ''
+      for (const k of ['cow_death_pct', 'calf_loss_pct', 'post_weaning_loss_pct', 'cull_pct'] as const) init[k] = saved?.[k] != null ? String(saved[k]) : ''
       init.cost_of_gain_per_lb =
         saved?.cost_of_gain_per_lb != null ? String(saved.cost_of_gain_per_lb) : ''
       init.cull_cow_price_cwt = saved?.cull_cow_price_cwt != null ? String(saved.cull_cow_price_cwt) : ''
@@ -164,6 +165,10 @@ function CostForm({
     vet_cost_per_head: numOrNull(current.vet_cost_per_head ?? ''),
     other_cost_per_head: numOrNull(current.other_cost_per_head ?? ''),
     death_loss_pct: numOrNull(current.death_loss_pct ?? ''),
+    cow_death_pct: numOrNull(current.cow_death_pct ?? ''),
+    calf_loss_pct: numOrNull(current.calf_loss_pct ?? ''),
+    post_weaning_loss_pct: numOrNull(current.post_weaning_loss_pct ?? ''),
+    cull_pct: numOrNull(current.cull_pct ?? ''),
     weaning_rate_pct: numOrNull(current.weaning_rate_pct ?? ''),
     cost_of_gain_per_lb: numOrNull(current.cost_of_gain_per_lb ?? ''),
     cull_cow_price_cwt: numOrNull(current.cull_cow_price_cwt ?? ''),
@@ -177,7 +182,6 @@ function CostForm({
     typedCwt: asCosts.cull_cow_price_cwt ?? null,
     today: new Date().toLocaleDateString('en-CA'),
   })
-  const be = breakEven(asCosts, numOrNull(weight))
 
   if (isLoading) return <p className="text-sm text-gray-500">Loading…</p>
 
@@ -191,6 +195,9 @@ function CostForm({
       other_cost_per_head: String(bench.other_cost_per_head ?? ''),
       weaning_rate_pct: String(COW_CALF_BENCHMARK_COSTS.weaning_rate_pct),
       death_loss_pct: String(COW_CALF_BENCHMARK_COSTS.death_loss_pct),
+      cow_death_pct: String(COW_CALF_BENCHMARK_COSTS.cow_death_pct),
+      calf_loss_pct: String(COW_CALF_BENCHMARK_COSTS.calf_loss_pct),
+      post_weaning_loss_pct: String(COW_CALF_BENCHMARK_COSTS.post_weaning_loss_pct),
       cost_of_gain_per_lb: String(COW_CALF_BENCHMARK_COSTS.cost_of_gain_per_lb),
     })
 
@@ -274,7 +281,7 @@ function CostForm({
         </p>
       )}
 
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="mt-3 grid grid-cols-2 gap-3 @lg:grid-cols-3 @4xl:grid-cols-5">
         <Small
           label="Weaning rate %"
           value={current.weaning_rate_pct ?? ''}
@@ -282,12 +289,34 @@ function CostForm({
           disabled={!isManager}
           onChange={(v) => setD({ ...current, weaning_rate_pct: v })}
         />
+        {/* Death loss in three places it means different things (2 Nov 2026). */}
         <Small
-          label="Death loss %"
-          value={current.death_loss_pct ?? ''}
-          placeholder={String(COW_CALF_BENCHMARK_COSTS.death_loss_pct)}
+          label="Cow deaths %/yr"
+          value={current.cow_death_pct ?? ''}
+          placeholder={String(COW_CALF_BENCHMARK_COSTS.cow_death_pct)}
           disabled={!isManager}
-          onChange={(v) => setD({ ...current, death_loss_pct: v })}
+          onChange={(v) => setD({ ...current, cow_death_pct: v })}
+        />
+        <Small
+          label="Calf loss to weaning %"
+          value={current.calf_loss_pct ?? ''}
+          placeholder={String(COW_CALF_BENCHMARK_COSTS.calf_loss_pct)}
+          disabled={!isManager}
+          onChange={(v) => setD({ ...current, calf_loss_pct: v })}
+        />
+        <Small
+          label="Loss after weaning %/yr"
+          value={current.post_weaning_loss_pct ?? ''}
+          placeholder={String(COW_CALF_BENCHMARK_COSTS.post_weaning_loss_pct)}
+          disabled={!isManager}
+          onChange={(v) => setD({ ...current, post_weaning_loss_pct: v })}
+        />
+        <Small
+          label="Cows culled %/yr"
+          value={current.cull_pct ?? ''}
+          placeholder={String(DEFAULT_CULL_PCT)}
+          disabled={!isManager}
+          onChange={(v) => setD({ ...current, cull_pct: v })}
         />
         <Small
           label="Cost of gain $/lb"
@@ -296,13 +325,6 @@ function CostForm({
           placeholder={String(COW_CALF_BENCHMARK_COSTS.cost_of_gain_per_lb)}
           disabled={!isManager}
           onChange={(v) => setD({ ...current, cost_of_gain_per_lb: v })}
-        />
-        <Small
-          label="Weaning weight lb"
-          value={weight}
-          placeholder={String(saleWeight)}
-          disabled={false}
-          onChange={setWeight}
         />
         <Small
           label="Cull cow price $/cwt"
@@ -347,31 +369,35 @@ function CostForm({
       <CostOfGainWorksheet
         ranchId={ranchRow?.id ?? null}
         isManager={isManager}
-        deathLossPct={asCosts.death_loss_pct}
+        deathLossPct={asCosts.post_weaning_loss_pct ?? null}
         calfYardage={asCosts.calf_yardage_per_day ?? null}
         onUse={(perLb) => setD({ ...current, cost_of_gain_per_lb: perLb.toFixed(2) })}
       />
 
-      {/* The answer, live, so a typed figure can be judged as it is typed. */}
-      {be && (
-        <div className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-1 rounded-md bg-brand-50 px-3 py-2">
-          <span className="text-xs text-gray-600">
-            {be.calvesPerCow.toFixed(2)} calves sold per cow
+      {/* The break-even has one home, Markets; the sale weights it uses are
+          set under Weaning and calf sale. Both shown here, neither worked out twice. */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-brand-50 px-3 py-2 text-xs text-gray-600">
+        <span>
+          Sale weights: steers <b className="tabular-nums text-gray-900">{sale.steers.lb} lb</b>, heifers{' '}
+          <b className="tabular-nums text-gray-900">{sale.heifers.lb} lb</b>
+          <span className="text-gray-400" title={`Steers ${saleWeightSource(sale.steers)}; heifers ${saleWeightSource(sale.heifers)}`}>
+            {' '}· set under{' '}
           </span>
-          <span className="text-xs text-gray-600">{money(be.costPerCalf)} a calf</span>
-          <span className="text-sm">
-            <span className="text-gray-600">Break-even </span>
-            <span className="font-bold tabular-nums text-brand-800">
-              {be.perLb != null ? `$${be.perLb.toFixed(2)}/lb` : '—'}
-            </span>
-          </span>
-          {be.missing.length > 0 && (
-            <span className="text-[11px] text-amber-700">
-              short by whatever {be.missing.join(', ')} cost
-            </span>
-          )}
-        </div>
-      )}
+          <button
+            type="button"
+            onClick={() => document.getElementById(`calf-sale-${ranchRow?.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className="font-medium text-brand-700 hover:underline"
+          >
+            Weaning and calf sale
+          </button>
+        </span>
+        <Link
+          to={`/cattle-markets?tab=markets${ranchRow ? `&ranch=${ranchRow.id}` : ''}`}
+          className="ml-auto flex items-center gap-1 font-medium text-brand-700 hover:underline"
+        >
+          Break-even on Markets <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
 
       <label className="mt-3 block text-xs text-gray-500">
         Notes
@@ -416,6 +442,10 @@ function CostForm({
                 vet_cost_per_head: asCosts.vet_cost_per_head,
                 other_cost_per_head: asCosts.other_cost_per_head,
                 death_loss_pct: asCosts.death_loss_pct,
+                cow_death_pct: asCosts.cow_death_pct,
+                calf_loss_pct: asCosts.calf_loss_pct,
+                post_weaning_loss_pct: asCosts.post_weaning_loss_pct,
+                cull_pct: asCosts.cull_pct,
                 weaning_rate_pct: asCosts.weaning_rate_pct,
                 cost_of_gain_per_lb: asCosts.cost_of_gain_per_lb,
                 cull_cow_price_cwt: asCosts.cull_cow_price_cwt,

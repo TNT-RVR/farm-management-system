@@ -86,14 +86,16 @@ describe('livestock classes', () => {
 })
 
 describe('prefilling the livestock', () => {
-  it('falls back to the Herd tab: classes merged, weight by head, only this year’s dates', () => {
+  it('falls back to the Herd tab: classes merged, weight by head, dates read as this year', () => {
     const p = prefillLivestock({ year: 2026, pastureUnit: 'Combined with 10002', herd, events: [] })
     expect(p.source).toBe('herd')
     expect(p.livestock).toEqual([
       { pasture_unit: 'Combined with 10002', livestock_class: 'Cattle Cow', count: 120, date_in: '2026-05-20', date_out: '2026-10-30' },
       { pasture_unit: 'Combined with 10002', livestock_class: 'Cattle Bull', count: 5, date_in: '2026-06-15', date_out: '2026-08-31' },
-      // Heifers and yearlings together; the yearlings' 2025 date is not this year's.
-      { pasture_unit: 'Combined with 10002', livestock_class: 'Cattle Yearling', count: 40, date_in: '', date_out: '' },
+      // Heifers and yearlings together. The yearlings' turnout was typed in an
+      // earlier season and is read as the same day of the year being returned,
+      // because the Herd tab keeps only a month and a day.
+      { pasture_unit: 'Combined with 10002', livestock_class: 'Cattle Yearling', count: 40, date_in: '2026-05-01', date_out: '' },
     ])
     expect(p.weights).toEqual([
       { livestock_class: 'Cattle Cow', weight: 1400, unit: 'Pounds' },

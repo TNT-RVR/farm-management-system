@@ -20,7 +20,53 @@
  * on the Markets tab): backgrounding pays while cost of gain is under it.
  */
 
+import { solveRation, type GroupInput, type RationLine } from './cattle-nutrition'
+
 export type CogFeed = { id: string; name: string; asFedLbPerDay: number; pricePerTonne: number | null }
+
+/**
+ * What a backgrounded calf eats a day on average, walked day by day from the
+ * weaning date: its weight climbing at the target gain, and each day's cold
+ * from the ranch's own winters by month (winter-feeding.ts monthlyCold). Until
+ * 2 Nov 2026 the worksheet priced one day — today, at no cold — so a
+ * worksheet opened in September costed a winter of backgrounding at September
+ * weather.
+ */
+export function backgroundRation(o: {
+  group: GroupInput
+  lines: RationLine[]
+  start: Date
+  days: number
+  gainLbPerDay: number
+  coldByMonth: Map<number, number>
+  calvingMonth: number
+  calvingDay: number
+  muddy?: boolean
+}): { feeds: { id: string; name: string; asFedLbPerDay: number }[]; addGrainLbPerDay: number } {
+  const days = Math.max(0, Math.round(o.days))
+  const lb = new Map<string, { name: string; total: number }>()
+  let grain = 0
+  for (let i = 0; i < days; i++) {
+    const d = new Date(o.start.getFullYear(), o.start.getMonth(), o.start.getDate() + i)
+    const r = solveRation(
+      // Fed for the chosen gain — a measured ration — whatever the group's
+      // winter feeding: cost of gain prices that gain, not appetite.
+      { ...o.group, feeding: 'measured', head: 1, weightLb: o.group.weightLb + o.gainLbPerDay * i },
+      { onDate: d, calvingMonth: o.calvingMonth, calvingDay: o.calvingDay, daysToTurnout: days - i, cold: o.coldByMonth.get(d.getMonth() + 1) ?? 0, muddy: o.muddy ?? false },
+      o.lines,
+    )
+    for (const l of r.lines) {
+      const e = lb.get(l.feed.id) ?? { name: l.feed.name, total: 0 }
+      e.total += l.offeredLb
+      lb.set(l.feed.id, e)
+    }
+    grain += r.addGrainLb
+  }
+  return {
+    feeds: [...lb].map(([id, e]) => ({ id, name: e.name, asFedLbPerDay: days ? e.total / days : 0 })),
+    addGrainLbPerDay: days ? grain / days : 0,
+  }
+}
 
 export type CogInput = {
   startLb: number

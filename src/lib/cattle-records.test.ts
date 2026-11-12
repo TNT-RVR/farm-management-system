@@ -1,38 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { filterAnimals, ranchDeleteBlockers } from './cattle'
+import { ranchDeleteBlockers } from './cattle'
 import { signedQuantity } from './feed-inventory'
 import { feedTypeDeletePlan } from './winter-feeding'
 import { nearestLook } from './grazing-forage'
-
-const animal = (tag: string | null, over: Partial<{ name: string | null; breed: string | null; status: 'active' | 'sold' | 'died' | 'culled'; group_id: string | null }> = {}) => ({
-  tag,
-  name: null,
-  breed: null,
-  status: 'active' as const,
-  group_id: null,
-  ...over,
-})
-
-describe('filterAnimals', () => {
-  it('sorts tags as numbers, untagged last', () => {
-    const out = filterAnimals([animal('10'), animal(null, { name: 'Daisy' }), animal('9'), animal('100')], {})
-    expect(out.map((a) => a.tag)).toEqual(['9', '10', '100', null])
-  })
-
-  it('leaves sold and dead animals out unless asked', () => {
-    const rows = [animal('1'), animal('2', { status: 'sold' }), animal('3', { status: 'died' })]
-    expect(filterAnimals(rows, {}).map((a) => a.tag)).toEqual(['1'])
-    expect(filterAnimals(rows, { showGone: true })).toHaveLength(3)
-  })
-
-  it('searches tag, name, breed and group name', () => {
-    const rows = [animal('1', { name: 'Bessie' }), animal('2', { breed: 'Angus' }), animal('3', { group_id: 'g1' })]
-    const groupName = (id: string | null) => (id === 'g1' ? 'Replacement heifers' : '')
-    expect(filterAnimals(rows, { search: 'bess' }).map((a) => a.tag)).toEqual(['1'])
-    expect(filterAnimals(rows, { search: 'ANGUS' }).map((a) => a.tag)).toEqual(['2'])
-    expect(filterAnimals(rows, { search: 'heifer', groupName }).map((a) => a.tag)).toEqual(['3'])
-  })
-})
 
 describe('signedQuantity', () => {
   it('takes a sale or spoilage off the pile whatever sign was typed', () => {

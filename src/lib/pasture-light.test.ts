@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { trafficLight, type ReadinessRow } from './pasture-light'
+import { isDormant, LIGHT_LABEL, trafficLight, type ReadinessRow } from './pasture-light'
 
 const row = (p: Partial<ReadinessRow>): ReadinessRow => ({
   pasture_id: 'x',
@@ -36,5 +36,31 @@ describe('trafficLight', () => {
 
   it('is grey with no look', () => {
     expect(trafficLight(undefined, false).light).toBe('grey')
+  })
+})
+
+describe('isDormant', () => {
+  it('is dormant outside the April-to-October growing season', () => {
+    expect(isDormant(new Date(2026, 10, 3))).toBe(true) // 3 Nov
+    expect(isDormant(new Date(2026, 2, 31))).toBe(true) // 31 Mar
+    expect(isDormant(new Date(2026, 3, 1))).toBe(false) // 1 Apr
+    expect(isDormant(new Date(2026, 9, 31))).toBe(false) // 31 Oct
+  })
+
+  it('follows the ranch window it is given', () => {
+    expect(isDormant(new Date(2026, 9, 15), 5, 9)).toBe(true)
+    expect(isDormant(new Date(2026, 5, 15), 5, 9)).toBe(false)
+  })
+})
+
+describe('trafficLight out of season', () => {
+  it('reads Dormant rather than red for thin winter forage', () => {
+    const l = trafficLight(row({ readiness: 'overgrazed', forage_index: 0.1 }), true, true)
+    expect(l.light).toBe('dormant')
+    expect(LIGHT_LABEL[l.light]).toBe('Dormant')
+  })
+
+  it('still says when cattle are on it', () => {
+    expect(trafficLight(row({ cattle_on_now: true }), true, true).light).toBe('red')
   })
 })

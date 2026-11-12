@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logApiCall, runSatelliteIngest, FULL_QUALITY, PARTIAL_QUALITY } from './sat-ingest.ts'
 import { runRadarIngest } from './sat-radar.ts'
-import { runCanolaBloom } from './canola-bloom.ts'
+import { canolaWatchFields, runCanolaBloom } from './canola-bloom.ts'
 import { runLandsatIngest } from './sat-landsat.ts'
 import { rebuildDaily } from './sat-daily.ts'
 import { runAlertDetection } from './sat-alerts.ts'
@@ -93,7 +93,8 @@ export async function runFullIngest(
   // CDSE outage does not stop it and vice versa.
   let landsat: { fields: number; scenes: number; observations: number; detail: string }
   try {
-    landsat = await runLandsatIngest(sb, staged)
+    // Canola fields in summer get the flower test on their Landsat looks too.
+    landsat = await runLandsatIngest(sb, { ...staged, bloomIds: await canolaWatchFields(sb, new Date()) })
   } catch (e) {
     landsat = { fields: 0, scenes: 0, observations: 0, detail: `landsat failed: ${(e as Error).message.slice(0, 120)}` }
     await logApiCall(sb, 'landsat', false, (e as Error).message.slice(0, 200))
@@ -117,7 +118,12 @@ export async function runFullIngest(
     // source added since the last run changes which ground is in which band —
     // and statistics against a stale band would answer a question about a
     // shape that no longer exists.
-    const { data: zonesBuilt } = await sb.rpc('rebuild_pasture_zones')
+    //
+    // The error is checked, not discarded. Discarding it is how this step
+    // failed every run for two months while the log read "0 across 0 water
+    // bands" — indistinguishable from a farm with no water recorded.
+    const { data: zonesBuilt, error: zoneErr } = await sb.rpc('rebuild_pasture_zones')
+    if (zoneErr) await logApiCall(sb, 'pasture_zone', false, `rebuild: ${zoneErr.message.slice(0, 180)}`)
     const zoneOpts = { ...staged, subjectType: 'pasture_zone' as const }
     const zo = zonesBuilt ? await runSatelliteIngest(sb, zoneOpts) : { observations: 0 }
 
@@ -125,9 +131,11 @@ export async function runFullIngest(
       observations: po.observations + pl.observations + zo.observations,
       detail:
         `pasture ${po.observations + pl.observations} observations` +
-        (zonesBuilt
-          ? `, ${zo.observations} across ${zonesBuilt} water-distance bands`
-          : ', no water sources recorded so no underutilisation bands'),
+        (zoneErr
+          ? `, bands not rebuilt: ${zoneErr.message.slice(0, 80)}`
+          : zonesBuilt
+            ? `, ${zo.observations} across ${zonesBuilt} water-distance bands`
+            : ', no water sources recorded so no underutilisation bands'),
     }
   } catch (e) {
     pasture = { observations: 0, detail: `pasture failed: ${(e as Error).message.slice(0, 100)}` }
@@ -268,12 +276,23 @@ export async function runPastureIngest(
   let bands = 0
   let zone = { observations: 0 }
   try {
-    const { data: zonesBuilt } = await sb.rpc('rebuild_pasture_zones')
+    // The error is checked rather than discarded, which is how this failed
+    // every run since the bands were added: supabase-js returns the failure
+    // instead of throwing, so `data` came back null, `bands` came back 0, and
+    // the run logged "0 across 0 water bands" as though the farm had no water.
+    const { data: zonesBuilt, error: zoneErr } = await sb.rpc('rebuild_pasture_zones')
+    if (zoneErr) throw new Error(`rebuild_pasture_zones: ${zoneErr.message}`)
     bands = Number(zonesBuilt ?? 0)
-    // The bands get a slice of their own. Queued behind the paddocks and
+    // Grass-only polygons for the paddocks that are mostly irrigated crop.
+    // Same table, same ingest; a paddock with no crop inside the fence gets
+    // none, because its own reading is already a reading of its grass.
+    const { data: grassBuilt, error: grassErr } = await sb.rpc('rebuild_pasture_grass_zones')
+    if (grassErr) throw new Error(`rebuild_pasture_grass_zones: ${grassErr.message}`)
+    bands += Number(grassBuilt ?? 0)
+    // The zones get a slice of their own. Queued behind the paddocks and
     // Landsat under one deadline, they got none: every run on 28 Sep read
     // "0 across 22 water bands". Scenes already read are skipped, so a few
-    // seconds a run catches the bands up within a day.
+    // seconds a run catches the zones up within a day.
     if (bands) zone = await runSatelliteIngest(sb, { ...staged, deadline: Math.max(deadline, Date.now() + 6_000), subjectType: 'pasture_zone' })
   } catch (e) {
     await logApiCall(sb, 'pasture_zone', false, (e as Error).message.slice(0, 200))
@@ -312,10 +331,24 @@ export async function runPastureIngest(
     cattle = `cattle alerts failed: ${(e as Error).message.slice(0, 100)}`
   }
 
+  // The grass rating, after the looks are graded and harmonised. It reads
+  // peak-season canopy cover over whole seasons, so it only moves when a new
+  // June-to-August look lands — most runs change nothing and it costs one
+  // statement to find that out.
+  let rating: string
+  try {
+    const { data: rated, error: rateErr } = await sb.rpc('apply_pasture_grass_ratings')
+    if (rateErr) throw new Error(rateErr.message)
+    rating = Number(rated ?? 0) > 0 ? ` · ${rated} ratings set` : ''
+  } catch (e) {
+    rating = ` · rating failed: ${(e as Error).message.slice(0, 80)}`
+    await logApiCall(sb, 'grass-rating', false, (e as Error).message.slice(0, 200))
+  }
+
   const observations = optical.observations + landsat.observations + zone.observations
   const detail =
-    `pasture ${optical.observations + landsat.observations} observations, ${zone.observations} across ${bands} water bands` +
-    ` · ${daily.days} pasture days · ${pictures} pictures · ${cattle}${problem}`
+    `pasture ${optical.observations + landsat.observations} observations, ${zone.observations} across ${bands} zones` +
+    ` · ${daily.days} pasture days · ${pictures} pictures · ${cattle}${rating}${problem}`
 
   // The newest clear look is the fact that matters; the run time is only when
   // we last asked.

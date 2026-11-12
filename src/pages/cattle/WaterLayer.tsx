@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useWaterTests, latestByWater } from '@/lib/cattle-papers-data'
+import { readingFor, useDistrictWater, fedByLabel } from '@/lib/district-water'
+import { judgeWater, VERDICT_LABEL, WATER_CLASSES, worst, type ParamFinding } from '@/lib/livestock-water'
 import maplibregl, { type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl'
 import type { FeatureCollection } from 'geojson'
-import { Droplet, Trash2 } from 'lucide-react'
+import { Copy, Droplet, FlaskConical, Share2, Trash2 } from 'lucide-react'
 import {
   WATER_KINDS,
   WATER_REACH_LAYERS,
+  isTrough,
   useCattleWater,
   useWaterMutations,
   useWaterReach,
@@ -14,12 +18,13 @@ import {
 import { cn } from '@/lib/utils'
 import { usePastures } from '@/lib/pastures'
 import { pastureLabel } from '@/lib/pastureLabel'
-import { circleRing } from '@/lib/geo/circle'
 import { askConfirm } from '@/components/askConfirm'
+import { WaterReportDialog } from '@/pages/cattle/WaterReport'
 
 /**
  * The water on the cattle map: pins you can drag, rename and delete, and the
- * ground within 800 m of them.
+ * ground within the recommended distance of them — 250 m, with an outer band
+ * at 800 m (see docs/grazing-distance-evidence.md).
  *
  * Pins are HTML markers rather than a circle layer, because a marker can be
  * dragged with nothing more than `draggable: true` and always draws above the
@@ -30,8 +35,8 @@ const REACH_SRC = 'water-reach'
 
 function pinElement(w: WaterSource): HTMLDivElement {
   const el = document.createElement('div')
-  el.title = w.name || (w.kind === 'trough' ? 'Trough' : 'Water')
-  const trough = w.kind === 'trough'
+  el.title = w.name || (isTrough(w.kind) ? 'Trough' : 'Water')
+  const trough = isTrough(w.kind)
   Object.assign(el.style, {
     width: trough ? '16px' : '14px',
     height: trough ? '16px' : '14px',
@@ -124,36 +129,6 @@ export function WaterLayer({
     }
   }, [map, mapReady, sources, showPins, isManager])
 
-  // The 800 m of every trough, as a dashed ring off the pin itself. Not
-  // clipped to the fence — that is the reach fill's job — but on screen the
-  // moment a trough lands and wherever it is dragged, which the reach fill
-  // (recomputed by the database after the drop) is not.
-  useEffect(() => {
-    if (!map || !mapReady) return
-    const fc: FeatureCollection = {
-      type: 'FeatureCollection',
-      features: (sources ?? [])
-        .filter((w) => w.kind === 'trough' && w.drinkable)
-        .map((w) => ({
-          type: 'Feature' as const,
-          properties: { name: w.name },
-          geometry: { type: 'Polygon' as const, coordinates: [circleRing([w.lon, w.lat], 800)] },
-        })),
-    }
-    const src = map.getSource('trough-rings') as GeoJSONSource | undefined
-    if (src) src.setData(fc)
-    else {
-      map.addSource('trough-rings', { type: 'geojson', data: fc })
-      map.addLayer({
-        id: 'trough-ring',
-        type: 'line',
-        source: 'trough-rings',
-        paint: { 'line-color': '#f97316', 'line-width': 2, 'line-dasharray': [3, 2] },
-      })
-    }
-    map.setLayoutProperty('trough-ring', 'visibility', showPins ? 'visible' : 'none')
-  }, [map, mapReady, sources, showPins])
-
   useEffect(() => {
     if (!map || !mapReady) return
     const fc: FeatureCollection = { type: 'FeatureCollection', features: [] }
@@ -163,6 +138,12 @@ export function WaterLayer({
           type: 'Feature',
           properties: { kind: 'beyond', name: r.name, acres: r.beyond_acres },
           geometry: r.beyond_geojson,
+        })
+      if (r.margin_geojson)
+        fc.features.push({
+          type: 'Feature',
+          properties: { kind: 'margin', name: r.name, acres: r.margin_acres },
+          geometry: r.margin_geojson,
         })
       if (r.reach_geojson)
         fc.features.push({
@@ -185,6 +166,23 @@ export function WaterLayer({
           // Strong enough to read over brown prairie AND over an NDVI raster:
           // this is a toggle someone turned on to see exactly this.
           paint: { 'fill-color': '#dc2626', 'fill-opacity': 0.45 },
+        },
+        before,
+      )
+      // The 250-800 m band, between the blue and the red: cattle do come out
+      // this far, grazing it less evenly as they go. Amber rather than a
+      // lighter red, so it reads as its own band and not as weak evidence of
+      // the same thing. This band is the only thing drawn around a trough now
+      // -- the dashed ring that used to sit on top of it was drawn in the
+      // browser, ignored every fence, and so disagreed with the band beneath
+      // it wherever a boundary cut one.
+      map.addLayer(
+        {
+          id: 'water-reach-margin',
+          type: 'fill',
+          source: REACH_SRC,
+          filter: ['==', ['get', 'kind'], 'margin'],
+          paint: { 'fill-color': '#f59e0b', 'fill-opacity': 0.35 },
         },
         before,
       )
@@ -221,7 +219,8 @@ export function WaterLayer({
     const onClick = (e: MapMouseEvent) => {
       onAddingChange(false)
       mutate.current.add.mutate(
-        { lon: e.lngLat.lng, lat: e.lngLat.lat, kind: 'trough', name: 'Trough', drinkable: true },
+        // A dropped trough is a moveable one: that is what dropping is for.
+        { lon: e.lngLat.lng, lat: e.lngLat.lat, kind: 'trough_portable', name: 'Trough', drinkable: true },
         {
           onSuccess: (id) => {
             setSelectedId(id)
@@ -253,6 +252,63 @@ export function WaterLayer({
   )
 }
 
+/**
+ * Where the pin actually is, in a form you can send to somebody.
+ *
+ * Whoever drives out to set a solar trough needs the coordinates, not "by the
+ * north fence". Copy puts the pair on the clipboard. Share hands the phone's
+ * own share sheet a line with a Google Maps link, which is what makes it
+ * useful in a text message; a browser without a share sheet copies that same
+ * line instead, so the button always does something.
+ *
+ * Five decimal places is about a metre — finer than the pin was placed.
+ */
+function PinLocation({ source }: { source: WaterSource }) {
+  const [said, setSaid] = useState<'' | 'copied' | 'sent'>('')
+  const coords = `${source.lat.toFixed(5)}, ${source.lon.toFixed(5)}`
+  const label = source.name || (isTrough(source.kind) ? 'Trough' : 'Water')
+  const link = `https://www.google.com/maps/search/?api=1&query=${source.lat.toFixed(6)},${source.lon.toFixed(6)}`
+  const message = `${label} — ${coords}\n${link}`
+  const flash = (what: 'copied' | 'sent') => {
+    setSaid(what)
+    setTimeout(() => setSaid(''), 3000)
+  }
+  const copy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      flash('copied')
+    } catch {
+      /* the coordinates are on screen to read off */
+    }
+  }
+  const share = async () => {
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: label, text: message })
+        flash('sent')
+      } catch {
+        /* they closed the sheet, or it refused — not a failure worth saying */
+      }
+      return
+    }
+    await copy(message)
+  }
+  const btn =
+    'flex items-center gap-1 rounded-md border border-gray-200 px-1.5 py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50'
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      <code className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] tabular-nums text-gray-700">{coords}</code>
+      <button onClick={() => copy(coords)} className={btn} title="Copy the latitude and longitude">
+        <Copy className="h-3 w-3" /> Copy
+      </button>
+      <button onClick={share} className={btn} title="Send it with a map link">
+        <Share2 className="h-3 w-3" /> Share
+      </button>
+      {said && <span className="text-[11px] font-medium text-brand-700">{said === 'copied' ? 'Copied' : 'Sent'}</span>}
+    </div>
+  )
+}
+
 function WaterEditor({
   source,
   canEdit,
@@ -267,6 +323,7 @@ function WaterEditor({
   onClose: () => void
 }) {
   const [name, setName] = useState(source.name ?? '')
+  const [report, setReport] = useState(false)
   const { data: pastures } = usePastures()
   const lettered = (pastures ?? []).filter((p) => pastureLabel(p.name))
   const [pickingServes, setPickingServes] = useState(false)
@@ -275,7 +332,7 @@ function WaterEditor({
       <div className="flex items-start justify-between gap-3">
         <p className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
           <Droplet className={cn('h-4 w-4', source.drinkable ? 'text-sky-600' : 'text-gray-400')} />
-          {source.name || (source.kind === 'trough' ? 'Trough' : 'Water pin')}
+          {source.name || (isTrough(source.kind) ? 'Trough' : 'Water pin')}
         </p>
         <button onClick={onClose} className="-mr-1 -mt-1 rounded p-1 text-gray-400 hover:bg-gray-100" aria-label="Close">
           ✕
@@ -285,6 +342,18 @@ function WaterEditor({
         {source.pasture_name ?? 'Outside every paddock'}
         {source.source === 'mymap' && ' · from the My Map'}
       </p>
+      <PinLocation source={source} />
+      <WhatIsInTheWater source={source} />
+      {/* The whole report, which is too much to read on a panel over the map:
+          every parameter against the chart, the combinations, the bloom lean,
+          and where a lab sheet is typed in (Sam, 11 Nov 2026). */}
+      <button
+        onClick={() => setReport(true)}
+        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+      >
+        <FlaskConical className="h-3.5 w-3.5" /> Water report
+      </button>
+      {report && <WaterReportDialog source={source} canEdit={canEdit} onClose={() => setReport(false)} />}
       {canEdit ? (
         <div className="mt-2 space-y-2 text-sm">
           <input
@@ -361,6 +430,95 @@ function WaterEditor({
         <p className="mt-1 text-xs text-gray-600">
           {WATER_KINDS.find((k) => k.value === source.kind)?.label}
           {source.drinkable ? '' : ' · not for drinking'}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * What is in this water, on the pin itself (Sam, 11 Nov 2026).
+ *
+ * The water-quality card used to sit under the map with every source's
+ * readings in one table. The question anyone actually has is about the dugout
+ * they are looking at, so the answer is on it: the worst verdict across the
+ * classes, the readings that earned it, and what the chart says to do.
+ *
+ * Nothing here is a model. Every verdict is a band out of Alberta's Agdex
+ * 400/716-2 and carries the sentence the publication wrote beside that band —
+ * see lib/livestock-water.ts. A source fed by the river or the canal is read
+ * from that supply's own monitoring instead of waiting on a lab sheet.
+ */
+function WhatIsInTheWater({ source }: { source: WaterSource }) {
+  const { data: tests } = useWaterTests()
+  const { data: district } = useDistrictWater()
+  const latest = useMemo(() => latestByWater(tests).get(source.id) ?? null, [tests, source.id])
+  const reading = useMemo(
+    () => readingFor({ fedBy: source.fed_by, test: latest, district, sampledOn: latest?.sampled_on ?? null }),
+    [source.fed_by, latest, district],
+  )
+  const judged = useMemo(() => (reading ? judgeWater(reading.values) : null), [reading])
+
+  if (!reading || !judged) {
+    return (
+      <p className="mt-2 border-t border-gray-100 pt-2 text-xs text-gray-500">
+        Nothing tested on this water yet.
+      </p>
+    )
+  }
+
+  const verdict = worst(WATER_CLASSES.map((c) => judged.byClass[c.key]))
+  // Only what the chart marked: an acceptable reading is not news on a pin.
+  const flagged = judged.findings.filter((f: ParamFinding) => f.grade !== 'acceptable')
+  const when =
+    reading.from === 'lab'
+      ? reading.sampledOn
+        ? `lab sheet, ${new Date(`${reading.sampledOn}T12:00:00Z`).toLocaleDateString('en-CA', { month: 'short', year: 'numeric', timeZone: 'UTC' })}`
+        : 'lab sheet'
+      : `from the ${fedByLabel(reading.fedBy)} monitoring`
+
+  return (
+    <div className="mt-2 border-t border-gray-100 pt-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] uppercase tracking-wide text-gray-500">What is in it</span>
+        <span
+          className={cn(
+            'rounded-full px-2 py-0.5 text-[11px] font-medium',
+            verdict === 'acceptable'
+              ? 'bg-green-100 text-green-900'
+              : verdict === 'limits'
+                ? 'bg-amber-100 text-amber-900'
+                : verdict === 'do_not_use'
+                  ? 'bg-red-100 text-red-900'
+                  : 'bg-gray-100 text-gray-500',
+          )}
+        >
+          {VERDICT_LABEL[verdict]}
+        </span>
+        <span className="text-[11px] text-gray-400">{when}</span>
+      </div>
+      {flagged.length === 0 ? (
+        <p className="mt-1 text-xs text-gray-600">
+          Every reading on the sheet is inside Alberta&rsquo;s livestock bands.
+        </p>
+      ) : (
+        <ul className="mt-1 space-y-0.5 text-xs text-gray-700">
+          {flagged.slice(0, 4).map((f: ParamFinding) => (
+            <li key={f.param.key}>
+              <span className="font-medium">{f.param.label}</span>{' '}
+              <span className="tabular-nums">
+                {f.value}
+                {f.param.unit ? ` ${f.param.unit}` : ''}
+              </span>{' '}
+              — {f.says}
+            </li>
+          ))}
+        </ul>
+      )}
+      {judged.untested.length > 0 && (
+        <p className="mt-1 text-[11px] text-gray-400">
+          Not on this sheet: {judged.untested.slice(0, 5).join(', ')}
+          {judged.untested.length > 5 && ` and ${judged.untested.length - 5} more`}.
         </p>
       )}
     </div>

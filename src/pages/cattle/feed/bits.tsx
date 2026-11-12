@@ -12,7 +12,7 @@ import { n0, n1Fixed as n1 } from '@/lib/format'
 export function FromHerdChip({ className }: { className?: string }) {
   return (
     <Link
-      to="/herd?tab=herd"
+      to="/herd?tab=animals"
       title="Head counts come from the Herd tab — add or remove classes there."
       className={cn(
         'inline-flex items-center rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-500 hover:border-brand-300 hover:text-brand-700',

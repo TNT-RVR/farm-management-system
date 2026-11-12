@@ -1,7 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { computePasture, type PastureRow } from '../../src/lib/forage-yield.ts'
+import { loadPastureFields } from '../../src/lib/pasture-fields-data.ts'
+import type { PastureFieldRow } from '../../src/lib/field-residue.ts'
 import { calvesAtSideAU, median, mobClass, moveVerdict, type Look, type MoveVerdict } from '../../src/lib/pasture-move.ts'
 import { pastureLabel } from '../../src/lib/pastureLabel.ts'
+import { auFor as classAu } from '../../src/lib/animal-units.ts'
 import { RAIN_NORMAL_YEARS, rainOutlook } from '../../src/lib/rain-normals.ts'
 import { seasonNormal, seasonToDate } from './ranch-rain.ts'
 import { farmTz } from '../../src/lib/farm-context.ts'
@@ -77,15 +80,26 @@ export type MoveCheck = { stocked: number; move: number; sent: number; detail: s
 
 export async function runPastureMoveWatch(sb: SupabaseClient, today = new Date().toLocaleDateString('en-CA', { timeZone: farmTz() })): Promise<MoveCheck> {
   const year = Number(today.slice(0, 4))
-  const [ranchesQ, eventsQ, pasturesQ, gpQ, countsQ, importQ] = await Promise.all([
+  const [ranchesQ, eventsQ, pasturesQ, gpQ, countsQ, importQ, plansQ] = await Promise.all([
     sb.from('ranches').select('*'),
     sb.from('grazing_events').select('pasture_id, head_count, avg_animal_weight_lb, turned_in_on, moved_out_on, notes').gte('turned_in_on', `${year - 1}-01-01`),
     sb.from('pastures').select('id, name, area_acres'),
     sb.from('grazing_pastures').select('*'),
-    sb.from('herd_counts').select('ranch_id, class_name, au_equivalent, head_count, feed_class, background_head'),
+    sb.from('herd_counts').select('ranch_id, class_name, au_equivalent, au_override, avg_weight_lb, head_count, feed_class, background_head'),
     sb.from('eshepherd_activations').select('imported_at').order('imported_at', { ascending: false }).limit(1),
+    // Calving dates: a calf at side counts by its age.
+    sb.from('feed_plans').select('ranch_id, calving_month, calving_day'),
   ])
   for (const q of [ranchesQ, eventsQ, pasturesQ, gpQ, countsQ]) if (q.error) throw new Error(q.error.message)
+  // The crop fields inside each pasture, from the farming side: a corn field
+  // gives the herd nothing in July and its stubble in November. A failed read
+  // falls back to the typed irrigated acres rather than stopping the check.
+  let fieldRows: PastureFieldRow[] = []
+  try {
+    fieldRows = await loadPastureFields(sb, year)
+  } catch (e) {
+    console.warn('[pasture-move] pasture_field_crops: ' + (e as Error).message)
+  }
   const ranches = (ranchesQ.data ?? []) as unknown as Ranch[]
   const events = (eventsQ.data ?? []) as Event[]
   const open = events.filter((e) => e.moved_out_on == null)
@@ -178,14 +192,19 @@ export async function runPastureMoveWatch(sb: SupabaseClient, today = new Date()
     irrigated_ac: Number(g.irrigated_ac),
     grazeable_irrigated_ac: Number(g.grazeable_irrigated_ac),
   }))
-  const auFor = (ranchId: string, cls: string) =>
-    n((countsQ.data ?? []).find((c) => c.ranch_id === ranchId && c.class_name === cls)?.au_equivalent) ?? 1
+  // AU per head by the class's weight (animal-units.ts auFor), unless typed on purpose.
+  const auFor = (ranchId: string, cls: string) => {
+    const row = (countsQ.data ?? []).find((c) => c.ranch_id === ranchId && c.class_name === cls)
+    return row ? classAu(row) : 1
+  }
   // Calves at side wear no collars: the cows' mob carries them until weaning.
   const calvesFor = (ranchId: string) => {
     const rows = (countsQ.data ?? []).filter((c) => c.ranch_id === ranchId)
     const cows = rows.filter((c) => c.class_name === 'Cows').reduce((a, c) => a + (n(c.head_count) ?? 0), 0)
     const calf = rows.find((c) => c.background_head != null) ?? rows.find((c) => /calf|calves/i.test(String(c.class_name)))
-    return { cows, calves: n(calf?.head_count) ?? 0, calfAu: n(calf?.au_equivalent) ?? 0 }
+    const plan = (plansQ.data ?? []).find((p) => p.ranch_id === ranchId)
+    const calving = plan?.calving_month && plan?.calving_day ? { month: Number(plan.calving_month), day: Number(plan.calving_day) } : null
+    return { cows, calves: n(calf?.head_count) ?? 0, calfAu: calf ? classAu(calf) : 0, calving }
   }
 
   // One verdict per stocked paddock, with every mob on it.
@@ -217,7 +236,6 @@ export async function runPastureMoveWatch(sb: SupabaseClient, today = new Date()
     const gp = label
       ? gps.find((g) => g.ranch_id === ranch.id && pastureLabel(g.name)?.letter === label.letter && (pastureLabel(g.name)?.part ?? null) === label.part)
       : undefined
-    const acres = gp ? computePasture(gp, 0, util).totalGrazeableAc : (n(p.area_acres) ?? 0)
     const quality = gp?.grass_quality ?? 'Fair'
 
     const herdCalves = calvesFor(ranch.id)
@@ -241,9 +259,19 @@ export async function runPastureMoveWatch(sb: SupabaseClient, today = new Date()
       .map((e) => runStart(events, pid, mobOf(e.notes), e.turned_in_on))
       .sort()[0]
 
+    // Native grass acres, and what the crop fields inside the fence give from
+    // turn-in to today (stubble once harvested and not worked). Spray holds
+    // are left to the grazing-restrictions watch, which alerts on them itself.
+    // A pasture with no mapped field keeps the typed irrigated acres, read at
+    // the grass yield as before.
+    const pc = gp ? computePasture(gp, 0, util, { fields: fieldRows, window: { from: turnedInOn, to: today } }) : null
+    const acres = pc ? (pc.fieldsLinked ? pc.nativeGrassAc : pc.totalGrazeableAc) : (n(p.area_acres) ?? 0)
+    const fieldLb = pc?.fieldsLinked ? pc.fieldLbs : 0
+
     const v: MoveVerdict = moveVerdict({
       pasture: p.name,
       acres,
+      fieldLb,
       quality,
       utilisation: util,
       // No rain figure: plan on the manual season figure, as the Grazing tab does.
@@ -308,6 +336,7 @@ export async function runPastureMoveWatch(sb: SupabaseClient, today = new Date()
         days_left: v.daysLeft,
         days_left_threshold: v.daysLeftMin,
         grazeable_acres: Math.round(acres),
+        crop_field_forage_lb: Math.round(fieldLb),
         grass_quality: quality,
         utilisation_pct: Math.round(util * 100),
         expected_lb_per_acre: v.expectedLbAc,

@@ -151,11 +151,32 @@ export function SeasonPhoneNav() {
         <>
           {/* The dimming sits under the bar; the sheet sits over it, so the raised + never covers the sheet. */}
           <div className="fixed inset-0 z-40 bg-black/20 md:hidden print:hidden" onClick={close} />
+          {/* The strip the + pokes through.
+              The bar is 3.5rem tall and the + is pulled 1rem out of the top of
+              it, so a sheet resting on the bar covered that 1rem and the button
+              came out a flat-topped dome (Sam, 5 Nov 2026). The sheets now
+              start a full 1rem higher and this fills the band they left, in the
+              same white, so the bar still reads as one surface and the + sits
+              whole on top of it. The bar is painted after this and over it.
+              Not for Add: that one is a floating card with the dimmed page
+              showing round it, and a white band under it would look like a
+              mistake. */}
+          {open !== 'add' && (
+            <div
+              className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-40 h-4 bg-white md:hidden print:hidden"
+              onClick={close}
+            />
+          )}
           <div
             className={cn(
-              'fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-50 border-t border-gray-200 bg-white md:hidden print:hidden',
+              // Clear of the +, not flush to the bar: 3.5rem of bar plus the
+              // 1rem the button is pulled out of it. The strip above covers
+              // the band this leaves.
+              'fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-50 border-t border-gray-200 bg-white md:hidden print:hidden',
               open === 'menu' && 'max-h-[75vh] overflow-y-auto p-2',
-              open === 'add' && 'mx-auto mb-6 max-w-xs rounded-xl border shadow-lg',
+              // mb-2 where it used to be mb-6: the 1rem the sheet just gained
+              // back, so the Add card floats where it always did.
+              open === 'add' && 'mx-auto mb-2 max-w-xs rounded-xl border shadow-lg',
               open === 'search' && 'rounded-t-xl',
             )}
           >

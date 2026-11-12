@@ -5,10 +5,12 @@ import {
   feedValues,
   feedingWindow,
   monthlyCold,
+  monthlyIntakeFactor,
   planSettings,
   seasonInputs,
   seasonPlan,
   usableInYard,
+  withReserve,
   type FeedTestRow,
   type FeedTypeRow,
   type GroupRationRow,
@@ -68,18 +70,18 @@ export function budgetRows(o: {
   let neededLb = 0
   for (const [id, need] of [...o.season.needLb].filter(([, lb]) => lb > 0).sort((a, b) => b[1] - a[1])) {
     neededLb += need
-    const withReserve = need * (1 + o.reservePct / 100)
+    const reserved = withReserve(need, o.reservePct)
     const have = o.usable.get(id)
     const b = o.bale(id)
     const bales = b.unit && b.unit !== 'lb' && b.lb ? `${Math.round(need / b.lb).toLocaleString('en-CA')} ${b.unit === 'round' ? 'rounds' : 'big squares'}` : null
-    const diff = have == null ? null : have - withReserve
+    const diff = have == null ? null : have - reserved
     if (diff != null && diff < 0) short.push(o.feedName(id))
     const out = o.season.runsOut.get(id)
-    rows.push([o.feedName(id), t(need), t(withReserve), bales, have == null ? 'not counted' : t(have), t(diff), out ? longDate(out) : have == null ? null : 'lasts'])
+    rows.push([o.feedName(id), t(need), t(reserved), bales, have == null ? 'not counted' : t(have), t(diff), out ? longDate(out) : have == null ? null : 'lasts'])
   }
   if (o.season.extraGrainLb > 1) {
     neededLb += o.season.extraGrainLb
-    rows.push(['Grain to add where a ration falls short', t(o.season.extraGrainLb), t(o.season.extraGrainLb * (1 + o.reservePct / 100)), null, null, null, null])
+    rows.push(['Grain to add where a ration falls short', t(o.season.extraGrainLb), t(withReserve(o.season.extraGrainLb, o.reservePct)), null, null, null, null])
   }
   return { rows, neededLb, short }
 }
@@ -137,7 +139,7 @@ export async function gatherFeedBudget(p: ParamValues, ctx: GatherContext): Prom
     const yard = onHand.filter((f) => f.ranch_id === ranch.id)
     const usable = usableInYard(yard, values)
     if (usable.size) anyCounted = true
-    const season = seasonPlan({ groups: inputs.groups, settings, from: w.from, to: w.to, coldByMonth: monthlyCold(history?.months, settings.coat, settings.sheltered), stubble: inputs.stubble, onHand: usable })
+    const season = seasonPlan({ groups: inputs.groups, settings, from: w.from, to: w.to, coldByMonth: monthlyCold(history?.months, settings.coat, settings.sheltered), intakeByMonth: monthlyIntakeFactor(history?.months, settings.sheltered), stubble: inputs.stubble, onHand: usable })
     const b = budgetRows({
       season,
       usable,
@@ -161,7 +163,7 @@ export async function gatherFeedBudget(p: ParamValues, ctx: GatherContext): Prom
         .filter(Boolean)
         .join(' · '),
       rows: b.rows.length ? b.rows : [['No ration on file — set one on the Feed tab', null, null, null, null, null, null]],
-      totals: b.rows.length ? ['All feed', t(b.neededLb), t(b.neededLb * (1 + settings.reservePct / 100)), null, null, null, null] : undefined,
+      totals: b.rows.length ? ['All feed', t(b.neededLb), t(withReserve(b.neededLb, settings.reservePct)), null, null, null, null] : undefined,
     })
     meta.push([ranch.name, `${Math.round(b.neededLb / LB_PER_TONNE).toLocaleString('en-CA')} t needed`])
   }

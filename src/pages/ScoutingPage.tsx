@@ -11,6 +11,9 @@ import { RecordEditModal } from '@/components/RecordEditor'
 import { Modal } from '@/components/Modal'
 import { Select } from '@/components/Select'
 import { SoilMoistureEntry } from '@/components/SoilMoistureEntry'
+import { InsectThresholdEntry } from '@/components/InsectThresholdEntry'
+import { useFieldPestCrop } from '@/lib/insect-thresholds-data'
+import { INSECT_UNITS, draftToCount, hasThreshold, initialInsectCount, thresholdCrop, type InsectCountDraft } from '@/lib/insect-thresholds'
 import {
   SCOUT_CATEGORIES,
   SCOUT_SUBJECTS,
@@ -144,6 +147,13 @@ function ScoutForm({ cropYear, initialField = null, spot = null, onClose }: { cr
   const [usePosition, setUsePosition] = useState(true)
   const [photos, setPhotos] = useState<File[]>([])
 
+  // Optional count, read against Alberta's economic threshold for this pest in
+  // this crop. Only appears where the research library holds one.
+  const pestCrop = useFieldPestCrop(fieldId || null, cropYear)
+  const [insect, setInsect] = useState<InsectCountDraft | null>(null)
+  const insectDraft = insect ?? initialInsectCount(pestCrop.pricePerBushel)
+  const counted = draftToCount(insectDraft, subject.trim(), pestCrop.cropName)
+
   // Optional soil moisture, filed as today's AIMM reading for the field.
   const [soil, setSoil] = useState(EMPTY_SOIL_READING)
   const u = useUnitSystem()
@@ -179,6 +189,8 @@ function ScoutForm({ cropYear, initialField = null, spot = null, onClose }: { cr
         subject: subject.trim() || null,
         severity,
         note: note.trim() || null,
+        count_value: counted?.count_value ?? null,
+        count_unit: counted?.count_unit ?? null,
         lat: lngLat ? lngLat[1] : null,
         lng: lngLat ? lngLat[0] : null,
         photos,
@@ -267,6 +279,9 @@ function ScoutForm({ cropYear, initialField = null, spot = null, onClose }: { cr
           <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={(e) => setPhotos([...photos, ...Array.from(e.target.files ?? [])])} />
         </label>
         <div className="sm:col-span-2">
+          <InsectThresholdEntry pest={subject.trim()} cropName={pestCrop.cropName} value={insectDraft} onChange={setInsect} />
+        </div>
+        <div className="sm:col-span-2">
           <SoilMoistureEntry fieldId={fieldId || null} value={soil} onChange={setSoil} />
         </div>
       </div>
@@ -284,6 +299,49 @@ function ScoutForm({ cropYear, initialField = null, spot = null, onClose }: { cr
         </button>
       </div>
     </Modal>
+  )
+}
+
+/**
+ * The threshold again, on a pin already saved.
+ *
+ * Seeded with the count that was recorded, but the stage, the cost of a pass
+ * and the price are live: none of them is stored on the pin, because a verdict
+ * kept from July would read in August as though it still held. The count is
+ * the fact; the reading of it is worked out whenever someone opens the pin.
+ */
+function PinThreshold({ note }: { note: ScoutNote }) {
+  // The pin's own year, not whatever year the page is showing: a pin from 2025
+  // has to be read against the crop that was in the field in 2025.
+  const pestCrop = useFieldPestCrop(note.field_id, note.crop_year)
+  const [draft, setDraft] = useState<InsectCountDraft | null>(null)
+  const pest = (note.subject ?? '').trim()
+  const seeded = {
+    ...initialInsectCount(pestCrop.pricePerBushel),
+    count: note.count_value == null ? '' : String(note.count_value),
+  }
+  if (note.count_value == null) return null
+  // The count reads inside the threshold card where there is one. Where there
+  // is not — a pin whose field has since been replanted, so the crop that gave
+  // the count its meaning has gone — the number is still shown, plainly, rather
+  // than disappearing with the card.
+  if (!hasThreshold(pest, thresholdCrop(pestCrop.cropName)))
+    return (
+      <p className="mt-2 text-xs text-gray-600">
+        Counted {note.count_value} {note.count_unit ? INSECT_UNITS[note.count_unit].label : ''}
+      </p>
+    )
+  return (
+    <div className="mt-2">
+      <InsectThresholdEntry
+        pest={pest}
+        cropName={pestCrop.cropName}
+        value={draft ?? seeded}
+        onChange={setDraft}
+        startOpen
+        countFixed
+      />
+    </div>
   )
 }
 
@@ -343,6 +401,7 @@ function ScoutDetail({ note, fieldName, onClose }: { note: ScoutNote; fieldName:
           </button>
         </div>
         {note.note && <p className="mt-2 whitespace-pre-wrap text-gray-800">{note.note}</p>}
+        <PinThreshold note={note} />
         {!!urls?.length && (
           <div className="mt-3 grid grid-cols-2 gap-2">
             {urls.map((u) => (

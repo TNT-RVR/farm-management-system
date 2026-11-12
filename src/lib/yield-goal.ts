@@ -24,6 +24,7 @@
 
 import { expectedYield, type ExpectedYield, type YieldRecord } from './forecast'
 import { estimateYield, type YieldCut } from './yield-estimate'
+import { kgAside } from '@/lib/lbs-kg'
 
 const n = (v: unknown): number | null => (v == null || v === '' ? null : Number.isFinite(Number(v)) ? Number(v) : null)
 const pos = (v: unknown): number | null => {
@@ -281,7 +282,7 @@ function abnormalSuffix(s: YieldScore): string {
 export function scoreText(s: YieldScore, unit: string): string {
   if (!s.actual) return ''
   const parts = [s.vsEstimate && versusText(s.vsEstimate, 'estimate'), s.vsGoal && versusText(s.vsGoal, 'goal')].filter(Boolean)
-  const head = `${fmt(s.actual.value)} ${unit}/ac${s.actual.clean ? '' : ' (pre-clean)'}`
+  const head = `${fmt(s.actual.value)} ${unit}/ac${kgAside(s.actual.value, unit)}${s.actual.clean ? '' : ' (pre-clean)'}`
   return (parts.length ? `${head} — ${parts.join(', ')}` : head) + abnormalSuffix(s)
 }
 

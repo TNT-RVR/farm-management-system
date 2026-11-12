@@ -16,6 +16,7 @@ export function Card({
   right,
   header = 'bar',
   className,
+  bodyClassName,
   children,
 }: {
   title: ReactNode
@@ -23,6 +24,13 @@ export function Card({
   right?: ReactNode
   header?: 'bar' | 'inline'
   className?: string
+  /**
+   * Replaces the body's `p-3`, the same escape hatch `Fold` has. For a card
+   * whose contents draw their own edges — a table, a list of rows — where the
+   * padding insets a full-width head inside the card's own and eats a sixth of
+   * a 375-pixel screen on both sides at once.
+   */
+  bodyClassName?: string
   children: ReactNode
 }) {
   const heading = (
@@ -59,7 +67,7 @@ export function Card({
         {heading}
         {right}
       </div>
-      <div className="p-3">{children}</div>
+      <div className={bodyClassName ?? 'p-3'}>{children}</div>
     </section>
   )
 }

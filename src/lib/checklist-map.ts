@@ -208,6 +208,59 @@ export function useSaveRunNote(runId: string) {
 }
 
 /**
+ * Add, rename, move and delete a place from the year's own checklist, rather
+ * than only from the template page where nobody doing the work is standing
+ * (Sam, 5 Nov 2026). Each one changes this year and the template together,
+ * so next January's copy comes out right — the same bargain the job buttons
+ * make. Managers only; the database decides, and says so if not.
+ */
+export function useRunPlaces(runId: string, templateId: string | null) {
+  const qc = useQueryClient()
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['checklist_run_locations', runId] })
+    void qc.invalidateQueries({ queryKey: ['checklist_run_items', runId] })
+    void qc.invalidateQueries({ queryKey: ['checklist_runs'] })
+    if (templateId) {
+      void qc.invalidateQueries({ queryKey: ['checklist_template_locations', templateId] })
+      void qc.invalidateQueries({ queryKey: ['checklist_template_items', templateId] })
+    }
+  }
+  const add = useMutation({
+    mutationFn: async (v: { name: string; geojson: PlaceGeometry; category?: string | null; colour?: string | null }) => {
+      const { data, error } = await db.rpc('checklist_add_place', {
+        p_run: runId,
+        p_name: v.name,
+        p_geojson: v.geojson,
+        p_category: v.category ?? null,
+        p_colour: v.colour ?? null,
+      })
+      if (error) throw error
+      return data as unknown as string
+    },
+    onSuccess: refresh,
+  })
+  const edit = useMutation({
+    mutationFn: async (v: { id: string; name?: string | null; geojson?: PlaceGeometry | null }) => {
+      const { error } = await db.rpc('checklist_edit_place', {
+        p_run_location: v.id,
+        p_name: v.name ?? null,
+        p_geojson: v.geojson ?? null,
+      })
+      if (error) throw error
+    },
+    onSuccess: refresh,
+  })
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await db.rpc('checklist_delete_place', { p_run_location: id })
+      if (error) throw error
+    },
+    onSuccess: refresh,
+  })
+  return { add, edit, remove }
+}
+
+/**
  * Carry a year's note into the template's instructions, so next year's crew
  * starts with what this year's learned. Managers only (the template's RLS).
  */

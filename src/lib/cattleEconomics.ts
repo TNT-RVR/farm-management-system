@@ -18,7 +18,17 @@ export type CattleCosts = {
   pasture_cost_per_head: number | null
   vet_cost_per_head: number | null
   other_cost_per_head: number | null
+  /** The old single death-loss figure. Kept for rows saved before the split; read the three below. */
   death_loss_pct: number | null
+  /** Cows that die in a year, % of the herd — replacements cover these as well as culls. */
+  cow_death_pct?: number | null
+  /** Calves lost birth to weaning, %. Already inside weaning_rate_pct when that is set. */
+  calf_loss_pct?: number | null
+  /** Calves lost while held after weaning, % a year held. */
+  post_weaning_loss_pct?: number | null
+  /** Cows culled and sold a year, % of the herd; null reads as DEFAULT_CULL_PCT. */
+  cull_pct?: number | null
+  /** Calves weaned ÷ cows exposed, %. */
   weaning_rate_pct: number | null
   cost_of_gain_per_lb: number | null
   /** Typed cull cow price, $/cwt: used when no market sold cows in the last two weeks. */
@@ -73,6 +83,11 @@ export function useCattleCosts(ranch: string | null, year: number) {
         cow_yardage_per_day: num(data.cow_yardage_per_day),
         calf_yardage_per_day: num(data.calf_yardage_per_day),
         death_loss_pct: num(data.death_loss_pct),
+        // A row saved before the split carries only the old figure: it stands in for all three.
+        cow_death_pct: num(data.cow_death_pct) ?? num(data.death_loss_pct),
+        calf_loss_pct: num(data.calf_loss_pct) ?? num(data.death_loss_pct),
+        post_weaning_loss_pct: num(data.post_weaning_loss_pct) ?? num(data.death_loss_pct),
+        cull_pct: num(data.cull_pct),
         weaning_rate_pct: num(data.weaning_rate_pct),
         cost_of_gain_per_lb: num(data.cost_of_gain_per_lb),
         cull_cow_price_cwt: num(data.cull_cow_price_cwt),
@@ -101,14 +116,24 @@ export function useSaveCattleCosts() {
 export type BreakEven = {
   /** Total cost of carrying one cow for the year. */
   costPerCow: number
-  /** Calves actually sold per cow exposed, after weaning and death loss. */
+  /** Calves weaned per cow exposed (the weaning rate). */
   calvesPerCow: number
+  /** What the culls bring in, a cow wintered: cull % × the cull cow cheque. Null when no cull price is known. */
+  cullCreditPerCow: number | null
+  /** The cull % used (the ranch's, else DEFAULT_CULL_PCT). */
+  cullPct: number
+  /** Cost per cow less the cull credit and other revenue, over the calves. */
   costPerCalf: number
   /** The price a calf must fetch to cover it. */
   perLb: number | null
+  /** The same, $/cwt — what the auction markets quote. */
+  perCwt: number | null
   /** Which inputs were supplied, so the UI can say what is missing. */
   missing: string[]
 }
+
+/** Cows culled a year when the ranch hasn't said: the replacement-heifer screen's long-standing 12%. */
+export const DEFAULT_CULL_PCT = 12
 
 const COST_FIELDS: [keyof CattleCosts, string][] = [
   ['cow_cost_per_head', 'cow cost'],
@@ -121,30 +146,52 @@ const COST_FIELDS: [keyof CattleCosts, string][] = [
 /**
  * What a calf has to fetch to pay for itself.
  *
- * The per-cow costs are divided by the calves actually SOLD per cow, not by the
- * cows: a 92% weaning rate and 2% death loss mean roughly nine calves carry the
- * cost of ten cows, and ignoring that understates the break-even by a tenth.
+ *   break-even $/lb = (cost per cow − cull % × cull cheque − other revenue)
+ *                     ÷ (calves weaned per cow × weaning weight)
+ *
+ * The per-cow costs are divided by the calves actually WEANED per cow, not by
+ * the cows: a 90% weaning rate means nine calves carry the cost of ten cows.
+ * The weaning rate is calves weaned ÷ cows exposed, so calves lost before
+ * weaning are already in it — taking a death loss off it as well (as this did
+ * until 2 Nov 2026) counted them twice.
+ *
+ * The cow-calf herd sells cull cows as well as calves; the cow cost line
+ * carries the replacements that stand in for them, so their cheque comes off
+ * before the calves have to pay for the rest. Without a cull price there is
+ * no credit, and `cullCreditPerCow` is null so the screen can say so.
  *
  * Missing cost lines are listed rather than assumed zero. A break-even that
  * quietly leaves out feed is worse than no break-even, because it reads as good
  * news.
  */
-export function breakEven(costs: CattleCosts | null, avgWeightLb: number | null): BreakEven | null {
+export function breakEven(
+  costs: CattleCosts | null,
+  avgWeightLb: number | null,
+  opts: { cullCheque?: number | null; otherRevenuePerCow?: number | null } = {},
+): BreakEven | null {
   if (!costs) return null
   const missing = COST_FIELDS.filter(([k]) => costs[k] == null).map(([, label]) => label)
   const costPerCow = COST_FIELDS.reduce((sum, [k]) => sum + (num(costs[k]) ?? 0), 0)
   if (costPerCow <= 0) return null
 
-  const weaning = (costs.weaning_rate_pct ?? 100) / 100
-  const death = (costs.death_loss_pct ?? 0) / 100
-  const calvesPerCow = Math.max(0.01, weaning * (1 - death))
-  const costPerCalf = costPerCow / calvesPerCow
+  // Weaning rate unknown: every calf born that lives to weaning.
+  const weaningPct = costs.weaning_rate_pct ?? 100 - (costs.calf_loss_pct ?? costs.death_loss_pct ?? 0)
+  const calvesPerCow = Math.max(0.01, weaningPct / 100)
+  const cullPct = num(costs.cull_pct) ?? DEFAULT_CULL_PCT
+  const cheque = num(opts.cullCheque)
+  const cullCreditPerCow = cheque != null && cheque > 0 ? (cullPct / 100) * cheque : null
+  const net = costPerCow - (cullCreditPerCow ?? 0) - (num(opts.otherRevenuePerCow) ?? 0)
+  const costPerCalf = Math.max(0, net) / calvesPerCow
+  const perLb = avgWeightLb && avgWeightLb > 0 ? costPerCalf / avgWeightLb : null
 
   return {
     costPerCow,
     calvesPerCow,
+    cullCreditPerCow,
+    cullPct,
     costPerCalf,
-    perLb: avgWeightLb && avgWeightLb > 0 ? costPerCalf / avgWeightLb : null,
+    perLb,
+    perCwt: perLb != null ? perLb * 100 : null,
     missing,
   }
 }
@@ -282,6 +329,13 @@ export type LockInSignal = {
  * said, or how much risk the family wants to carry. Presenting four honest
  * readings beats one confident number that hides all of that.
  */
+/** Where a bid sits against the farm's own sale prices, in words: no percentiles. */
+function againstHistory(pct: number, years: number): string {
+  if (pct >= 100) return `Highest price in ${years} years`
+  if (pct <= 0) return `Lowest price in ${years} years`
+  return `Higher than ${pct}% of the last ${years} years`
+}
+
 export function lockInSignals(input: {
   forwardPricePerLb: number | null
   historyPricesPerLb: number[]
@@ -289,6 +343,12 @@ export function lockInSignals(input: {
   basisHistory: number[]
   curveSlope: number | null
   breakEvenPerLb: number | null
+  /** Which price forwardPricePerLb is: the sale month's forward bid (default), or today's when there is no bid. */
+  priceKind?: 'forward' | 'today'
+  /** The sale month's name, for the label ("December bid"). */
+  forwardMonth?: string
+  /** Today's auction price at the same weight, quoted beside the forward bid. */
+  todayPricePerLb?: number | null
 }): LockInSignal[] {
   const signals: LockInSignal[] = []
   const { forwardPricePerLb, historyPricesPerLb, basis, basisHistory, curveSlope, breakEvenPerLb } = input
@@ -298,7 +358,7 @@ export function lockInSignals(input: {
     const pct = Math.round((below / historyPricesPerLb.length) * 100)
     signals.push({
       label: 'Against our own history',
-      reading: `${pct}th percentile of ${historyPricesPerLb.length} years`,
+      reading: againstHistory(pct, historyPricesPerLb.length),
       lean: pct >= 70 ? 'lock' : pct <= 30 ? 'wait' : 'neutral',
       why: 'Where this bid sits against every price this farm has actually taken.',
     })
@@ -309,7 +369,7 @@ export function lockInSignals(input: {
     const pct = Math.round((below / basisHistory.length) * 100)
     signals.push({
       label: 'Basis',
-      reading: `${pct}th percentile`,
+      reading: pct >= 100 ? 'Best basis on record' : pct <= 0 ? 'Weakest basis on record' : `Better than ${pct}% of past weeks`,
       lean: pct >= 70 ? 'lock' : pct <= 30 ? 'wait' : 'neutral',
       why: 'A narrow basis means the local market is paying up against the board.',
     })
@@ -317,20 +377,32 @@ export function lockInSignals(input: {
 
   if (curveSlope != null) {
     signals.push({
-      label: 'Forward curve',
-      reading: `${curveSlope >= 0 ? '+' : ''}${curveSlope.toFixed(2)} across the months`,
+      label: 'Later months on the futures board',
+      reading:
+        Math.abs(curveSlope) < 0.005
+          ? 'Later months bid the same as now'
+          : `Later months bid US$${Math.abs(curveSlope).toFixed(2)}/cwt ${curveSlope > 0 ? 'higher' : 'lower'}`,
       lean: curveSlope > 0 ? 'wait' : curveSlope < 0 ? 'lock' : 'neutral',
-      why: 'A curve sloping up pays you to deliver later; sloping down, it wants them now.',
+      why: 'Feeder futures for the furthest month against the nearest. Higher later pays you to wait and deliver later; lower later says sell sooner.',
     })
   }
 
   if (breakEvenPerLb != null && forwardPricePerLb != null) {
+    // Names the price it compares (3 Nov 2026): the ranch summary's "over
+    // break-even" is today's auction price; this is the forward bid for the
+    // sale month, so the two differ by what the board expects between now and then.
     const over = forwardPricePerLb - breakEvenPerLb
+    const signed = (v: number) => `${v >= 0 ? '+' : '−'}$${Math.abs(v).toFixed(2)}/lb`
+    const isForward = input.priceKind !== 'today'
+    const today = input.todayPricePerLb
     signals.push({
-      label: 'Against break-even',
-      reading: `${over >= 0 ? '+' : '−'}$${Math.abs(over).toFixed(2)}/lb`,
+      label: isForward ? `${input.forwardMonth ? `${input.forwardMonth} bid` : 'Forward bid'} vs break-even` : "Today's price vs break-even",
+      reading: signed(over),
       lean: over > 0 ? 'lock' : 'wait',
-      why: 'A bid that already clears the cost of production is a different decision from one that does not.',
+      why:
+        `${isForward ? 'Forward bid' : "Today's price"} $${forwardPricePerLb.toFixed(2)} against break-even $${breakEvenPerLb.toFixed(2)}.` +
+        (isForward && today != null ? ` Today's auction price, $${today.toFixed(2)}, is ${signed(today - breakEvenPerLb)} (the ranch summary's figure).` : '') +
+        ' A bid that already clears the cost of production is a different decision from one that does not.',
     })
   }
 
@@ -486,6 +558,9 @@ export const COW_CALF_BENCHMARK_COSTS = {
   // Common Prairie planning assumptions, and the ones that budget is built on.
   weaning_rate_pct: 92,
   death_loss_pct: 2,
+  cow_death_pct: 2,
+  calf_loss_pct: 2,
+  post_weaning_loss_pct: 2,
   // Backgrounding cost of gain, southern Alberta, barley ration.
   cost_of_gain_per_lb: 1.4,
 } as const

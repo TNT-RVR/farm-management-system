@@ -90,7 +90,7 @@ export function MoveAlertSettings({ ranch, isManager }: { ranch: Ranch; isManage
           ))}
         </ul>
       </HelpNote>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-3 grid gap-3 @sm:grid-cols-2 @3xl:grid-cols-4">
         {FIELDS.map((f) => (
           // Keyed on the ranch too: the inputs are uncontrolled, and switching
           // ranch must show the other ranch's figure, not keep this one's.

@@ -26,7 +26,7 @@ export function UnpricedMatches({
   category,
 }: {
   products: JdProduct[]
-  category: 'chemical' | 'fertilizer'
+  category: 'chemical' | 'fertilizer' | 'seed'
 }) {
   const save = useSaveProduct()
   const [done, setDone] = useState<Record<string, true>>({})

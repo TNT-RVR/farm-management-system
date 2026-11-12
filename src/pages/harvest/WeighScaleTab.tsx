@@ -9,6 +9,11 @@ import { isOpenLoad, useBinLoads, useDeliverySites, weighTime, type BinLoad } fr
 import { driverName, filterTickets, type TicketFilters, type TicketRow, type TicketSort } from '@/lib/weigh-scale'
 import { WeighInForm } from '@/pages/bins/WeighIn'
 import { LiveScaleCard } from '@/pages/bins/LiveScale'
+import { LoadSummary } from './LoadSummary'
+import { ExportButton } from '@/components/ExportButton'
+import { useAllCropPrices } from '@/lib/forecast-data'
+import { downloadBlob, tableReportToCsv, tableReportToPdf } from '@/lib/table-report'
+import { fetchCleanYields, storedPhoto, ticketFacts, ticketsReport } from '@/lib/scale-ticket-report'
 import { usePartnerLoads } from '@/lib/partner-view'
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD } from '@/lib/table-style'
@@ -28,7 +33,7 @@ const COLUMNS: { key: TicketSort; label: string; num?: boolean }[] = [
 
 /**
  * The farm scale (Sam, 23 Oct 2026): every scale ticket in columns to sort and filter (date and time, field,
- * crop, net weight, driver, truck), each opening to correct. The truck,
+ * crop, net weight, driver, truck), each opening to its summary, and from there to correct. The truck,
  * trailer and driver figures are on the Stats tab.
  */
 export function WeighScaleTab({ cropYear }: { cropYear: number }) {
@@ -38,7 +43,9 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
   const { data: sites } = useDeliverySites()
   const { data: crops } = useCrops()
   const { data: users } = useUsers()
+  // A row opens the ticket's summary first; Edit there opens the form (Sam, 2 Nov 2026).
   const [open, setOpen] = useState<BinLoad | null>(null)
+  const [editing, setEditing] = useState(false)
   const [year, setYear] = useState<'this' | 'all'>('this')
   const [filters, setFilters] = useState<TicketFilters>({})
   const [sort, setSort] = useState<TicketSort>('when')
@@ -49,6 +56,7 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
   const [hidePartner, setHidePartner] = useState(false)
 
   const byId = useMemo(() => new Map((loads ?? []).map((l) => [l.id, l])), [loads])
+  const current = open ? byId.get(open.id) : undefined
   const rows: TicketRow[] = useMemo(() => {
     const fieldName = (id: string | null) => (fields ?? []).find((f) => f.id === id)?.name ?? 'No field'
     const cropName = (id: string | null) => (crops ?? []).find((c) => c.id === id)?.name ?? '—'
@@ -104,6 +112,52 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
     if (l?.empty_at) return weighTime(l.empty_at)
     return l && l.entry_kind === 'weighed' && isOpenLoad(l) ? 'waiting' : '—'
   }
+  // Export what the list is showing (Sam, 2 Nov 2026): a summary page of the
+  // lot, then a page per load as one ticket prints. The CSV is the summary and the list.
+  const { data: allPrices } = useAllCropPrices()
+  const exportShown = async (format: 'CSV' | 'PDF') => {
+    const shownLoads = shownRows.map((r) => byId.get(r.id)).filter((l): l is BinLoad => !!l)
+    if (!shownLoads.length) throw new Error('No tickets to export')
+    const clean = await fetchCleanYields(
+      [...new Set(shownLoads.map((l) => l.field_id).filter((f): f is string => !!f))],
+      [...new Set(shownLoads.map((l) => l.crop_year))],
+    )
+    const lookups = {
+      fields: fields ?? [],
+      crops: crops ?? [],
+      bins: bins ?? [],
+      sites: sites ?? [],
+      users: users ?? [],
+      prices: allPrices ?? [],
+      cleanYield: (l: BinLoad) => clean.get(`${l.field_id}|${l.crop_id}|${l.crop_year}`),
+    }
+    const tickets = shownLoads.map((l) => ticketFacts(l, lookups))
+    const what = [
+      year === 'all' ? 'All years' : String(cropYear),
+      filters.field,
+      filters.crop,
+      filters.driver,
+      filters.truck,
+      filters.from || filters.to ? `${filters.from ?? '…'} to ${filters.to ?? '…'}` : null,
+      filters.q ? `"${filters.q}"` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    const name = `Scale tickets ${what.replace(/[" ]+/g, ' ').trim()}`
+    if (format === 'CSV') {
+      downloadBlob(new Blob([tableReportToCsv(ticketsReport(tickets, { filters: what, withPages: false }))], { type: 'text/csv' }), `${name}.csv`)
+      return
+    }
+    // Both photos of every load, four loads at a time.
+    const photos = new Map<string, [Awaited<ReturnType<typeof storedPhoto>>, Awaited<ReturnType<typeof storedPhoto>>]>()
+    for (let i = 0; i < shownLoads.length; i += 4) {
+      await Promise.all(
+        shownLoads.slice(i, i + 4).map(async (l) => photos.set(l.id, await Promise.all([storedPhoto(l.full_photo), storedPhoto(l.empty_photo)]))),
+      )
+    }
+    const pdf = await tableReportToPdf(ticketsReport(tickets, { filters: what, withPages: true, photos: (t) => photos.get(t.load.id) ?? [null, null] }))
+    downloadBlob(pdf, `${name}.pdf`)
+  }
   const SortIcon = ({ k }: { k: TicketSort }) => (sort === k ? desc ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" /> : null)
 
   return (
@@ -115,14 +169,17 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
             <h2 className="text-sm font-semibold text-gray-900">
               Scale tickets ({shownRows.length}) <span className="font-normal text-gray-500">· {kg(total)} net</span>
             </h2>
-            <span className="inline-flex overflow-hidden rounded-md border border-gray-300 bg-white text-xs">
-              <button type="button" onClick={() => setYear('this')} className={cn('px-3 py-1.5', year === 'this' ? 'bg-brand-700 font-semibold text-white' : 'text-gray-600')}>
-                {cropYear}
-              </button>
-              <button type="button" onClick={() => setYear('all')} className={cn('px-3 py-1.5', year === 'all' ? 'bg-brand-700 font-semibold text-white' : 'text-gray-600')}>
-                All years
-              </button>
-            </span>
+            <div className="flex items-center gap-2">
+              <ExportButton label="Export the tickets shown" onExport={exportShown} />
+              <span className="inline-flex overflow-hidden rounded-md border border-gray-300 bg-white text-xs">
+                <button type="button" onClick={() => setYear('this')} className={cn('px-3 py-1.5', year === 'this' ? 'bg-brand-700 font-semibold text-white' : 'text-gray-600')}>
+                  {cropYear}
+                </button>
+                <button type="button" onClick={() => setYear('all')} className={cn('px-3 py-1.5', year === 'all' ? 'bg-brand-700 font-semibold text-white' : 'text-gray-600')}>
+                  All years
+                </button>
+              </span>
+            </div>
           </div>
           {/* Filters: each column's values, the dates, and words anywhere. */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -247,9 +304,17 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
         )}
       </section>
 
-      {open && (
-        <Modal title={isOpenLoad(open) ? 'Finish the load' : 'Correct the load'} onClose={() => setOpen(null)}>
-          <WeighInForm key={open.id} cropYear={open.crop_year} load={open} onDone={() => setOpen(null)} onCancel={() => setOpen(null)} />
+      {/* The latest copy of the load, and nothing once it is deleted. */}
+      {current && !editing && <LoadSummary load={current} onEdit={() => setEditing(true)} onClose={() => setOpen(null)} />}
+      {current && editing && (
+        <Modal title={isOpenLoad(current) ? 'Finish the load' : 'Correct the load'} onClose={() => setEditing(false)}>
+          <WeighInForm
+            key={current.id}
+            cropYear={current.crop_year}
+            load={current}
+            onDone={() => setEditing(false)}
+            onCancel={() => setEditing(false)}
+          />
         </Modal>
       )}
     </div>

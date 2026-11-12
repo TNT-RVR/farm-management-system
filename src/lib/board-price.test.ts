@@ -39,8 +39,9 @@ describe('boardPriceIn', () => {
   it('refuses what it cannot convert honestly', () => {
     // US dollars: no exchange rate here.
     expect(boardPriceIn(4.5, 'USD/bu', { name: 'Grain Corn', unit: 'bu' })).toBeNull()
-    // No bushel weight for the crop.
-    expect(boardPriceIn(500, '$/tonne', { name: 'Alfalfa Seed', unit: 'bu' })).toBeNull()
+    // No bushel weight for the crop: quinoa is booked in bushels but the trade
+    // sells it by the pound, so there is no standard bushel to divide by.
+    expect(boardPriceIn(500, '$/tonne', { name: 'Quinoa', unit: 'bu' })).toBeNull()
     // Not a price per weight.
     expect(boardPriceIn(100, 'index', { name: 'Canola', unit: 'bu' })).toBeNull()
     expect(boardPriceIn(100, '$/tonne', { name: 'Fallow', unit: 'ac' })).toBeNull()

@@ -4,6 +4,7 @@ import {
   cowStage,
   effectiveTemp,
   groupNeed,
+  maintenanceTdnLb,
   solveRation,
   stubbleCowDays,
   tdnFromAdf,
@@ -24,8 +25,8 @@ const calm = (d: string, extra: Partial<Conditions> = {}): Conditions => ({
 const cow = (w = 1200, bcs = 3): GroupInput => ({ feedClass: 'cow', head: 100, weightLb: w, bcs, targetBcs: 3, targetGainLb: null })
 
 describe('cold', () => {
-  it('matches K-State: 22 °F effective against a 32 °F LCT is +10%', () => {
-    // 22 °F = −5.56 °C, calm.
+  it('matches K-State: 22 Â°F effective against a 32 Â°F LCT is +10%', () => {
+    // 22 Â°F = âˆ’5.56 Â°C, calm.
     expect(coldUplift(-5.56, 0, 'winter')).toBeCloseTo(0.1, 2)
   })
   it('subtracts wind from the lookup, and shelter caps it', () => {
@@ -59,8 +60,27 @@ describe('need', () => {
   it('adds cold and condition to energy but not protein', () => {
     const thin = groupNeed(cow(1200, 2.5), calm('2026-12-15', { cold: 0.2 }))
     expect(thin.parts.condition).toBeGreaterThan(0)
-    expect(thin.tdnLb).toBeCloseTo(thin.base.tdn * (1 + 0.2 + thin.parts.condition))
+    // Cold on maintenance only; condition on the whole need.
+    expect(thin.tdnLb).toBeCloseTo(thin.base.tdn * (1 + thin.parts.condition) + thin.maintTdnLb * 0.2)
     expect(thin.cpLb).toBeCloseTo(thin.base.cp)
+  })
+  it('works maintenance from NASEM NEm = 0.077 Mcal Ã— SBW^0.75', () => {
+    // 1,200 lb: SBW 522.5 kg, 8.41 Mcal, 9.0 lb TDN at 0.934 Mcal NEm a lb of TDN.
+    expect(maintenanceTdnLb(1200)).toBeCloseTo(9.0, 1)
+    expect(maintenanceTdnLb(550)).toBeCloseTo(5.0, 1)
+  })
+  it('raises a nursing cow less for cold than a dry one, as a share of her need', () => {
+    // Cold costs the same Mcal for maintenance whether or not she is milking,
+    // so the extra is the same pounds â€” a smaller share of the bigger need.
+    const dry = groupNeed(cow(1200), calm('2026-12-15', { cold: 0.2 }))
+    const dryWarm = groupNeed(cow(1200), calm('2026-12-15'))
+    const milk = groupNeed(cow(1200), calm('2026-06-15', { cold: 0.2 }))
+    const milkWarm = groupNeed(cow(1200), calm('2026-06-15'))
+    expect(dry.tdnLb - dryWarm.tdnLb).toBeCloseTo(milk.tdnLb - milkWarm.tdnLb, 6)
+    expect((milk.tdnLb - milkWarm.tdnLb) / milkWarm.tdnLb).toBeLessThan((dry.tdnLb - dryWarm.tdnLb) / dryWarm.tdnLb)
+    // Mud is maintenance too: 10% of it.
+    const mud = groupNeed(cow(1200), calm('2026-12-15', { muddy: true }))
+    expect(mud.tdnLb - dryWarm.tdnLb).toBeCloseTo(0.1 * dryWarm.maintTdnLb, 6)
   })
   it('sizes a mature bull from the 1,800 lb table', () => {
     const n = groupNeed({ feedClass: 'bull', head: 20, weightLb: 1800, bcs: 3, targetBcs: 3, targetGainLb: null }, calm('2027-01-10'))

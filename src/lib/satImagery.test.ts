@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { rasterSize, IMAGE_SIZE } from '../../netlify/shared/sat-imagery'
+import { rasterSize, IMAGE_SIZE, ndviRasterEvalscript } from '../../netlify/shared/sat-imagery'
 
 /** A bbox of roughly `metres` across, near the farm's latitude. */
 const boxOf = (metres: number): [number, number, number, number] => {
@@ -56,5 +56,59 @@ describe('rasterSize', () => {
     // of the two decisions along with the other.
     expect(IMAGE_SIZE).toBe(1024)
     expect(rasterSize(boxOf(520)).width).not.toBe(IMAGE_SIZE)
+  })
+})
+
+describe('the index raster evalscript', () => {
+  /**
+   * Run the generated script the way Sentinel Hub does, so the test exercises
+   * the real string rather than a paraphrase of it. The script is plain ES5
+   * with no imports, so a Function wrapper is a faithful enough host: it only
+   * has to define setup/shade/evaluatePixel and hand evaluatePixel back.
+   */
+  const evaluator = (lo: number, hi: number, index: 'ndvi' | 'ndre' = 'ndvi') => {
+    const script = ndviRasterEvalscript(lo, hi, index).replace('//VERSION=3', '')
+    return new Function(`${script}; return evaluatePixel;`)() as (
+      s: Record<string, number>,
+    ) => number[]
+  }
+  /** A pixel that passes every mask, so only the arithmetic is under test. */
+  const px = (nir: number, red: number) => ({ B08: nir, B04: red, B05: red, SCL: 4, CLP: 0, dataMask: 1 })
+
+  it('leaves a hole where the index has no denominator', () => {
+    // Both bands exactly zero divides nothing by nothing. dataMask does not
+    // catch it -- a pixel at the edge of a scene's footprint can read zero
+    // reflectance and still be "in" the data. Unguarded, Math.round(NaN * 6)
+    // indexes the colour ramp with NaN, shade() hands back undefined, and the
+    // whole request dies as "evalscript.js:37: TypeError". That is how the
+    // biggest paddocks lost their NDVI, NDRE and per-field rasters on scene
+    // after scene while true colour of the same scene came back fine.
+    const evaluatePixel = evaluator(0.15, 0.95)
+    expect(() => evaluatePixel(px(0, 0))).not.toThrow()
+    expect(evaluatePixel(px(0, 0))).toEqual([0, 0, 0, 0])
+  })
+
+  it('survives a degenerate scale, which divides by zero the other way', () => {
+    const evaluatePixel = evaluator(0.5, 0.5)
+    expect(() => evaluatePixel(px(0.4, 0.1))).not.toThrow()
+    const out = evaluatePixel(px(0.4, 0.1))
+    expect(out).toHaveLength(4)
+    expect(out.every((n) => Number.isFinite(n))).toBe(true)
+  })
+
+  it('still paints a real reading', () => {
+    // The guard must not swallow ordinary pixels: NDVI 0.6 is mid-ramp and
+    // opaque, not a hole.
+    const evaluatePixel = evaluator(0.15, 0.95)
+    const out = evaluatePixel(px(0.4, 0.1))
+    expect(out[3]).toBe(1)
+    expect(out.slice(0, 3).some((n) => n > 0)).toBe(true)
+  })
+
+  it('masks cloud and nodata as before', () => {
+    const evaluatePixel = evaluator(0.15, 0.95)
+    expect(evaluatePixel({ ...px(0.4, 0.1), dataMask: 0 })).toEqual([0, 0, 0, 0])
+    expect(evaluatePixel({ ...px(0.4, 0.1), SCL: 9 })).toEqual([0, 0, 0, 0])
+    expect(evaluatePixel({ ...px(0.4, 0.1), CLP: 0.9 })).toEqual([0, 0, 0, 0])
   })
 })

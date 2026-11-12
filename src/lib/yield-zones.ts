@@ -31,6 +31,7 @@
  */
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from './supabase'
+import { kgRangeAside } from '@/lib/lbs-kg'
 
 export type YieldZone = {
   id: string
@@ -91,6 +92,47 @@ export function useYieldZones() {
   return useQuery(yieldZonesQuery())
 }
 
+/** One field's zones without their geometry — the numbers, for a table. */
+export type FieldZone = Pick<
+  YieldZone,
+  'id' | 'field_id' | 'zone' | 'min_yield' | 'max_yield' | 'yield_unit' | 'acres'
+>
+
+/**
+ * The zones of one field, for a screen that is not a map.
+ *
+ * Separate from `useYieldZones` because that one carries every zone's polygon
+ * — a few hundred kilobytes of geometry to put four numbers on a field page.
+ */
+export function useFieldYieldZones(fieldId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['field-yield-zones', fieldId],
+    enabled: !!fieldId,
+    queryFn: async (): Promise<FieldZone[]> => {
+      const { data, error } = await supabase
+        .from('field_yield_zones')
+        .select('id, field_id, zone, min_yield, max_yield, yield_unit, acres')
+        .eq('field_id', fieldId!)
+        .order('zone')
+      if (error) throw error
+      const num = (v: unknown) => (v == null ? null : Number(v))
+      return (data ?? []).map((r) => {
+        const row = r as unknown as Record<string, unknown>
+        return {
+          id: String(row.id),
+          field_id: String(row.field_id),
+          zone: Number(row.zone),
+          min_yield: num(row.min_yield),
+          max_yield: num(row.max_yield),
+          yield_unit: (row.yield_unit as string) ?? null,
+          acres: num(row.acres),
+        }
+      })
+    },
+    staleTime: 3_600_000,
+  })
+}
+
 /**
  * Five bands across the farm's zones, as a legend and a colour lookup.
  *
@@ -146,7 +188,7 @@ export function rangeLabel(z: Pick<YieldZone, 'min_yield' | 'max_yield' | 'yield
   const hi = z.max_yield
   const n = (v: number) => v.toLocaleString('en-CA', { maximumFractionDigits: 0 })
   const span = lo != null && hi != null ? `${n(lo)}–${n(hi)}` : lo != null ? `${n(lo)}+` : hi != null ? `up to ${n(hi)}` : '—'
-  return z.yield_unit ? `${span} ${z.yield_unit}` : span
+  return z.yield_unit ? `${span} ${z.yield_unit}${kgRangeAside(lo, hi, z.yield_unit, '')}` : span
 }
 
 /** Zones grouped by field, best ground first — how a field is read on a list. */

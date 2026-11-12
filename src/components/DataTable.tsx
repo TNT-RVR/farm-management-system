@@ -33,6 +33,22 @@ type Props<Row> = {
    * sub-rows of their own (`renderAfter`), which a card cannot carry.
    */
   tableOnPhone?: boolean
+  /**
+   * Fit the table to the width it is given instead of to its content.
+   *
+   * The default below is `w-max`: a column is never squeezed narrower than
+   * what is in it, which is right for a table of figures, where a number
+   * broken over two lines is worse than a sideways scroll. It is wrong for a
+   * table of sentences -- a column holding a line of prose makes the table
+   * far wider than the window, and whatever sits to its right (a button the
+   * row is there to be decided by) ends up off the edge behind a scrollbar at
+   * the bottom of the page.
+   *
+   * With this set the browser's own column sizing shares out the available
+   * width, so cells whose content is allowed to wrap (`whitespace-normal`)
+   * give way first. Only for tables whose columns can wrap.
+   */
+  fitWidth?: boolean
 }
 
 /**
@@ -75,6 +91,7 @@ export function DataTable<Row>({
   emptyMessage = 'Nothing here yet.',
   renderAfter,
   tableOnPhone,
+  fitWidth,
 }: Props<Row>) {
   return (
     <>
@@ -108,8 +125,9 @@ export function DataTable<Row>({
       )}
       <div className={cn('overflow-x-auto', !tableOnPhone && 'hidden sm:block')}>
         {/* Never squeezed narrower than its content: a column crushed to one
-            word a line is harder to read than one scrolled to. */}
-        <table className="w-max min-w-full text-sm">
+            word a line is harder to read than one scrolled to. `fitWidth`
+            turns that off for a table of sentences -- see the prop. */}
+        <table className={cn('text-sm', fitWidth ? 'w-full table-auto' : 'w-max min-w-full')}>
           <thead className={TABLE_HEAD}>
             <tr>
               {columns.map((c) => (

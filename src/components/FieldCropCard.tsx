@@ -204,6 +204,7 @@ export function FieldCropCard({
           cropId={editing.cropId}
           cropName={crops?.find((c) => c.id === editing.cropId)?.name ?? 'Crop'}
           unit={crops?.find((c) => c.id === editing.cropId)?.yield_unit ?? null}
+          lbPerBu={crops?.find((c) => c.id === editing.cropId)?.test_weight_lb_per_bu ?? null}
           acres={areaAcres(editing.cropId)}
           row={editing.row}
           onClose={() => setEditing(null)}

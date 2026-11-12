@@ -12,6 +12,8 @@ import {
   totalsByProduct,
 } from '@/lib/fertilizer-plan'
 import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
+import { GuideRate } from '@/pages/fertilizer/GuideRate'
+import { useGuideSoil } from '@/lib/nutrient-guide-query'
 
 // n1 = tonnes to one place: an order is placed in tenths of a tonne at best, and
 // the second decimal was 2 kg of false precision on a truckload.
@@ -32,6 +34,9 @@ export function Requirements() {
   // credit: these totals still include fertilizer the manure has covered.
   const { data: manure } = useManureWithTimes()
   const { data: soil } = useSoilByField(cropYear)
+  // The same soil tests read in the units Alberta's own rate tables are
+  // indexed by, so each line can show the province's rate beside the lab's.
+  const { data: guideSoils } = useGuideSoil(cropYear)
   const staleManure = useMemo(
     () =>
       requirements.filter((r) => {
@@ -227,15 +232,20 @@ export function Requirements() {
                 {expanded === r.fieldId && r.lines && (
                   <tr className="border-b border-gray-100 bg-gray-50/60">
                     <td colSpan={4} className="px-3 py-2">
-                      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-                      <table className="w-full table-fixed text-[11px]">
+                      {/* Scrolls rather than squeezing: seven columns at phone
+                          width is two words a line otherwise. */}
+                      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                      <table className="w-full min-w-[560px] table-fixed text-[11px]">
                         <thead className={TABLE_HEAD}>
                           <tr>
                             <th className={TABLE_TH} style={{ width: '10%' }}>Nutrient</th>
                             <th className={TABLE_TH} style={{ width: '22%' }}>Product</th>
                             <th className={cn(TABLE_TH, 'text-right')} style={{ width: '12%' }}>lb/ac actual</th>
+                            <th className={cn(TABLE_TH, 'text-right')} style={{ width: '14%' }}>
+                              Alberta guide
+                            </th>
                             <th className={cn(TABLE_TH, 'text-right')} style={{ width: '12%' }}>lb/ac product</th>
-                            <th className={cn(TABLE_TH, 'text-right')} style={{ width: '14%' }}>lb for field</th>
+                            <th className={cn(TABLE_TH, 'text-right')} style={{ width: '13%' }}>lb for field</th>
                             <th className={TABLE_TH}>Timing</th>
                           </tr>
                         </thead>
@@ -245,6 +255,13 @@ export function Requirements() {
                               <td className="px-3 py-1 font-semibold text-gray-900">{l.nutrient}</td>
                               <td className="px-3 py-1 text-gray-700">{l.product}</td>
                               <td className="px-3 py-1 text-right tabular-nums">{n2(l.lbPerAc)}</td>
+                              <td className="px-3 py-1 text-right">
+                                <GuideRate
+                                  crop={guideSoils?.get(r.fieldId)?.crop ?? null}
+                                  nutrient={l.nutrient}
+                                  soil={guideSoils?.get(r.fieldId)?.soil ?? {}}
+                                />
+                              </td>
                               <td className="px-3 py-1 text-right tabular-nums text-gray-600">
                                 {l.productLbPerAc == null ? (
                                   <span className="text-amber-700" title="No analysis in the product name to derive it from">
@@ -281,6 +298,24 @@ export function Requirements() {
         the words around it, because the same product gets written a dozen ways — grouping on the
         text split potash across four rows. Anything without an analysis is counted as actual
         nutrient instead. Check rates before ordering.
+      </HelpNote>
+      <HelpNote
+        className="mt-2"
+        summary="Alberta guide is the province&rsquo;s published rate for the same soil test."
+        title="Where the Alberta guide column comes from"
+      >
+        Alberta Agriculture publishes a rate table for each crop: the irrigated dry bean, barley,
+        winter wheat, soft white spring wheat and irrigated alfalfa factsheets, all of which the
+        research library holds. The column reads this field&rsquo;s own soil test against the right
+        row of the right table, so the lab&rsquo;s rate has something to be compared with. The ⓘ
+        beside each number shows the table it came from and links to the sheet.
+        <br />
+        <br />
+        Where a crop has no sheet, or no sample at the depth the table wants, or a soil test past
+        the end of the printed table, it says so rather than showing a number — an empty cell beside
+        the lab&rsquo;s rate would read as agreement. Nothing is interpolated: the bands are the
+        sheet&rsquo;s own. A field sampled in halves has both halves&rsquo; sites averaged, which is
+        the field average rather than either half.
       </HelpNote>
       {/* Savings tool, kept with this tab since 26 Oct 2026 (lib/fert-savings/homes.ts). */}
       <SavingsHere ids={[4]} />

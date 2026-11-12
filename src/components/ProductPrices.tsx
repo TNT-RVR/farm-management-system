@@ -113,6 +113,9 @@ type Row = SortableRow & {
   invoiceNo: string | null
 }
 
+/** What a hand-added product is priced per, before anybody changes it. */
+const ADD_UNIT = { chemical: 'L', fertilizer: 'kg', seed: 'k seeds' } as const
+
 const COLUMNS: { key: SortKey; label: string; align?: 'right' }[] = [
   { key: 'name', label: 'Product' },
   { key: 'unit', label: 'Unit' },
@@ -123,15 +126,32 @@ const COLUMNS: { key: SortKey; label: string; align?: 'right' }[] = [
 ]
 
 /**
+ * The columns worth drawing for this kind of product.
+ *
+ * Seed loses the three that read off `product_applications`, which covers
+ * operations of type 'application' only — a seeding is not one, so "Applied
+ * on", "Crops sprayed" and "Last applied" are a dash on every seed row for
+ * ever, and "crops sprayed" is the wrong question about seed anyway.
+ */
+const columnsFor = (category: string) =>
+  category === 'seed' ? COLUMNS.filter((c) => c.key !== 'fields' && c.key !== 'applied') : COLUMNS
+
+/** What a price can be per. Seed is counted, so it is priced per thousand. */
+export type PriceUnit = 'L' | 'kg' | 'k seeds'
+
+/**
  * The pricing table, for one kind of product.
  *
  * Chemicals and fertiliser are priced identically — per litre or per kilogram,
  * off the most recent invoice — and read in different places. One component,
- * filtered, rather than two that drift apart.
+ * filtered, rather than two that drift apart. Seed joined them on 11 Nov 2026,
+ * priced per thousand seeds because that is how the planter meters it and how
+ * the invoice reads; the chemical-only columns (re-crop, registration, the
+ * label) simply do not render for it.
  */
 export function ProductPrices({
   category = 'chemical',
-}: { category?: 'chemical' | 'fertilizer' } = {}) {
+}: { category?: 'chemical' | 'fertilizer' | 'seed' } = {}) {
   const { data, isLoading } = useJdProducts()
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
@@ -151,7 +171,7 @@ export function ProductPrices({
   // Sam, 7 Oct 2026: a product can be typed in by hand, and a hand-added one deleted.
   const addProduct = useAddProduct()
   const deleteProduct = useDeleteProduct()
-  const [adding, setAdding] = useState<{ name: string; unit: 'L' | 'kg'; price: string } | null>(null)
+  const [adding, setAdding] = useState<{ name: string; unit: PriceUnit; price: string } | null>(null)
   // Added this visit: shown even while never-applied products are hidden, or it would vanish on Save.
   const [justAdded, setJustAdded] = useState<Set<string>>(() => new Set())
   const [q, setQ] = useState('')
@@ -164,13 +184,22 @@ export function ProductPrices({
   // a Deere spelling nobody used — are noise when looking a price up. Hidden
   // by default, one tick to see the lot; the choice sticks per browser.
   const HIDE_KEY = `prices_hideNeverApplied_${category}`
-  const [hideNeverApplied, setHideNeverApplied] = useState(() => {
+  /*
+   * Seed is never "applied". `product_applications` reads
+   * jd_field_operations where operation_type = 'application', and a seeding is
+   * not one — so every seed row counts as never applied and the filter hides
+   * the whole list. Offering a tick box that empties the page is worse than
+   * not offering it.
+   */
+  const canHideNeverApplied = category !== 'seed'
+  const [hideStored, setHideNeverApplied] = useState(() => {
     try {
       return localStorage.getItem(HIDE_KEY) !== '0'
     } catch {
       return true
     }
   })
+  const hideNeverApplied = canHideNeverApplied && hideStored
   const toggleHide = (on: boolean) => {
     setHideNeverApplied(on)
     try {
@@ -308,7 +337,10 @@ export function ProductPrices({
   if (isLoading) return <p className="p-4 text-sm text-gray-500 md:p-6">Loading…</p>
 
   // The sortable columns, plus Type, Crops, Invoice, the Deere aliases, and Label on chemicals.
-  const colSpan = COLUMNS.length + 4 + (category === 'chemical' ? 2 : 0)
+  const columns = columnsFor(category)
+  /** Whether "applied on", "crops sprayed" and "last applied" mean anything here. */
+  const showsApplications = category !== 'seed'
+  const colSpan = columns.length + (category === 'seed' ? 3 : 4) + (category === 'chemical' ? 2 : 0)
 
   /* Each row's figures, built once and handed to both the table and the card:
      twelve columns is screens of sideways scrolling on a phone, so under `sm`
@@ -358,12 +390,17 @@ export function ProductPrices({
       unit: (
         <select
           value={p.unit}
-          onChange={(e) => saveProduct.mutate({ id: p.id, unit: e.target.value as 'L' | 'kg' })}
+          onChange={(e) => saveProduct.mutate({ id: p.id, unit: e.target.value as PriceUnit })}
           aria-label={`Price unit for ${p.name}`}
           className="rounded border border-gray-300 px-1.5 py-1 text-xs"
         >
           <option value="L">$ / L</option>
           <option value="kg">$ / kg</option>
+          {/* Only where it could be the answer. Nothing is sprayed by the
+              seed, and an option nobody can want is still one to read past.
+              Shown anyway on a row already set to it, so a mis-set product
+              can always be set back. */}
+          {(category === 'seed' || p.unit === 'k seeds') && <option value="k seeds">$ / 1,000 seeds</option>}
         </select>
       ),
       price: (
@@ -535,14 +572,16 @@ export function ProductPrices({
           <td className="px-3 py-2">{c.unit}</td>
           <td className="px-3 py-2 text-right">{c.price}</td>
           <td className="px-3 py-2 text-xs">{c.priceFrom ?? dash}</td>
-          <td className="px-3 py-2 text-xs">{c.fields ?? dash}</td>
-          <td className="px-3 py-2 text-xs text-gray-700">{c.crops ?? dash}</td>
+          {/* Seed is never "applied": product_applications covers operations
+              of type 'application', and a seeding is not one. */}
+          {showsApplications && <td className="px-3 py-2 text-xs">{c.fields ?? dash}</td>}
+          {showsApplications && <td className="px-3 py-2 text-xs text-gray-700">{c.crops ?? dash}</td>}
           {category === 'chemical' && (
             <td className="px-3 py-2 text-xs">
               {c.notNext ?? <span className="text-gray-300" title="The label's re-cropping section has not been read yet">—</span>}
             </td>
           )}
-          <td className="px-3 py-2 text-xs">{c.lastApplied ?? dash}</td>
+          {showsApplications && <td className="px-3 py-2 text-xs">{c.lastApplied ?? dash}</td>}
           {category === 'chemical' && <td className="px-3 py-2 text-xs">{c.label}</td>}
           <td className="px-3 py-2 text-xs">{c.invoice ?? dash}</td>
           <td className="px-3 py-2 text-xs text-gray-500">{c.aliases}</td>
@@ -597,23 +636,28 @@ export function ProductPrices({
         <div>
           <h2 className="text-sm font-semibold text-gray-900">Product prices</h2>
           <p className="mt-0.5 text-xs text-gray-500">
-            {priced} of {total} products priced. Prices are per litre or per kilogram, and drive the
-            input costs on every field.
+            {priced} of {total} products priced.{' '}
+            {category === 'seed'
+              ? 'Seed the planter counted is priced per thousand seeds; seed the drill weighed, per kilogram.'
+              : 'Prices are per litre or per kilogram,'}{' '}
+            {category === 'seed' ? 'A price here is what puts seed on a field’s Profit/Loss.' : 'and drive the input costs on every field.'}
           </p>
         </div>
         <div className="ml-auto flex items-center gap-3">
-          <label
-            className="flex items-center gap-1.5 text-xs text-gray-600"
-            title="Products with no application on record — an old invoice line, a spelling nobody used"
-          >
-            <input
-              type="checkbox"
-              checked={hideNeverApplied}
-              onChange={(e) => toggleHide(e.target.checked)}
-              className="rounded border-gray-300"
-            />
-            Hide never applied{neverApplied > 0 && ` (${neverApplied})`}
-          </label>
+          {canHideNeverApplied && (
+            <label
+              className="flex items-center gap-1.5 text-xs text-gray-600"
+              title="Products with no application on record — an old invoice line, a spelling nobody used"
+            >
+              <input
+                type="checkbox"
+                checked={hideNeverApplied}
+                onChange={(e) => toggleHide(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              Hide never applied{neverApplied > 0 && ` (${neverApplied})`}
+            </label>
+          )}
           {category === 'fertilizer' && (
             <label className="flex items-center gap-1.5 text-xs text-gray-600">
               <input
@@ -649,7 +693,9 @@ export function ProductPrices({
               <input
                 value={adding.name}
                 onChange={(e) => setAdding({ ...adding, name: e.target.value })}
-                placeholder={category === 'fertilizer' ? 'Product, e.g. 12-51-0' : 'Product name'}
+                placeholder={
+                  category === 'fertilizer' ? 'Product, e.g. 12-51-0' : category === 'seed' ? 'Seed, e.g. P7332AM' : 'Product name'
+                }
                 aria-label="New product name"
                 className="w-56 rounded border border-gray-300 px-2 py-1 text-sm"
                 autoFocus
@@ -709,7 +755,7 @@ export function ProductPrices({
           ) : (
             <button
               type="button"
-              onClick={() => setAdding({ name: '', unit: category === 'fertilizer' ? 'kg' : 'L', price: '' })}
+              onClick={() => setAdding({ name: '', unit: ADD_UNIT[category], price: '' })}
               className="inline-flex items-center gap-1 font-medium text-brand-700 underline"
             >
               <Plus className="h-3.5 w-3.5" /> Add a product by hand
@@ -754,7 +800,7 @@ export function ProductPrices({
         <table className="w-full min-w-[1480px] text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
-              {COLUMNS.map((c) => (
+              {columns.map((c) => (
                 <Fragment key={c.key}>
                 <th
                   className={cn('px-3 py-2 font-medium', c.align === 'right' && 'text-right')}
@@ -777,7 +823,7 @@ export function ProductPrices({
                   </button>
                 </th>
                   {c.key === 'name' && <th className="px-3 py-2 font-medium">Type</th>}
-                  {c.key === 'fields' && (
+                  {c.key === 'fields' && showsApplications && (
                     <th className="px-3 py-2 font-medium" title="Crops it has actually been sprayed on here, not everything the label allows">
                       Crops sprayed
                     </th>

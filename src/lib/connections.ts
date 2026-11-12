@@ -329,8 +329,8 @@ export const CONNECTIONS: ConnectionDef[] = [
     name: 'Email sender (Resend)',
     category: 'Email & messages',
     keyGroup: 'Email sender (Resend)',
-    about: 'Resend sends the sign-in emails. Its key is saved in Supabase (Authentication → Emails → SMTP), not here.',
-    keywords: 'smtp sign in emails noreply',
+    about: 'Resend sends the sign-in emails (that key lives in Supabase) and, with an API key here, emails people send from the app, such as a grant’s meeting request.',
+    keywords: 'smtp sign in emails noreply grant meeting request api key',
   },
   {
     id: 'timeoff',

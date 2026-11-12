@@ -1,4 +1,5 @@
 import { AU_LBS_PER_DAY, forageYieldPerAcre } from './forage-yield'
+import { calfAU, monthDayOf, type MonthDay } from './animal-units'
 
 // When to move the herd out of a paddock (Sam, 1 Oct 2026: "create an alert
 // when its recommended to move the animals out of a pasture based on the NDVI
@@ -50,6 +51,12 @@ export type MoveInput = {
   pasture: string
   /** Grazeable acres (the Grazing tab's figure when the paddock is matched there). */
   acres: number
+  /**
+   * Grazeable lb from the crop fields inside the fence since turn-in (stubble
+   * after harvest — field-residue.ts), already net of trampling. Not grass, so
+   * not scaled by the season's growth or the satellite's share standing.
+   */
+  fieldLb?: number
   quality: string
   utilisation: number
   /** This year's rain to date + a normal rest of season, mm. */
@@ -131,7 +138,12 @@ export function moveVerdict(inp: MoveInput): MoveVerdict {
     shareStanding = Math.min(1, Math.max(0, season > 0 ? own / season : own))
   }
 
-  const availableLb = inp.acres * expectedLbAc * inp.utilisation * shareStanding
+  // The estimator's yield is a whole season's growth. A herd turned in in May
+  // hasn't got the season's grass in front of it yet — only what has grown by
+  // today (seasonGrowthShare). Crediting the full season at turn-in told a
+  // spring paddock it had weeks more grazing than it did.
+  const grown = seasonGrowthShare(inp.today)
+  const availableLb = inp.acres * expectedLbAc * inp.utilisation * shareStanding * grown + Math.max(0, inp.fieldLb ?? 0)
   const eatenLb = dailyLb * daysOn
   const remainingLb = availableLb - eatenLb
   const daysLeft = dailyLb > 0 ? remainingLb / dailyLb : null
@@ -193,6 +205,23 @@ export function moveVerdict(inp: MoveInput): MoveVerdict {
   }
 }
 
+/**
+ * Share of a season's grass grown by the end of each month, for southern
+ * Alberta mixed grass (cool-season grasses: growth starts in April, most of it
+ * comes in May–June on spring moisture, it slows in July heat and has stopped
+ * by August). Cumulative: April 5%, May 30%, June 75%, July 95%, August on
+ * 100%. Read by month, not interpolated within one, so a figure on screen
+ * doesn't creep day by day. January–March is last season's grass standing —
+ * all of it — so it reads 100% too.
+ */
+const GROWTH_BY_MONTH: Record<number, number> = { 4: 0.05, 5: 0.3, 6: 0.75, 7: 0.95 }
+
+/** Cumulative share of the season's growth standing on a day (ISO date). */
+export function seasonGrowthShare(onIso: string): number {
+  const m = Number(onIso.slice(5, 7))
+  return GROWTH_BY_MONTH[m] ?? 1
+}
+
 /** Median of a list; null when empty. */
 export function median(xs: number[]): number | null {
   if (!xs.length) return null
@@ -217,7 +246,9 @@ export function mobClass(mob: string): 'Bulls' | 'Replacement heifers' | 'Cows' 
  * Animal units the calves at side add to a mob of cows, until weaning (Sam,
  * 5 Oct 2026: "calves will be at side till weaning either in November or
  * later"). Calves wear no collars, so the mob's head is cows only: each cow is
- * given the herd's calves per cow (at most one), at the calves' AU per head.
+ * given the herd's calves per cow (at most one). With the calving date known,
+ * a calf counts by its age (animal-units.ts calfAU — the same ramp the Grazing
+ * tab uses); without it, at the calf class's AU per head.
  */
 export function calvesAtSideAU(o: {
   mobClass: string
@@ -228,8 +259,11 @@ export function calvesAtSideAU(o: {
   countCalves: boolean
   weaningDate: string | null
   today: string
+  calving?: MonthDay | null
 }): number {
-  if (!o.countCalves || o.mobClass !== 'Cows' || o.cows <= 0 || o.calves <= 0 || o.calfAu <= 0) return 0
+  if (!o.countCalves || o.mobClass !== 'Cows' || o.cows <= 0 || o.calves <= 0) return 0
   if (o.weaningDate && o.today >= o.weaningDate) return 0
-  return o.mobHead * Math.min(1, o.calves / o.cows) * o.calfAu
+  const perCalf = o.calving ? calfAU(o.today, o.calving, monthDayOf(o.weaningDate)) : o.calfAu
+  if (perCalf <= 0) return 0
+  return o.mobHead * Math.min(1, o.calves / o.cows) * perCalf
 }

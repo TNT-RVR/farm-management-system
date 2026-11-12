@@ -42,8 +42,18 @@ const money = (v: number, dp = 2) => fmtMoney(v, dp, { neg: 'inside' })
  * gives the price — what minerals cost a head (Sam, 5 Oct 2026). Prices are
  * blank until the receipts are in.
  */
-export function CattleSuppliers({ ranches, isManager }: { ranches: { id: string; name: string }[]; isManager: boolean }) {
-  const { data: programs } = usePrograms()
+export function CattleSuppliers({
+  ranches,
+  ranchId,
+  isManager,
+}: {
+  ranches: { id: string; name: string }[]
+  /** Only this ranch's programmes, when Cattle settings has one picked. */
+  ranchId?: string
+  isManager: boolean
+}) {
+  const { data: allPrograms } = usePrograms()
+  const programs = ranchId ? allPrograms?.filter((p) => p.ranch_id === ranchId) : allPrograms
   const { data: contacts } = useCattleContacts()
   const { data: herd } = useHerdCounts('')
   const qc = useQueryClient()
@@ -112,8 +122,8 @@ export function CattleSuppliers({ ranches, isManager }: { ranches: { id: string;
         <Package className="h-4 w-4 text-brand-100" /> Minerals and vet
       </h2>
       <div className="p-3">
-      <HelpNote className="mt-1 text-xs" summary="Prices wait for the receipts." title="Where these come from">
-        <p>Sam, 5 Oct 2026. Type a tub&apos;s price from a receipt and the cost a head works out here. The calves at side are left out of the head: they eat from the cows&apos; tubs.</p>
+      <HelpNote className="mt-1 text-xs" summary="Type a tub's price from a receipt." title="Where these come from">
+        <p>Type a tub&apos;s price from a receipt and the cost a head works out here. The calves at side are left out of the head: they eat from the cows&apos; tubs.</p>
       </HelpNote>
       {isManager && (
         <div className="mt-2 flex justify-end">
@@ -195,7 +205,7 @@ export function CattleSuppliers({ ranches, isManager }: { ranches: { id: string;
         <RecordEditModal
           title={editing === 'new' ? 'Add a mineral programme' : `Edit ${editing.product}`}
           fields={fields}
-          row={editing === 'new' ? { ranch_id: ranches[0]?.id ?? '', product: 'Mineral tubs', unit: 'tub', per: 'month' } : editing}
+          row={editing === 'new' ? { ranch_id: ranchId ?? ranches[0]?.id ?? '', product: 'Mineral tubs', unit: 'tub', per: 'month' } : editing}
           saving={saveProgram.isPending}
           error={saveProgram.error ? (saveProgram.error as Error).message : null}
           onClose={() => setEditing(null)}

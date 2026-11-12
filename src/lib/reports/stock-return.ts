@@ -21,7 +21,7 @@ const DECLARATION =
   'I declare that the information on this return is complete and correct, and understand that making a false or fraudulent declaration is an offence.'
 const COLLECTION_NOTICE =
   "The province collects this information under Alberta's Protection of Privacy Act and the Public Lands Administration Regulation (PLAR) to administer the disposition. Questions about the form go to the stock return client administration mailbox."
-export const CLIENT_ADMIN_EMAIL = 'user-c6e1@gov.ab.ca'
+export const CLIENT_ADMIN_EMAIL = 'FP.StockReturnClientAdmin@gov.ab.ca'
 
 /** Each table shows at least this many rows, the spare ones as lines to write on. */
 export const SPARE_ROWS = 2

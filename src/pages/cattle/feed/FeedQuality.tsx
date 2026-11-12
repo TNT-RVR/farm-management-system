@@ -4,6 +4,7 @@ import { DeleteButton, DetailList, EditButton, RecordEditModal, rowClick, type E
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Select } from '@/components/Select'
 import { Fold } from '@/components/Fold'
+import { CardList, RowCard } from '@/components/RowCards'
 import { supabase } from '@/lib/supabase'
 import { nitrateNPpmToPct, tdnFromAdf, type FeedCategory, type FeedValue } from '@/lib/cattle-nutrition'
 import {
@@ -64,6 +65,64 @@ export function FeedQuality({
 
   // Folded by default: set up once a season, when a test comes back.
   const tested = types.filter((t) => values.get(t.id)?.test).length
+  // Each feed's cells built once: the phone card and the table row show the same nodes.
+  const rows = types.map((ft) => {
+    const v = values.get(ft.id)
+    const t = v?.test
+    const edit = (patch: Parameters<typeof upd.mutate>[0]['patch']) => upd.mutate({ id: ft.id, patch })
+    return {
+      ft,
+      name: (
+        <>
+          {ft.name}
+          {ft.is_bedding && <span className="ml-1 rounded bg-gray-100 px-1 text-[10px] text-gray-500">bedding</span>}
+        </>
+      ),
+      kind: (
+        <Select
+          value={ft.category}
+          size="sm"
+          disabled={!isManager}
+          ariaLabel="Kind of feed"
+          className="w-28"
+          onChange={(c) => edit({ category: c as FeedCategory })}
+          options={(Object.keys(CATEGORY_LABEL) as FeedCategory[]).map((c) => ({ value: c, label: CATEGORY_LABEL[c] }))}
+        />
+      ),
+      bale:
+        ft.default_unit === 'lb' ? (
+          <span className="text-xs text-gray-400">by the lb</span>
+        ) : (
+          <Num value={ft.default_lb_per_bale == null ? null : Number(ft.default_lb_per_bale)} step="25" min={100} max={3000} suffix="lb" disabled={!isManager} onCommit={(x) => edit({ default_lb_per_bale: x })} className="w-20" allowEmpty />
+        ),
+      dm: t ? (v ? n1(v.dmPct) : '—') : <Num value={ft.dm_pct == null ? null : Number(ft.dm_pct)} step="1" min={1} max={100} disabled={!isManager} onCommit={(x) => edit({ dm_pct: x })} className="w-14" />,
+      tdn: t ? (v ? n1(v.tdnPct) : '—') : <Num value={ft.tdn_pct == null ? null : Number(ft.tdn_pct)} step="1" min={1} max={100} disabled={!isManager} onCommit={(x) => edit({ tdn_pct: x })} className="w-14" />,
+      cp: t ? (v ? n1(v.cpPct) : '—') : <Num value={ft.cp_pct == null ? null : Number(ft.cp_pct)} step="0.5" min={0} max={60} disabled={!isManager} onCommit={(x) => edit({ cp_pct: x })} className="w-14" />,
+      loss: <Num value={Number(ft.storage_loss_pct)} step="1" min={0} max={60} suffix="%" disabled={!isManager} onCommit={(x) => x != null && edit({ storage_loss_pct: x })} className="w-12" />,
+      source: (
+        <>
+          {t ? (
+            <span className="text-emerald-800">
+              Tested {t.sampled_on}
+              {t.lab ? `, ${t.lab}` : ''}
+              {t.nitrate_pct != null && <span className={cn('ml-1', Number(t.nitrate_pct) >= 0.5 ? 'font-semibold text-red-700' : '')}>NO₃ {Number(t.nitrate_pct).toFixed(2)}%</span>}
+            </span>
+          ) : (
+            <span className="text-gray-400" title={ft.book_note ?? undefined}>
+              Book value{ft.book_note ? ' ⓘ' : ''}
+            </span>
+          )}
+          {isManager && (
+            <button type="button" onClick={() => setTesting(testing === ft.id ? null : ft.id)} className="ml-2 text-brand-700 hover:underline">
+              {testing === ft.id ? 'close' : '+ test'}
+            </button>
+          )}
+          {testing === ft.id && <TestForm feed={ft} onDone={() => setTesting(null)} />}
+        </>
+      ),
+      detail: <FeedDetail feed={ft} tests={tests.filter((x) => x.feed_type_id === ft.id)} isManager={isManager} onGone={() => setOpen(null)} />,
+    }
+  })
   return (
     <Fold
       storageKey="cattle-feed-quality"
@@ -89,7 +148,27 @@ export function FeedQuality({
         </div>
       )}
       {adding && <NewFeed onDone={() => setAdding(false)} />}
-      <div className="overflow-x-auto">
+      <CardList>
+        {rows.map((r) => (
+          <RowCard
+            key={r.ft.id}
+            onClick={rowClick(() => setOpen(open === r.ft.id ? null : r.ft.id))}
+            heading={r.name}
+            facts={[
+              { label: 'Kind', node: r.kind },
+              { label: 'Bale weight', node: r.bale },
+              { label: 'Dry matter %', node: r.dm },
+              { label: 'Energy (TDN) %', node: r.tdn },
+              { label: 'Protein (CP) %', node: r.cp },
+              { label: 'Storage loss', node: r.loss },
+              { label: 'Source', node: r.source },
+            ]}
+          >
+            {open === r.ft.id ? r.detail : undefined}
+          </RowCard>
+        ))}
+      </CardList>
+      <div className="hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[760px] text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -114,85 +193,33 @@ export function FeedQuality({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {types.map((ft) => {
-              const v = values.get(ft.id)
-              const t = v?.test
-              const edit = (patch: Parameters<typeof upd.mutate>[0]['patch']) => upd.mutate({ id: ft.id, patch })
-              return (
-                <Fragment key={ft.id}>
+            {rows.map((r) => (
+              <Fragment key={r.ft.id}>
                 <tr
-                  onClick={rowClick(() => setOpen(open === ft.id ? null : ft.id))}
-                  className={cn('cursor-pointer hover:bg-gray-50', ft.is_bedding && 'text-gray-500')}
+                  onClick={rowClick(() => setOpen(open === r.ft.id ? null : r.ft.id))}
+                  className={cn('cursor-pointer hover:bg-gray-50', r.ft.is_bedding && 'text-gray-500')}
                 >
                   <td className="px-3 py-1.5">
-                    <ChevronRight className={cn('mr-1 inline h-3.5 w-3.5 text-gray-400 transition-transform', open === ft.id && 'rotate-90')} />
-                    {ft.name}
-                    {ft.is_bedding && <span className="ml-1 rounded bg-gray-100 px-1 text-[10px] text-gray-500">bedding</span>}
+                    <ChevronRight className={cn('mr-1 inline h-3.5 w-3.5 text-gray-400 transition-transform', open === r.ft.id && 'rotate-90')} />
+                    {r.name}
                   </td>
-                  <td className="px-2 py-1.5">
-                    <Select
-                      value={ft.category}
-                      size="sm"
-                      disabled={!isManager}
-                      ariaLabel="Kind of feed"
-                      className="w-28"
-                      onChange={(c) => edit({ category: c as FeedCategory })}
-                      options={(Object.keys(CATEGORY_LABEL) as FeedCategory[]).map((c) => ({ value: c, label: CATEGORY_LABEL[c] }))}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5 text-right">
-                    {ft.default_unit === 'lb' ? (
-                      <span className="text-xs text-gray-400">by the lb</span>
-                    ) : (
-                      <Num value={ft.default_lb_per_bale == null ? null : Number(ft.default_lb_per_bale)} step="25" min={100} max={3000} suffix="lb" disabled={!isManager} onCommit={(x) => edit({ default_lb_per_bale: x })} className="w-20" allowEmpty />
-                    )}
-                  </td>
-                  {t ? (
-                    <>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{v ? n1(v.dmPct) : '—'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{v ? n1(v.tdnPct) : '—'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{v ? n1(v.cpPct) : '—'}</td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="px-2 py-1.5 text-right"><Num value={ft.dm_pct == null ? null : Number(ft.dm_pct)} step="1" min={1} max={100} disabled={!isManager} onCommit={(x) => edit({ dm_pct: x })} className="w-14" /></td>
-                      <td className="px-2 py-1.5 text-right"><Num value={ft.tdn_pct == null ? null : Number(ft.tdn_pct)} step="1" min={1} max={100} disabled={!isManager} onCommit={(x) => edit({ tdn_pct: x })} className="w-14" /></td>
-                      <td className="px-2 py-1.5 text-right"><Num value={ft.cp_pct == null ? null : Number(ft.cp_pct)} step="0.5" min={0} max={60} disabled={!isManager} onCommit={(x) => edit({ cp_pct: x })} className="w-14" /></td>
-                    </>
-                  )}
-                  <td className="px-2 py-1.5 text-right">
-                    <Num value={Number(ft.storage_loss_pct)} step="1" min={0} max={60} suffix="%" disabled={!isManager} onCommit={(x) => x != null && edit({ storage_loss_pct: x })} className="w-12" />
-                  </td>
-                  <td className="px-3 py-1.5 text-xs">
-                    {t ? (
-                      <span className="text-emerald-800">
-                        Tested {t.sampled_on}
-                        {t.lab ? `, ${t.lab}` : ''}
-                        {t.nitrate_pct != null && <span className={cn('ml-1', Number(t.nitrate_pct) >= 0.5 ? 'font-semibold text-red-700' : '')}>NO₃ {Number(t.nitrate_pct).toFixed(2)}%</span>}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400" title={ft.book_note ?? undefined}>
-                        Book value{ft.book_note ? ' ⓘ' : ''}
-                      </span>
-                    )}
-                    {isManager && (
-                      <button type="button" onClick={() => setTesting(testing === ft.id ? null : ft.id)} className="ml-2 text-brand-700 hover:underline">
-                        {testing === ft.id ? 'close' : '+ test'}
-                      </button>
-                    )}
-                    {testing === ft.id && <TestForm feed={ft} onDone={() => setTesting(null)} />}
-                  </td>
+                  <td className="px-2 py-1.5">{r.kind}</td>
+                  <td className="px-2 py-1.5 text-right">{r.bale}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{r.dm}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{r.tdn}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{r.cp}</td>
+                  <td className="px-2 py-1.5 text-right">{r.loss}</td>
+                  <td className="px-3 py-1.5 text-xs">{r.source}</td>
                 </tr>
-                {open === ft.id && (
+                {open === r.ft.id && (
                   <tr className="bg-gray-50">
                     <td colSpan={8} className="px-3 py-2">
-                      <FeedDetail feed={ft} tests={tests.filter((x) => x.feed_type_id === ft.id)} isManager={isManager} onGone={() => setOpen(null)} />
+                      {r.detail}
                     </td>
                   </tr>
                 )}
-                </Fragment>
-              )
-            })}
+              </Fragment>
+            ))}
           </tbody>
         </table>
       </div>

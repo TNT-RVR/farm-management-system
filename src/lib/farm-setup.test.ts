@@ -15,6 +15,14 @@ describe('feature switches', () => {
     expect(featureOn({ cattle: true, pregnancy: false }, 'cattle')).toBe(true)
   })
 
+  it('starts collars where pregnancy is, until the farm sets it', () => {
+    expect(featureOn({ cattle: true }, 'collars')).toBe(true)
+    expect(featureOn({ pregnancy: false }, 'collars')).toBe(false)
+    expect(featureOn({ pregnancy: false, collars: true }, 'collars')).toBe(true)
+    expect(featureOn({ collars: false }, 'collars')).toBe(false)
+    expect(featureOn({ cattle: false, collars: true }, 'collars')).toBe(false)
+  })
+
   it('closes a section and everything under it', () => {
     const off = disabledPaths({ cattle: false })
     expect(isPathOff(off, '/herd')).toBe(true)

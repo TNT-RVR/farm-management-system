@@ -61,7 +61,7 @@ const PARTNER_BLOCKED_TABS: Record<string, string[]> = {
   '/map': ['topography', 'profit', 'compare'],
   '/fertilizer/plan': ['spreading'],
   '/fertilizer/prices': ['retailer'],
-  '/plan': ['actuals', 'farm costs'],
+  '/plan': ['actuals', 'farm costs', 'benchmark'],
   '/rotation': ['advice'],
   // Our chemical shed and its prices. (Soil moisture's Setup is ?view=, hidden on the page.)
   '/chemicals': ['inventory', 'prices'],

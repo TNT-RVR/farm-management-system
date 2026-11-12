@@ -289,6 +289,15 @@ export function BinDetail({
                     ? contentLabel(content)
                     : 'Empty'}
             </p>
+            {/* What is in it, big enough to read across the shop (Sam, 2 Nov
+                2026: "We need bigger label for what crop is in the bin"). The
+                bushels tell you how much; this tells you of what, which is the
+                first thing anyone walking up to a bin wants. */}
+            {heldTotal > 0 && held.length > 0 && (
+              <p className="text-lg font-semibold leading-tight text-gray-900">
+                {held.map((h) => cropName(h.crop_id)).join(' · ')}
+              </p>
+            )}
             {products.length > 0 && (
               <p className="text-sm text-gray-700">{products.map((p) => `${p.product} ${p.tonnes.toLocaleString('en-CA', { maximumFractionDigits: 2 })} t`).join(' · ')}</p>
             )}
@@ -323,7 +332,6 @@ export function BinDetail({
                   .join(' · ')}
               </p>
             )}
-            {heldTotal > 0 && held.length === 1 && <p className="mt-0.5 text-xs text-gray-700">{cropName(held[0].crop_id)} in it</p>}
             {/* The same switches as the bin list, on the same bin: both read
                 one cache, so one follows the other (Sam, 27 Oct 2026). */}
             <BinRunSwitches bin={current} canEdit={canEdit} className="mt-1" />
@@ -563,7 +571,26 @@ export function BinDetail({
                           </span>
                         )}
                       </Td>
-                      <Td num>{share ? kg(share.kg) : '—'}</Td>
+                      {/* Weighed where a load crossed the scale; worked out from
+                          the bushels otherwise, and said to be, so a row entered
+                          by hand is not a blank (Sam, 2 Nov 2026). */}
+                      <Td num>
+                        {share ? (
+                          kg(share.kg)
+                        ) : (
+                          (() => {
+                            const k = kgOf(m.crop_id, Math.abs(signed))
+                            return k == null ? (
+                              '—'
+                            ) : (
+                              <>
+                                {kg(k)}
+                                <span className="block text-[10px] font-normal text-gray-400">calculated</span>
+                              </>
+                            )
+                          })()
+                        )}
+                      </Td>
                       <Td>{load?.driver ?? '—'}</Td>
                       <Td num strong>
                         {Math.round(balance).toLocaleString('en-CA')}

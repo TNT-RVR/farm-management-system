@@ -42,7 +42,7 @@ export function useProductResolver(): ProductResolver | undefined {
     }
     return (deereName: string) => {
       const p = byAlias.get(deereName.trim().toLowerCase())
-      return p ? { name: p.name, pricePerUnit: p.price_per_unit } : null
+      return p ? { name: p.name, pricePerUnit: p.price_per_unit, unit: p.unit } : null
     }
   }, [data])
 }
@@ -95,7 +95,7 @@ export function useCreateQuotedProduct() {
 export function useAddProduct() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (p: { name: string; unit: 'kg' | 'L'; price_per_unit: number | null; category: 'chemical' | 'fertilizer' }) => {
+    mutationFn: async (p: { name: string; unit: 'kg' | 'L' | 'k seeds'; price_per_unit: number | null; category: 'chemical' | 'fertilizer' | 'seed' }) => {
       const { data, error } = await supabase
         .from('jd_products')
         .insert({ ...p, name: p.name.trim(), price_source: 'Added by hand' })

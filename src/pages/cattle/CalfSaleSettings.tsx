@@ -103,7 +103,7 @@ export function CalfSaleSettings({ ranch, isManager }: { ranch: Ranch; isManager
   }
 
   return (
-    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+    <section id={`calf-sale-${ranch.id}`} className="scroll-mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
       <h2 className={cn('flex items-center gap-1.5 font-medium', CARD_HEAD)}>
         <Tag className="h-4 w-4 text-brand-100" /> Weaning and calf sale — {ranch.name}
       </h2>
@@ -118,7 +118,7 @@ export function CalfSaleSettings({ ranch, isManager }: { ranch: Ranch; isManager
           ranch&apos;s own sales over its last five years with sales (steers with the uncut bull calves).
         </p>
       </HelpNote>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-3 grid gap-3 @sm:grid-cols-2 @3xl:grid-cols-4">
         <label key={`${ranch.id}-wean`} className="text-xs text-gray-600">
           Weaning date
           <input

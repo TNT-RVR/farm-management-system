@@ -12,7 +12,7 @@ import { useBasics, useOperatingSettings } from '@/lib/hauling-data'
 import { useFuelModel } from '@/lib/operating-costs'
 import { useFixedPerAcre } from '@/lib/farm-costs'
 import { useTaskMutations } from '@/lib/tasks'
-import { appliedByProduct, toCanonicalRate } from '@/lib/applied'
+import { appliedByProduct, toCanonicalRate, type Canonical } from '@/lib/applied'
 import { inPacks, stockLine } from '@/lib/chem-inventory'
 import { OP_KINDS, L_PER_US_GAL } from '@/lib/fuel'
 import { workTypeList } from '@/lib/field-work'
@@ -175,7 +175,9 @@ export function OperationCostCalculator() {
 
   // ----------------------------------------------------- last Deere rates here
   const lastHere = useMemo(() => {
-    const out = new Map<string, { rate: number; unit: 'L' | 'kg'; on: string | null }>()
+    // Canonical, not a two-value union: seed is counted, so 'k seeds' is one
+    // of the answers toCanonicalRate can give now.
+    const out = new Map<string, { rate: number; unit: Canonical; on: string | null }>()
     let carrier: { lPerAc: number; on: string | null } | null = null
     if (!fieldId || !field) return { byName: out, carrier }
     const ops = (history?.ops ?? []).filter((o) => o.field_id === fieldId && o.operation_type === 'application')

@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
 import {
+  Fence,
   Umbrella,
   ArrowLeftRight,
   BookOpen,
@@ -26,6 +27,7 @@ import {
   LandPlot,
   LayoutDashboard,
   Leaf,
+  Library,
   LineChart,
   ListChecks,
   Map as MapIcon,
@@ -150,6 +152,8 @@ const VIEW_LIST: MenuView[] = [
   { key: 'chemicals', label: 'Chemicals', icon: FlaskConical, to: '/chemicals', description: 'Labels, the shed, prices, and the spray check.' },
   { key: 'scouting', label: 'Scouting', icon: Bug, to: '/scouting', description: 'What was found in each field, and when.' },
   { key: 'hail', label: 'Hail reports', icon: CloudHail, to: '/hail', description: 'Hail damage reports and claims.' },
+  { key: 'canola-bloom', label: 'Canola bloom', icon: Flower2, to: '/canola-bloom', description: 'Which canola is flowering, from the satellite, and how each season went.' },
+  { key: 'fusarium', label: 'Fusarium risk', icon: Wheat, to: '/fusarium', description: "Whether the weather Alberta's sheet describes landed on each cereal field while its heads were open." },
   // Growing: irrigation
   { key: 'soil-moisture', label: 'Soil moisture', icon: Waves, to: '/irrigation', description: 'Soil moisture by field, and when to water.' },
   { key: 'river', label: 'River', icon: Waves, to: '/river', description: 'Oldman River levels and dam releases.' },
@@ -182,6 +186,7 @@ const VIEW_LIST: MenuView[] = [
   { key: 'herd', label: 'Herd', icon: Beef, to: '/herd', description: 'Every animal, and pregnancy from the collars.' },
   { key: 'feed', label: 'Feed', icon: Container, to: '/feed', description: 'The winter feed plan, what was fed and bale checks.' },
   { key: 'cattle-sales', label: 'Sales & paperwork', icon: LineChart, to: '/cattle-markets', home: 'cattle', description: 'Auction prices, manifests and grazing leases.' },
+  { key: 'handling-system', label: 'Handling system', icon: Fence, to: '/handling-system', home: 'cattle', description: 'Lay the corral out to scale on the yard, and check pens against the herd.' },
   { key: 'cattle-settings', label: 'Cattle settings', icon: Settings, to: '/cattle-settings', description: 'Ranches, grazing and herd settings.' },
   { key: 'cattle-markets', label: 'Cattle markets', icon: LineChart, to: '/cattle-markets?tab=markets', home: 'cattle', tabOf: 'cattle-sales', description: 'Auction and futures prices for cattle.' },
   { key: 'pasture-insurance', label: 'Pasture insurance', icon: Umbrella, to: '/cattle-markets?tab=insurance', home: 'cattle', tabOf: 'cattle-sales', description: 'AFSC’s moisture deficiency forms, filled in. Due 28 February.' },
@@ -209,6 +214,9 @@ const VIEW_LIST: MenuView[] = [
   // Tools
   { key: 'weather', label: 'Weather', icon: Cloud, to: '/weather', description: 'The forecast, spray windows and frost.' },
   { key: 'reports', label: 'Reports', icon: FileText, to: '/reports', description: 'Every download the app makes, by section.' },
+  // In the menu as well as on a tile (Sam, 2 Nov 2026): a tile under
+  // Reference is the only way in, and he could not find it.
+  { key: 'research', label: 'Research', icon: Library, to: '/research', description: 'What the papers say about our crops, sprays and water.' },
   { key: 'calculator', label: 'Calculator', icon: Calculator, to: '/calculator', description: 'Water, bushels, units and job costs.' },
   { key: 'contacts', label: 'Contacts', icon: Users, to: '/contacts', description: 'Phone numbers for people and suppliers.' },
   { key: 'missing', label: 'Missing info', icon: ListChecks, to: '/missing', description: 'What still needs filling in.' },
@@ -273,7 +281,7 @@ const SECTION_DEFS: SectionDef[] = [
     items: [
       // Spray restrictions are not here (Sam, 29 Oct 2026): they are about
       // where cattle may go, and they are listed under Cattle only.
-      { heading: 'Crop care', icon: ShieldCheck, views: ['chemicals', 'scouting', 'tissue-tests', 'hail'] },
+      { heading: 'Crop care', icon: ShieldCheck, views: ['chemicals', 'scouting', 'tissue-tests', 'hail', 'canola-bloom', 'fusarium'] },
       {
         heading: 'Irrigation',
         icon: Droplets,
@@ -335,6 +343,7 @@ const SECTION_DEFS: SectionDef[] = [
       'herd',
       'feed',
       'cattle-sales',
+      'handling-system',
       'cattle-settings',
     ],
   },
@@ -350,7 +359,7 @@ const SECTION_DEFS: SectionDef[] = [
     icon: CheckSquare,
     items: ['tasks', 'checklists', 'daybook', 'calendar', 'monthly', 'meeting', 'conferences'],
   },
-  { key: 'tools', label: 'Tools', icon: Wrench, items: ['weather', 'reports', 'calculator', 'contacts', 'missing'] },
+  { key: 'tools', label: 'Tools', icon: Wrench, items: ['weather', 'reports', 'research', 'calculator', 'contacts', 'missing'] },
   {
     key: 'settings',
     label: 'Settings',
@@ -588,6 +597,8 @@ export const OLD_NAV_VIEWS: Readonly<Record<string, readonly string[]>> = {
   '/rotation': ['rotation'],
   '/crop-compare': ['crop-compare'],
   '/canola-reports': ['canola-isolation'],
+  '/canola-bloom': ['canola-bloom'],
+  '/fusarium': ['fusarium'],
   '/crops': ['crops'],
   '/markets': ['markets'],
   '/contracts': ['contracts'],
@@ -623,6 +634,9 @@ export const OLD_NAV_VIEWS: Readonly<Record<string, readonly string[]>> = {
   '/herd': ['herd'],
   '/feed': ['feed', 'bale-checks'],
   '/cattle-markets': ['cattle-sales', 'cattle-markets', 'pasture-insurance'],
+  // New on 3 Nov 2026, so nobody hid it in the old menu; mapped all the same,
+  // because the carry-over reads this table and not the date a view shipped.
+  '/handling-system': ['handling-system'],
   '/cattle-settings': ['cattle-settings'],
   '/equipment': ['equipment-service'],
   '/combine': ['combine'],

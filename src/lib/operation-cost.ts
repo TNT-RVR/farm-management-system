@@ -25,6 +25,7 @@
  *
  * Pure: the screen gathers the rows and passes them in.
  */
+import type { Canonical } from './applied'
 import { WORK_TYPES } from './field-work'
 import { MIN_LOGGED_PASSES, kindOf, noPoints, opAcres, tripsFor, type FarmAverage, type FuelOp, type OpKind } from './fuel'
 
@@ -282,7 +283,7 @@ export function inputCost(row: InputRow, acres: number): InputCost {
 }
 
 /** Rate units offered for a price-book product, as the factor into its canonical unit. */
-export const RATE_UNITS: Record<'L' | 'kg', { key: string; label: string; toCanonical: number }[]> = {
+export const RATE_UNITS: Record<Canonical, { key: string; label: string; toCanonical: number }[]> = {
   L: [
     { key: 'L', label: 'L/ac', toCanonical: 1 },
     { key: 'mL', label: 'mL/ac', toCanonical: 0.001 },
@@ -292,6 +293,14 @@ export const RATE_UNITS: Record<'L' | 'kg', { key: string; label: string; toCano
     { key: 'kg', label: 'kg/ac', toCanonical: 1 },
     { key: 'lb', label: 'lb/ac', toCanonical: 0.45359237 },
     { key: 'g', label: 'g/ac', toCanonical: 0.001 },
+  ],
+  // Seed is metered by count, so a seeding costs out the same way a spray
+  // does: a rate an acre times a price. Written as plain seeds because that
+  // is what a planter is set to, and kept per thousand underneath because
+  // that is what the invoice prices.
+  'k seeds': [
+    { key: 'kseeds', label: '000 seeds/ac', toCanonical: 1 },
+    { key: 'seeds', label: 'seeds/ac', toCanonical: 0.001 },
   ],
 }
 

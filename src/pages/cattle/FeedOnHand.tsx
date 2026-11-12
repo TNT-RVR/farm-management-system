@@ -8,7 +8,6 @@ import { Select } from '@/components/Select'
 import {
   KIND_LABEL,
   KIND_SIGN,
-  daysOfFeedLeft,
   inNaturalUnits,
   signedQuantity,
   useDeleteFeedInventory,
@@ -84,28 +83,20 @@ const baledFields = (tests: { value: string; label: string }[]): EditField[] => 
  * statement that the inventory is missing, and hiding it behind a tidy zero is
  * how somebody comes to trust a number that was never entered.
  *
- * Only Left and Lasts are columns: whether the feed lasts to turnout has one
- * home, the Feed tab's "Will the feed last?". Put up and fed are behind the
- * Left figure, and the 30-day-rate method behind the Lasts header.
+ * Only Left is a column: how long the feed lasts has one home, the Feed
+ * plan's "Will the feed last?", and the panel links there (2 Nov 2026). Put
+ * up and fed are behind the Left figure.
  */
 export function FeedOnHandPanel({
   ranchId,
   ranchName,
   types,
   canEdit,
-  rates,
-  rateWindow,
-  daysToTurnout,
 }: {
   ranchId: string | null
   ranchName?: string
   types: { id: string; name: string; default_unit: string; default_lb_per_bale: number | null }[]
   canEdit: boolean
-  /** Lb a day each feed has gone out at over the last 30 days of sheets. */
-  rates: Map<string, number>
-  rateWindow: { from: string | null; to: string | null }
-  /** Days from today to turnout, when feeding; null outside the feeding period. */
-  daysToTurnout: number | null
 }) {
   const { data: onHand, isLoading } = useFeedOnHand(ranchId)
   const save = useSaveFeedInventory()
@@ -322,21 +313,12 @@ export function FeedOnHandPanel({
               <th className="px-3 py-1.5 text-right font-medium" title="Put up, minus what the feed sheets say was fed.">
                 Left (lb)
               </th>
-              <th
-                className="px-3 py-1.5 text-right font-medium"
-                title={`At the rate this feed actually went out over the last 30 days of sheets${rateWindow.from ? ` (${rateWindow.from} to ${rateWindow.to})` : ''}. The Feed tab plans it against each group's need to turnout instead.`}
-              >
-                Lasts
-              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {[...rows, ...bedding].map((f) => {
               const short = f.remaining_lb < 0
               const natural = inNaturalUnits(f, f.remaining_lb)
-              const rate = rates.get(f.feed_type_id) ?? 0
-              const days = daysOfFeedLeft(f.remaining_lb, rate * 30, 30)
-              const shortOfTurnout = days != null && daysToTurnout != null && days < daysToTurnout
               return (
                 <Fragment key={f.feed_type_id}>
                 <tr
@@ -387,14 +369,10 @@ export function FeedOnHandPanel({
                       <span className="block text-[10px] font-normal text-gray-400">{natural}</span>
                     )}
                   </td>
-                  <td className={cn('px-3 py-1.5 text-right tabular-nums', shortOfTurnout ? 'font-semibold text-red-700' : 'text-gray-600')}>
-                    {days == null ? <span className="text-gray-300">—</span> : `${days} days`}
-                    {shortOfTurnout && <span className="block text-[10px] font-normal">turnout is in {daysToTurnout}</span>}
-                  </td>
                 </tr>
                 {openFeed === f.feed_type_id && (
                   <tr className="bg-gray-50">
-                    <td colSpan={3} className="px-3 py-2">
+                    <td colSpan={2} className="px-3 py-2">
                       <FeedEntries
                         rows={(entries ?? []).filter((e) => e.feed_type_id === f.feed_type_id && (!ranchId || e.ranch_id === ranchId))}
                         feed={types.find((t) => t.id === f.feed_type_id) ?? null}
@@ -489,19 +467,18 @@ export function FeedOnHandPanel({
         className="border-t border-gray-100 px-3 py-2"
         summary={
           <>
-            Will it last to turnout?{' '}
-            <Link to="/feed?tab=plan" className="font-medium text-brand-700 hover:underline">
-              See the Feed tab
+            How long it lasts:{' '}
+            <Link to="/feed?tab=plan#feed-last" className="font-medium text-brand-700 hover:underline">
+              Feed plan → Will the feed last?
             </Link>
           </>
         }
-        title="How Left and Lasts are worked out"
+        title="How Left is worked out"
       >
         <p>
           Everything in pounds, because a pile counted in rounds and fed out in pounds cannot be
-          subtracted otherwise. &ldquo;Lasts&rdquo; uses the rate this feed actually went out at over
-          the last 30 days of sheets{rateWindow.from ? ` (${rateWindow.from} to ${rateWindow.to})` : ''}. The Feed
-          tab plans it against each group&apos;s need to turnout instead.
+          subtracted otherwise. Left is what was put up, minus what the feed sheets say was fed. The
+          Feed plan works out how long it lasts against each group&apos;s need to turnout.
         </p>
       </HelpNote>
     </div>

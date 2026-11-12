@@ -1,8 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { JD_ACCEPT, jdAccessToken } from './_jd.mts'
+import { jdAccessToken } from './_jd.mts'
+import { stepFor, supabaseStore, useLegacyExport, type ExportStep } from '../shared/jd-export-store.ts'
 import { zipEntryChunks } from '../shared/dbf-stream.ts'
 import { dbfRecords, shpPoints } from '../../src/lib/shp-stream.ts'
-import { gridExport, type DeereMetadata } from '../../src/lib/pl-export.ts'
+import { gridExport, isRealHash, soleOperationProduct, type DeereMetadata } from '../../src/lib/pl-export.ts'
 import { listZip, readZipMember } from '../../src/lib/zipListing.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
@@ -25,10 +26,13 @@ import { admin } from '../shared/supabase-admin.ts'
  * row per product to pl_op_grids. Everything runs here: nothing is downloaded
  * to anybody's computer.
  *
- * Same shape as jd-op-sessions-background: Deere builds an export on first
- * request and answers 202 until it is ready, so every pass is asked for up
- * front and collected round-robin inside the budget. A pass still building
- * when time runs out is picked up by the next run.
+ * Same shape as jd-op-sessions-background: Deere builds an export over many
+ * minutes, so every pass is asked for up front and collected round-robin
+ * inside the budget, and a pass still building when time runs out is picked up
+ * by the next run. Since 11 Nov 2026 the request id survives between runs in
+ * `jd-export-store.ts` — the Operations Data Export takes 20 to 38 minutes on
+ * this organization and this run gets 13 — and the row is shared with
+ * jd-op-sessions-background, so one build at Deere is read by both.
  *
  * A harvest export can be 116 MB zipped around a 3.4 GB .dbf. The zip is held
  * (it has to be — the .shp and .dbf are read side by side out of it) but the
@@ -69,6 +73,12 @@ type Op = {
   crop_season: number
   operation_type: string
   started_at: string | null
+  /**
+   * Deere's own record of the operation, from the Field Operations API, which
+   * the deprecation notice does not touch. Its `varieties` / `products` name
+   * the product when the export cannot — see `soleOperationProduct`.
+   */
+  raw: unknown
   fields?: { name: string } | null
 }
 
@@ -139,7 +149,7 @@ export default async (req: Request) => {
 
   let query = sb
     .from('jd_field_operations')
-    .select('id, jd_id, field_id, crop_season, operation_type, started_at, sessions, fields(name)')
+    .select('id, jd_id, field_id, crop_season, operation_type, started_at, sessions, raw, fields(name)')
     .eq('crop_season', season)
     .in('operation_type', TYPES)
     .eq('source', 'deere')
@@ -202,10 +212,10 @@ export default async (req: Request) => {
     throw e
   }
   const deadline = Date.now() + BUDGET_MS
-  const get = (jdId: string) =>
-    fetch(`https://api.deere.com/platform/fieldOps/${jdId}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: JD_ACCEPT },
-    })
+  // The Operations Data Export, with the request ids kept between runs. Falls
+  // back to the deprecated /fieldOps/ path under JD_EXPORT_LEGACY=1, which is
+  // off in Nov 2027. See docs/JD-OPERATIONS-EXPORT.md.
+  const step = stepFor(supabaseStore(sb), token)
 
   const notes: string[] = []
   let gridded = 0
@@ -237,27 +247,26 @@ export default async (req: Request) => {
     })
   }
 
-  const finish = async (op: Op, res: Response) => {
+  const finish = async (op: Op, got: ExportStep) => {
     const tag = `${op.fields?.name ?? 'field'} ${op.operation_type} ${op.started_at?.slice(0, 10) ?? op.jd_id.slice(0, 8)}`
-    const size = Number(res.headers.get('content-length') ?? 0)
+    if (got.kind === 'none') {
+      // No logged points: a job set up and never run.
+      empty++
+      notes.push(`${tag}: ${got.note}`)
+      await markEmpty(op, got.note)
+      return
+    }
+    if (got.kind !== 'ready') {
+      failed++
+      notes.push(`${tag}: ${got.kind === 'failed' ? got.note : got.status}`)
+      return
+    }
+    const buf = got.zip
     await health(
       sb,
       'running',
-      `Working on ${tag}${size ? ` (${Math.round(size / 1e6)} MB)` : ''} — ${gridded} built so far this run. If this is still here next hour, this pass killed the run.`,
+      `Working on ${tag} (${Math.round(buf.byteLength / 1e6)} MB) — ${gridded} built so far this run. If this is still here next hour, this pass killed the run.`,
     )
-    if (res.status === 404) {
-      // No logged points: a job set up and never run.
-      empty++
-      notes.push(`${tag}: no logged points`)
-      await markEmpty(op, 'Deere has no logged points for this pass.')
-      return
-    }
-    if (!res.ok) {
-      failed++
-      notes.push(`${tag}: Deere ${res.status}`)
-      return
-    }
-    const buf = await res.arrayBuffer()
     let meta: DeereMetadata | null = null
     try {
       const bytes = new Uint8Array(buf)
@@ -274,6 +283,10 @@ export default async (req: Request) => {
         records: (choose) =>
           dbfRecords(zipEntryChunks(buf, (n) => n.toLowerCase().endsWith('.dbf')), choose)[Symbol.asyncIterator](),
         meta,
+        // Metres under METRIC, feet off the old endpoint. Carried with the
+        // bytes: covered area is the denominator of every dollar an acre on
+        // the map, and getting it wrong changes nothing a person would see.
+        lengthToM: got.lengthToM,
       })
       await sb.from('pl_op_grids').delete().eq('operation_id', op.id)
       if (!result.layers.length) {
@@ -282,8 +295,46 @@ export default async (req: Request) => {
         await markEmpty(op, `${result.points.toLocaleString('en-CA')} logged points, none usable.`)
         return
       }
+      /**
+       * The check that would have caught the metres-read-as-feet bug within
+       * the hour instead of within the day (11 Nov 2026).
+       *
+       * A cell only exists because the machine drove over it, so across every
+       * pass ever gridded off the old endpoint the mean coverage of a cell
+       * sits between 0.96 and 1.07. Under the first move to the Operations
+       * Data Export it came out at 0.193 — every swath 3.28x narrow and every
+       * step along it 3.28x short — and nothing else about the grid looked
+       * wrong: same points, right rate, right place. Only the dollars an acre
+       * were out, which is not something a page shows you.
+       *
+       * So the number is asserted here rather than trusted. Half is a long
+       * way below anything real and a long way above the failure.
+       */
+      const widest = result.layers.reduce((a, b) => (b.cells.length > a.cells.length ? b : a))
+      const meanCover = widest.cells.length
+        ? widest.cells.reduce((sum, c) => sum + (Number(c[3]) || 0), 0) / widest.cells.length
+        : 1
+      if (meanCover < 0.5) {
+        notes.push(`${tag}: cells only ${Math.round(meanCover * 100)}% covered — swath or distance read in the wrong unit?`)
+      }
       const note =
-        result.skipped > 0 ? `${result.skipped.toLocaleString('en-CA')} of ${result.points.toLocaleString('en-CA')} points covered no ground or had no rate` : null
+        [
+          result.skipped > 0 ? `${result.skipped.toLocaleString('en-CA')} of ${result.points.toLocaleString('en-CA')} points covered no ground or had no rate` : null,
+          meanCover < 0.5 ? `Each cell is only ${Math.round(meanCover * 100)}% covered, where a driven cell is normally about full. The export's swath or distance may have been read in the wrong unit.` : null,
+        ]
+          .filter(Boolean)
+          .join('. ') || null
+      /*
+       * The export does not always say what the pass put down. That seeding
+       * came back with no product column and no Products in its metadata, so
+       * the layer lost the hash and the name the Profit/Loss prices seed by.
+       * Deere's own record of the operation still names it, and its productId
+       * is the same hash the old export's PRODUCTHASH column held — so take it
+       * from there, but only for a pass that gridded into one input layer.
+       */
+      const inputs = result.layers.filter((l) => l.kind === 'input')
+      const fallback = inputs.length === 1 ? soleOperationProduct(op.raw) : null
+
       const { error: insErr } = await sb.from('pl_op_grids').insert(
         result.layers.map((l) => ({
           field_id: op.field_id,
@@ -293,8 +344,8 @@ export default async (req: Request) => {
           operation_type: op.operation_type,
           operation_date: op.started_at?.slice(0, 10) ?? null,
           kind: l.kind,
-          product_hash: l.product_hash,
-          product_name: l.product_name,
+          product_hash: l.kind === 'input' && fallback && !isRealHash(l.product_hash) ? fallback.hash : l.product_hash,
+          product_name: l.kind === 'input' && fallback ? (l.product_name ?? fallback.name) : l.product_name,
           rate_unit: l.rate_unit,
           cells: l.cells,
           cell_count: l.cells.length,
@@ -313,24 +364,28 @@ export default async (req: Request) => {
   const pending = new Map(ops.map((o) => [o.jd_id, o]))
   const round = async () => {
     for (const op of [...pending.values()]) {
+      const tag = `${op.fields?.name ?? 'field'} ${op.operation_type} ${op.started_at?.slice(0, 10) ?? op.jd_id.slice(0, 8)}`
       try {
-        const res = await get(op.jd_id)
-        if (res.status === 202) {
-          await res.arrayBuffer()
-          continue
-        }
+        // Named before the step, not after it. The step is where a 116 MB
+        // harvest zip is downloaded now, so a run that dies there has to leave
+        // the pass's name behind — that is the whole job of this line.
+        await health(sb, 'running', `Looking at ${tag} — ${gridded} built so far this run.`)
+        const got = await step(op)
+        if (got.kind === 'building') continue
         pending.delete(op.jd_id)
-        await finish(op, res)
+        await finish(op, got)
       } catch (e) {
         pending.delete(op.jd_id)
         failed++
-        notes.push(`${op.operation_type}: ${(e as Error).message.slice(0, 80)}`)
+        notes.push(`${tag}: ${(e as Error).message.slice(0, 80)}`)
       }
     }
   }
 
   await round()
-  let wait = 10_000
+  // Half a minute to start on the export path: nothing there finishes inside
+  // twenty, so a ten-second first look only spends requests.
+  let wait = useLegacyExport() ? 10_000 : 30_000
   while (pending.size && Date.now() + wait < deadline) {
     await new Promise((r) => setTimeout(r, wait))
     wait = Math.min(Math.round(wait * 1.4), 60_000)

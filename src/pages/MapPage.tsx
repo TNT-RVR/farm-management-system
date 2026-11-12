@@ -6,6 +6,7 @@ import type { FeatureCollection, MultiPolygon, Position } from 'geojson'
 import { ChevronDown, ChevronRight, Crosshair, MapPin, Ruler, X } from 'lucide-react'
 import { SoilLayer } from '@/pages/map/SoilLayer'
 import { YieldZoneLayer } from '@/pages/map/YieldZoneLayer'
+import { SaltZoneLayer } from '@/pages/map/SaltZoneLayer'
 import { MeasureTool } from '@/pages/map/MeasureTool'
 import {
   freshness,
@@ -31,7 +32,8 @@ import {
 import { useCropYear } from '@/lib/crop-year'
 import { GRID_ERROR_M, SURVEY_ERROR_M, atsBox, toGeoJson } from '@/lib/geo/ats'
 import { useTownshipTable } from '@/lib/geo/atsTownships'
-import { quarterGridGeoJson, quartersInView, type Bounds, type GridParcel } from '@/lib/geo/atsGrid'
+import { quartersInView, type Bounds, type GridParcel } from '@/lib/geo/atsGrid'
+import { drawQuarterGrid } from '@/lib/geo/quarter-grid-layer'
 import { formatLld, lldMatches, parseLld } from '@/lib/geo/lld'
 import { reverseLld } from '@/lib/geo/ats'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
@@ -56,7 +58,7 @@ import {
   FN_STATUS_COLOR,
   type FieldnetSystem,
 } from '@/lib/fieldnet'
-import { asOfDay } from '@/lib/map-as-of'
+import { asOfDay, photoDateLabel } from '@/lib/map-as-of'
 import { PivotStatusPanel } from '@/components/PivotStatusPanel'
 import { bearingBetween, circleRing, destination } from '@/lib/geo/circle'
 import { haversineM } from '@/lib/geo/measure'
@@ -217,21 +219,6 @@ function ndviScaleLabel(images: { stretch_min: number | null; stretch_max: numbe
   return `Shaded from ${lo.toFixed(2)} to ${hi.toFixed(2)} NDVI.`
 }
 
-function photoDateLabel(days: string[]): string {
-  const fmt = (d: string) =>
-    new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      timeZone: 'UTC',
-    })
-  const sorted = [...new Set(days)].sort()
-  const oldest = sorted[0]
-  const newest = sorted[sorted.length - 1]
-  return oldest === newest
-    ? `Taken ${fmt(newest)}.`
-    : `Taken ${fmt(oldest)} to ${fmt(newest)}.`
-}
 
 
 /**
@@ -263,13 +250,38 @@ function LegendArrow({ open, onToggle, label }: { open: boolean; onToggle: () =>
 }
 
 /** Salinity legend, and the saltiest fields by name — the colour alone hides which. */
-function SaltLegend({ salt, names }: { salt: Map<string, FieldSalt>; names: Map<string, { name: string }> }) {
+function SaltLegend({
+  salt,
+  names,
+  zonedFields,
+}: {
+  salt: Map<string, FieldSalt>
+  names: Map<string, { name: string }>
+  zonedFields: number
+}) {
   const worst = [...salt.entries()].filter(([id]) => names.has(id)).sort((a, b) => b[1].worst - a[1].worst).slice(0, 5)
   return (
     <>
       <LegendList items={[['No soil-test EC', SALT_NO_DATA] as const, ...SALT_CLASSES.map((c) => [`EC ${c.label}`, c.colour] as const)]} />
+      <div className="ml-6 mb-1 flex items-center gap-1 text-[11px] text-gray-500">
+        Topsoil EC (mS/cm), latest soil test
+        <InfoPopover title="Salinity" width={300}>
+          <p>
+            Each field&rsquo;s latest report: the mean of its topsoil samples, and the worst of them.
+            Where a field has a productivity zone map ({zonedFields} of {salt.size} tested), that
+            measured spread is laid across its zones — the poorest ground carries the worst sample —
+            so the colour inside a field is an estimate of where the salt sits, not a reading. One
+            flat colour means the zone map is missing. Tap a zone.
+          </p>
+          <p className="mt-1.5">
+            All of our own ground falls below the first crop-tolerance threshold, so the bottom
+            three breaks split that range instead of painting the farm one colour. Nothing under 1
+            is costing yield.
+          </p>
+        </InfoPopover>
+      </div>
       <p className="ml-6 mb-1 text-[11px] text-gray-500">
-        Topsoil EC (mS/cm) from each field&apos;s latest soil test, averaged over its samples. Saltiest patches:{' '}
+        Saltiest patches:{' '}
         {worst.length
           ? worst.map(([id, v]) => `${names.get(id)!.name} ${v.worst.toFixed(2)}${v.naPct != null && v.naPct >= 5 ? ` (Na ${v.naPct.toFixed(0)}%)` : ''}`).join(', ')
           : 'none on record'}
@@ -443,6 +455,12 @@ export function MapPage() {
   const showYield = fillMode === 'yield'
   const { data: saltRows } = useFieldSalinity(showSalt)
   const saltByField = useMemo(() => fieldSalinity(saltRows ?? []), [saltRows])
+  // How many tested fields the zone map can split, for the legend — the rest
+  // stay one colour, and the legend says which is which.
+  const saltZonedFields = useMemo(
+    () => new Set((yieldZones ?? []).filter((z) => saltByField.has(z.field_id)).map((z) => z.field_id)).size,
+    [yieldZones, saltByField],
+  )
   const { data: fieldSat } = useFieldSatellite()
   const { data: zoneReadiness } = useZoneReadiness()
   // The day the map shows: today, or a past day from the picker beside the
@@ -857,7 +875,11 @@ export function MapPage() {
       showPhoto || (!showSatellite && !showFieldnet && !showIrrigation && !showSalt)
         ? 0
         : showSalt
-          ? 0.6
+          // Nearly solid. At 0.6 the clean end of the ramp disappeared into the
+          // green of the field under it, which is most of the farm (Sam,
+          // 6 Nov 2026). Fields with a zone map are painted over by
+          // SaltZoneLayer; this is the single-colour fallback for the rest.
+          ? 0.85
           : showSatellite
           // Faint under the raster: it is the field-mean fallback for fields
           // with no NDVI raster yet, and must not compete with the real one.
@@ -1590,47 +1612,9 @@ export function MapPage() {
     const map = mapRef.current
     if (!map || !mapReady) return
 
-    // The shared builder rather than an inline copy, so the properties the
-    // paint expressions read cannot drift away from what the module emits.
-    const fc = quarterGridGeoJson(gridParcels)
-
-    const src = map.getSource('quarter-grid') as maplibregl.GeoJSONSource | undefined
-    if (src) {
-      src.setData(fc)
-    } else {
-      map.addSource('quarter-grid', { type: 'geojson', data: fc })
-      map.addLayer({
-        id: 'quarter-grid-line',
-        type: 'line',
-        source: 'quarter-grid',
-        paint: {
-          'line-color': '#ffffff',
-          'line-width': 1,
-          // An estimated parcel is drawn fainter than a surveyed one, so the
-          // grid never claims a precision it does not have outside Alberta.
-          // MapLibre cannot vary line-dasharray per feature, so opacity does
-          // the work and the label carries the word.
-          'line-opacity': ['case', ['get', 'estimated'], 0.35, 0.75],
-          'line-dasharray': [2, 2],
-        },
-      })
-    }
-
-    gridMarkersRef.current.forEach((m) => m.remove())
-    gridMarkersRef.current = gridParcels.map((p) => {
-      const el = document.createElement('div')
-      el.className =
-        'pointer-events-none select-none whitespace-nowrap text-[10px] font-semibold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.95)]' +
-        (p.estimated ? ' italic opacity-70' : '')
-      // Always the full description. "NW" on its own named the corner without
-      // naming the parcel — every section has one, so it answered nothing.
-      // A leading "≈" marks a parcel placed by estimate rather than survey —
-      // click it with the identify tool for the reason in words.
-      el.textContent = p.estimated ? `≈ ${p.label}` : p.label
-      return new maplibregl.Marker({ element: el })
-        .setLngLat([p.box.center.lng, p.box.center.lat])
-        .addTo(map)
-    })
+    // Shared with the cattle map (lib/geo/quarter-grid-layer), so the two
+    // cannot drift on what an estimated parcel looks like.
+    gridMarkersRef.current = drawQuarterGrid(map, gridParcels, gridMarkersRef.current)
   }, [mapRef, gridParcels, mapReady])
 
   // Crosshair while armed, so it is obvious the next click is a question.
@@ -1675,6 +1659,12 @@ export function MapPage() {
           layers, so unmounting it would strand them visible. */}
       <SoilLayer map={mapRef.current} mapReady={mapReady} visible={showSoil} />
       <YieldZoneLayer map={mapRef.current} mapReady={mapReady} visible={showYield} />
+      <SaltZoneLayer
+        map={mapRef.current}
+        mapReady={mapReady}
+        visible={showSalt}
+        salt={saltByField}
+      />
       <FarmLayersOverlay map={mapRef.current} ready={mapReady} layers={farmLayers ?? []} activeIds={[...farmActive]} isManager={isManager} focusId={pinLink} />
 
       {/* Mounted only while it is out: its layers and its corners go with it,
@@ -1817,7 +1807,9 @@ export function MapPage() {
                       </div>
                     </div>
                   )}
-                  {val === 'salinity' && showSalt && <SaltLegend salt={saltByField} names={fieldById} />}
+                  {val === 'salinity' && showSalt && (
+                    <SaltLegend salt={saltByField} names={fieldById} zonedFields={saltZonedFields} />
+                  )}
                   {val === 'aimm' && showIrrigation && aimmLegend && (
                     <LegendList items={IRRIGATION_LEGEND} />
                   )}

@@ -27,14 +27,31 @@ const blankNode = (n: React.ReactNode) =>
   n === '' ||
   (typeof n === 'string' && (n.trim() === '' || n.trim() === '—'))
 
-/** The label-and-value pairs under a card's heading, blanks left out. */
+/**
+ * The label-and-value pairs under a card's heading, blanks left out.
+ *
+ * The label column is sized to the labels, capped at 8rem — not fixed at 8rem
+ * (Sam, 9 Nov 2026: "not really formatted for a mobile app"). Measured on
+ * the live site at 375 px: the median label in the app needs 43 px and 77 of
+ * the 94 are under 70, so a fixed track spent 60–85 px of a phone's width on
+ * nothing and left every value stranded out to the right of a gulf. The two
+ * labels that did exceed 8rem — the "share (% of dry matter)" pair in
+ * FeedRation and GroupCard — were shortened to "Winter share" / "Group share"
+ * on the phone on 10 Nov 2026 (the desktop table header keeps the long form),
+ * so no label in the app now reaches the cap.
+ *
+ * Each card sizes its own track, so a card that drops its longest-labelled
+ * fact for a blank indents a few pixels less than its neighbours. Checked on
+ * Contracts, Scale tickets, Grants and Fusarium: every list came out to one
+ * width, because the widest label is rarely the conditional one.
+ */
 export function FactList({ facts, className }: { facts: Fact[]; className?: string }) {
   const shown = facts.filter((f) => !blankNode(f.node))
   if (shown.length === 0) return null
   return (
     <dl
       className={cn(
-        'mt-1 grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 text-xs',
+        'mt-1 grid grid-cols-[fit-content(8rem)_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 text-xs',
         className,
       )}
     >
@@ -72,16 +89,50 @@ export function CardList({
   )
 }
 
+/**
+ * A card's figures on one wrapped line instead of a label column.
+ *
+ * The label-and-value grid is right for a row of a dozen mixed columns, where
+ * a figure means nothing without its name. It is wrong for a short row whose
+ * figures carry their own units — "1,268 ac · 1,256 grazeable" says everything
+ * "Acres 1,268 / Grazeable 1,256" says, in a third of the height, and without
+ * the fixed 8rem label track that eats a third of a 375-pixel screen and
+ * leaves the values stranded out to the right (Sam, 9 Nov 2026: the Pastures
+ * list, 145 px a pasture for four numbers).
+ *
+ * Opt in per card by passing `summary` instead of relying on `facts`. Pass
+ * both and the summary is shown on the phone while `facts` still feeds the
+ * table's cells, which is the usual arrangement.
+ */
+export function SummaryLine({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={cn('mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-gray-600', className)}>
+      {children}
+    </div>
+  )
+}
+
+/** The dot between figures on a summary line. */
+export function Dot() {
+  return <span className="text-gray-300">·</span>
+}
+
 /** One row as a card: its heading, anything to press on the right, its facts. */
 export function RowCard({
   heading,
   facts,
+  summary,
   onClick,
   actions,
   children,
 }: {
   heading: React.ReactNode
   facts: Fact[]
+  /**
+   * Shown in place of the label-and-value list. For a short row whose figures
+   * carry their own units; see SummaryLine.
+   */
+  summary?: React.ReactNode
   onClick?: (e: MouseEvent<HTMLElement>) => void
   actions?: React.ReactNode
   /** Anything under the facts: what a table row opens beneath it, in the card. */
@@ -97,7 +148,7 @@ export function RowCard({
         <div className="min-w-0 flex-auto text-sm font-semibold text-gray-900">{heading}</div>
         {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
       </div>
-      <FactList facts={facts} />
+      {summary ?? <FactList facts={facts} />}
       {/* What the row opens beneath it, fenced off from the facts above. */}
       {children && <div className="mt-2 border-t border-gray-100 pt-2">{children}</div>}
     </li>

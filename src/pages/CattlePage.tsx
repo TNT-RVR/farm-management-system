@@ -10,7 +10,7 @@ import { useTab } from '@/lib/useTab'
 import { PillTabs } from '@/components/PillTabs'
 import { mobsNow, useActivations } from '@/lib/eshepherd'
 import { mobClass } from '@/lib/pasture-move'
-import { useHerdCountMutations, useHerdCounts } from '@/lib/cattle'
+import { combineHerdCounts, useHerdCountMutations, useHerdCounts } from '@/lib/cattle'
 import { useCropYear } from '@/lib/crop-year'
 import { useFeedPlan } from '@/lib/feed'
 import { cn } from '@/lib/utils'
@@ -26,20 +26,23 @@ const FeedRecordsTab = lazy(() => import('@/pages/cattle/FeedRecordsTab').then((
 const ManifestsTab = lazy(() => import('@/pages/cattle/ManifestsTab').then((m) => ({ default: m.ManifestsTab })))
 const GrazingLeasesTab = lazy(() => import('@/pages/cattle/GrazingLeasesTab').then((m) => ({ default: m.GrazingLeasesTab })))
 const PastureInsurance = lazy(() => import('@/pages/cattle/PastureInsurance').then((m) => ({ default: m.PastureInsurance })))
+const AnimalRegister = lazy(() => import('@/pages/cattle/AnimalRegister').then((m) => ({ default: m.AnimalRegister })))
 const AllRanchesFeed = lazy(() => import('@/pages/cattle/AllRanches').then((m) => ({ default: m.AllRanchesFeed })))
 const AllRanchesGrazing = lazy(() => import('@/pages/cattle/AllRanches').then((m) => ({ default: m.AllRanchesGrazing })))
 const PastureMap = lazy(() => import('@/pages/cattle/PastureMap').then((m) => ({ default: m.PastureMap })))
 const RotationList = lazy(() => import('@/pages/cattle/RotationList').then((m) => ({ default: m.RotationList })))
-const HerdLocation = lazy(() => import('@/pages/cattle/HerdLocation').then((m) => ({ default: m.HerdLocation })))
-const Underutilisation = lazy(() => import('@/pages/cattle/Underutilisation').then((m) => ({ default: m.Underutilisation })))
 const GrazingCalculator = lazy(() => import('@/pages/cattle/GrazingCalculator').then((m) => ({ default: m.GrazingCalculator })))
+const GrazingPlanner = lazy(() => import('@/pages/cattle/GrazingPlanner').then((m) => ({ default: m.GrazingPlanner })))
 const GrazingSettings = lazy(() => import('@/pages/cattle/GrazingSettings').then((m) => ({ default: m.GrazingSettings })))
 const FirstRanchCard = lazy(() => import('@/pages/cattle/AddRanch').then((m) => ({ default: m.FirstRanchCard })))
 const BaleChecksPage = lazy(() => import('@/pages/BaleChecksPage').then((m) => ({ default: m.BaleChecksPage })))
 const GrazingRestrictionsPage = lazy(() => import('@/pages/GrazingRestrictionsPage').then((m) => ({ default: m.GrazingRestrictionsPage })))
 const ReplacementHeifers = lazy(() => import('@/pages/cattle/ReplacementHeifers').then((m) => ({ default: m.ReplacementHeifers })))
-const HerdAnimals = lazy(() => import('@/pages/cattle/HerdAnimals').then((m) => ({ default: m.HerdAnimals })))
-const CattleGroupsCard = lazy(() => import('@/pages/cattle/HerdAnimals').then((m) => ({ default: m.CattleGroupsCard })))
+// The features built on the research library (4 Nov 2026). Each hangs off the
+// tab that already asks its question, rather than taking a route of its own.
+const MapSidebar = lazy(() => import('@/pages/cattle/MapSidebar').then((m) => ({ default: m.MapSidebar })))
+const ArrivalRisk = lazy(() => import('@/pages/cattle/ArrivalRisk').then((m) => ({ default: m.ArrivalRisk })))
+const WinterBenchmarkFold = lazy(() => import('@/pages/cattle/WinterBenchmark').then((m) => ({ default: m.WinterBenchmarkFold })))
 import { askConfirm } from '@/components/askConfirm'
 
 /**
@@ -48,11 +51,14 @@ import { askConfirm } from '@/components/askConfirm'
  * tabs read them, so updating a number here flows straight through.
  */
 function HerdCountsCard({ isManager, ranchId }: { isManager: boolean; ranchId: string }) {
-  const { data: counts } = useHerdCounts(ranchId)
+  const { data: rawCounts, isLoading } = useHerdCounts(ranchId)
   const { add, update, remove } = useHerdCountMutations(ranchId)
   // Under "All" the counts are a sum across ranches and there is no single
   // ranch to write a change back to. Read-only rather than guessing at one.
   const allRanches = ranchId === ''
+  // One row per class on "All" — each ranch keeps its own row, so without this
+  // the farm reads as two lots of Cows and two lots of Bulls to add up by eye.
+  const counts = useMemo(() => (allRanches ? combineHerdCounts(rawCounts) : rawCounts), [allRanches, rawCounts])
   const canEdit = isManager && !allRanches
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
@@ -100,10 +106,11 @@ function HerdCountsCard({ isManager, ranchId }: { isManager: boolean; ranchId: s
     <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
-          Head count
+          Herd
           {allRanches && <span className="font-normal text-gray-400">all ranches</span>}
           <InfoPopover title="Where these counts go">
-            <p>These totals feed the Grazing and Feed tabs automatically.</p>
+            <p>This is the herd: the one number the Grazing and Feed tabs read.</p>
+            <p>Saving a sale, a manifest or an animal&apos;s death offers to take the same head off here.</p>
             <p>
               Calves are counted as they are now — at side until the weaning date in Cattle settings. &ldquo;Keep&rdquo; is how many stay
               after weaning to background; those are the ones the Feed tab feeds from that day, and the rest are sold.
@@ -131,7 +138,11 @@ function HerdCountsCard({ isManager, ranchId }: { isManager: boolean; ranchId: s
 
       <ul className="mt-3 divide-y divide-gray-100">
         {(counts ?? []).map((c) => (
-          <li key={c.id} className="flex items-center gap-2 py-1.5 text-sm">
+          // The "at side · keep … to background" box is as wide as the row on a
+          // phone, and it was squeezing the class name to nothing — the Calves
+          // row read as a bare number with no word for what it counted. It
+          // drops to its own line instead, and stays inline on a computer.
+          <li key={c.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1.5 text-sm">
             <span
               className={cn(
                 'min-w-0 flex-1 truncate text-gray-800',
@@ -150,7 +161,7 @@ function HerdCountsCard({ isManager, ranchId }: { isManager: boolean; ranchId: s
             )}
             {c.background_head != null && (
               <label
-                className="flex items-center gap-1 text-[11px] text-gray-500"
+                className="order-last flex w-full items-center gap-1 text-[11px] text-gray-500 md:order-none md:w-auto"
                 title="At side until the weaning date (Cattle settings); this many are kept to background after it and the rest sold."
               >
                 at side · keep
@@ -234,8 +245,10 @@ function HerdCountsCard({ isManager, ranchId }: { isManager: boolean; ranchId: s
             )}
           </li>
         ))}
-        {(counts ?? []).length === 0 && (
-          <li className="py-2 text-sm text-gray-400">No groups yet.</li>
+        {isLoading ? (
+          <li className="py-2 text-sm text-gray-400">Loading…</li>
+        ) : (
+          (counts ?? []).length === 0 && <li className="py-2 text-sm text-gray-400">No groups yet.</li>
         )}
       </ul>
 
@@ -311,6 +324,13 @@ type CattleTab = {
   was: string
   /** Narrowed by the Ranch filter. The rest list or pick ranches themselves. */
   ranchScoped: boolean
+  /**
+   * No All: the tab works on one ranch and cannot answer for both at once.
+   * Its chip row leaves All out, and arriving with All remembered from
+   * another tab lands on the main ranch rather than on an empty page
+   * (Sam, 12 Nov 2026 — the Plan tab read as having lost its map).
+   */
+  oneRanch?: boolean
 }
 
 const VIEWS: Record<Exclude<CattleView, 'settings'>, { path: string; tabs: CattleTab[]; alias?: Record<string, string> }> = {
@@ -319,6 +339,8 @@ const VIEWS: Record<Exclude<CattleView, 'settings'>, { path: string; tabs: Cattl
     tabs: [
       { key: 'map', label: 'Map', was: '/cattle', ranchScoped: true },
       { key: 'grazing', label: 'Grazing', was: '/grazing', ranchScoped: true },
+      // The season's grazing plan, pasture by pasture (Sam, 2 Nov 2026).
+      { key: 'grazing-plan', label: 'Plan', was: '/grazing', ranchScoped: true, oneRanch: true },
       { key: 'restrictions', label: 'Spray restrictions', was: '/grazing-restrictions', ranchScoped: false },
     ],
     alias: { 'grazing-restrictions': 'restrictions' },
@@ -326,9 +348,19 @@ const VIEWS: Record<Exclude<CattleView, 'settings'>, { path: string; tabs: Cattl
   herd: {
     path: '/herd',
     tabs: [
-      { key: 'herd', label: 'Herd', was: '/herd', ranchScoped: true },
+      // The eShepherd animal register — the collar sheet in, the same sheet
+      // out, a tag reader to pull one animal up in the yard — with the head
+      // count by class above it. The count used to have a tab of its own
+      // called Herd, inside the Herd view, which read as a tab for the page
+      // it was already on (Sam, 11 Nov 2026).
+      { key: 'animals', label: 'Animals', was: '/herd', ranchScoped: true },
       { key: 'pregnancy', label: 'Pregnancy', was: '/pregnancy', ranchScoped: true },
+      // Its own tab rather than the tail of the head count: it is a plan for
+      // next year's cows, not a record of this year's.
+      { key: 'replacements', label: 'Replacement heifers', was: '/herd', ranchScoped: true },
     ],
+    // Every link written while the head count had its own tab.
+    alias: { herd: 'animals' },
   },
   feed: {
     path: '/feed',
@@ -345,7 +377,9 @@ const VIEWS: Record<Exclude<CattleView, 'settings'>, { path: string; tabs: Cattl
       { key: 'markets', label: 'Markets', was: '/cattle-markets', ranchScoped: false },
       { key: 'manifests', label: 'Manifests', was: '/manifests', ranchScoped: false },
       { key: 'leases', label: 'Grazing leases', was: '/grazing-leases', ranchScoped: false },
-      { key: 'insurance', label: 'Pasture insurance', was: '/pasture-insurance', ranchScoped: false },
+      // AFSC allows a subscription per block of pasture more than fifteen
+      // miles from the next, so each ranch elects and applies on its own.
+      { key: 'insurance', label: 'Pasture insurance', was: '/pasture-insurance', ranchScoped: true },
     ],
     alias: { 'grazing-leases': 'leases' },
   },
@@ -415,16 +449,23 @@ function CattleBody({
   const { data: ranches } = useRanches()
   const mainRanch = useMainRanch()
   // eShepherd collars: the import card only shows on farms that use them.
-  const collarsOn = useFeature('pregnancy')
+  // Its own switch, which starts wherever collar pregnancy tracking is.
+  const collarsOn = useFeature('collars')
   const { cropYear } = useCropYear()
   const navigate = useNavigate()
-  const [ranchPref, setRanchPref] = useState<string>(
-    () => localStorage.getItem(RANCH_STORE_KEY) ?? '',
+  // null means nobody has picked yet, which is not the same as picking All.
+  // Keeping them apart matters: inferring "never picked" from a second,
+  // non-reactive read of localStorage during render meant the first click on
+  // All set the same '' the state already held, React skipped the re-render,
+  // and the button only lit up on the next reload (Sam, 11 Nov 2026).
+  const [ranchPref, setRanchPref] = useState<string | null>(() =>
+    localStorage.getItem(RANCH_STORE_KEY),
   )
   // A setup link names the ranch it is about (?ranch=<id>): open on it, and
   // remember it, as picking it here would.
   const [params] = useSearchParams()
   const askedRanch = params.get('ranch')
+  const sharedCollars = params.get('shared') === 'collars'
   const [seenRanch, setSeenRanch] = useState<string | null>(null)
   if (askedRanch && askedRanch !== seenRanch) {
     setSeenRanch(askedRanch)
@@ -446,10 +487,18 @@ function CattleBody({
    * first ranch and quietly writing to the wrong place.
    */
   const ALL_RANCHES = ''
-  const savedIsAll = ranchPref === ALL_RANCHES && localStorage.getItem(RANCH_STORE_KEY) !== null
+  // A tab that cannot answer for both ranches ignores a remembered All and
+  // works on the main ranch, so it never opens on nothing. The preference
+  // itself is left alone: the tabs that do read All still get it.
+  const oneRanchOnly = !!current?.oneRanch
+  const savedIsAll = ranchPref === ALL_RANCHES && !oneRanchOnly
   const ranch = savedIsAll ? undefined : (ranches?.find((r) => r.id === ranchPref) ?? mainRanch ?? undefined)
   const ranchId = savedIsAll ? ALL_RANCHES : (ranch?.id ?? '')
   const allRanches = savedIsAll
+  // The grass's growing season: the window the ranch counts its rain over.
+  // Under All, the main ranch's.
+  const seasonRanch = ranch ?? mainRanch
+  const growingMonths: [number, number] = [seasonRanch?.precip_start_month ?? 4, seasonRanch?.precip_end_month ?? 10]
   const selectRanch = (id: string) => {
     setRanchPref(id)
     localStorage.setItem(RANCH_STORE_KEY, id)
@@ -501,15 +550,17 @@ function CattleBody({
                 Ranch
               </span>
               <div className="flex flex-wrap rounded-md border border-gray-200 p-0.5">
-                <button
-                  onClick={() => selectRanch(ALL_RANCHES)}
-                  className={cn(
-                    'rounded px-3 py-1 text-sm font-medium transition-colors',
-                    allRanches ? 'bg-brand-700 text-white' : 'text-gray-600 hover:bg-gray-50',
-                  )}
-                >
-                  All
-                </button>
+                {!oneRanchOnly && (
+                  <button
+                    onClick={() => selectRanch(ALL_RANCHES)}
+                    className={cn(
+                      'rounded px-3 py-1 text-sm font-medium transition-colors',
+                      allRanches ? 'bg-brand-700 text-white' : 'text-gray-600 hover:bg-gray-50',
+                    )}
+                  >
+                    All
+                  </button>
+                )}
                 {(ranches ?? []).map((r) => (
                   <button
                     key={r.id}
@@ -528,7 +579,7 @@ function CattleBody({
               {/* Rename and delete live with Add ranch in Cattle settings. */}
               {isManager && (
                 <button
-                  onClick={() => navigate('/cattle-settings')}
+                  onClick={() => navigate(SETUP_LINKS.cattleRanches(allRanches ? null : ranchId))}
                   className="text-xs font-medium text-gray-400 hover:text-brand-700 hover:underline"
                 >
                   Manage
@@ -540,26 +591,30 @@ function CattleBody({
       )}
       <TabSuspense>
       {view === 'settings' ? (
-        <div className="p-4 md:p-6">
-          <GrazingSettings ranches={ranchList} isManager={isManager} />
-        </div>
+        <GrazingSettings ranches={ranchList} isManager={isManager} />
       ) : tab === 'restrictions' ? (
         // Its own page until the split, padding and all.
-        <GrazingRestrictionsPage />
-      ) : tab === 'bale-checks' ? (
-        <BaleChecksPage />
-      ) : tab === 'herd' ? (
+        // The reading pages share the Herd tab's width; the map and the
+        // calculators keep the full width they need.
         <div className="mx-auto max-w-5xl p-4 md:p-6">
-          <div className="max-w-2xl">
-            <HerdCountsCard isManager={isManager} ranchId={ranchId} />
-          </div>
-          {/* The tagged animals, each row opening /cattle/:id (Sam, 7 Oct 2026). */}
-          <HerdAnimals ranchId={ranchId} ranches={ranchList} isManager={isManager} />
-          <div className="max-w-2xl">
-            <CattleGroupsCard ranchId={ranchId} ranches={ranchList} isManager={isManager} />
-          </div>
+          <GrazingRestrictionsPage embedded />
+        </div>
+      ) : tab === 'bale-checks' ? (
+        <div className="mx-auto max-w-5xl p-4 md:p-6">
+          <BaleChecksPage embedded />
+        </div>
+      ) : tab === 'replacements' ? (
+        <div className="mx-auto max-w-5xl p-4 md:p-6">
           {/* Per ranch: the calculation needs one ranch's herd and grass. */}
-          {ranch && !allRanches && <ReplacementHeifers ranch={ranch} />}
+          {ranch && !allRanches ? (
+            <ReplacementHeifers ranch={ranch} />
+          ) : (
+            <PickRanch
+              why="The heifer plan counts one ranch's herd against its own grass."
+              ranches={ranches ?? []}
+              onPick={selectRanch}
+            />
+          )}
         </div>
       ) : (
         <div className="p-4 md:p-6">
@@ -568,19 +623,20 @@ function CattleBody({
               {/* Above the map: cattle on sprayed ground is the one thing on
                   this page that cannot wait. Renders nothing when clear. */}
               <GrazingRestrictionBanner />
-              <PastureMap />
-              {/* Where the mobs are, from the collars — what the rotation list
-                  underneath needs to know before it can say where to go next. */}
-              {collarsOn && (
-                <HerdLocation
+              {/* The map had the page to itself and a lot of empty sky in it.
+                  Beside it now: where the cattle are, and whether the water
+                  can carry them (Sam, 11 Nov 2026). Below a large screen
+                  the column goes back under the map. */}
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+                <PastureMap ranchId={ranchId} growingMonths={growingMonths} />
+                <MapSidebar
+                  ranchId={ranchId}
                   ranchName={allRanches ? null : (ranch?.name ?? null)}
                   ranchNames={(ranches ?? []).map((r) => r.name)}
+                  collars={collarsOn}
+                  openCollars={sharedCollars}
                 />
-              )}
-              {/* The map says where the paddocks are; this says which one to
-                  move to next, and why (spec §9.3). */}
-              <RotationList />
-              <Underutilisation />
+              </div>
             </div>
           ) : tab === 'markets' ? (
             <CattleMarketsTab onGoToSettings={(id) => navigate(SETUP_LINKS.cattleCosts(id))} />
@@ -588,21 +644,64 @@ function CattleBody({
             <FeedRecordsTab ranchId={ranchId} ranches={ranchList} canEdit={isManager} />
           ) : tab === 'pregnancy' ? (
             <PregnancyTab ranchId={ranchId} ranches={ranchList} isManager={isManager} />
+          ) : tab === 'animals' ? (
+            <div className="space-y-6">
+              {/* The head count by class, above the animals it counts. */}
+              <div className="max-w-2xl">
+                <HerdCountsCard isManager={isManager} ranchId={ranchId} />
+              </div>
+              <AnimalRegister ranchId={ranchId} ranches={ranchList} isManager={isManager} />
+            </div>
           ) : tab === 'manifests' ? (
-            <ManifestsTab cropYear={cropYear} canEdit={isManager} />
+            <div className="space-y-6">
+              <ManifestsTab cropYear={cropYear} canEdit={isManager} />
+              {/* A manifest already knows when a load moved and from where, so
+                  the respiratory note reads it rather than asking twice. */}
+              <ArrivalRisk cropYear={cropYear} canEdit={isManager} />
+            </div>
           ) : tab === 'leases' ? (
             <GrazingLeasesTab canEdit={isManager} />
           ) : tab === 'insurance' ? (
-            <PastureInsurance isManager={isManager} />
+            ranch && !allRanches ? (
+              <PastureInsurance isManager={isManager} ranch={ranch} />
+            ) : (
+              <PickRanch
+                why="AFSC insures each block of pasture under its own subscription, with its own weather stations."
+                ranches={ranches ?? []}
+                onPick={selectRanch}
+              />
+            )
           ) : tab === 'grazing' ? (
             ranch ? (
               <GrazingCalculator isManager={isManager} ranch={ranch} />
             ) : (
-              <AllRanchesGrazing isManager={isManager} ranches={ranches ?? []} />
+              <AllRanchesGrazing ranches={ranches ?? []} />
             )
+          ) : tab === 'grazing-plan' ? (
+            <div className="space-y-6">
+              {ranch && !allRanches ? (
+                <GrazingPlanner isManager={isManager} ranch={ranch} />
+              ) : (
+                <PickRanch
+                  why="A grazing plan moves one herd around one ranch, so the map needs a ranch first."
+                  ranches={ranches ?? []}
+                  onPick={selectRanch}
+                />
+              )}
+              {/* The plan says where the cattle go all season; this says which
+                  paddock is ready to move to next, and why (spec §9.3). It sat
+                  under the map until 10 Nov 2026, a tab away from the plan it
+                  belongs to. */}
+              <RotationList ranchId={ranchId} growingMonths={growingMonths} />
+            </div>
           ) : tab === 'plan' ? (
             ranch ? (
-              <FeedCalculator isManager={isManager} ranchId={ranchId} />
+              <div className="space-y-6">
+                <FeedCalculator isManager={isManager} ranchId={ranchId} />
+                {/* The plan says what the herd needs; this says what Alberta's
+                    producers spent to carry a cow through the same winter. */}
+                <WinterBenchmarkFold ranchId={ranchId} />
+              </div>
             ) : (
               <AllRanchesFeed isManager={isManager} ranches={ranches ?? []} />
             )
@@ -610,6 +709,43 @@ function CattleBody({
         </div>
       )}
       </TabSuspense>
+    </div>
+  )
+}
+
+/**
+ * The dead end under the All tab (Sam, 12 Nov 2026).
+ *
+ * A few of these tabs work on one ranch at a time — a grazing plan, an AFSC
+ * subscription and a heifer plan each belong to one block of land, and
+ * averaging two ranches into one would be a made-up number. Under All they
+ * used to print one grey sentence and nothing else, which reads as the view
+ * having lost its map rather than as waiting on a choice. The choice is right
+ * here now.
+ */
+function PickRanch({
+  why,
+  ranches,
+  onPick,
+}: {
+  why: string
+  ranches: { id: string; name: string }[]
+  onPick: (id: string) => void
+}) {
+  return (
+    <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3">
+      <p className="text-sm text-gray-700">{why}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {ranches.map((r) => (
+          <button
+            key={r.id}
+            onClick={() => onPick(r.id)}
+            className="rounded-md border border-brand-300 bg-white px-3 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-50"
+          >
+            {r.name}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

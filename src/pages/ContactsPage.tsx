@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { Mail, Phone, Search, Trash2 } from 'lucide-react'
+import { Mail, Phone, Search, Trash2, UserPlus } from 'lucide-react'
 import { DataTable, type DataTableColumn } from '@/components/DataTable'
 import { ConfirmDialog, Modal } from '@/components/Modal'
 import { AddButton, DetailList, EditButton, RecordEditModal, type EditField } from '@/components/RecordEditor'
 import { Select } from '@/components/Select'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
+import { useContactCandidates } from '@/lib/contact-candidates'
 import { CONTACT_LINKS, contactLinkSummary, parseTags } from '@/lib/contact-links'
 import {
   CONTACT_TYPES,
@@ -57,6 +59,9 @@ export function ContactsPage() {
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
   const { data: contacts, isLoading } = useContacts()
+  // Just the number waiting, so the button says what is behind it.
+  const { data: candidates } = useContactCandidates()
+  const waiting = (candidates ?? []).filter((c) => c.status === 'pending').length
   const { create, update, remove } = useContactMutations()
 
   const [search, setSearch] = useState('')
@@ -146,13 +151,24 @@ export function ContactsPage() {
           Contacts{contacts ? ` (${contacts.length})` : ''}
         </h1>
         {isManager && (
-          <AddButton
-            label="New contact"
-            onClick={() => {
-              create.reset()
-              setEditing('new')
-            }}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            {/* The harvest from Sam's mail and QuickBooks waits on its own
+                page; this is the only way anyone would find it. */}
+            <Link
+              to="/contacts/suggested"
+              className="flex items-center gap-1.5 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <UserPlus className="h-4 w-4" />
+              {waiting ? `${waiting} to add` : 'Contacts to add'}
+            </Link>
+            <AddButton
+              label="New contact"
+              onClick={() => {
+                create.reset()
+                setEditing('new')
+              }}
+            />
+          </div>
         )}
       </div>
 

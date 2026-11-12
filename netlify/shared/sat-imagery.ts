@@ -188,7 +188,7 @@ export function scaleMatches(
  * alpha holes — is identical, because the difference between the two maps
  * must be the measurement and not the rendering.
  */
-const ndviRasterEvalscript = (lo: number, hi: number, index: 'ndvi' | 'ndre' = 'ndvi') => {
+export const ndviRasterEvalscript = (lo: number, hi: number, index: 'ndvi' | 'ndre' = 'ndvi') => {
   // B05 is the red edge, B04 the red. Named once here rather than interpolated
   // twice inside the script, where a typo in one of the two would silently
   // produce an index computed against different bands top and bottom.
@@ -217,7 +217,12 @@ var LO = ${lo};
 var HI = ${hi};
 function shade(ndvi) {
   var t = (ndvi - LO) / (HI - LO);
-  if (t < 0) t = 0;
+  // Written as "not >= 0" rather than "< 0" on purpose: every comparison
+  // against NaN is false, so "if (t < 0)" and "if (t > 1)" both let a NaN
+  // straight through, Math.round(NaN * 6) is NaN, COLOURS[NaN] is undefined,
+  // and the caller then throws on c[0]. A degenerate LO === HI does the same
+  // by dividing nothing by nothing.
+  if (!(t >= 0)) t = 0;
   if (t > 1) t = 1;
   var i = Math.round(t * (COLOURS.length - 1));
   return COLOURS[i];
@@ -228,6 +233,16 @@ function evaluatePixel(s) {
   var valid = s.dataMask === 1 && !bad && clp <= ${0.4} ? 1 : 0;
   if (valid === 0) return [0, 0, 0, 0];
   var v = (s.B08 - s.${band}) / (s.B08 + s.${band});
+  // Both bands exactly zero divides nothing by nothing. dataMask does not
+  // catch it -- a pixel at the edge of a scene's footprint can read zero
+  // reflectance and still be "in" the data -- and the whole raster then
+  // fails with "evalscript.js:37: TypeError", which is how the biggest
+  // paddocks (Pasture K, the farm outer boundary) lost their index rasters
+  // on scene after scene while true colour of the same scene came back fine.
+  // A ratio with no denominator is not a reading, so it leaves a hole, the
+  // same as cloud: this module's own rule is that a pixel nobody measured
+  // must not be painted any shade of the ramp.
+  if (!(v >= -1 && v <= 1)) return [0, 0, 0, 0];
   var c = shade(v);
   return [c[0], c[1], c[2], 1];
 }`
@@ -395,9 +410,10 @@ export async function runImageryCapture(
   if (error) return { captured: 0, skipped: 0, detail: error.message }
   if (!subjects?.length) return { captured: 0, skipped: 0, detail: 'no field geometries' }
 
-  let token: string
+  // Asked for once here only to fail fast on a bad credential; each raster
+  // takes its own below, because a token does not outlive a long pass.
   try {
-    token = await getToken()
+    await getToken()
   } catch (e) {
     return { captured: 0, skipped: 0, detail: `token: ${(e as Error).message.slice(0, 120)}` }
   }
@@ -512,7 +528,12 @@ export async function runImageryCapture(
       for (const kind of wanted) {
         const bounds =
           kind === 'ndvi' ? scale : kind === 'ndre' ? DEFAULT_NDRE_SCALE : kind === 'ndvi_field' ? own : null
-        const problem = await captureImage(sb, token, subjectType, s, row, kind, geom, bbox as [number, number, number, number], bounds)
+        // Fresh per raster, not once per run: a CDSE access token is minted
+        // for minutes and a capture pass can outlive it, after which every
+        // remaining raster comes back "401 AccessToken signature expired".
+        // getToken caches and re-mints a minute before expiry, so this is a
+        // lookup almost every time.
+        const problem = await captureImage(sb, await getToken(), subjectType, s, row, kind, geom, bbox as [number, number, number, number], bounds)
         if (problem) problems.push(problem)
         else captured++
       }

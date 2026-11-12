@@ -14,6 +14,15 @@ describe('checkFeeding', () => {
     expect(c.ratio).toBeCloseTo(1, 2)
     expect(c.warnings[0].code).toBe('W1')
   })
+  it('takes the calf’s pounds out of what went out before crediting the cow', () => {
+    // Nursing in June (month 3 after an April calving): the calf eats 4 lb DM of the pile.
+    const june: Conditions = { ...cond, onDate: new Date('2026-06-15T12:00:00') }
+    const dmPerHead = 30
+    const asFed = dmPerHead / 0.88 / 0.88
+    const c = checkFeeding({ group: cows, head: 100, days: 1, lines: [{ feed: gf, lbAsFed: asFed * 100, wastePct: 12 }], cond: june })!
+    expect(c.dmPerHead).toBeCloseTo(30, 6)
+    expect(c.cowTdnPerHead).toBeCloseTo((30 - 4) * 0.58, 6)
+  })
   it('goes red more than 20% under', () => {
     const perHead = (10.59 / 0.58 / 0.88 / 0.88) * 0.7
     const c = checkFeeding({ group: cows, head: 100, days: 1, lines: [{ feed: gf, lbAsFed: perHead * 100, wastePct: 12 }], cond })!

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { asOfDay, nearestPerSubject, systemsOn, type PivotPass } from './map-as-of'
+import { asOfDay, nearestPerSubject, photoDateLabel, stepDay, systemsOn, type PivotPass } from './map-as-of'
 import type { Database } from './database.types'
 
 type Sys = Database['public']['Tables']['fieldnet_systems']['Row']
@@ -43,5 +43,54 @@ describe('the map on a past day', () => {
     expect(on('2026-09-03')).toMatchObject({ is_water_on: true, operational_status: 'running', direction: 'forward', raw: { pivot_angle: 200 } })
     // Before any pass: off, today's arm left alone.
     expect(on('2026-08-01')).toMatchObject({ is_water_on: false, raw: { pivot_angle: 10 } })
+  })
+})
+
+describe('stepping through the satellite passes', () => {
+  const days = ['2026-08-04', '2026-08-25', '2026-09-24', '2026-10-14']
+
+  it('steps back from the latest to the pass before it', () => {
+    expect(stepDay(days, null, -1)).toEqual({ day: '2026-09-24', moved: true })
+  })
+
+  it('reports the newest pass as "latest" rather than its date', () => {
+    expect(stepDay(days, '2026-09-24', 1)).toEqual({ day: null, moved: true })
+  })
+
+  it('does not step past either end', () => {
+    expect(stepDay(days, '2026-08-04', -1)).toEqual({ day: '2026-08-04', moved: false })
+    expect(stepDay(days, null, 1)).toEqual({ day: null, moved: false })
+  })
+
+  it('walks the whole list one pass at a time', () => {
+    expect(stepDay(days, '2026-10-14', -1)).toEqual({ day: '2026-09-24', moved: true })
+    expect(stepDay(days, '2026-09-24', -1)).toEqual({ day: '2026-08-25', moved: true })
+    expect(stepDay(days, '2026-08-25', 1)).toEqual({ day: '2026-09-24', moved: true })
+  })
+
+  it('treats a hand-typed date as the pass up to it', () => {
+    // 1 Sep is no pass; the paddocks are showing 25 Aug, so back is 4 Aug.
+    expect(stepDay(days, '2026-09-01', -1)).toEqual({ day: '2026-08-04', moved: true })
+    expect(stepDay(days, '2026-09-01', 1)).toEqual({ day: '2026-09-24', moved: true })
+  })
+
+  it('steps forward into the list from a date before any pass', () => {
+    expect(stepDay(days, '2026-01-01', 1)).toEqual({ day: '2026-08-04', moved: true })
+    expect(stepDay(days, '2026-01-01', -1)).toEqual({ day: '2026-01-01', moved: false })
+  })
+
+  it('has nowhere to go with one pass, or none', () => {
+    expect(stepDay(['2026-10-14'], null, -1)).toEqual({ day: null, moved: false })
+    expect(stepDay([], null, -1)).toEqual({ day: null, moved: false })
+  })
+})
+
+describe('saying when the picture was taken', () => {
+  it('names one day when every image is from it', () => {
+    expect(photoDateLabel(['2026-10-14', '2026-10-14'])).toBe('Taken Oct 14, 2026.')
+  })
+
+  it('gives the span when the paddocks were imaged on different passes', () => {
+    expect(photoDateLabel(['2026-10-14', '2026-08-04'])).toBe('Taken Aug 4, 2026 to Oct 14, 2026.')
   })
 })

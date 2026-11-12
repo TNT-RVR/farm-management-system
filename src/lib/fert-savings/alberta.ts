@@ -14,6 +14,7 @@
  * model explains them.
  */
 import { farmDistrict } from '../farm-context'
+import { POTATO_PETIOLE } from '../nutrient-guide-data'
 
 export type SoilZone = 'Brown' | 'Dark Brown'
 
@@ -478,13 +479,21 @@ export const AOPA_EC_LIMIT = 4
  * Russet Burbank 4th-petiole nitrate-N, ppm, by days after planting, sampled
  * 8–11 a.m. The low value is 90% of maximum yield. Agdex 258/541-1 (2011).
  * The band resets upward around 85 days as the crop's demand rises again.
+ *
+ * The four days this walks between are taken from the sheet's whole printed
+ * table, which lives in nutrient-guide-data.ts with the phosphorus and
+ * potassium columns beside the nitrate one; only nitrate is used here. Reading
+ * them out of that table rather than repeating them keeps one copy of the
+ * numbers — a petiole band and a petiole target that disagreed would be worse
+ * than either alone. A row that went missing reads as zero, which the test
+ * holding these four bands catches at once.
  */
-const PETIOLE_BANDS: [dap: number, low: number, high: number][] = [
-  [60, 13000, 21400],
-  [80, 7200, 15600],
-  [85, 12978, 20378],
-  [125, 3200, 10600],
-]
+const petioleNitrate = (dap: number) =>
+  POTATO_PETIOLE.rows.find((r) => r.dap === dap)?.no3n ?? [0, 0]
+
+const PETIOLE_BANDS = ([60, 80, 85, 125] as const).map(
+  (dap) => [dap, ...petioleNitrate(dap)] as [dap: number, low: number, high: number],
+)
 
 export function petioleNitrateBand(daysAfterPlanting: number): [number, number] | null {
   if (!(daysAfterPlanting > 0)) return null

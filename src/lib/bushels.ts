@@ -24,6 +24,11 @@ export const LB_PER_SHORT_TON = 2000
  * Canadian trade standards. Matched loosely on the name because this farm calls
  * a crop "Vandermeer Corn" and "Beans-Pinto", and a table keyed on exact names would
  * miss both.
+ *
+ * Only crops the trade sells by the bushel belong here. Grass and vegetable
+ * seed, quinoa and the cover-crop seeds go by the pound and have no standard
+ * bushel at all, so they are left out and convert to nothing rather than to a
+ * number somebody might bank on.
  */
 export const STANDARD_BUSHEL_LB: { match: RegExp; lb: number; label: string }[] = [
   { match: /durum/i, lb: 60, label: 'Durum' },
@@ -34,11 +39,18 @@ export const STANDARD_BUSHEL_LB: { match: RegExp; lb: number; label: string }[] 
   { match: /corn|maize/i, lb: 56, label: 'Corn' },
   { match: /soy/i, lb: 60, label: 'Soybeans' },
   { match: /flax/i, lb: 56, label: 'Flax' },
-  { match: /\brye\b/i, lb: 56, label: 'Rye' },
+  // Cereal rye only. Ryegrass seed is a different plant, sold by the pound:
+  // "Rye Grass Seed" was matching here and converting at 56 lb to the bushel.
+  { match: /\brye\b(?!\s*grass)/i, lb: 56, label: 'Rye' },
   { match: /triticale/i, lb: 50, label: 'Triticale' },
   { match: /lentil/i, lb: 60, label: 'Lentils' },
-  { match: /pea/i, lb: 60, label: 'Peas' },
+  // Before the looser pea pattern, which would otherwise answer for these.
   { match: /chickpea|garbanzo/i, lb: 60, label: 'Chickpeas' },
+  { match: /pea/i, lb: 60, label: 'Peas' },
+  // Grain sorghum. Forage sorghum is cut green and weighed by the ton.
+  { match: /sorghum/i, lb: 56, label: 'Grain sorghum' },
+  // The seed, not the hay: hay has no bushel and must keep returning nothing.
+  { match: /alfalfa seed/i, lb: 60, label: 'Alfalfa seed' },
   { match: /mustard/i, lb: 50, label: 'Mustard' },
   { match: /sunflower/i, lb: 30, label: 'Sunflower' },
   { match: /bean/i, lb: 60, label: 'Dry beans' },

@@ -13,6 +13,7 @@ import type { FillLot } from './bin-fill'
 import { bushelsLeavingByField } from './bin-fill'
 
 type MovementInsert = Database['public']['Tables']['grain_movements']['Insert']
+type LoadInsert = Database['public']['Tables']['bin_loads']['Insert']
 
 /** Where a shipment went: hauled to a place on the list, or picked up at our yard by a buyer. */
 export type Destination = { kind: 'site'; siteId: string } | { kind: 'pickup'; buyer: string }
@@ -67,6 +68,82 @@ export function shipmentLabel(
   if (m.picked_up) return `Shipped — picked up${m.shipped_to ? ` by ${m.shipped_to}` : ' at the yard'}`
   const to = (m.delivery_site_id && siteName(m.delivery_site_id)) || m.shipped_to
   return to ? `Shipped to ${to}` : 'Shipped out'
+}
+
+/** Pounds in a kilogram, the figure the scale columns are generated with. */
+const LB_PER_KG = 2.20462262
+
+/**
+ * The loads to write for one shipment, when it is going out on a truck
+ * (Sam, 2 Nov 2026: "I want to be able to add a driver and a truck … Also
+ * have the options of doing a weigh in and weigh out").
+ *
+ * A shipment written as a load carries what only a load can: who drove it,
+ * which truck, the full and empty weights, the kilograms. The bin's movement
+ * is written by the database from the load, so the ledger shows the driver and
+ * the weight against a shipment exactly as it does against a harvest load.
+ *
+ * Weights are the truth when the truck crossed the scale: net_kg and bushels
+ * are worked out from them by the database, so what comes off the scale wins
+ * over what was typed. With no scale weights, the bushels are turned back into
+ * a weight at the crop's bushel weight and the load is marked an estimate.
+ *
+ * One load per field the grain came from, as the movements were, so each
+ * field's deliveries still add up; a weighed truck's kilograms are split
+ * between them in the same proportion as its bushels.
+ */
+export function shipmentLoads(a: {
+  binId: string
+  cropId: string
+  cropYear: number
+  /** What is leaving, in bushels. Ignored for the split when the truck was weighed. */
+  bushels: number
+  on: string
+  lots: readonly FillLot[]
+  destination: Destination
+  /** The crop's bushel weight. Without it nothing can be written as a load. */
+  lbPerBu: number
+  /** Full and empty off the scale, in kilograms. Both or neither. */
+  weights: { grossKg: number; tareKg: number } | null
+  driver: { id: string | null; name: string | null }
+  truck: string | null
+  note: string
+}): LoadInsert[] | null {
+  if (!(a.lbPerBu > 0)) return null
+  const weighed = a.weights != null && a.weights.grossKg > a.weights.tareKg
+  // What the load is worth in bushels: off the scale where there is one.
+  const total = weighed ? ((a.weights!.grossKg - a.weights!.tareKg) * LB_PER_KG) / a.lbPerBu : a.bushels
+  if (!(total > 0)) return null
+
+  const parts = bushelsLeavingByField(a.lots, total).filter((p) => p.bushels > 0)
+  const split = parts.length ? parts : [{ fieldId: null as string | null, bushels: total }]
+  const sum = split.reduce((s, p) => s + p.bushels, 0)
+
+  return split.map((p) => {
+    const share = sum > 0 ? p.bushels / sum : 1
+    // The scale's weights, this field's share of them; or the weight its
+    // bushels come to, with nothing taken off for an empty truck.
+    const gross = weighed ? a.weights!.grossKg * share : (p.bushels * a.lbPerBu) / LB_PER_KG
+    const tare = weighed ? a.weights!.tareKg * share : 0
+    return {
+      bin_id: a.binId,
+      crop_id: a.cropId,
+      crop_year: a.cropYear,
+      field_id: p.fieldId,
+      loaded_on: a.on,
+      direction: 'out',
+      entry_kind: weighed ? 'weighed' : 'net',
+      estimated: !weighed,
+      gross_kg: Math.round(gross * 100) / 100,
+      tare_kg: Math.round(tare * 100) / 100,
+      lb_per_bu: a.lbPerBu,
+      driver: a.driver.name?.trim() || null,
+      driver_id: a.driver.id || null,
+      truck: a.truck?.trim() || null,
+      delivery_site_id: a.destination.kind === 'site' ? a.destination.siteId : null,
+      note: a.note.trim() || null,
+    }
+  })
 }
 
 /**

@@ -45,6 +45,9 @@ You have read-only tools over the app. Work like someone who knows the app well:
 - The farm's own settings beat general knowledge: a crop's moisture limits, prices and rates are in its tables (crops, crop_inputs…); look them up rather than quoting a rule of thumb, and if you must use general knowledge, say that it is.
 - An agronomy question the records cannot answer — a rate, a timing, a threshold, a reason — goes to search_research before it goes to what you happen to know. Say where the answer came from, in the sentence rather than a footnote: "a Lethbridge trial found…", "Alberta Agriculture's sheet says…". Give the year when it matters, and prefer the work done nearest here when papers disagree. Never cite a paper search_research did not return, and never quote a figure that is not in the passage it gave you.
 - Never invent a figure. If the data can't answer it, or a look-up was refused (they may not have access), say so plainly.
+- Comparing one field with another means per acre, every time. A field's acres are crop_plans.planned_acres for that crop year — the fields table has no acres column — so look them up before saying one field used or grew more than another. The bigger total is often the bigger field, and often enough it is the smaller one.
+- Never give a reason you have not checked. Offering a list of things that "may" explain it, while saying you could not check them, is worse than no answer: say what you found, say what is still unchecked, and stop.
+- Before telling someone their own figure is wrong, make sure you are reading the same measure. A report's total usually adds something to the raw record — road fuel on top of in-field litres, freight, shrink, a second pass the field had and the other did not. Name which measure your number is before you correct theirs.
 
 The answer is read on a phone and may be read aloud. Lead with the answer in one or two plain sentences. Then at most four short "- " bullets if they help. Under 120 words. No headings, no tables, no preamble. Bold at most the main figure with **.
 Link what you mention to where it lives in the app, as markdown [words](/path). Use only paths from find_pages, search_records or search_research (each paper carries its own path), or a record's own page: /fields/<id>, /tasks/<id>, /cattle/<id>, /equipment/<id>, /crops/<id>. Never name a paper in link text over a path that does not open it. End with the one link that best opens the answer, on its own line, as [Open …](/path).`
@@ -185,6 +188,10 @@ export default async (req: Request) => {
         folder: h.folder_name,
         pages: h.pages,
         passage: h.passage,
+        // 735 papers are held only as a citation (the publisher would not
+        // serve us a copy) or as a scan with no text layer, so their abstract
+        // is all we have. The model must not present one as the paper itself.
+        passage_is: h.kind === 'abstract' ? 'the abstract only, not the full paper' : 'a page of the paper',
         // Linking a paper by name to somewhere it is not is worse than not
         // linking it, and the model has no other path to one: this reopens
         // the library searched for that title, which puts it first.
@@ -280,7 +287,15 @@ export default async (req: Request) => {
       if (left < 20_000) throw new Error('It took too long to work out; try a narrower question')
       if (last && round > 0) {
         const tail = messages[messages.length - 1]
-        if (Array.isArray(tail.content)) tail.content.push({ type: 'text', text: 'Time is up for look-ups. Answer now from what you have found, and say plainly what you could not check.' })
+        if (Array.isArray(tail.content))
+          tail.content.push({
+            type: 'text',
+            // Saying what it could not check is right; filling the hole with
+            // guesses is not (Sam, 2 Nov 2026 — it offered four reasons one
+            // field burned more fuel, having checked none of them, and the
+            // first guess was the wrong way round).
+            text: 'Time is up for look-ups. Answer now from what you have found. Say plainly what you could not check, and give no reason you did not check — no list of things that "may" explain it.',
+          })
         await progress('Writing the answer…')
       }
       const res = await callClaude(

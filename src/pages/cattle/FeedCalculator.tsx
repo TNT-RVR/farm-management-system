@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CloudSnow, Wheat } from 'lucide-react'
+import { Link, useLocation } from 'react-router-dom'
 import { Select } from '@/components/Select'
+import { CardList, RowCard } from '@/components/RowCards'
 import { HelpNote } from '@/components/HelpNote'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
 import { useHerdCounts } from '@/lib/cattle'
@@ -13,12 +15,14 @@ import {
   feedingWindow,
   groupInput,
   monthlyCold,
+  monthlyIntakeFactor,
   planSettings,
   rationLines,
   seasonInputs,
   seasonPlan,
   todayConditions,
   usableInYard,
+  withReserve,
   useColdForecast,
   useFeedTests,
   useFeedTypesFull,
@@ -92,7 +96,8 @@ export type FeedTotals = {
  *
  * The need comes from each group's class, weight, stage and condition, raised
  * for cold (today's forecast; the season from this ranch's last five winters)
- * and mud. The group's ration is fed in the amount that meets it. The season
+ * and mud. A measured group's ration is fed in the amount that meets it; a
+ * free-choice group eats to appetite and the rest goes on as condition. The season
  * is walked day by day to turnout and set against what is left in the yard.
  */
 export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: boolean; ranchId: string; onTotals?: (t: FeedTotals) => void }) {
@@ -130,11 +135,12 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
   const today = useMemo(() => {
     if (!cond) return new Map()
     return new Map(
-      (counts ?? []).map((g) => [g.id, solveRation(groupInput(g), { ...cond, freeChoice: false }, rationLines(g.id, rations ?? [], values))]),
+      (counts ?? []).map((g) => [g.id, solveRation(groupInput(g), cond, rationLines(g.id, rations ?? [], values))]),
     )
   }, [counts, rations, values, cond])
 
   const coldByMonth = useMemo(() => (settings ? monthlyCold(history?.months, settings.coat, settings.sheltered) : new Map<number, number>()), [history, settings])
+  const intakeByMonth = useMemo(() => (settings ? monthlyIntakeFactor(history?.months, settings.sheltered) : new Map<number, number>()), [history, settings])
 
   // What is in the yard, usable: left × (1 − storage loss still to come). Only feeds with something recorded as put up.
   const usable = useMemo(() => usableInYard(onHand ?? [], values), [onHand, values])
@@ -142,13 +148,13 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
   const season = useMemo(() => {
     if (!settings || !window) return null
     const inputs = seasonInputs(counts ?? [], excluded, rations ?? [], values, stubble ?? [], ranch?.weaning_date)
-    return seasonPlan({ groups: inputs.groups, settings, from: window.from, to: window.to, coldByMonth, stubble: inputs.stubble, onHand: usable })
-  }, [settings, window, counts, excluded, rations, values, stubble, coldByMonth, usable, ranch?.weaning_date])
+    return seasonPlan({ groups: inputs.groups, settings, from: window.from, to: window.to, coldByMonth, intakeByMonth, stubble: inputs.stubble, onHand: usable })
+  }, [settings, window, counts, excluded, rations, values, stubble, coldByMonth, intakeByMonth, usable, ranch?.weaning_date])
 
   const shortFeeds = useMemo(() => {
     if (!season || !settings) return [] as string[]
     return [...season.needLb]
-      .filter(([id, need]) => usable.has(id) && (usable.get(id) ?? 0) < need * (1 + settings.reservePct / 100))
+      .filter(([id, need]) => usable.has(id) && (usable.get(id) ?? 0) < withReserve(need, settings.reservePct))
       .map(([id]) => values.get(id)?.name ?? '?')
   }, [season, usable, values, settings])
 
@@ -163,6 +169,17 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
       shortFeeds,
     })
   }, [onTotals, ranchId, season, counts, excluded, shortFeeds])
+
+  // A link to "Will the feed last?" (#feed-last) lands on it once it has drawn.
+  const { hash } = useLocation()
+  const seasonReady = !!season
+  useEffect(() => {
+    if (!seasonReady || hash !== '#feed-last') return
+    const frame = requestAnimationFrame(() =>
+      document.getElementById('feed-last')?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
+    )
+    return () => cancelAnimationFrame(frame)
+  }, [seasonReady, hash])
 
   // The yard, as the ration planner sees it: counted feeds this ranch uses.
   const yardFeeds: YardFeed[] = (onHand ?? [])
@@ -321,7 +338,7 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
         counted={!nothingCounted}
         feeds={yardFeeds}
         groups={yardGroups}
-        args={{ from: window.from, to: window.to, coldByMonth, calvingMonth: settings.calvingMonth, calvingDay: settings.calvingDay, muddy: settings.muddy, reservePct: settings.reservePct }}
+        args={{ from: window.from, to: window.to, coldByMonth, intakeByMonth, calvingMonth: settings.calvingMonth, calvingDay: settings.calvingDay, muddy: settings.muddy, reservePct: settings.reservePct }}
         problems={yardProblems}
       />
 
@@ -349,6 +366,9 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
               included={!excluded.has(g.id)}
               onToggle={() => toggle(g.id)}
               weaningDate={ranch?.weaning_date ?? null}
+              season={season?.groups.get(g.id) ?? null}
+              turnout={window.to}
+              cond={cond}
             />
           ))
         )}
@@ -356,7 +376,8 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
 
       {/* Season */}
       {season && (
-        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        // id: Feed records' "how long it lasts" links here (#feed-last).
+        <section id="feed-last" className="scroll-mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
           <div className={cn('flex flex-wrap items-center justify-between gap-2', CARD_HEAD)}>
             <h2 className="flex items-center gap-1.5 font-medium">
               <Wheat className="h-4 w-4 text-brand-100" /> Will the feed last? {fmtDate(window.from)} to turnout {fmtDate(window.to)} ({season.days} of {feedDaysTotal} days) <FeedInfo k="daysOfFeed" />
@@ -376,10 +397,56 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
           )}
           {nothingCounted && (
             <p className="mx-3 mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
-              Nothing is counted in the yard yet — this shows what is needed, not whether you have it. Record it under Feed records → Feed put up (“Counted on hand”).
+              Nothing counted in the yard yet, so this is need only.{' '}
+              <Link to="/feed?tab=records" className="font-medium underline">
+                Record what is on hand
+              </Link>
             </p>
           )}
-          <div className="overflow-x-auto">
+          <CardList>
+            {[...season.needLb]
+              .filter(([, lb]) => lb > 0)
+              .sort((a, b) => b[1] - a[1])
+              .map(([id, need]) => {
+                const v = values.get(id)
+                const withReserve = need * (1 + settings.reservePct / 100)
+                const have = usable.get(id)
+                const diff = have == null ? null : have - withReserve
+                const out = season.runsOut.get(id)
+                return (
+                  <RowCard
+                    key={id}
+                    heading={v?.name ?? '?'}
+                    actions={
+                      <span className={cn('text-xs', out ? 'font-semibold text-red-700' : 'text-gray-400')}>
+                        {out ? `runs out ${fmtDate(out)}` : have == null ? '' : 'lasts'}
+                      </span>
+                    }
+                    facts={[
+                      { label: 'Needed to turnout', node: `${tonnes(need)} t · ${yardAmount(need, v?.unit, v?.lbPerBale)}` },
+                      { label: '+ reserve', node: `${tonnes(withReserve)} t` },
+                      { label: 'Usable in the yard', node: have == null ? 'not counted' : `${tonnes(have)} t` },
+                      {
+                        label: 'Short / spare',
+                        node:
+                          diff == null ? null : (
+                            <span className={cn('font-semibold', diff < 0 ? 'text-red-700' : 'text-emerald-700')}>
+                              {diff < 0 ? `${tonnes(-diff)} t short` : `${tonnes(diff)} t spare`}
+                            </span>
+                          ),
+                      },
+                    ]}
+                  />
+                )
+              })}
+            {season.extraGrainLb > 1 && (
+              <RowCard
+                heading={<span className="text-amber-900">Grain to add where a ration falls short</span>}
+                facts={[{ label: 'Needed', node: `${tonnes(season.extraGrainLb)} t` }]}
+              />
+            )}
+          </CardList>
+          <div className="hidden overflow-x-auto sm:block">
             <table className="w-full min-w-[680px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
@@ -397,9 +464,9 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
                   .sort((a, b) => b[1] - a[1])
                   .map(([id, need]) => {
                     const v = values.get(id)
-                    const withReserve = need * (1 + settings.reservePct / 100)
+                    const reserved = withReserve(need, settings.reservePct)
                     const have = usable.get(id)
-                    const diff = have == null ? null : have - withReserve
+                    const diff = have == null ? null : have - reserved
                     const out = season.runsOut.get(id)
                     return (
                       <tr key={id}>
@@ -407,7 +474,7 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
                         <td className="px-2 py-1.5 text-right tabular-nums">
                           {tonnes(need)} t<span className="block text-[10px] text-gray-400">{yardAmount(need, v?.unit, v?.lbPerBale)}</span>
                         </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{tonnes(withReserve)} t</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{tonnes(reserved)} t</td>
                         <td className="px-2 py-1.5 text-right tabular-nums">{have == null ? <span className="text-xs text-gray-400">not counted</span> : `${tonnes(have)} t`}</td>
                         <td className={cn('px-2 py-1.5 text-right font-semibold tabular-nums', diff == null ? 'text-gray-300' : diff < 0 ? 'text-red-700' : 'text-emerald-700')}>
                           {diff == null ? '—' : diff < 0 ? `${tonnes(-diff)} t short` : `${tonnes(diff)} t spare`}
@@ -439,11 +506,8 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
             title="How the season is worked out"
           >
             <p>
-              Day by day: each group at its stage that day, this month&apos;s average cold, head as counted today. Usable in the yard is what is left × (1 − storage loss
-              still to come).
-            </p>
-            <p>
-              Feed records → Feed left works it the other way: how many days each feed lasts at the rate it actually went out over the last 30 days of feed sheets.
+              Day by day: each group at its stage that day, this month&apos;s average cold, head as counted today. Free-choice groups eat to appetite. Usable in the yard is
+              what is left × (1 − storage loss still to come).
             </p>
           </HelpNote>
         </section>
@@ -462,7 +526,7 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
       <FeedQuality types={types ?? []} tests={tests ?? []} values={values} isManager={isManager} />
 
       {/* Crops to grow for next winter */}
-      <FeedRation isManager={isManager} ranchId={ranchId} plan={plan} herds={counts ?? []} />
+      <FeedRation isManager={isManager} ranchId={ranchId} plan={plan} herds={counts ?? []} coldByMonth={coldByMonth} weaningDate={ranch?.weaning_date ?? null} />
     </div>
   )
 }

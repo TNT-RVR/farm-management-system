@@ -5,6 +5,7 @@ import {
   describeRestriction,
   fmtDay,
   grazingPicture,
+  untilPhrase,
   type Clash,
   type GrazingRule,
   type Place,
@@ -49,8 +50,8 @@ const restrictionFinding = (place: Place, r: Restriction) => ({
 
 const placeLink = (p: Place) => (p.kind === 'field' ? `/fields/${p.id}` : '/cattle?tab=restrictions')
 
-/** "11 Aug 2026", or "spring 2027" for a not-at-all (it runs to 1 May). */
-const untilText = (r: Restriction) => (r.never ? `spring ${r.until!.slice(0, 4)}` : fmtDay(r.until!))
+/** "11 Aug 2026", "harvest is finished", or "spring 2027" for a not-at-all (it runs to 1 May). */
+const untilText = (r: Restriction) => untilPhrase(r)
 
 /** Whole days from `today` to `until` — how long is left, not how long it was. */
 const daysLeft = (until: string, today: string) =>
@@ -66,7 +67,9 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
  * read as 30 days from the alert.
  */
 const ruleLine = (r: Restriction, what: string, today: string) =>
-  r.never
+  r.never && r.endsAtHarvest
+    ? `${what} while the treated crop is on the field — ${r.product}'s label says not the treated crop, so it lifts once harvest is finished.`
+    : r.never
     ? `${what} on this crop at all — ${r.product}'s label says not the treated crop (counted to ${fmtDay(r.until!)}).`
     : `${what} for ${plural(r.days ?? 0, 'day')} after spraying — ${r.product}, sprayed ${fmtDay(r.appliedOn)}, so not until ${fmtDay(r.until!)} (${plural(daysLeft(r.until!, today), 'day')} from now).`
 

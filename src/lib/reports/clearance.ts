@@ -3,7 +3,7 @@ import { compareFieldNames } from '@/lib/queries'
 import { fieldPhi, type PhiApplication } from '@/lib/phi'
 import { loadPhiSeason } from '@/lib/phi-data'
 import { loadGrazingData } from '@/lib/grazing-data'
-import { fmtDay, grazingPicture, longest, type Place, type Restriction } from '@/lib/grazing-restrictions'
+import { fmtDay, grazingPicture, longest, untilPhrase, type Place, type Restriction } from '@/lib/grazing-restrictions'
 import { fetchAll, fieldLabel, yearParam, type Cell, type GatherContext, type ParamValues, type ReportData } from './framework'
 
 /**
@@ -46,7 +46,8 @@ export function uniqueNames(names: string[]): string[] {
 export function clearFrom(rs: Restriction[], kind: 'graze' | 'feed'): string | null {
   const last = longest(rs, kind)
   if (!last) return null
-  return last.never ? `spring ${last.until!.slice(0, 4)} (not this crop at all)` : last.until
+  if (last.never && last.endsAtHarvest && !last.harvestedOn) return 'once harvest is finished (not the treated crop)'
+  return last.never ? `${untilPhrase(last)} (not this crop at all)` : last.until
 }
 
 /** One field's row. `place` is the grazing picture's view of the field, its restrictions already this season's. */

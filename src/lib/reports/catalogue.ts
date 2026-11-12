@@ -564,7 +564,8 @@ export const REPORTS: ReportEntry[] = [
     from: { label: 'Pasture insurance', to: '/cattle-markets?tab=insurance' },
     formats: ['PDF', 'CSV'],
     managerOnly: true,
-    params: [year],
+    // One subscription per ranch; left unpicked it is the farm's main one.
+    params: [year, { key: 'ranch', kind: 'ranch', label: 'Ranch' }],
   },
   {
     mode: 'build',
@@ -575,7 +576,8 @@ export const REPORTS: ReportEntry[] = [
     from: { label: 'Pasture insurance', to: '/cattle-markets?tab=insurance' },
     formats: ['PDF', 'CSV'],
     managerOnly: true,
-    params: [year],
+    // One subscription per ranch; left unpicked it is the farm's main one.
+    params: [year, { key: 'ranch', kind: 'ranch', label: 'Ranch' }],
   },
   {
     mode: 'build',
@@ -586,7 +588,8 @@ export const REPORTS: ReportEntry[] = [
     from: { label: 'Pasture insurance', to: '/cattle-markets?tab=insurance' },
     formats: ['PDF', 'CSV'],
     managerOnly: true,
-    params: [year],
+    // One subscription per ranch; left unpicked it is the farm's main one.
+    params: [year, { key: 'ranch', kind: 'ranch', label: 'Ranch' }],
   },
   {
     mode: 'build',
@@ -597,7 +600,8 @@ export const REPORTS: ReportEntry[] = [
     from: { label: 'Pasture insurance', to: '/cattle-markets?tab=insurance' },
     formats: ['PDF', 'CSV'],
     managerOnly: true,
-    params: [year],
+    // One subscription per ranch; left unpicked it is the farm's main one.
+    params: [year, { key: 'ranch', kind: 'ranch', label: 'Ranch' }],
   },
   {
     mode: 'build',
@@ -633,7 +637,7 @@ export const REPORTS: ReportEntry[] = [
     section: 'cattle',
     name: 'Year-end herd inventory',
     what: 'Head, weight and animal units by ranch and class on a date, the collar counts beside, and calves valued.',
-    from: { label: 'Herd', to: '/herd?tab=herd' },
+    from: { label: 'Herd', to: '/herd?tab=animals' },
     formats: PDF_CSV,
     params: [{ key: 'ranch', kind: 'ranch', allLabel: 'All ranches' }, { key: 'asOf', kind: 'date', label: 'As of' }],
   },

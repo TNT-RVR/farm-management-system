@@ -56,6 +56,11 @@ export function costsFor(rows: CostRow[], ranch: string, year: number): CattleCo
     vet_cost_per_head: n('vet_cost_per_head'),
     other_cost_per_head: n('other_cost_per_head'),
     death_loss_pct: n('death_loss_pct'),
+    cow_death_pct: n('cow_death_pct') ?? n('death_loss_pct'),
+    calf_loss_pct: n('calf_loss_pct') ?? n('death_loss_pct'),
+    post_weaning_loss_pct: n('post_weaning_loss_pct') ?? n('death_loss_pct'),
+    cull_pct: n('cull_pct'),
+    cull_cow_price_cwt: n('cull_cow_price_cwt'),
     weaning_rate_pct: n('weaning_rate_pct'),
     cost_of_gain_per_lb: n('cost_of_gain_per_lb'),
     notes: (r.notes as string | null) ?? null,
@@ -69,7 +74,7 @@ export function benchmarkLines(live: BenchmarkLine[] | null): Record<string, num
   return { ...published, pasture_cost_per_head: ownGrass(published.pasture_cost_per_head ?? 0) }
 }
 
-export function cowCostGroup(o: { ranch: string; costs: CattleCosts | null; bench: Record<string, number>; cows: number; saleWeightLb: number; year: number }): ReportGroup {
+export function cowCostGroup(o: { ranch: string; costs: CattleCosts | null; bench: Record<string, number>; cows: number; saleWeightLb: number; year: number; cowWeightLb?: number | null }): ReportGroup {
   if (!o.costs) {
     return { title: o.ranch, note: `No costs entered for ${o.ranch} for ${o.year} or before — Cattle settings → Costs.`, rows: COST_LINES.map((l) => [l.label, null, o.bench[l.key] ?? null, null, null]) }
   }
@@ -81,7 +86,9 @@ export function cowCostGroup(o: { ranch: string; costs: CattleCosts | null; benc
   })
   const ours = COST_LINES.reduce((s, l) => s + (num(c[l.key]) ?? 0), 0)
   const bench = COST_LINES.reduce((s, l) => s + (o.bench[l.key] ?? 0), 0)
-  const be = breakEven(c, o.saleWeightLb)
+  // The cull credit at the typed cull cow price (the report reads no market quotes).
+  const cullCheque = c.cull_cow_price_cwt != null && o.cowWeightLb ? (c.cull_cow_price_cwt * o.cowWeightLb) / 100 : null
+  const be = breakEven(c, o.saleWeightLb, { cullCheque })
   const missing = COST_LINES.filter((l) => c[l.key] == null).map((l) => l.label.split(' (')[0].toLowerCase())
   return {
     title: o.ranch,
@@ -89,7 +96,7 @@ export function cowCostGroup(o: { ranch: string; costs: CattleCosts | null; benc
       c.carriedFrom != null ? `${c.carriedFrom}’s costs, carried to ${o.year} (nothing saved for ${o.year} yet)` : `${o.year} costs`,
       `${o.cows.toLocaleString('en-CA')} cows on the Herd tab`,
       be
-        ? `weaning ${c.weaning_rate_pct ?? 100}%, death loss ${c.death_loss_pct ?? 0}% → ${be.calvesPerCow.toFixed(2)} calves sold a cow, $${Math.round(be.costPerCalf).toLocaleString('en-CA')} a calf${be.perLb != null ? `, break-even $${be.perLb.toFixed(2)}/lb at ${o.saleWeightLb} lb` : ''}`
+        ? `weaning ${Math.round(be.calvesPerCow * 100)}% (calves weaned ÷ cows exposed)${be.cullCreditPerCow != null ? `, culls ${be.cullPct}% bring $${Math.round(be.cullCreditPerCow).toLocaleString('en-CA')} a cow` : ', no cull price typed so no cull credit'} → $${Math.round(be.costPerCalf).toLocaleString('en-CA')} a calf${be.perLb != null ? `, break-even $${be.perLb.toFixed(2)}/lb ($${Math.round(be.perCwt!)}/cwt) at ${o.saleWeightLb} lb` : ''}`
         : null,
       missing.length ? `not entered: ${missing.join(', ')} — counted as nothing, so the total is low` : null,
     ]
@@ -108,7 +115,7 @@ export async function gatherCowCost(p: ParamValues, ctx: GatherContext): Promise
     fetchAll<{ id: string; name: string; steer_sale_weight_lb: number | null; heifer_sale_weight_lb: number | null; calf_sale_month: number | null }>((a, b) =>
       supabase.from('ranches').select('id, name, steer_sale_weight_lb, heifer_sale_weight_lb, calf_sale_month').order('sort_order').order('id').range(a, b),
     ),
-    fetchAll<{ ranch_id: string; class_name: string; head_count: number; feed_class: string | null }>((a, b) => supabase.from('herd_counts').select('ranch_id, class_name, head_count, feed_class').order('id').range(a, b)),
+    fetchAll<{ ranch_id: string; class_name: string; head_count: number; feed_class: string | null; avg_weight_lb: number | string | null }>((a, b) => supabase.from('herd_counts').select('ranch_id, class_name, head_count, feed_class, avg_weight_lb').order('id').range(a, b)),
     supabase.from('cost_benchmarks').select('source, lines').eq('key', 'cattle_cow_calf_ab').maybeSingle(),
     supabase.from('farm_setup').select('calf_sale_weight_lb, calf_sale_month').limit(1).maybeSingle(),
     fetchAll<SaleLot>((a, b) => supabase.from('cattle_sales').select('ranch, crop_year, animal_class, head, avg_weight_lb').order('id').range(a, b)),
@@ -126,7 +133,8 @@ export async function gatherCowCost(p: ParamValues, ctx: GatherContext): Promise
   if (!rows.some((r) => shown.some((s) => s.name === r.ranch))) throw new Error(`No cow costs are entered for ${ranchId ? (shown[0]?.name ?? 'that ranch') : 'any ranch'} for ${year} or before (Cattle settings → Costs).`)
   // Cows wintered: the cow classes on the Herd tab.
   const cowsAt = (id: string) => herd.filter((h) => h.ranch_id === id && (h.feed_class === 'cow' || /\bcows?\b/i.test(h.class_name))).reduce((s, h) => s + (Number(h.head_count) || 0), 0)
-  const groups = shown.map((r) => cowCostGroup({ ranch: r.name, costs: costsFor(rows, r.name, year), bench: lines, cows: cowsAt(r.id), saleWeightLb: saleWeightOf(r), year }))
+  const cowWeightAt = (id: string) => num(herd.find((h) => h.ranch_id === id && (h.feed_class === 'cow' || /\bcows?\b/i.test(h.class_name)))?.avg_weight_lb)
+  const groups = shown.map((r) => cowCostGroup({ ranch: r.name, costs: costsFor(rows, r.name, year), bench: lines, cows: cowsAt(r.id), saleWeightLb: saleWeightOf(r), year, cowWeightLb: cowWeightAt(r.id) }))
   const benchTotal = COST_LINES.reduce((s, l) => s + (lines[l.key] ?? 0), 0)
   return {
     title: 'Cost per cow',
@@ -139,7 +147,7 @@ export async function gatherCowCost(p: ParamValues, ctx: GatherContext): Promise
     summary: [
       `Benchmark: ${bench.data?.source ?? COW_CALF_BENCHMARK_SOURCE}. It is a neighbouring province’s budget, offered as a first draft to correct — pasture and feed in particular differ a good deal in southern Alberta irrigation country.`,
       'The farm owns its grass, so the benchmark’s pasture rental is taken out of its pasture line, as Cattle settings does; what is left is the operating and fencing cost.',
-      'Death loss is not a cost line: it lowers the calves sold a cow, which raises the cost a calf and the break-even.',
+      'Death loss is not a cost line: calves lost before weaning are inside the weaning rate (calves weaned ÷ cows exposed), which sets the calves sold a cow. The cull cows sold each year come off the cost before the calves pay for the rest.',
     ],
     columns: COW_COST_COLUMNS,
     groups,

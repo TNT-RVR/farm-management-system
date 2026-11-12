@@ -36,7 +36,7 @@ export const LAYER_INFO = {
   },
   salinity: {
     title: 'Salinity (soil tests)',
-    text: 'Salt in our own soil tests (EC, dS/m), worst sample per field. Green has no effect; orange and red only tolerant crops will grow.',
+    text: 'Salt in our own soil tests (EC, dS/m). Pale has no effect; orange and red only tolerant crops will grow. Inside a field the measured spread follows its productivity zones, where it has them.',
   },
   topography: {
     title: 'Topography',

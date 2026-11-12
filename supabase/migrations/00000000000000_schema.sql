@@ -478,6 +478,86 @@ $$;
 ALTER FUNCTION "public"."apply_mfa_policies"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."apply_pasture_grass_ratings"() RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  changed integer := 0;
+begin
+  if auth.uid() is not null and not public.is_active() then
+    raise exception 'Only active accounts can do this';
+  end if;
+
+  with r as (
+    select * from pasture_grass_rating where enough
+  )
+  update grazing_pastures g
+     set grass_quality = r.rated,
+         grass_quality_source = 'satellite',
+         grass_quality_rel = r.rel,
+         grass_quality_set_on = current_date
+    from r
+   where g.id = r.grazing_pasture_id
+     and g.grass_quality_source <> 'manual'
+     and (g.grass_quality is distinct from r.rated or g.grass_quality_rel is distinct from r.rel);
+
+  get diagnostics changed = row_count;
+  return changed;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."apply_pasture_grass_ratings"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."approve_contact_candidate"("p_id" "uuid") RETURNS "uuid"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  c   public.contact_candidates;
+  cid uuid;
+begin
+  select * into c from public.contact_candidates where id = p_id for update;
+  if not found then
+    raise exception 'no such candidate: %', p_id;
+  end if;
+  if c.contact_id is not null then
+    return c.contact_id;
+  end if;
+
+  insert into public.contacts (company, contact_name, email, phone, type, notes_md, tags, active)
+  values (
+    c.company,
+    case when c.role is null then c.contact_name
+         when c.contact_name is null then c.role
+         else c.contact_name || ' — ' || c.role end,
+    nullif(c.email, ''),
+    nullif(c.phone, ''),
+    c.type,
+    c.why,
+    '{}',
+    true
+  )
+  returning id into cid;
+
+  update public.contact_candidates
+     set status = 'approved', contact_id = cid, decided_at = now(), decided_by = auth.uid()
+   where id = p_id;
+
+  return cid;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."approve_contact_candidate"("p_id" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."approve_contact_candidate"("p_id" "uuid") IS 'Copies a candidate into contacts, marks it approved and links the two. Idempotent: an already-approved candidate returns its existing contact.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."area_scale_yield"("p_field" "uuid", "p_crop" "uuid", "p_year" integer) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
@@ -508,6 +588,7 @@ begin
     select 1 from bin_loads
      where field_id = p_field and crop_id = p_crop and crop_year = p_year
        and last_from_field and (bin_id is not null or delivery_site_id is not null)
+       and direction = 'in'
        and gross_kg is not null and tare_kg is not null
   ) into v_final;
 
@@ -560,6 +641,7 @@ begin
     into s_loads, s_bu, s_lb, s_wbu, s_wlb
     from bin_loads
    where delivery_site_id is not null and gross_kg is not null and tare_kg is not null
+   and direction = 'in'
      and field_id = p_field and crop_id = p_crop and crop_year = p_year;
 
   v_loads := v_loads + s_loads;
@@ -738,6 +820,58 @@ $$;
 ALTER FUNCTION "public"."checklist_add_job"("p_run" "uuid", "p_run_location" "uuid", "p_text" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."checklist_add_place"("p_run" "uuid", "p_name" "text", "p_geojson" "jsonb", "p_category" "text" DEFAULT NULL::"text", "p_colour" "text" DEFAULT NULL::"text") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  v_run   checklist_runs%rowtype;
+  v_name  text := left(trim(coalesce(p_name, '')), 120);
+  v_tl    uuid;
+  v_rl    uuid;
+  v_order int;
+begin
+  if v_name = '' then raise exception 'Name the place first'; end if;
+  if p_geojson is null or p_geojson->>'type' not in ('Point', 'LineString') then
+    raise exception 'A place is a pin or a line';
+  end if;
+  select * into v_run from checklist_runs where id = p_run;
+  if v_run.id is null then raise exception 'No such checklist'; end if;
+  if not is_manager() then raise exception 'Not allowed'; end if;
+
+  select coalesce(max(sort_order) + 1, 0) into v_order
+  from checklist_run_locations where run_id = p_run;
+
+  -- On the template first, so next year's copy has it too.
+  if v_run.template_id is not null then
+    insert into checklist_template_locations
+      (template_id, name, geojson, sort_order, source, category, colour)
+    values
+      (v_run.template_id, v_name, p_geojson,
+       coalesce((select max(sort_order) + 1 from checklist_template_locations
+                 where template_id = v_run.template_id), 0),
+       'drawn', p_category, p_colour)
+    returning id into v_tl;
+  end if;
+
+  insert into checklist_run_locations
+    (run_id, template_location_id, name, geojson, sort_order, category, colour)
+  values
+    (p_run, v_tl, v_name, p_geojson, v_order, p_category, p_colour)
+  returning id into v_rl;
+
+  return v_rl;
+end
+$$;
+
+
+ALTER FUNCTION "public"."checklist_add_place"("p_run" "uuid", "p_name" "text", "p_geojson" "jsonb", "p_category" "text", "p_colour" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."checklist_add_place"("p_run" "uuid", "p_name" "text", "p_geojson" "jsonb", "p_category" "text", "p_colour" "text") IS 'Add a place to a map checklist''s year and to its template. Managers only.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."checklist_delete_job"("p_run_item" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
@@ -756,6 +890,37 @@ end $$;
 
 
 ALTER FUNCTION "public"."checklist_delete_job"("p_run_item" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."checklist_delete_place"("p_run_location" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  v_run uuid;
+  v_tl  uuid;
+begin
+  select run_id, template_location_id into v_run, v_tl
+  from checklist_run_locations where id = p_run_location;
+  if v_run is null then raise exception 'No such place'; end if;
+  if not is_manager() then raise exception 'Not allowed'; end if;
+
+  -- The run's copy first: deleting the template location would null the link
+  -- and leave this year's point behind with nothing pointing at it. Its jobs
+  -- and photos go with it on the cascade.
+  delete from checklist_run_locations where id = p_run_location;
+  if v_tl is not null then
+    delete from checklist_template_locations where id = v_tl;
+  end if;
+end
+$$;
+
+
+ALTER FUNCTION "public"."checklist_delete_place"("p_run_location" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."checklist_delete_place"("p_run_location" "uuid") IS 'Remove a place from a map checklist''s year and from its template, with its jobs and photos. Past years keep their copy. Managers only.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."checklist_edit_job"("p_run_item" "uuid", "p_text" "text") RETURNS "void"
@@ -778,6 +943,47 @@ end $$;
 
 
 ALTER FUNCTION "public"."checklist_edit_job"("p_run_item" "uuid", "p_text" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."checklist_edit_place"("p_run_location" "uuid", "p_name" "text" DEFAULT NULL::"text", "p_geojson" "jsonb" DEFAULT NULL::"jsonb") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  v_run  uuid;
+  v_tl   uuid;
+  v_name text := nullif(left(trim(coalesce(p_name, '')), 120), '');
+begin
+  select run_id, template_location_id into v_run, v_tl
+  from checklist_run_locations where id = p_run_location;
+  if v_run is null then raise exception 'No such place'; end if;
+  if not is_manager() then raise exception 'Not allowed'; end if;
+  if v_name is null and p_geojson is null then return; end if;
+  if p_geojson is not null and p_geojson->>'type' not in ('Point', 'LineString') then
+    raise exception 'A place is a pin or a line';
+  end if;
+
+  update checklist_run_locations
+     set name    = coalesce(v_name, name),
+         geojson = coalesce(p_geojson, geojson)
+   where id = p_run_location;
+
+  if v_tl is not null then
+    update checklist_template_locations
+       set name       = coalesce(v_name, name),
+           geojson    = coalesce(p_geojson, geojson),
+           updated_at = now()
+     where id = v_tl;
+  end if;
+end
+$$;
+
+
+ALTER FUNCTION "public"."checklist_edit_place"("p_run_location" "uuid", "p_name" "text", "p_geojson" "jsonb") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."checklist_edit_place"("p_run_location" "uuid", "p_name" "text", "p_geojson" "jsonb") IS 'Rename or move a place on a map checklist''s year and on its template. Null leaves that part alone. Managers only.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."checklist_note_to_template"("p_run_location" "uuid") RETURNS "void"
@@ -1614,6 +1820,7 @@ begin
     select 1 from bin_loads
      where field_id = p_field and crop_id = p_crop and crop_year = p_year
        and last_from_field and (bin_id is not null or delivery_site_id is not null)
+       and direction = 'in'
        and gross_kg is not null and tare_kg is not null
   ) into v_final;
 
@@ -1672,6 +1879,7 @@ begin
     into s_loads, s_bu, s_lb, s_wbu, s_wlb, s_est
     from bin_loads
    where delivery_site_id is not null and gross_kg is not null and tare_kg is not null
+   and direction = 'in'
      and field_id = p_field and crop_id = p_crop and crop_year = p_year;
 
   v_loads := v_loads + s_loads;
@@ -2164,7 +2372,7 @@ begin
        and not exists (select 1 from combine_settings_used s where s.work_record_id = w.id);
   end if;
 
-  if tg_op in ('INSERT', 'UPDATE') and new.last_from_field
+  if tg_op in ('INSERT', 'UPDATE') and new.last_from_field and new.direction = 'in'
      and new.field_id is not null and new.crop_year is not null then
     -- Only a finish already recorded stops this. A Deere operation or a
     -- part-way harvesting pass is not one, and the scale knows better than
@@ -2203,6 +2411,7 @@ declare
   v_over uuid;
   v_first numeric;
   v_rest numeric;
+  v_kind grain_movement_type;
 begin
   if tg_op = 'DELETE' then
     delete from grain_movements where ticket_number = 'load:' || old.id::text;
@@ -2216,6 +2425,8 @@ begin
   if tg_op = 'UPDATE' then
     v_old_over := old.overflow_bin_id;
   end if;
+
+  v_kind := case when new.direction = 'out' then 'delivery_out' else 'harvest_in' end;
 
   if new.overflow_bin_id is null then
     v_first := new.bushels;
@@ -2248,12 +2459,16 @@ begin
   if v_main is not null then
     update grain_movements
        set bin_id = new.bin_id, crop_id = new.crop_id, crop_year = new.crop_year,
-           field_id = new.field_id, bushels = round(v_first, 2), moved_at = new.loaded_on,
+           field_id = new.field_id, movement_type = v_kind,
+           bushels = round(v_first, 2), moved_at = new.loaded_on,
+           delivery_site_id = case when new.direction = 'out' then new.delivery_site_id else delivery_site_id end,
            notes = case when v_rest > 0 then 'Filled the bin; the rest went to another bin. ' else '' end || v_note
      where id = v_main;
   else
-    insert into grain_movements (crop_year, bin_id, crop_id, field_id, movement_type, bushels, moved_at, ticket_number, notes, created_by)
-    values (new.crop_year, new.bin_id, new.crop_id, new.field_id, 'harvest_in', round(v_first, 2), new.loaded_on, v_ticket,
+    insert into grain_movements (crop_year, bin_id, crop_id, field_id, movement_type, bushels, moved_at,
+                                 ticket_number, delivery_site_id, notes, created_by)
+    values (new.crop_year, new.bin_id, new.crop_id, new.field_id, v_kind, round(v_first, 2), new.loaded_on, v_ticket,
+            case when new.direction = 'out' then new.delivery_site_id else null end,
             case when v_rest > 0 then 'Filled the bin; the rest went to another bin. ' else '' end || v_note, new.created_by)
     returning id into v_main;
   end if;
@@ -2262,12 +2477,13 @@ begin
     if v_over is not null then
       update grain_movements
          set bin_id = new.overflow_bin_id, crop_id = new.crop_id, crop_year = new.crop_year,
-             field_id = new.field_id, bushels = round(v_rest, 2), moved_at = new.loaded_on,
+             field_id = new.field_id, movement_type = v_kind,
+             bushels = round(v_rest, 2), moved_at = new.loaded_on,
              notes = 'The rest of a load, after the first bin was full. ' || v_note
        where id = v_over;
     else
       insert into grain_movements (crop_year, bin_id, crop_id, field_id, movement_type, bushels, moved_at, ticket_number, notes, created_by)
-      values (new.crop_year, new.overflow_bin_id, new.crop_id, new.field_id, 'harvest_in', round(v_rest, 2), new.loaded_on, v_ticket,
+      values (new.crop_year, new.overflow_bin_id, new.crop_id, new.field_id, v_kind, round(v_rest, 2), new.loaded_on, v_ticket,
               'The rest of a load, after the first bin was full. ' || v_note, new.created_by)
       returning id into v_over;
     end if;
@@ -2921,21 +3137,21 @@ CREATE OR REPLACE FUNCTION "public"."fn_dedupe_grants"() RETURNS integer
     SET "search_path" TO 'public', 'extensions'
     AS $$
 declare
-  removed   integer := 0;
-  n_removed integer := 0;
-  grp       record;
-  keeper    uuid;
+  removed integer := 0;
+  grp     record;
+  keeper  uuid;
+  loser   uuid;
 begin
+  if (select public.is_partner()) then
+    raise exception 'Merging grants is not available to a partner account';
+  end if;
   for grp in
-    select regexp_replace(lower(trim(title)), '[^a-z0-9]+', '', 'g') as norm,
-           array_agg(id) as ids
+    select public.grant_match_key(title) as k, array_agg(id) as ids
       from public.grants
      where title is not null
      group by 1
     having count(*) > 1
   loop
-    -- Richest row wins: most populated fields, then the one that has been
-    -- worked on, then the earliest seen.
     select id into keeper
       from public.grants
      where id = any(grp.ids)
@@ -2943,40 +3159,19 @@ begin
          (summary is not null)::int + (eligibility_summary is not null)::int
        + (amount_max is not null)::int + (closes_on is not null)::int
        + (url is not null)::int + (funder is not null)::int
+       + (eligible_costs is not null)::int + (contact_email is not null)::int
+       + (application_url is not null)::int + (cost_share_pct is not null)::int
        ) desc,
-       (status <> 'new')::int desc,
+       (status not in ('new', 'closed', 'ignored'))::int desc,
        created_at asc
      limit 1;
 
-    -- Carry across anything a person added that the keeper is missing.
-    update public.grants k set
-      notes_md    = coalesce(k.notes_md, (select string_agg(o.notes_md, E'\n\n')
-                                            from public.grants o
-                                           where o.id = any(grp.ids) and o.id <> keeper
-                                             and o.notes_md is not null)),
-      assigned_to = coalesce(k.assigned_to, (select o.assigned_to from public.grants o
-                                              where o.id = any(grp.ids) and o.id <> keeper
-                                                and o.assigned_to is not null limit 1)),
-      status      = case when k.status = 'new'
-                         then coalesce((select o.status from public.grants o
-                                         where o.id = any(grp.ids) and o.id <> keeper
-                                           and o.status <> 'new' limit 1), k.status)
-                         else k.status end,
-      summary     = coalesce(k.summary, (select o.summary from public.grants o
-                                          where o.id = any(grp.ids) and o.id <> keeper
-                                            and o.summary is not null limit 1)),
-      closes_on   = coalesce(k.closes_on, (select o.closes_on from public.grants o
-                                            where o.id = any(grp.ids) and o.id <> keeper
-                                              and o.closes_on is not null limit 1)),
-      url         = coalesce(k.url, (select o.url from public.grants o
-                                      where o.id = any(grp.ids) and o.id <> keeper
-                                        and o.url is not null limit 1)),
-      updated_at  = now()
-    where k.id = keeper;
-
-    delete from public.grants where id = any(grp.ids) and id <> keeper;
-    get diagnostics n_removed = row_count;
-    removed := removed + n_removed;
+    foreach loser in array grp.ids loop
+      if loser <> keeper then
+        perform public.fn_merge_grants(keeper, loser);
+        removed := removed + 1;
+      end if;
+    end loop;
   end loop;
   return removed;
 end;
@@ -3454,6 +3649,95 @@ $$;
 
 
 ALTER FUNCTION "public"."fn_map_feature_to_checklist"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_merge_grants"("p_keeper" "uuid", "p_loser" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  l public.grants%rowtype;
+begin
+  if (select public.is_partner()) then
+    raise exception 'Merging grants is not available to a partner account';
+  end if;
+  if p_keeper is null or p_loser is null or p_keeper = p_loser then return; end if;
+  select * into l from public.grants where id = p_loser;
+  if not found then return; end if;
+  if not exists (select 1 from public.grants where id = p_keeper) then return; end if;
+
+  update public.grants k set
+    funder              = coalesce(k.funder, l.funder),
+    url                 = coalesce(k.url, l.url),
+    amount_min          = coalesce(k.amount_min, l.amount_min),
+    amount_max          = coalesce(k.amount_max, l.amount_max),
+    eligibility_summary = coalesce(k.eligibility_summary, l.eligibility_summary),
+    summary             = coalesce(k.summary, l.summary),
+    opens_on            = coalesce(k.opens_on, l.opens_on),
+    closes_on           = coalesce(k.closes_on, l.closes_on),
+    region              = coalesce(k.region, l.region),
+    assigned_to         = coalesce(k.assigned_to, l.assigned_to),
+    cost_share_pct      = coalesce(k.cost_share_pct, l.cost_share_pct),
+    eligible_costs      = coalesce(k.eligible_costs, l.eligible_costs),
+    contact_name        = coalesce(k.contact_name, l.contact_name),
+    contact_email       = coalesce(k.contact_email, l.contact_email),
+    contact_phone       = coalesce(k.contact_phone, l.contact_phone),
+    application_url     = coalesce(k.application_url, l.application_url),
+    -- The file stays at the loser's own path in grant-docs; the bucket's
+    -- policies are per-bucket, so the keeper reads it from there unchanged.
+    application_pdf_path = coalesce(k.application_pdf_path, l.application_pdf_path),
+    details_checked_at  = greatest(k.details_checked_at, l.details_checked_at),
+    meeting_email_sent_at = greatest(k.meeting_email_sent_at, l.meeting_email_sent_at),
+    -- Somebody's writing: kept side by side, never replaced.
+    notes_md            = case
+                            when l.notes_md is null or btrim(l.notes_md) = '' then k.notes_md
+                            when k.notes_md is null or btrim(k.notes_md) = '' then l.notes_md
+                            when position(l.notes_md in k.notes_md) > 0 then k.notes_md
+                            else k.notes_md || E'\n\n' || l.notes_md
+                          end,
+    project_md          = case
+                            when l.project_md is null or btrim(l.project_md) = '' then k.project_md
+                            when k.project_md is null or btrim(k.project_md) = '' then l.project_md
+                            when position(l.project_md in k.project_md) > 0 then k.project_md
+                            else k.project_md || E'\n\n' || l.project_md
+                          end,
+    categories          = (
+                            select coalesce(array_agg(distinct c), '{}')
+                              from unnest(coalesce(k.categories, '{}') || coalesce(l.categories, '{}')) as c
+                          ),
+    status              = case
+                            when k.status = 'new'
+                             and l.status in ('reviewing', 'applying', 'submitted', 'awarded', 'declined')
+                            then l.status else k.status
+                          end,
+    -- A grant somebody added by hand is ours, however it was found later.
+    source              = case when l.source = 'manual' then 'manual' else k.source end,
+    updated_at          = now()
+  where k.id = p_keeper;
+
+  -- The loser's own listing, and anything already pointed at it.
+  if l.external_key is not null then
+    insert into public.grant_aliases (external_key, grant_id, title)
+    values (l.external_key, p_keeper, l.title)
+    on conflict (external_key) do update set grant_id = excluded.grant_id;
+  end if;
+  update public.grant_aliases set grant_id = p_keeper where grant_id = p_loser;
+
+  -- Work people have logged against it moves rather than cascading away.
+  update public.tasks set source_ref = p_keeper
+   where source = 'grant' and source_ref = p_loser;
+  update public.partner_grant_tracking t set grant_id = p_keeper
+   where t.grant_id = p_loser
+     and not exists (
+       select 1 from public.partner_grant_tracking k
+        where k.farm_id = t.farm_id and k.grant_id = p_keeper);
+
+  delete from public.grants where id = p_loser;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_merge_grants"("p_keeper" "uuid", "p_loser" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_moisture_test_air"() RETURNS "trigger"
@@ -5174,6 +5458,25 @@ $$;
 ALTER FUNCTION "public"."fn_zone_day_depths"("p_field_id" "uuid", "p_crop_year" integer, "p_sectors" "jsonb", "p_lon" double precision, "p_lat" double precision, "p_radius_m" double precision) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."gate_dirties_zones"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  delete from pasture_zone_build b
+   where b.kind = 'water_distance'
+     and b.pasture_id in (
+       coalesce(new.pasture_a, old.pasture_a), coalesce(new.pasture_b, old.pasture_b),
+       old.pasture_a, old.pasture_b
+     );
+  return coalesce(new, old);
+end;
+$$;
+
+
+ALTER FUNCTION "public"."gate_dirties_zones"() OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."audit_log" (
     "id" bigint NOT NULL,
     "table_name" "text" NOT NULL,
@@ -5214,6 +5517,112 @@ $$;
 
 
 ALTER FUNCTION "public"."get_field_audit"("p_field_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."grant_duplicate_count"() RETURNS integer
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select coalesce(sum(n - 1), 0)::int
+    from (
+      select count(*) as n
+        from public.grants
+       where title is not null
+       group by public.grant_match_key(title)
+      having count(*) > 1
+    ) d;
+$$;
+
+
+ALTER FUNCTION "public"."grant_duplicate_count"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."grant_find_match"("p_title" "text", "p_url" "text") RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select coalesce(
+    (select g.id from public.grants g
+      where p_url is not null and g.external_key = p_url limit 1),
+    (select a.grant_id from public.grant_aliases a
+      where p_url is not null and a.external_key = p_url limit 1),
+    (select g.id from public.grants g
+      where p_title is not null
+        and public.grant_match_key(g.title) = public.grant_match_key(p_title)
+      order by g.created_at limit 1)
+  );
+$$;
+
+
+ALTER FUNCTION "public"."grant_find_match"("p_title" "text", "p_url" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."grant_match_key"("p_title" "text") RETURNS "text"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'extensions'
+    AS $_$
+  with s0 as (
+    -- One kind of dash, lower case, and no parenthesised aside. The aside is
+    -- how one programme arrives under three names: "(OFEP)", "(Sustainable
+    -- CAP)", "(2026 Late Participation)".
+    select regexp_replace(
+             translate(lower(coalesce(p_title, '')), '—–·', '---'),
+             '\([^)]*\)', ' ', 'g') as t
+  ),
+  -- The Sustainable CAP family prefixes a good many of its own programmes, and
+  -- only sometimes. Dropped when a real name is left behind.
+  s1a as (
+    select t,
+           regexp_replace(
+             t,
+             '^\s*(sustainable canadian agricultural partnership|canadian agricultural partnership|sustainable cap|scap)\s*[-:]\s*',
+             '', 'i') as stripped
+      from s0
+  ),
+  s1 as (
+    select case when stripped <> t and length(trim(stripped)) >= 8 then stripped else t end as t
+      from s1a
+  ),
+  -- "X - Rotational Grazing", "X - General", "X - Alberta delivery via RDAR":
+  -- where the part before the dash is already a programme name in its own
+  -- right (three words or more), what follows says who delivers it, not which
+  -- programme it is. Two words or fewer and the dash is part of the name
+  -- ("Water Program - On-Farm Irrigation Stream"), so the whole title stands.
+  s2a as (select t, split_part(t, ' - ', 1) as head from s1),
+  s2 as (
+    select case
+             when t like '% - %'
+              and coalesce(array_length(regexp_split_to_array(trim(head), '\s+'), 1), 0) >= 3
+             then head
+             else t
+           end as t
+      from s2a
+  ),
+  -- A trailing "Program" / "Grant" / "Fund" is decoration: "Alberta VBP+
+  -- Incentive" and "Alberta VBP+ Incentive Program" are one grant.
+  s3 as (
+    select regexp_replace(
+             t,
+             '(\s+(programmes|programme|programs|program|grants|grant|funding|fund|initiative))+\s*$',
+             '', 'i') as t
+      from s2
+  ),
+  s4 as (select regexp_replace(t, '[^a-z0-9]+', '', 'g') as k from s3)
+  -- A title that is nothing but decoration keeps its own plain key rather than
+  -- collapsing to '' and merging with every other such title.
+  select case
+           when k = '' then regexp_replace(lower(coalesce(p_title, '')), '[^a-z0-9]+', '', 'g')
+           else k
+         end
+    from s4;
+$_$;
+
+
+ALTER FUNCTION "public"."grant_match_key"("p_title" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."grant_match_key"("p_title" "text") IS 'The programme a grant title names, with decoration removed. Equal keys = the same grant.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."handle_new_user"() RETURNS "trigger"
@@ -6121,16 +6530,19 @@ CREATE TABLE IF NOT EXISTS "public"."bin_loads" (
     "full_capture_id" "uuid",
     "empty_capture_id" "uuid",
     "empty_guessed" boolean DEFAULT false NOT NULL,
+    "direction" "text" DEFAULT 'in'::"text" NOT NULL,
     CONSTRAINT "bin_loads_bin_or_site" CHECK ((("bin_id" IS NULL) OR ("delivery_site_id" IS NULL))),
     CONSTRAINT "bin_loads_bin_when_weighed" CHECK ((("bin_id" IS NOT NULL) OR ("delivery_site_id" IS NOT NULL) OR ("gross_kg" IS NULL) OR ("tare_kg" IS NULL))),
     CONSTRAINT "bin_loads_check" CHECK (("gross_kg" > "tare_kg")),
     CONSTRAINT "bin_loads_contract_plant" CHECK ((("contract_id" IS NULL) OR ("delivery_site_id" IS NOT NULL))),
+    CONSTRAINT "bin_loads_direction_check" CHECK (("direction" = ANY (ARRAY['in'::"text", 'out'::"text"]))),
     CONSTRAINT "bin_loads_entry_kind_check" CHECK (("entry_kind" = ANY (ARRAY['weighed'::"text", 'net'::"text", 'bin_total'::"text"]))),
     CONSTRAINT "bin_loads_first_bin_bu_check" CHECK (("first_bin_bu" >= (0)::numeric)),
     CONSTRAINT "bin_loads_gross_kg_check" CHECK (("gross_kg" > (0)::numeric)),
     CONSTRAINT "bin_loads_lb_per_bu_check" CHECK (("lb_per_bu" > (0)::numeric)),
     CONSTRAINT "bin_loads_load_count_check" CHECK ((("load_count" IS NULL) OR ("load_count" > 0))),
     CONSTRAINT "bin_loads_one_weight" CHECK ((("gross_kg" IS NOT NULL) OR ("tare_kg" IS NOT NULL))),
+    CONSTRAINT "bin_loads_out_has_no_overflow" CHECK ((("direction" = 'in'::"text") OR ("overflow_bin_id" IS NULL))),
     CONSTRAINT "bin_loads_overflow_other_bin" CHECK ((("overflow_bin_id" IS NULL) OR (("bin_id" IS NOT NULL) AND ("overflow_bin_id" <> "bin_id") AND ("first_bin_bu" IS NOT NULL)))),
     CONSTRAINT "bin_loads_tare_kg_check" CHECK (("tare_kg" >= (0)::numeric)),
     CONSTRAINT "load_moisture_sane" CHECK ((("moisture_pct" IS NULL) OR (("moisture_pct" >= (0)::numeric) AND ("moisture_pct" <= (60)::numeric))))
@@ -6181,6 +6593,10 @@ COMMENT ON COLUMN "public"."bin_loads"."empty_capture_id" IS 'The yard-scale cap
 
 
 COMMENT ON COLUMN "public"."bin_loads"."empty_guessed" IS 'The truck was not weighed out; the empty weight is a best guess.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."direction" IS 'in: grain arriving in the bin (harvest, a move). out: grain shipped out of it.';
 
 
 
@@ -6284,8 +6700,10 @@ CREATE TABLE IF NOT EXISTS "public"."crops" (
     "on_combines" boolean DEFAULT true NOT NULL,
     "weighed" boolean DEFAULT true NOT NULL,
     "farm_id" "uuid",
+    "est_cleanout_pct" numeric,
     CONSTRAINT "crops_category_new_check" CHECK (("category" = ANY (ARRAY['seed'::"text", 'commercial'::"text", 'own_use'::"text"]))),
     CONSTRAINT "crops_days_to_maturity_check" CHECK ((("days_to_maturity" IS NULL) OR (("days_to_maturity" >= 1) AND ("days_to_maturity" <= 400)))),
+    CONSTRAINT "crops_est_cleanout_pct_check" CHECK ((("est_cleanout_pct" IS NULL) OR (("est_cleanout_pct" >= (0)::numeric) AND ("est_cleanout_pct" < (100)::numeric)))),
     CONSTRAINT "crops_feed_dm_pct_check" CHECK ((("feed_dm_pct" > (0)::numeric) AND ("feed_dm_pct" <= (100)::numeric))),
     CONSTRAINT "crops_goal_yield_positive" CHECK ((("goal_yield_per_acre" IS NULL) OR ("goal_yield_per_acre" > (0)::numeric))),
     CONSTRAINT "crops_herbicide_trait_check" CHECK ((("herbicide_trait" IS NULL) OR (("length"("btrim"("herbicide_trait")) >= 1) AND ("length"("btrim"("herbicide_trait")) <= 80)))),
@@ -6424,6 +6842,10 @@ COMMENT ON COLUMN "public"."crops"."weighed" IS 'Its loads are weighed at the sc
 
 
 
+COMMENT ON COLUMN "public"."crops"."est_cleanout_pct" IS 'Estimated clean-out, % of field-run weight; a load''s value uses it until the field''s clean yield is entered.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."field_boundaries" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "field_id" "uuid" NOT NULL,
@@ -6538,6 +6960,7 @@ CREATE TABLE IF NOT EXISTS "public"."fields" (
     "route_via" "text" DEFAULT 'auto'::"text" NOT NULL,
     "route_through" "jsonb",
     "ours_by_default" boolean DEFAULT true NOT NULL,
+    "never_grazed" boolean DEFAULT false NOT NULL,
     CONSTRAINT "fields_rented_out_acres_check" CHECK ((("rented_out_acres" IS NULL) OR ("rented_out_acres" >= (0)::numeric))),
     CONSTRAINT "fields_route_via_check" CHECK (("route_via" = ANY (ARRAY['auto'::"text", 'trails'::"text"]))),
     CONSTRAINT "fields_soil_source_check" CHECK ((("soil_source" IS NULL) OR ("soil_source" = ANY (ARRAY['survey'::"text", 'manual'::"text"]))))
@@ -6675,36 +7098,101 @@ CREATE OR REPLACE FUNCTION "public"."partner_task_ids"() RETURNS SETOF "uuid"
 ALTER FUNCTION "public"."partner_task_ids"() OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."pasture_water_radius_m"() RETURNS numeric
+CREATE OR REPLACE FUNCTION "public"."pasture_water_radius_far_m"() RETURNS numeric
     LANGUAGE "sql" IMMUTABLE
     AS $$ select 800::numeric $$;
+
+
+ALTER FUNCTION "public"."pasture_water_radius_far_m"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."pasture_water_radius_far_m"() IS 'Recommended distance from water, outer band. Ground out to 800 m is still grazed, less evenly the further out; past it is beyond the recommendation, not beyond reach. See docs/grazing-distance-evidence.md.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."pasture_water_radius_m"() RETURNS numeric
+    LANGUAGE "sql" IMMUTABLE
+    AS $$ select 250::numeric $$;
 
 
 ALTER FUNCTION "public"."pasture_water_radius_m"() OWNER TO "postgres";
 
 
+COMMENT ON FUNCTION "public"."pasture_water_radius_m"() IS 'Recommended distance from water, inner band. 250 m ~ 800 ft: BCRC''s "ideal distance to water", and where SDSU puts the start of the rapid falloff in utilisation. Inside it a paddock grazes evenly. Not a limit -- cattle walk much further; see docs/grazing-distance-evidence.md.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."pasture_water_reach"("p_id" "uuid") RETURNS "public"."geometry"
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'extensions'
+    AS $$ select public.pasture_water_reach_at(p_id, public.pasture_water_radius_m()) $$;
+
+
+ALTER FUNCTION "public"."pasture_water_reach"("p_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."pasture_water_reach_at"("p_id" "uuid", "p_radius" numeric) RETURNS "public"."geometry"
     LANGUAGE "plpgsql" STABLE
     SET "search_path" TO 'public', 'extensions'
     AS $$
 declare
   p      pastures%rowtype;
-  radius numeric := pasture_water_radius_m();
-  reach  geometry;
-  riv    geometry;
+  radius numeric := p_radius;
+  -- A trough in the fence line waters both sides. Beyond this, somebody has to
+  -- say so with `serves`.
+  fence_m constant numeric := 30;
+  reach  public.geometry;
+  riv    public.geometry;
   refy   double precision;
+  g      record;
+  walk   numeric;
 begin
   select * into p from pastures where id = p_id;
-  if p.boundary is null then return null; end if;
+  if p.boundary is null or radius is null or radius <= 0 then return null; end if;
 
-  -- Points within or on the fence of this pasture, and any the pasture is
-  -- named on however far away they sit.
+  -- Inside the fence, in the fence, or named on the source. Not "near", which
+  -- is how water on the far side of a fence came to shade ground on this one.
   select st_union(st_buffer(w.geom::geography, radius)::geometry) into reach
     from cattle_water w
    where w.drinkable
-     and (st_dwithin(w.geom::geography, p.boundary::geography, 30) or p.id = any(w.serves));
+     and (
+       st_dwithin(w.geom::geography, p.boundary::geography, fence_m)
+       or p.id = any(w.serves)
+     );
+
+  -- Through every open gate on this paddock's fence: how far from the gate to
+  -- the nearest drink on the other side, and whatever radius is left over
+  -- spreads from the gate into this paddock.
+  for g in
+    select gg.gate_geom,
+           case when gg.pasture_a = p_id then gg.pasture_b else gg.pasture_a end as other_id
+      from pasture_gates gg
+     where gg.is_open
+       and gg.gate_geom is not null
+       and (gg.pasture_a = p_id or gg.pasture_b = p_id)
+  loop
+    select min(st_distance(w.geom::geography, g.gate_geom::geography))::numeric
+      into walk
+      from cattle_water w
+      join pastures o on o.id = g.other_id
+     where w.drinkable
+       and o.boundary is not null
+       and (
+         st_dwithin(w.geom::geography, o.boundary::geography, fence_m)
+         or o.id = any(w.serves)
+       );
+
+    if walk is not null and walk < radius then
+      reach := case
+        when reach is null then st_buffer(g.gate_geom::geography, radius - walk)::geometry
+        else st_union(reach, st_buffer(g.gate_geom::geography, radius - walk)::geometry)
+      end;
+    end if;
+  end loop;
 
   if p.river_access <> 'none' then
+    -- Clip the river to the pasture's neighbourhood before buffering: the
+    -- whole Oldman is thousands of hectares and the buffer of it is not needed.
     select st_intersection(river_geom(), st_buffer(p.boundary::geography, radius + 50)::geometry) into riv;
     if riv is not null and not st_isempty(riv) then
       riv := st_buffer(riv::geography, radius)::geometry;
@@ -6726,7 +7214,7 @@ end;
 $$;
 
 
-ALTER FUNCTION "public"."pasture_water_reach"("p_id" "uuid") OWNER TO "postgres";
+ALTER FUNCTION "public"."pasture_water_reach_at"("p_id" "uuid", "p_radius" numeric) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."pl_layer_totals"("p_year" integer) RETURNS TABLE("operation_id" "uuid", "field_id" "uuid", "operation_type" "text", "kind" "text", "product_name" "text", "rate_unit" "text", "rate_acres" numeric, "covered_acres" numeric, "cell_count" integer)
@@ -6945,61 +7433,311 @@ $$;
 ALTER FUNCTION "public"."quickbooks_company"() OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."rebuild_pasture_zones"() RETURNS integer
+CREATE OR REPLACE FUNCTION "public"."rebuild_pasture_grass_zones"() RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
     AS $$
 declare
+  -- Bumped when the layout changes, so every paddock rebuilds once.
+  layout_version constant text := 'v1-grass-minus-crop';
+  -- Below this share of the paddock, the whole-paddock reading already is the
+  -- grass reading and a second polygon would only cost processing units.
+  min_crop_share constant numeric := 0.05;
+  -- Smaller than this and the statistics are on too few pixels to mean
+  -- anything (sat-ingest's MIN_PLAUSIBLE_SAMPLES is 50; 20 ac is ~800).
+  min_grass_acres constant numeric := 20;
+  edge_m constant numeric := 20;
+  batch constant integer := 6;
   built integer := 0;
 begin
   if auth.uid() is not null and not public.is_active() then
     raise exception 'Only active accounts can do this';
   end if;
 
-  create temp table if not exists _zones (
-    pasture_id uuid, label text, band_order integer, boundary geometry, boundary_analysis geometry, acres numeric
-  ) on commit drop;
-  delete from _zones;
-  insert into _zones (pasture_id, label, band_order, boundary, boundary_analysis, acres)
-  select
-    z.pasture_id, z.label, z.band_order,
-    st_multi(z.geom) as boundary,
-    case
-      when st_isempty(st_buffer(z.geom::geography, -15)::geometry) then null
-      else st_multi(st_buffer(z.geom::geography, -15)::geometry)
-    end as boundary_analysis,
-    round((st_area(z.geom::geography) / 4046.8564224)::numeric, 1) as acres
-  from (
-    select p.id as pasture_id, 'Within 800 m of water' as label, 1 as band_order,
-           st_intersection(coalesce(p.boundary_analysis, p.boundary), r.reach) as geom
-    from pastures p cross join lateral (select pasture_water_reach(p.id) as reach) r
-    where r.reach is not null
-    union all
-    select p.id, 'Beyond 800 m of water', 2,
-           st_difference(coalesce(p.boundary_analysis, p.boundary), r.reach)
-    from pastures p cross join lateral (select pasture_water_reach(p.id) as reach) r
-    where r.reach is not null
-  ) z
-  where not st_isempty(z.geom)
-    and st_area(z.geom::geography) / 4046.8564224 >= 5;
+  delete from pasture_zones z
+  where z.kind = 'native_grass'
+    and not exists (select 1 from pastures p where p.id = z.pasture_id and p.boundary is not null);
 
-  -- Readings on a band whose ground changed are about the old shape.
-  delete from sat_observations o
-  using pasture_zones pz, _zones n
-  where o.subject_type = 'pasture_zone' and o.subject_id = pz.id
-    and pz.kind = 'water_distance' and n.pasture_id = pz.pasture_id and n.band_order = pz.band_order
-    and not st_equals(n.boundary, pz.boundary);
+  -- What a paddock's grass polygon depends on: its own boundary and the
+  -- current boundary of every crop field mapped inside it. Cheap — a digest,
+  -- no geometry work.
+  create temp table if not exists _grass_keys (pasture_id uuid primary key, source_key text) on commit drop;
+  delete from _grass_keys where true;
+  insert into _grass_keys (pasture_id, source_key)
+  select p.id,
+    md5(
+      layout_version || '|' || edge_m::text
+      || '|' || md5(st_asbinary(coalesce(p.boundary_analysis, p.boundary)))
+      || '|' || coalesce((
+           select string_agg(x.field_id::text || ':' || md5(st_asbinary(x.geom)), ',' order by x.field_id)
+             from (
+               select distinct on (f.id) f.id as field_id, coalesce(b.geom, b.boundary_analysis) as geom
+                 from pasture_field_crops pfc
+                 join fields f on f.id = pfc.field_id
+                 join field_boundaries b on b.field_id = f.id
+                where pfc.pasture_id = p.id
+                  and pfc.acres_in > 0
+                  and coalesce(b.geom, b.boundary_analysis) is not null
+                order by f.id, (b.valid_to is null) desc, b.valid_from desc nulls last
+             ) x
+         ), '')
+    )
+  from pastures p
+  where p.boundary is not null;
 
-  delete from pasture_zones pz
-  where pz.kind = 'water_distance'
-    and not exists (select 1 from _zones n where n.pasture_id = pz.pasture_id and n.band_order = pz.band_order);
+  delete from pasture_zone_build b
+  where b.kind = 'native_grass'
+    and not exists (select 1 from _grass_keys k where k.pasture_id = b.pasture_id);
 
-  insert into pasture_zones as pz (pasture_id, kind, label, band_order, boundary, boundary_analysis, acres)
-  select pasture_id, 'water_distance', label, band_order, boundary, boundary_analysis, acres from _zones
-  on conflict (pasture_id, kind, band_order) do update
-    set label = excluded.label, boundary = excluded.boundary, boundary_analysis = excluded.boundary_analysis,
-        acres = excluded.acres, generated_at = now()
-    where not st_equals(pz.boundary, excluded.boundary) or pz.label is distinct from excluded.label;
+  create temp table if not exists _grass_todo (pasture_id uuid primary key) on commit drop;
+  delete from _grass_todo where true;
+  insert into _grass_todo (pasture_id)
+  select k.pasture_id
+    from _grass_keys k
+    left join pasture_zone_build b on b.pasture_id = k.pasture_id and b.kind = 'native_grass'
+   where b.source_key is distinct from k.source_key
+   order by k.pasture_id
+   limit batch;
+
+  if exists (select 1 from _grass_todo) then
+    create temp table if not exists _grass (
+      pasture_id uuid, boundary geometry, boundary_analysis geometry, acres numeric
+    ) on commit drop;
+    delete from _grass where true;
+
+    insert into _grass (pasture_id, boundary, boundary_analysis, acres)
+    select g.pasture_id,
+      st_multi(g.geom),
+      case
+        when st_isempty(st_buffer(g.geom::geography, -15)::geometry) then null
+        else st_multi(st_buffer(g.geom::geography, -15)::geometry)
+      end,
+      round((st_area(g.geom::geography) / 4046.8564224)::numeric, 1)
+    from (
+      select t.pasture_id,
+             st_collectionextract(
+               st_makevalid(st_difference(coalesce(p.boundary_analysis, p.boundary), c.crop)), 3
+             ) as geom,
+             c.crop_acres,
+             st_area(coalesce(p.boundary_analysis, p.boundary)::geography) / 4046.8564224 as paddock_acres
+        from _grass_todo t
+        join pastures p on p.id = t.pasture_id
+        cross join lateral (
+          select
+            st_union(st_buffer(x.geom::geography, edge_m)::geometry) as crop,
+            sum(st_area(x.geom::geography) / 4046.8564224) as crop_acres
+          from (
+            select distinct on (f.id) f.id, coalesce(b.geom, b.boundary_analysis) as geom
+              from pasture_field_crops pfc
+              join fields f on f.id = pfc.field_id
+              join field_boundaries b on b.field_id = f.id
+             where pfc.pasture_id = p.id
+               and pfc.acres_in > 0
+               and coalesce(b.geom, b.boundary_analysis) is not null
+             order by f.id, (b.valid_to is null) desc, b.valid_from desc nulls last
+          ) x
+        ) c
+       where c.crop is not null
+    ) g
+    where g.geom is not null
+      and not st_isempty(g.geom)
+      and g.paddock_acres > 0
+      and g.crop_acres / g.paddock_acres >= min_crop_share
+      and st_area(g.geom::geography) / 4046.8564224 >= min_grass_acres;
+
+    -- A reading describes the ground that was in the polygon.
+    delete from sat_observations o
+    using pasture_zones pz
+    where o.subject_type = 'pasture_zone' and o.subject_id = pz.id
+      and pz.kind = 'native_grass'
+      and exists (select 1 from _grass_todo t where t.pasture_id = pz.pasture_id)
+      and not exists (
+        select 1 from _grass n
+         where n.pasture_id = pz.pasture_id and st_equals(n.boundary, pz.boundary)
+      );
+
+    delete from pasture_zones pz
+    where pz.kind = 'native_grass'
+      and exists (select 1 from _grass_todo t where t.pasture_id = pz.pasture_id)
+      and not exists (select 1 from _grass n where n.pasture_id = pz.pasture_id);
+
+    insert into pasture_zones as pz
+      (pasture_id, kind, label, band_order, boundary, boundary_analysis, acres, source_key)
+    select n.pasture_id, 'native_grass', 'Grass only', 1,
+           n.boundary, n.boundary_analysis, n.acres, k.source_key
+      from _grass n
+      join _grass_keys k on k.pasture_id = n.pasture_id
+    on conflict (pasture_id, kind, band_order) do update
+      set label = excluded.label,
+          boundary = excluded.boundary,
+          boundary_analysis = excluded.boundary_analysis,
+          acres = excluded.acres,
+          source_key = excluded.source_key,
+          generated_at = now();
+
+    insert into pasture_zone_build (pasture_id, kind, source_key, bands, built_at)
+    select k.pasture_id, 'native_grass', k.source_key,
+           (select count(*) from _grass n where n.pasture_id = k.pasture_id), now()
+      from _grass_keys k
+     where exists (select 1 from _grass_todo t where t.pasture_id = k.pasture_id)
+    on conflict (pasture_id, kind) do update
+      set source_key = excluded.source_key, bands = excluded.bands, built_at = now();
+  end if;
+
+  select count(*) into built from pasture_zones where kind = 'native_grass';
+  return built;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."rebuild_pasture_grass_zones"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."rebuild_pasture_zones"() RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  layout_version constant text := 'v4-reach-stops-at-the-fence';
+  batch constant integer := 6;
+  near numeric := public.pasture_water_radius_m();
+  far  numeric := public.pasture_water_radius_far_m();
+  built integer := 0;
+begin
+  if auth.uid() is not null and not public.is_active() then
+    raise exception 'Only active accounts can do this';
+  end if;
+
+  delete from pasture_zones z
+  where z.kind = 'water_distance'
+    and not exists (select 1 from pastures p where p.id = z.pasture_id and p.boundary is not null);
+
+  create temp table if not exists _zone_keys (pasture_id uuid primary key, source_key text) on commit drop;
+  delete from _zone_keys where true;
+  insert into _zone_keys (pasture_id, source_key)
+  select p.id,
+    md5(
+      layout_version || '|' || near::text || '|' || far::text
+      || '|' || md5(st_asbinary(p.boundary))
+      || '|' || coalesce(p.river_access, '') || '|' || coalesce(p.river_access_ref::text, '')
+      -- Every drinkable source the fence rule would let in, including the ones
+      -- that only qualify through `serves` and could be anywhere. Un-tick
+      -- "drinkable" on a trough and this key changes, which is what makes the
+      -- shading disappear rather than wait for the next satellite run.
+      || '|' || coalesce((
+           select string_agg(w.id::text || ':' || md5(st_asbinary(w.geom)), ',' order by w.id)
+             from cattle_water w
+            where w.drinkable
+              and (st_dwithin(w.geom::geography, p.boundary::geography, 30) or p.id = any(w.serves))
+         ), '')
+    )
+  from pastures p
+  where p.boundary is not null;
+
+  delete from pasture_zone_build b
+  where b.kind = 'water_distance'
+    and not exists (select 1 from _zone_keys k where k.pasture_id = b.pasture_id);
+
+  create temp table if not exists _zone_todo (pasture_id uuid primary key) on commit drop;
+  delete from _zone_todo where true;
+  insert into _zone_todo (pasture_id)
+  select k.pasture_id
+    from _zone_keys k
+    left join pasture_zone_build b on b.pasture_id = k.pasture_id and b.kind = 'water_distance'
+   where b.source_key is distinct from k.source_key
+   order by k.pasture_id
+   limit batch;
+
+  if exists (select 1 from _zone_todo) then
+    create temp table if not exists _zones (
+      pasture_id uuid, label text, band_order integer,
+      boundary geometry, boundary_analysis geometry, acres numeric
+    ) on commit drop;
+    delete from _zones where true;
+
+    insert into _zones (pasture_id, label, band_order, boundary, boundary_analysis, acres)
+    select
+      z.pasture_id, z.label, z.band_order,
+      st_multi(z.geom),
+      case
+        when st_isempty(st_buffer(z.geom::geography, -15)::geometry) then null
+        else st_multi(st_buffer(z.geom::geography, -15)::geometry)
+      end,
+      round((st_area(z.geom::geography) / 4046.8564224)::numeric, 1)
+    from (
+      with reach as materialized (
+        select t.pasture_id,
+               p.boundary as body,
+               coalesce(
+                 public.pasture_water_reach_at(p.id, near),
+                 st_setsrid('MULTIPOLYGON EMPTY'::geometry, 4326)
+               ) as near_reach,
+               public.pasture_water_reach_at(p.id, far) as far_reach
+          from _zone_todo t
+          join pastures p on p.id = t.pasture_id
+      )
+      select pasture_id, format('Within %s m of water', near) as label, 1 as band_order,
+             st_intersection(body, near_reach) as geom
+        from reach where far_reach is not null
+      union all
+      select pasture_id, format('%s to %s m from water', near, far), 2,
+             st_difference(st_intersection(body, far_reach), near_reach)
+        from reach where far_reach is not null
+      union all
+      select pasture_id, format('Beyond %s m of water', far), 3,
+             st_difference(body, far_reach)
+        from reach where far_reach is not null
+    ) z
+    where z.geom is not null
+      and not st_isempty(z.geom)
+      and st_area(z.geom::geography) / 4046.8564224 >= 5;
+
+    delete from sat_observations o
+    using pasture_zones pz, _zones n
+    where o.subject_type = 'pasture_zone' and o.subject_id = pz.id
+      and pz.kind = 'water_distance'
+      and exists (select 1 from _zone_todo t where t.pasture_id = pz.pasture_id)
+      and n.pasture_id = pz.pasture_id and n.band_order = pz.band_order
+      and not st_equals(n.boundary, pz.boundary);
+
+    delete from sat_observations o
+    using pasture_zones pz
+    where o.subject_type = 'pasture_zone' and o.subject_id = pz.id
+      and pz.kind = 'water_distance'
+      and exists (select 1 from _zone_todo t where t.pasture_id = pz.pasture_id)
+      and not exists (
+        select 1 from _zones n where n.pasture_id = pz.pasture_id and n.band_order = pz.band_order
+      );
+
+    delete from pasture_zones pz
+    where pz.kind = 'water_distance'
+      and exists (select 1 from _zone_todo t where t.pasture_id = pz.pasture_id)
+      and not exists (
+        select 1 from _zones n where n.pasture_id = pz.pasture_id and n.band_order = pz.band_order
+      );
+
+    insert into pasture_zones as pz
+      (pasture_id, kind, label, band_order, boundary, boundary_analysis, acres, source_key)
+    select z.pasture_id, 'water_distance', z.label, z.band_order,
+           z.boundary, z.boundary_analysis, z.acres, k.source_key
+      from _zones z
+      join _zone_keys k on k.pasture_id = z.pasture_id
+    on conflict (pasture_id, kind, band_order) do update
+      set label = excluded.label,
+          boundary = excluded.boundary,
+          boundary_analysis = excluded.boundary_analysis,
+          acres = excluded.acres,
+          source_key = excluded.source_key,
+          generated_at = now();
+
+    insert into pasture_zone_build (pasture_id, kind, source_key, bands, built_at)
+    select k.pasture_id, 'water_distance', k.source_key,
+           (select count(*) from _zones z where z.pasture_id = k.pasture_id), now()
+      from _zone_keys k
+     where exists (select 1 from _zone_todo t where t.pasture_id = k.pasture_id)
+    on conflict (pasture_id, kind) do update
+      set source_key = excluded.source_key, bands = excluded.bands, built_at = now();
+  end if;
 
   select count(*) into built from pasture_zones where kind = 'water_distance';
   return built;
@@ -7245,8 +7983,150 @@ $$;
 ALTER FUNCTION "public"."report_app_issue"("p_kind" "text", "p_fingerprint" "text", "p_title" "text", "p_message" "text", "p_details" "jsonb", "p_path" "text", "p_build" "text") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."research_search"("q" "text", "max_rows" integer DEFAULT 10) RETURNS TABLE("paper_id" "uuid", "title" "text", "authors" "text", "year" integer, "source" "text", "region" "text", "folder_name" "text", "pages" "text", "passage" "text", "rank" real)
-    LANGUAGE "plpgsql" STABLE
+CREATE OR REPLACE FUNCTION "public"."research_flat"("t" "text") RETURNS "text"
+    LANGUAGE "sql" IMMUTABLE PARALLEL SAFE
+    AS $$
+  select translate(lower(coalesce(t, '')), U&'\2010\2011\2012\2013\2014\2015\2212', '-------')
+$$;
+
+
+ALTER FUNCTION "public"."research_flat"("t" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."research_flat"("t" "text") IS 'Lower case with every kind of dash flattened to a hyphen, so an active ingredient can be matched by substring.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."research_refresh_lexeme_df"() RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  kept integer;
+begin
+  delete from public.research_lexeme_df where true;
+  insert into public.research_lexeme_df (lexeme, docs)
+  select word, ndoc
+    from ts_stat('select fts from public.research_paper_chunks')
+   where ndoc >= 10;
+  get diagnostics kept = row_count;
+  analyze public.research_lexeme_df;
+  return kept;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."research_refresh_lexeme_df"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."research_score_folder"("p_folder" "uuid") RETURNS integer
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    SET "statement_timeout" TO '120s'
+    AS $_$
+declare
+  written integer;
+begin
+  delete from public.research_paper_about where folder_id = p_folder;
+
+  insert into public.research_paper_about
+    (paper_id, folder_id, term, in_title, in_abstract, mentions, readable, about)
+  with pair as (
+    select s.id as paper_id, f.id as folder_id, f.kind, f.name, f.actives, f.aliases, f.about_terms,
+           public.research_flat(s.title) as title,
+           public.research_flat(s.abstract) as abstract
+    from public.research_shelf_v s
+    join public.research_folders f on f.id = s.shelf_folder_id
+    where f.id = p_folder and f.kind <> 'section' and f.slug <> 'chem-wrong-shelf'
+  ),
+  needle as (
+    select p.paper_id, p.folder_id, p.title, p.abstract, a as term,
+           lower(regexp_replace(a, '( CHLORIDE|-AMMONIUM|-METHYL|-PROPARGYL|-P-ETHYL|-ETHYL)$', '')) as name
+    from pair p cross join unnest(p.actives) as a
+    where p.kind = 'chemical'
+    union all
+    select p.paper_id, p.folder_id, p.title, p.abstract, t, public.research_flat(t)
+    from pair p cross join unnest(p.about_terms) as t
+    union all
+    select p.paper_id, p.folder_id, p.title, p.abstract, t, public.research_flat(t)
+    from pair p cross join unnest(array[p.name] || p.aliases) as t
+    where p.kind <> 'chemical' and cardinality(p.about_terms) = 0
+  ),
+  scored as (
+    select n.paper_id, n.folder_id, n.term,
+           position(n.name in n.title) > 0 as in_title,
+           position(n.name in n.abstract) > 0 as in_abstract,
+           coalesce((
+             select sum((length(flat.t) - length(replace(flat.t, n.name, ''))) / length(n.name))
+             from public.research_paper_chunks c
+             cross join lateral (select public.research_flat(c.text) as t) flat
+             where c.paper_id = n.paper_id
+           ), 0)::integer as mentions,
+           exists (select 1 from public.research_paper_chunks c where c.paper_id = n.paper_id) as readable
+    from needle n
+    where length(n.name) >= 3
+  ),
+  best as (
+    select distinct on (paper_id, folder_id) *
+    from scored
+    order by paper_id, folder_id, in_title desc, in_abstract desc, mentions desc
+  )
+  select paper_id, folder_id, term, in_title, in_abstract, mentions, readable,
+         case
+           when in_title       then 4
+           when in_abstract    then 3
+           when mentions >= 10 then 2
+           when mentions >= 1  then 1
+           -- A scan with no text layer, or a paper we hold only as a citation:
+           -- there was nothing to search, so it cannot be called a mis-filing.
+           when not readable   then 1
+           else 0
+         end
+  from best;
+
+  get diagnostics written = row_count;
+  return written;
+end;
+$_$;
+
+
+ALTER FUNCTION "public"."research_score_folder"("p_folder" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."research_score_folder"("p_folder" "uuid") IS 'Rebuild research_paper_about for one shelf. Seconds, not minutes -- call it for the folders a harvest touched.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."research_score_folders"() RETURNS integer
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    SET "statement_timeout" TO '1800s'
+    AS $$
+declare
+  f       record;
+  written integer := 0;
+begin
+  for f in
+    select id from public.research_folders
+    where kind <> 'section' and slug <> 'chem-wrong-shelf'
+    order by sort, name
+  loop
+    written := written + public.research_score_folder(f.id);
+  end loop;
+  return written;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."research_score_folders"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."research_score_folders"() IS 'Rebuild research_paper_about for every shelf, one at a time. Minutes: too long for the API gateways, so call it from psql or loop research_score_folder from a script.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."research_search"("q" "text", "max_rows" integer DEFAULT 10) RETURNS TABLE("paper_id" "uuid", "title" "text", "authors" "text", "year" integer, "source" "text", "region" "text", "folder_name" "text", "pages" "text", "passage" "text", "rank" real, "kind" "text")
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
     SET "statement_timeout" TO '15s'
     AS $$
@@ -7260,6 +8140,13 @@ declare
   tsq_all   tsquery := websearch_to_tsquery('english', q);
   found     integer;
 begin
+  -- The same gate the policies apply, evaluated once. auth.uid() and auth.jwt()
+  -- read the request's own claims, so SECURITY DEFINER does not change who the
+  -- caller is -- only which rows Postgres bothers to re-check.
+  if not (public.mfa_ok() and (public.is_active() or public.is_manager())) then
+    raise exception 'not permitted' using errcode = '42501';
+  end if;
+
   words := array(
     select x
     from unnest(regexp_split_to_array(
@@ -7272,13 +8159,20 @@ begin
   tsqs := array(select plainto_tsquery('english', w) from unnest(words) as w);
   tsq_any := to_tsquery('english', array_to_string(words, ' | '));
 
-  -- The four rarest words. The count gives up at 400: enough to tell "pinto"
-  -- from "rate", and cheap enough not to be the slowest thing here.
+  -- `least(docs, 400)` reproduces the old counting exactly: the previous
+  -- `count(*) ... limit 400` was min(true count, 400), so common words tied at
+  -- the cap and the tie broke alphabetically. Using true counts changes which
+  -- words get paired and so changes results.
   selectors := array(
     select w from unnest(words) as w
-    order by (select count(*) from (select 1 from public.research_paper_chunks c
-                                     where c.fts @@ plainto_tsquery('english', w)
-                                     limit 400) t), w
+    order by least(
+               coalesce(
+                 (select d.docs
+                    from public.research_lexeme_df d
+                   where d.lexeme = (tsvector_to_array(to_tsvector('english', w)))[1]),
+                 0),
+               400),
+             w
     limit 4
   );
 
@@ -7294,7 +8188,7 @@ begin
 
   return query
   with raw as (
-    select c.paper_id, c.page_from, c.page_to, c.text, c.fts,
+    select c.paper_id, c.page_from, c.page_to, c.text, c.fts, c.kind,
            ts_rank_cd(c.fts, tsq_sel) as r
     from public.research_paper_chunks c
     where c.fts @@ tsq_sel
@@ -7302,16 +8196,25 @@ begin
     limit 200
   ),
   scored as (
-    select raw.paper_id, raw.page_from, raw.page_to, raw.text,
+    select raw.paper_id, raw.page_from, raw.page_to, raw.text, raw.kind,
            (raw.r
              * power(
                  (select count(*) from unnest(tsqs) as tq where raw.fts @@ tq)::real
                    / greatest(cardinality(words), 1),
-                 2))::real as rank
+                 2)
+             -- An abstract is the author's own summary, so it states the
+             -- paper's key words close together and out-ranks the page that
+             -- does the actual work. Held back, so a paper we hold in full is
+             -- quoted from its body and an abstract only speaks when it is all
+             -- there is.
+             * case when raw.kind = 'abstract' then 0.75 else 1.0 end)::real as rank
     from raw
   ),
+  -- Prefer a body chunk when a paper somehow has both.
   hits as (
-    select distinct on (s.paper_id) * from scored s order by s.paper_id, s.rank desc
+    select distinct on (s.paper_id) *
+      from scored s
+     order by s.paper_id, (s.kind = 'body') desc, s.rank desc
   ),
   best as (
     select h.*,
@@ -7338,7 +8241,8 @@ begin
            ts_headline('english', b.text, coalesce(tsq_all, tsq_sel),
                        'MaxWords=90, MinWords=40, MaxFragments=2'),
            '</?b>', '', 'g'),
-         b.weighted
+         b.weighted,
+         b.kind
   from best b
   join public.research_papers p on p.id = b.paper_id
   join public.research_folders f on f.id = p.folder_id
@@ -7350,8 +8254,28 @@ $$;
 ALTER FUNCTION "public"."research_search"("q" "text", "max_rows" integer) OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."research_search"("q" "text", "max_rows" integer) IS 'Passages from the research library that answer a question, nearest work weighted up. One passage per paper.';
+CREATE OR REPLACE FUNCTION "public"."research_text_coverage"() RETURNS TABLE("full_text" integer, "abstract_only" integer, "nothing" integer)
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    SET "statement_timeout" TO '15s'
+    AS $$
+  with per_paper as (
+    select p.id,
+           bool_or(c.kind = 'body') as has_body,
+           bool_or(c.kind = 'abstract') as has_abstract
+      from public.research_papers p
+      left join public.research_paper_chunks c on c.paper_id = p.id
+     group by p.id
+  )
+  select count(*) filter (where has_body)::integer,
+         count(*) filter (where has_abstract and not coalesce(has_body, false))::integer,
+         count(*) filter (where not coalesce(has_body, false)
+                            and not coalesce(has_abstract, false))::integer
+    from per_paper;
+$$;
 
+
+ALTER FUNCTION "public"."research_text_coverage"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."retire_meeting_fact"("p_id" "text") RETURNS "void"
@@ -7514,6 +8438,40 @@ $$;
 
 
 ALTER FUNCTION "public"."sat_apply_harmonization"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."sat_band_scaled"("v" numeric, "lo" numeric, "span" numeric) RETURNS numeric
+    LANGUAGE "sql" IMMUTABLE PARALLEL SAFE
+    AS $$
+  select case
+    when v is null or span is null or span = 0 then null
+    else greatest(0::numeric, least(1::numeric, (v - lo) / span))
+  end
+$$;
+
+
+ALTER FUNCTION "public"."sat_band_scaled"("v" numeric, "lo" numeric, "span" numeric) OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."sat_band_scaled"("v" numeric, "lo" numeric, "span" numeric) IS 'Clamp a spectral index to 0-1 across [lo, lo+span], NULL in / NULL out. Written because greatest()/least() silently ignore NULL, which let an unmeasured band score a perfect 1.0 in pasture_forage_index.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."sat_fcover"("ndvi" numeric) RETURNS numeric
+    LANGUAGE "sql" IMMUTABLE PARALLEL SAFE
+    AS $$
+  select case
+    when ndvi is null then null
+    else round(power(greatest(0::numeric, least(1::numeric, (ndvi - 0.15) / 0.75)), 2), 4)
+  end
+$$;
+
+
+ALTER FUNCTION "public"."sat_fcover"("ndvi" numeric) OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."sat_fcover"("ndvi" numeric) IS 'Fractional canopy cover from NDVI: the squared scaled-NDVI relation (Gutman & Ignatov), bare 0.15 and closed canopy 0.90. Mirrors fcoverFromNdvi in netlify/shared/sat-kc.ts.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."sat_field_geometries"("p_limit" integer DEFAULT NULL::integer) RETURNS TABLE("field_id" "uuid", "name" "text", "geojson" "jsonb", "geojson_utm" "jsonb", "geojson_display" "jsonb", "utm_srid" integer, "acres" numeric)
@@ -7883,6 +8841,31 @@ COMMENT ON FUNCTION "public"."set_boundary_analysis"() IS 'Derives the 15 m inwa
 
 
 
+CREATE OR REPLACE FUNCTION "public"."set_contact_candidate_status"("p_id" "uuid", "p_status" "text") RETURNS "void"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if p_status not in ('pending', 'rejected') then
+    raise exception 'use approve_contact_candidate to approve; got %', p_status;
+  end if;
+  update public.contact_candidates
+     set status     = p_status,
+         decided_at = case when p_status = 'pending' then null else now() end,
+         decided_by = case when p_status = 'pending' then null else auth.uid() end,
+         contact_id = null
+   where id = p_id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."set_contact_candidate_status"("p_id" "uuid", "p_status" "text") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."set_contact_candidate_status"("p_id" "uuid", "p_status" "text") IS 'Rejects a candidate, or sets a decided one back to pending. Never writes to contacts.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."set_crop_moisture_levels"("p_crop" "uuid", "p_dry_min" numeric, "p_dry_max" numeric, "p_tough_max" numeric) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
@@ -7943,6 +8926,43 @@ end $$;
 ALTER FUNCTION "public"."set_freeze_watch"("p_low" numeric, "p_high" numeric) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."set_gates_open"("p_open" boolean, "p_ranch" "uuid" DEFAULT NULL::"uuid") RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  n integer;
+begin
+  if auth.uid() is not null and not public.is_active() then
+    raise exception 'Only active accounts can do this';
+  end if;
+
+  update pasture_gates g
+     set is_open = p_open,
+         updated_at = now()
+   where g.is_open is distinct from p_open
+     and (
+       p_ranch is null
+       or exists (
+         select 1 from grazing_pastures gp
+          where gp.ranch_id = p_ranch
+            and gp.pasture_id in (g.pasture_a, g.pasture_b)
+       )
+     );
+
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."set_gates_open"("p_open" boolean, "p_ranch" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."set_gates_open"("p_open" boolean, "p_ranch" "uuid") IS 'Open or shut every gate, or every gate touching a paddock on one ranch. Returns the number that changed. The per-row trigger dirties the affected paddocks'' water bands, so a rebuild redraws them.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."start_monthly_checklist"("p_copy" "uuid") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
@@ -7983,6 +9003,163 @@ $$;
 
 
 ALTER FUNCTION "public"."start_monthly_checklist"("p_copy" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."suggest_trough_sites"("p_id" "uuid", "p_count" integer DEFAULT 1) RETURNS TABLE("ord" integer, "lon" double precision, "lat" double precision, "gains_ac" numeric)
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  p          pastures%rowtype;
+  near       numeric := public.pasture_water_radius_m();
+  far        numeric := public.pasture_water_radius_far_m();
+  tgt_m      constant integer := 100;
+  cand_m     constant integer := 150;
+  cell_ac    constant numeric := (100 * 100) / 4046.8564224;
+  want       integer := greatest(1, least(coalesce(p_count, 1), 2));
+  b          public.geometry;  -- boundary, metres
+  covered    public.geometry;  -- already within the outer radius, metres
+  red        public.geometry;
+  pick       record;
+  i          integer;
+  pass       integer;
+begin
+  select * into p from pastures where id = p_id;
+  if p.boundary is null then return; end if;
+
+  b := st_transform(p.boundary, 26912);
+  covered := public.pasture_water_reach_at(p_id, far);
+  red := case
+    when covered is null then b
+    else st_difference(b, st_transform(covered, 26912))
+  end;
+  if red is null or st_isempty(red) then return; end if;
+
+  create temp table if not exists _trough_tgt (
+    id serial primary key, x double precision, y double precision, taken integer
+  ) on commit drop;
+  create temp table if not exists _trough_cand (
+    id serial primary key, x double precision, y double precision
+  ) on commit drop;
+  create temp table if not exists _trough_pick (
+    slot integer primary key, x double precision, y double precision, gains numeric
+  ) on commit drop;
+  delete from _trough_tgt where true;
+  delete from _trough_cand where true;
+  delete from _trough_pick where true;
+
+  -- The ground that still needs answering, one point per 100 m cell.
+  insert into _trough_tgt (x, y, taken)
+  select gx, gy, null
+    from generate_series(
+           floor(st_xmin(red) / tgt_m)::integer * tgt_m,
+           ceil(st_xmax(red) / tgt_m)::integer * tgt_m,
+           tgt_m
+         ) as gx,
+         generate_series(
+           floor(st_ymin(red) / tgt_m)::integer * tgt_m,
+           ceil(st_ymax(red) / tgt_m)::integer * tgt_m,
+           tgt_m
+         ) as gy
+   where st_intersects(red, st_setsrid(st_makepoint(gx, gy), 26912));
+
+  if not exists (select 1 from _trough_tgt) then return; end if;
+
+  -- Somewhere a trough could stand: anywhere inside the fence.
+  insert into _trough_cand (x, y)
+  select gx, gy
+    from generate_series(
+           floor(st_xmin(b) / cand_m)::integer * cand_m,
+           ceil(st_xmax(b) / cand_m)::integer * cand_m,
+           cand_m
+         ) as gx,
+         generate_series(
+           floor(st_ymin(b) / cand_m)::integer * cand_m,
+           ceil(st_ymax(b) / cand_m)::integer * cand_m,
+           cand_m
+         ) as gy
+   where st_intersects(b, st_setsrid(st_makepoint(gx, gy), 26912));
+
+  if not exists (select 1 from _trough_cand) then return; end if;
+
+  -- Greedy: best candidate, mark what it answers, repeat.
+  for i in 1 .. want loop
+    select c.x, c.y,
+           sum(case when d.dist <= near then 1.0 when d.dist <= far then 0.5 else 0 end) as score,
+           count(*) filter (where d.dist <= far) as reached
+      into pick
+      from _trough_cand c
+      join lateral (
+        select sqrt((t.x - c.x) ^ 2 + (t.y - c.y) ^ 2) as dist
+          from _trough_tgt t
+         where t.taken is null
+      ) d on true
+     group by c.x, c.y
+     order by score desc, c.x, c.y
+     limit 1;
+
+    exit when not found or coalesce(pick.score, 0) <= 0;
+
+    insert into _trough_pick (slot, x, y, gains)
+    values (i, pick.x, pick.y, round(pick.reached * cell_ac, 1));
+
+    update _trough_tgt t
+       set taken = i
+     where t.taken is null
+       and sqrt((t.x - pick.x) ^ 2 + (t.y - pick.y) ^ 2) <= far;
+  end loop;
+
+  -- Refinement: re-pick each trough with the others held where they are. Two
+  -- passes is enough to settle; it has nowhere left to go after that.
+  if (select count(*) from _trough_pick) > 1 then
+    for pass in 1 .. 2 loop
+      for i in 1 .. want loop
+        -- Free the ground this one was answering, keeping what the others do.
+        update _trough_tgt set taken = null where taken = i;
+
+        select c.x, c.y,
+               sum(case when d.dist <= near then 1.0 when d.dist <= far then 0.5 else 0 end) as score,
+               count(*) filter (where d.dist <= far) as reached
+          into pick
+          from _trough_cand c
+          join lateral (
+            select sqrt((t.x - c.x) ^ 2 + (t.y - c.y) ^ 2) as dist
+              from _trough_tgt t
+             where t.taken is null
+          ) d on true
+         group by c.x, c.y
+         order by score desc, c.x, c.y
+         limit 1;
+
+        exit when not found;
+
+        update _trough_pick set x = pick.x, y = pick.y, gains = round(pick.reached * cell_ac, 1)
+         where slot = i;
+
+        update _trough_tgt t
+           set taken = i
+         where t.taken is null
+           and sqrt((t.x - pick.x) ^ 2 + (t.y - pick.y) ^ 2) <= far;
+      end loop;
+    end loop;
+  end if;
+
+  return query
+  select k.slot,
+         st_x(st_transform(st_setsrid(st_makepoint(k.x, k.y), 26912), 4326)),
+         st_y(st_transform(st_setsrid(st_makepoint(k.x, k.y), 26912), 4326)),
+         k.gains
+    from _trough_pick k
+   order by k.slot;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."suggest_trough_sites"("p_id" "uuid", "p_count" integer) OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."suggest_trough_sites"("p_id" "uuid", "p_count" integer) IS 'One or two trough sites for a paddock, chosen to leave the least ground out of reach of water. Greedy maximum coverage on a 100 m sample grid, weighting ground brought inside the inner radius twice what the margin is worth, then refined. A suggestion: it knows nothing about sloughs, access or where the sun falls.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."topo_cells"("p_surface" "uuid") RETURNS "jsonb"
@@ -8149,12 +9326,17 @@ CREATE TABLE IF NOT EXISTS "public"."afsc_mdi_land" (
     "title_name" "text",
     "sort" integer DEFAULT 0 NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "ranch_id" "uuid",
     CONSTRAINT "afsc_mdi_land_acres_check" CHECK ((("acres" IS NULL) OR ("acres" >= (0)::numeric))),
     CONSTRAINT "afsc_mdi_land_tenure_check" CHECK ((("tenure" IS NULL) OR ("tenure" = ANY (ARRAY['owned'::"text", 'cash'::"text", 'crop_share'::"text"]))))
 );
 
 
 ALTER TABLE "public"."afsc_mdi_land" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."afsc_mdi_land"."ranch_id" IS 'The ranch whose subscription this parcel is insured under. Null only on a farm with no ranches yet.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."afsc_mdi_year" (
@@ -8183,6 +9365,7 @@ CREATE TABLE IF NOT EXISTS "public"."afsc_mdi_year" (
     "notes" "text",
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_by" "uuid",
+    "ranch_id" "uuid" NOT NULL,
     CONSTRAINT "afsc_mdi_year_coverage_option_check" CHECK ((("coverage_option" IS NULL) OR ("coverage_option" = ANY (ARRAY['A'::"text", 'B'::"text", 'C'::"text", 'D'::"text"])))),
     CONSTRAINT "afsc_mdi_year_price_per_lb_check" CHECK ((("price_per_lb" IS NULL) OR ("price_per_lb" >= (0)::numeric)))
 );
@@ -8192,6 +9375,10 @@ ALTER TABLE "public"."afsc_mdi_year" OWNER TO "postgres";
 
 
 COMMENT ON TABLE "public"."afsc_mdi_year" IS 'One year''s answers for AFSC Moisture Deficiency Insurance: what the forms ask that the app does not already know.';
+
+
+
+COMMENT ON COLUMN "public"."afsc_mdi_year"."ranch_id" IS 'The ranch this subscription covers. AFSC allows a second subscription when two pastures are more than 15 miles apart.';
 
 
 
@@ -8493,6 +9680,36 @@ COMMENT ON TABLE "public"."bale_weight_defaults" IS 'The farm''s usual weight of
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."bee_placements" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "kind" "text" NOT NULL,
+    "placed_on" "date" NOT NULL,
+    "removed_on" "date",
+    "units" integer,
+    "contact_id" "uuid",
+    "note" "text",
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "bee_placements_check" CHECK ((("removed_on" IS NULL) OR ("removed_on" >= "placed_on"))),
+    CONSTRAINT "bee_placements_kind_check" CHECK (("kind" = ANY (ARRAY['honey'::"text", 'leafcutter'::"text"]))),
+    CONSTRAINT "bee_placements_units_check" CHECK ((("units" IS NULL) OR ("units" > 0)))
+);
+
+
+ALTER TABLE "public"."bee_placements" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."bee_placements" IS 'Honey bee hives and leafcutter shelters in a field, so the bloom page can cross-check sprays, pivot passes and hail against them (Alberta seed canola pollinator guides, 2019).';
+
+
+
+COMMENT ON COLUMN "public"."bee_placements"."removed_on" IS 'Null while the bees are still in the field. Honey bees are often removed in stages as bloom wanes, which is several rows.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."bin_air_alerts" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "field_id" "uuid" NOT NULL,
@@ -8786,11 +10003,68 @@ CREATE TABLE IF NOT EXISTS "public"."canola_bloom" (
     "notified_start_at" timestamp with time zone,
     "notified_end_at" timestamp with time zone,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "stage" "text",
+    "confidence" "text",
+    "baseline" numeric,
+    "model_score" numeric,
+    "station_id" "uuid",
+    "forecast_start_on" "date",
+    "typical_start_gdd" numeric,
+    "blind_since" "date",
+    "blind_alerted_on" "date",
+    "notified" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "task_id" "uuid",
+    "truth_on" "date",
+    "truth_source" "text",
+    "gdd_at_truth" numeric,
+    "gdd_at_start" numeric,
+    "first_fungicide_on" "date",
+    "looks" "jsonb",
+    CONSTRAINT "canola_bloom_stage_check" CHECK ((("stage" IS NULL) OR ("stage" = ANY (ARRAY['none'::"text", 'starting'::"text", 'window'::"text", 'full'::"text", 'falling'::"text", 'over'::"text"])))),
     CONSTRAINT "canola_bloom_status_check" CHECK (("status" = ANY (ARRAY['waiting'::"text", 'watching'::"text", 'flowering'::"text", 'over'::"text"])))
 );
 
 
 ALTER TABLE "public"."canola_bloom" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."canola_bloom_scouting" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "seen_on" "date" NOT NULL,
+    "bloom_pct" integer NOT NULL,
+    "note" "text",
+    "created_by" "uuid" DEFAULT "auth"."uid"(),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "canola_bloom_scouting_bloom_pct_check" CHECK ((("bloom_pct" >= 0) AND ("bloom_pct" <= 100)))
+);
+
+
+ALTER TABLE "public"."canola_bloom_scouting" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."canola_bloom_settings" (
+    "id" integer DEFAULT 1 NOT NULL,
+    "start_fraction" numeric DEFAULT 0.10 NOT NULL,
+    "window_fraction" numeric DEFAULT 0.25 NOT NULL,
+    "full_fraction" numeric DEFAULT 0.50 NOT NULL,
+    "end_fraction" numeric DEFAULT 0.10 NOT NULL,
+    "gate_gdd" numeric DEFAULT 450 NOT NULL,
+    "latest_gdd" numeric DEFAULT 1150 NOT NULL,
+    "typical_start_gdd" numeric DEFAULT 560 NOT NULL,
+    "haze_blue_max" numeric DEFAULT 0.08 NOT NULL,
+    "haze_aot_max" numeric DEFAULT 0.4 NOT NULL,
+    "min_valid" numeric DEFAULT 0.3 NOT NULL,
+    "blind_days" integer DEFAULT 6 NOT NULL,
+    "variety_gate" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "updated_by" "uuid",
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "canola_bloom_settings_id_check" CHECK (("id" = 1))
+);
+
+
+ALTER TABLE "public"."canola_bloom_settings" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."canola_isolation_reports" (
@@ -8845,11 +10119,49 @@ CREATE TABLE IF NOT EXISTS "public"."cattle" (
     "acquired_date" "date",
     "notes_md" "text",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "ranch_id" "uuid"
+    "ranch_id" "uuid",
+    "eshepherd_animal_id" "text",
+    "eid" "text",
+    "vid" "text",
+    "neckband" "text",
+    "stock_class" "text",
+    "brand" "text",
+    "weight_kg" numeric,
+    "weighed_on" "date",
+    "expected_gain_kg" numeric,
+    "pregnancy_status" "text",
+    "mob" "text",
+    "eshepherd_note" "text",
+    "last_upload_id" "uuid",
+    CONSTRAINT "cattle_weight_kg_check" CHECK ((("weight_kg" IS NULL) OR (("weight_kg" >= (0)::numeric) AND ("weight_kg" <= (9999)::numeric))))
 );
 
 
 ALTER TABLE "public"."cattle" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."cattle"."eid" IS 'The 15-digit RFID in the ear tag; what an EID wand reads. Unique where set.';
+
+
+
+COMMENT ON COLUMN "public"."cattle"."mob" IS 'The eShepherd mob. Not in any eShepherd export — assigned in the app.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."cattle_brand_ranch" (
+    "brand" "text" NOT NULL,
+    "ranch_id" "uuid",
+    "note" "text",
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_by" "uuid"
+);
+
+
+ALTER TABLE "public"."cattle_brand_ranch" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."cattle_brand_ranch" IS 'Tattoo/brand to ranch, for sorting an uploaded eShepherd sheet. Only what somebody has confirmed.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."cattle_cost_assumptions" (
@@ -8869,7 +10181,11 @@ CREATE TABLE IF NOT EXISTS "public"."cattle_cost_assumptions" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "cull_cow_price_cwt" numeric(8,2),
     "cow_yardage_per_day" numeric,
-    "calf_yardage_per_day" numeric
+    "calf_yardage_per_day" numeric,
+    "cow_death_pct" numeric,
+    "calf_loss_pct" numeric,
+    "post_weaning_loss_pct" numeric,
+    "cull_pct" numeric
 );
 
 
@@ -8885,6 +10201,22 @@ COMMENT ON COLUMN "public"."cattle_cost_assumptions"."cow_yardage_per_day" IS 'W
 
 
 COMMENT ON COLUMN "public"."cattle_cost_assumptions"."calf_yardage_per_day" IS 'Backgrounding a calf, $ a head a day. The cost-of-gain worksheet starts from it.';
+
+
+
+COMMENT ON COLUMN "public"."cattle_cost_assumptions"."cow_death_pct" IS 'Cows that die in a year, % of the herd. Replacements must cover these as well as culls.';
+
+
+
+COMMENT ON COLUMN "public"."cattle_cost_assumptions"."calf_loss_pct" IS 'Calves lost between birth and weaning, % of calves born. Informational when weaning_rate_pct is set (weaning % already counts them).';
+
+
+
+COMMENT ON COLUMN "public"."cattle_cost_assumptions"."post_weaning_loss_pct" IS 'Calves lost while held after weaning (backgrounding, wintering), % a year held.';
+
+
+
+COMMENT ON COLUMN "public"."cattle_cost_assumptions"."cull_pct" IS 'Cows culled and sold a year, % of the herd: the cull-cow credit in the break-even. Null = 12%.';
 
 
 
@@ -8967,11 +10299,31 @@ CREATE TABLE IF NOT EXISTS "public"."cattle_manifests" (
     "created_by" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "cattle_manifests_purpose_check" CHECK (("purpose" = ANY (ARRAY['sale'::"text", 'feeding'::"text", 'pasture'::"text", 'slaughter'::"text", 'exhibition'::"text", 'return'::"text", 'other'::"text"])))
+    "direction" "text" DEFAULT 'out'::"text" NOT NULL,
+    "source_kind" "text",
+    "commingled" boolean,
+    "transport_km" numeric,
+    "rest_stop_h" numeric,
+    "arrival_note" "text",
+    CONSTRAINT "cattle_manifests_direction_check" CHECK (("direction" = ANY (ARRAY['out'::"text", 'in'::"text"]))),
+    CONSTRAINT "cattle_manifests_purpose_check" CHECK (("purpose" = ANY (ARRAY['sale'::"text", 'feeding'::"text", 'pasture'::"text", 'slaughter'::"text", 'exhibition'::"text", 'return'::"text", 'other'::"text"]))),
+    CONSTRAINT "cattle_manifests_source_kind_check" CHECK ((("source_kind" IS NULL) OR ("source_kind" = ANY (ARRAY['ranch_direct'::"text", 'auction'::"text", 'backgrounding'::"text", 'own_ranch'::"text"]))))
 );
 
 
 ALTER TABLE "public"."cattle_manifests" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."cattle_manifests"."direction" IS 'out = cattle left on this manifest (the default, and what every manifest was before arrivals existed). in = cattle arrived.';
+
+
+
+COMMENT ON COLUMN "public"."cattle_manifests"."source_kind" IS 'Where the load came from, in the categories the Canadian entry study used: ranch_direct, auction, backgrounding, or own_ranch for a move between our own ranches.';
+
+
+
+COMMENT ON COLUMN "public"."cattle_manifests"."rest_stop_h" IS 'Hours rested in transit. Recorded because Canadian work has looked at whether a rest stop changes the respiratory microbiota; the app does not claim an effect size from it.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."cattle_sales" (
@@ -8997,6 +10349,49 @@ CREATE TABLE IF NOT EXISTS "public"."cattle_sales" (
 ALTER TABLE "public"."cattle_sales" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."cattle_scans" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "eid" "text" NOT NULL,
+    "cattle_id" "uuid",
+    "scanned_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "scanned_by" "uuid",
+    "source" "text" DEFAULT 'wand'::"text" NOT NULL,
+    "ranch_id" "uuid",
+    "note" "text"
+);
+
+
+ALTER TABLE "public"."cattle_scans" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."cattle_scans" IS 'Every EID a reader sent, matched to an animal where one is known.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."cattle_uploads" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "filename" "text" NOT NULL,
+    "uploaded_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "uploaded_by" "uuid",
+    "row_count" integer DEFAULT 0 NOT NULL,
+    "created_count" integer DEFAULT 0 NOT NULL,
+    "updated_count" integer DEFAULT 0 NOT NULL,
+    "skipped_count" integer DEFAULT 0 NOT NULL,
+    "headers" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "rows" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "previous" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL,
+    "undone_at" timestamp with time zone,
+    "note" "text"
+);
+
+
+ALTER TABLE "public"."cattle_uploads" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."cattle_uploads" IS 'Every eShepherd animal sheet uploaded, kept whole with the rows it replaced, so an upload can be read back or undone.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."cattle_water" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "name" "text",
@@ -9009,7 +10404,9 @@ CREATE TABLE IF NOT EXISTS "public"."cattle_water" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "serves" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
-    CONSTRAINT "cattle_water_kind_check" CHECK (("kind" = ANY (ARRAY['dugout'::"text", 'pond'::"text", 'trough'::"text", 'spring'::"text", 'well'::"text", 'other'::"text"]))),
+    "fed_by" "text",
+    CONSTRAINT "cattle_water_fed_by_check" CHECK ((("fed_by" IS NULL) OR ("fed_by" = ANY (ARRAY['oldman'::"text", 'smrid'::"text"])))),
+    CONSTRAINT "cattle_water_kind_check" CHECK (("kind" = ANY (ARRAY['dugout'::"text", 'pond'::"text", 'trough'::"text", 'trough_portable'::"text", 'spring'::"text", 'well'::"text", 'other'::"text"]))),
     CONSTRAINT "cattle_water_source_check" CHECK (("source" = ANY (ARRAY['mymap'::"text", 'manual'::"text"])))
 );
 
@@ -9017,7 +10414,15 @@ CREATE TABLE IF NOT EXISTS "public"."cattle_water" (
 ALTER TABLE "public"."cattle_water" OWNER TO "postgres";
 
 
+COMMENT ON COLUMN "public"."cattle_water"."kind" IS 'What the source is. `trough` is plumbed in and does not move; `trough_portable` is a moveable or solar trough the placement recommender is allowed to propose moving. The reach treats both the same — it is built from `drinkable` alone.';
+
+
+
 COMMENT ON COLUMN "public"."cattle_water"."serves" IS 'Pasture ids this water counts for regardless of distance — a corral trough the cattle walk out to.';
+
+
+
+COMMENT ON COLUMN "public"."cattle_water"."fed_by" IS 'Where the water comes from: oldman (the river), smrid (the canal), or null for its own water. Set, the quality is read from that source''s monitoring rather than a lab sheet.';
 
 
 
@@ -9065,17 +10470,61 @@ CREATE OR REPLACE VIEW "public"."cattle_water_points" WITH ("security_invoker"='
     "public"."st_x"("w"."geom") AS "lon",
     "public"."st_y"("w"."geom") AS "lat",
     "p"."id" AS "pasture_id",
-    "p"."name" AS "pasture_name"
+    "p"."name" AS "pasture_name",
+    "w"."fed_by"
    FROM ("public"."cattle_water" "w"
      LEFT JOIN LATERAL ( SELECT "p_1"."id",
             "p_1"."name"
            FROM "public"."pastures" "p_1"
-          WHERE "public"."st_dwithin"(("p_1"."boundary")::"public"."geography", ("w"."geom")::"public"."geography", (30)::double precision)
-          ORDER BY ("public"."st_contains"("p_1"."boundary", "w"."geom")) DESC, ("public"."st_distance"(("p_1"."boundary")::"public"."geography", ("w"."geom")::"public"."geography"))
+          WHERE "public"."st_dwithin"((("p_1"."boundary")::"public"."geography")::"public"."geography", (("w"."geom")::"public"."geography")::"public"."geography", (30)::double precision)
+          ORDER BY ("public"."st_contains"("p_1"."boundary", "w"."geom")) DESC, ("public"."st_distance"((("p_1"."boundary")::"public"."geography")::"public"."geography", (("w"."geom")::"public"."geography")::"public"."geography"))
          LIMIT 1) "p" ON (true));
 
 
 ALTER VIEW "public"."cattle_water_points" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."cattle_water_tests" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "water_id" "uuid" NOT NULL,
+    "sampled_on" "date" NOT NULL,
+    "lab" "text",
+    "tds_mg_l" numeric,
+    "so4_mg_l" numeric,
+    "no3n_mg_l" numeric,
+    "na_mg_l" numeric,
+    "k_mg_l" numeric,
+    "cl_mg_l" numeric,
+    "alkalinity_mg_l" numeric,
+    "hardness_mg_l" numeric,
+    "ph" numeric,
+    "ec_us_cm" numeric,
+    "fe_mg_l" numeric,
+    "cu_mg_l" numeric,
+    "mo_mg_l" numeric,
+    "se_mg_l" numeric,
+    "mn_mg_l" numeric,
+    "f_mg_l" numeric,
+    "total_n_ug_l" numeric,
+    "total_p_ug_l" numeric,
+    "microcystin_ug_l" numeric,
+    "bloom_seen" boolean,
+    "notes" "text",
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."cattle_water_tests" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."cattle_water_tests" IS 'Lab results for one of our own cattle water sources, read against Alberta Agdex 400/716-2 in src/lib/livestock-water.ts. Units are the guideline tables'' own: mg/L except the two nutrients and the toxin, which are ug/L.';
+
+
+
+COMMENT ON COLUMN "public"."cattle_water_tests"."bloom_seen" IS 'Blue-green algae seen on the water at sampling. Recorded because the Alberta shallow-lake work found cyanobacteria pigment tracks molybdenum and total nitrogen up and sulphate down, with no threshold to test against.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."checklist_photos" (
@@ -9351,6 +10800,33 @@ COMMENT ON COLUMN "public"."chemical_labels"."grazing_rules_status" IS 'read | n
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."chemical_moa" (
+    "active" "text" NOT NULL,
+    "scheme" "text" NOT NULL,
+    "group_code" "text" NOT NULL,
+    "group_name" "text" NOT NULL,
+    "ph_sensitive" boolean DEFAULT false NOT NULL,
+    "time_of_day" "text",
+    "note" "text",
+    CONSTRAINT "chemical_moa_scheme_check" CHECK (("scheme" = ANY (ARRAY['herbicide'::"text", 'fungicide'::"text", 'insecticide'::"text"])))
+);
+
+
+ALTER TABLE "public"."chemical_moa" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."chemical_moa" IS 'Resistance group per active ingredient: herbicide (HRAC/WSSA as Canadian guides number them), fungicide (FRAC) and insecticide (IRAC).';
+
+
+
+COMMENT ON COLUMN "public"."chemical_moa"."active" IS 'The active as chemicals.active_ingredients spells it, upper case, everything before " (" — GLYPHOSATE, not GLYPHOSATE (PRESENT AS POTASSIUM SALT).';
+
+
+
+COMMENT ON COLUMN "public"."chemical_moa"."ph_sensitive" IS 'Weak acids whose carryover injury rises on alkaline ground; the spray check weights the label''s re-crop interval by the field''s own soil-test pH.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."chemical_recrop_overrides" (
     "registration_number" "text" NOT NULL,
     "max_months" numeric NOT NULL,
@@ -9615,6 +11091,34 @@ COMMENT ON COLUMN "public"."combine_settings_used"."work_record_id" IS 'The Fiel
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."contact_candidates" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "company" "text" NOT NULL,
+    "contact_name" "text",
+    "role" "text",
+    "email" "text",
+    "phone" "text",
+    "type" "public"."contact_type" DEFAULT 'other'::"public"."contact_type" NOT NULL,
+    "why" "text" NOT NULL,
+    "source" "text" NOT NULL,
+    "source_detail" "text",
+    "status" "text" DEFAULT 'pending'::"text" NOT NULL,
+    "decided_at" timestamp with time zone,
+    "decided_by" "uuid",
+    "contact_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "contact_candidates_source_check" CHECK (("source" = ANY (ARRAY['mail'::"text", 'quickbooks'::"text", 'both'::"text", 'contacts'::"text"]))),
+    CONSTRAINT "contact_candidates_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'approved'::"text", 'rejected'::"text"])))
+);
+
+
+ALTER TABLE "public"."contact_candidates" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."contact_candidates" IS 'Contacts found in Gmail and QuickBooks, waiting for approval onto the Contacts page. Rejected rows are kept so a later harvest does not offer the same name twice.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."contacts" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "company" "text",
@@ -9851,6 +11355,76 @@ COMMENT ON COLUMN "public"."crop_inputs"."farm_fixed" IS 'This row is the farm-w
 
 
 COMMENT ON COLUMN "public"."crop_inputs"."fixed_land_share" IS 'This farm_fixed row is the land share of the fixed expenses on land rented out (Hillside''s seed carrots and spinach). Part of the owner-only breakdown: readable only by can_see_finances(), never audited.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."crop_irrigation_refill" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "sheet_id" "uuid" NOT NULL,
+    "depth_cm" integer NOT NULL,
+    "texture" "text" NOT NULL,
+    "taw_mm" integer NOT NULL,
+    "refill_mm" integer NOT NULL,
+    "depletion_pct" numeric(4,1) NOT NULL
+);
+
+
+ALTER TABLE "public"."crop_irrigation_refill" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."crop_irrigation_refill" IS 'Soil-texture table from each Alberta sheet: what the zone holds and what it takes to refill it at the sheet''s own allowable depletion.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."crop_irrigation_sheets" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "coef_crop" "text" NOT NULL,
+    "coef_variant" "text" DEFAULT ''::"text" NOT NULL,
+    "crop_label" "text" NOT NULL,
+    "paper_id" "uuid" NOT NULL,
+    "agdex" "text",
+    "published" "text",
+    "season_mm_low" integer,
+    "season_mm_high" integer,
+    "peak_mm_day" numeric(4,1),
+    "peak_when" "text",
+    "root_zone_cm" integer NOT NULL,
+    "root_note" "text",
+    "final_note" "text",
+    "establish_note" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."crop_irrigation_sheets" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."crop_irrigation_sheets" IS 'One row per Alberta "Irrigation scheduling for X in southern Alberta" sheet. paper_id points at the PDF in the research library.';
+
+
+
+COMMENT ON COLUMN "public"."crop_irrigation_sheets"."coef_variant" IS 'crop_coefficients.variant the sheet applies to; empty string means any variant of that crop.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."crop_irrigation_stages" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "sheet_id" "uuid" NOT NULL,
+    "phase" "text" NOT NULL,
+    "seq" integer NOT NULL,
+    "stage_label" "text" NOT NULL,
+    "monitor_depth_cm" integer NOT NULL,
+    "start_pct" numeric(4,1),
+    "floor_pct" numeric(4,1) NOT NULL,
+    "note" "text",
+    CONSTRAINT "crop_irrigation_stages_phase_check" CHECK (("phase" = ANY (ARRAY['ini'::"text", 'dev'::"text", 'mid'::"text", 'late'::"text"])))
+);
+
+
+ALTER TABLE "public"."crop_irrigation_stages" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."crop_irrigation_stages" IS 'Per-growth-stage irrigation trigger from the crop''s Alberta sheet: the depth to read at, the per cent to start at, the per cent not to cross.';
 
 
 
@@ -10158,23 +11732,6 @@ CREATE TABLE IF NOT EXISTS "public"."crop_prices" (
 
 
 ALTER TABLE "public"."crop_prices" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "public"."crop_share_fields" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "user_id" "uuid" NOT NULL,
-    "field_id" "uuid" NOT NULL,
-    "crop_year" integer NOT NULL,
-    "created_by" "uuid" DEFAULT "auth"."uid"(),
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
-);
-
-
-ALTER TABLE "public"."crop_share_fields" OWNER TO "postgres";
-
-
-COMMENT ON TABLE "public"."crop_share_fields" IS 'Fields a crop-share partner (users.role = partner) grows on, per crop year. He reads every year of an assigned field and writes only in the assigned years.';
-
 
 
 CREATE TABLE IF NOT EXISTS "public"."crop_succession_rules" (
@@ -11447,8 +13004,12 @@ CREATE TABLE IF NOT EXISTS "public"."field_crop_seasons" (
     "calibration_note" "text",
     "irrigation_done_source" "text",
     "irrigation_done_note" "text",
+    "irrigation_stage" "text",
+    "irrigation_stage_set_at" timestamp with time zone,
+    "irrigation_stage_set_by" "uuid",
     CONSTRAINT "field_crop_seasons_calibration_factor_check" CHECK ((("calibration_factor" >= 0.5) AND ("calibration_factor" <= 1.5))),
     CONSTRAINT "field_crop_seasons_irrigation_done_source_check" CHECK (("irrigation_done_source" = ANY (ARRAY['person'::"text", 'auto'::"text"]))),
+    CONSTRAINT "field_crop_seasons_irrigation_stage_check" CHECK ((("irrigation_stage" IS NULL) OR ("irrigation_stage" = ANY (ARRAY['ini'::"text", 'dev'::"text", 'mid'::"text", 'late'::"text"])))),
     CONSTRAINT "field_crop_seasons_planting_date_source_check" CHECK ((("planting_date_source" IS NULL) OR ("planting_date_source" = ANY (ARRAY['manual'::"text", 'john_deere'::"text"])))),
     CONSTRAINT "field_crop_seasons_start_moisture_mm_check" CHECK ((("start_moisture_mm" IS NULL) OR ("start_moisture_mm" >= (0)::numeric)))
 );
@@ -11470,6 +13031,10 @@ COMMENT ON COLUMN "public"."field_crop_seasons"."irrigation_done_source" IS 'Who
 
 
 COMMENT ON COLUMN "public"."field_crop_seasons"."irrigation_done_note" IS 'Why the season is marked finished, when the app decided it (harvest recorded, or past maturity with the pivot stopped).';
+
+
+
+COMMENT ON COLUMN "public"."field_crop_seasons"."irrigation_stage" IS 'Growth phase set by hand, overriding the one worked out from the planting date. Null = work it out.';
 
 
 
@@ -11628,6 +13193,191 @@ CREATE TABLE IF NOT EXISTS "public"."field_inspections" (
 ALTER TABLE "public"."field_inspections" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."jd_product_aliases" (
+    "deere_name" "text" NOT NULL,
+    "product_id" "uuid",
+    "ignored" boolean DEFAULT false NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."jd_product_aliases" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."jd_products" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "unit" "text" NOT NULL,
+    "price_per_unit" numeric,
+    "pmra_registration" "text",
+    "notes" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "price_updated_on" "date",
+    "price_source" "text",
+    "category" "text" DEFAULT 'chemical'::"text" NOT NULL,
+    "label_note" "text",
+    "manual_last_applied" "date",
+    "manual_crops" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "actives_manual" "text",
+    CONSTRAINT "jd_products_category_check" CHECK (("category" = ANY (ARRAY['chemical'::"text", 'fertilizer'::"text", 'seed'::"text", 'other'::"text"]))),
+    CONSTRAINT "jd_products_price_per_unit_check" CHECK (("price_per_unit" >= (0)::numeric)),
+    CONSTRAINT "jd_products_unit_check" CHECK (("unit" = ANY (ARRAY['L'::"text", 'kg'::"text", 'k seeds'::"text"])))
+);
+
+
+ALTER TABLE "public"."jd_products" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."jd_products"."unit" IS 'What price_per_unit is per: L, kg, or "k seeds" (one thousand seeds, for seed metered by count rather than weight).';
+
+
+
+COMMENT ON COLUMN "public"."jd_products"."price_updated_on" IS 'Date of the invoice the current price came from. Null means somebody typed it.';
+
+
+
+COMMENT ON COLUMN "public"."jd_products"."category" IS 'Which pricing list this appears under. Fertiliser is sold by the tonne and read under Fertilizer; chemicals under Chemicals.';
+
+
+
+COMMENT ON COLUMN "public"."jd_products"."label_note" IS 'Why there is no PMRA label, in a sentence: "Plant biostimulant, CFIA not PMRA". Shown in place of the Link button.';
+
+
+
+COMMENT ON COLUMN "public"."jd_products"."manual_last_applied" IS 'Last application date typed by a person, for products the Deere record misses. The newer of this and the Deere date is shown.';
+
+
+
+COMMENT ON COLUMN "public"."jd_products"."manual_crops" IS 'Crops a person says this product has gone on, added to the crops the Deere record shows.';
+
+
+
+COMMENT ON COLUMN "public"."jd_products"."actives_manual" IS 'Actives for a product with no PMRA registration, spelled as chemicals.active_ingredients does and separated by semicolons. Only for products whose contents are not in doubt.';
+
+
+
+CREATE OR REPLACE VIEW "public"."product_applications" WITH ("security_invoker"='true') AS
+ WITH "lines" AS (
+         SELECT "o"."id" AS "operation_id",
+            "o"."field_id",
+            "o"."started_at",
+            "o"."ended_at",
+            "o"."crop_season",
+            "o"."operator_name",
+            COALESCE(("c"."value" ->> 'name'::"text"), ("p"."value" ->> 'name'::"text")) AS "applied_name",
+            COALESCE((("c"."value" -> 'rate'::"text") ->> 'value'::"text"), (("p"."value" -> 'rate'::"text") ->> 'value'::"text")) AS "rate_value",
+            COALESCE((("c"."value" -> 'rate'::"text") ->> 'unit'::"text"), (("p"."value" -> 'rate'::"text") ->> 'unit'::"text")) AS "rate_unit",
+            ("c"."value" IS NOT NULL) AS "from_mix",
+            ("p"."value" ->> 'name'::"text") AS "mix_name"
+           FROM (("public"."jd_field_operations" "o"
+             CROSS JOIN LATERAL "jsonb_array_elements"(
+                CASE
+                    WHEN ("jsonb_typeof"("o"."products") = 'array'::"text") THEN "o"."products"
+                    ELSE '[]'::"jsonb"
+                END) "p"("value"))
+             LEFT JOIN LATERAL "jsonb_array_elements"(
+                CASE
+                    WHEN ("jsonb_typeof"(("p"."value" -> 'components'::"text")) = 'array'::"text") THEN ("p"."value" -> 'components'::"text")
+                    ELSE '[]'::"jsonb"
+                END) "c"("value") ON (true))
+          WHERE ("o"."operation_type" = 'application'::"text")
+        )
+ SELECT "l"."operation_id",
+    COALESCE("a"."product_id", "pr"."id") AS "product_id",
+    "l"."applied_name",
+    "l"."field_id",
+    "f"."name" AS "field_name",
+    ("l"."started_at")::"date" AS "applied_on",
+    "l"."crop_season",
+    "l"."operator_name",
+    "l"."mix_name",
+    "l"."from_mix",
+    (NULLIF("l"."rate_value", ''::"text"))::numeric AS "rate_value",
+    "l"."rate_unit",
+    COALESCE("l"."ended_at", (((("l"."started_at")::"date" + '1 day'::interval) - '00:00:01'::interval))::timestamp with time zone) AS "applied_at"
+   FROM ((("lines" "l"
+     LEFT JOIN "public"."jd_product_aliases" "a" ON (("lower"("a"."deere_name") = "lower"("l"."applied_name"))))
+     LEFT JOIN "public"."jd_products" "pr" ON (("lower"("pr"."name") = "lower"("l"."applied_name"))))
+     LEFT JOIN "public"."fields" "f" ON (("f"."id" = "l"."field_id")))
+  WHERE (("l"."applied_name" IS NOT NULL) AND ("l"."applied_name" <> ''::"text"));
+
+
+ALTER VIEW "public"."product_applications" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."product_applications" IS 'One row per product per application: which field, which day, at what rate.';
+
+
+
+CREATE OR REPLACE VIEW "public"."product_moa_v" WITH ("security_invoker"='true') AS
+ SELECT "p"."id" AS "product_id",
+    "p"."name" AS "product_name",
+    "p"."pmra_registration",
+    "m"."active",
+    "m"."scheme",
+    "m"."group_code",
+    "m"."group_name",
+    "m"."ph_sensitive",
+    "m"."time_of_day",
+    "m"."note" AS "group_note"
+   FROM ((("public"."jd_products" "p"
+     LEFT JOIN "public"."chemicals" "c" ON (("c"."registration_number" = "p"."pmra_registration")))
+     CROSS JOIN LATERAL "unnest"("string_to_array"("upper"(COALESCE(NULLIF("p"."actives_manual", ''::"text"), "c"."active_ingredients", ''::"text")), ';'::"text")) "a"("raw"))
+     JOIN "public"."chemical_moa" "m" ON (("m"."active" = "btrim"("split_part"("btrim"("a"."raw"), ' ('::"text", 1)))));
+
+
+ALTER VIEW "public"."product_moa_v" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."product_moa_v" IS 'One row per product per active that has a resistance group: which groups this product puts in the tank.';
+
+
+
+CREATE OR REPLACE VIEW "public"."field_moa_history_v" WITH ("security_invoker"='true') AS
+ SELECT "pa"."field_id",
+    "pa"."field_name",
+    "pa"."crop_season",
+    "pa"."applied_on",
+    "pa"."operation_id",
+    "v"."product_id",
+    "v"."product_name",
+    "v"."active",
+    "v"."scheme",
+    "v"."group_code",
+    "v"."group_name"
+   FROM ("public"."product_applications" "pa"
+     JOIN "public"."product_moa_v" "v" ON (("v"."product_id" = "pa"."product_id")))
+  WHERE ("pa"."field_id" IS NOT NULL);
+
+
+ALTER VIEW "public"."field_moa_history_v" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."field_moa_history_v" IS 'Every application resolved to a resistance group: field, season, day, product and group.';
+
+
+
+CREATE OR REPLACE VIEW "public"."field_moa_unknown_v" WITH ("security_invoker"='true') AS
+ SELECT "pa"."field_id",
+    "pa"."crop_season",
+    "count"(*) AS "passes",
+    "count"(DISTINCT COALESCE("pa"."applied_name", ''::"text")) AS "products"
+   FROM ((("public"."product_applications" "pa"
+     JOIN "public"."jd_products" "p" ON (("p"."id" = "pa"."product_id")))
+     LEFT JOIN "public"."chemicals" "c" ON (("c"."registration_number" = "p"."pmra_registration")))
+     LEFT JOIN "public"."product_moa_v" "v" ON (("v"."product_id" = "pa"."product_id")))
+  WHERE (("pa"."field_id" IS NOT NULL) AND ("v"."product_id" IS NULL) AND ("p"."category" = 'chemical'::"text") AND (COALESCE("c"."product_type", ''::"text") <> ALL (ARRAY['ADJUVANT, SURFACTANT'::"text", 'PLANT GROWTH REGULATOR'::"text"])))
+  GROUP BY "pa"."field_id", "pa"."crop_season";
+
+
+ALTER VIEW "public"."field_moa_unknown_v" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."field_moa_unknown_v" IS 'Chemical applications that should have a resistance group and have none: how much the group counts on the spray check are missing. Adjuvants, surfactants, PGRs and fertiliser are excluded — they have no mode of action to rotate.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."sat_observations" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "scene_id" "uuid" NOT NULL,
@@ -11657,6 +13407,9 @@ CREATE TABLE IF NOT EXISTS "public"."sat_observations" (
     "harmonization_source" "text",
     "yellow_fraction" numeric,
     "blue_mean" numeric,
+    "plant_fraction" numeric,
+    "aot_mean" numeric,
+    "band_means" "jsonb",
     CONSTRAINT "sat_observations_quality_check" CHECK (("quality" = ANY (ARRAY['full'::"text", 'partial'::"text", 'rejected'::"text"]))),
     CONSTRAINT "sat_observations_subject_type_check" CHECK (("subject_type" = ANY (ARRAY['field'::"text", 'pasture'::"text", 'pasture_zone'::"text", 'n_strip'::"text"])))
 );
@@ -12009,6 +13762,97 @@ CREATE OR REPLACE VIEW "public"."field_season_water" WITH ("security_invoker"='t
 
 
 ALTER VIEW "public"."field_season_water" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."soil_test_reports" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "part_label" "text" DEFAULT ''::"text" NOT NULL,
+    "crop_label" "text",
+    "lab" "text",
+    "report_ref" "text",
+    "report_date" "date",
+    "source_file" "text",
+    "source_page" integer,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."soil_test_reports" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."soil_test_samples" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "report_id" "uuid" NOT NULL,
+    "sample_code" "text" NOT NULL,
+    "depth_label" "text",
+    "depth_top_in" integer,
+    "depth_bottom_in" integer,
+    "om_pct" numeric,
+    "no3n_ppm" numeric,
+    "no3n_lb_ac" numeric,
+    "p_bicarb_ppm" numeric,
+    "p_melich3_ppm" numeric,
+    "k_ppm" numeric,
+    "so4s_ppm" numeric,
+    "ph" numeric,
+    "cec_meq" numeric,
+    "base_k_pct" numeric,
+    "base_mg_pct" numeric,
+    "base_ca_pct" numeric,
+    "base_h_pct" numeric,
+    "base_na_pct" numeric,
+    "mg_ppm" numeric,
+    "ca_ppm" numeric,
+    "na_ppm" numeric,
+    "zn_ppm" numeric,
+    "mn_ppm" numeric,
+    "fe_ppm" numeric,
+    "cu_ppm" numeric,
+    "b_ppm" numeric,
+    "soluble_salts" numeric,
+    "p_sat_pct" numeric,
+    "al_ppm" numeric,
+    "al_sat_pct" numeric,
+    "k_mg_ratio" numeric,
+    "cl_ppm" numeric,
+    "ec_ms_cm" numeric,
+    "enr" numeric,
+    "gfi" numeric
+);
+
+
+ALTER TABLE "public"."soil_test_samples" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."field_soil_ph_v" WITH ("security_invoker"='true') AS
+ WITH "latest" AS (
+         SELECT "r_1"."field_id",
+            "max"("r_1"."crop_year") AS "crop_year"
+           FROM ("public"."soil_test_reports" "r_1"
+             JOIN "public"."soil_test_samples" "s_1" ON (("s_1"."report_id" = "r_1"."id")))
+          WHERE ("s_1"."ph" IS NOT NULL)
+          GROUP BY "r_1"."field_id"
+        )
+ SELECT "l"."field_id",
+    "l"."crop_year",
+    "round"("avg"("s"."ph"), 1) AS "ph",
+    "round"("max"("s"."ph"), 1) AS "ph_max",
+    "round"("avg"("s"."om_pct"), 1) AS "om_pct",
+    "count"(*) AS "samples"
+   FROM (("latest" "l"
+     JOIN "public"."soil_test_reports" "r" ON ((("r"."field_id" = "l"."field_id") AND ("r"."crop_year" = "l"."crop_year"))))
+     JOIN "public"."soil_test_samples" "s" ON (("s"."report_id" = "r"."id")))
+  WHERE ((COALESCE("s"."depth_top_in", 0) = 0) AND ("s"."ph" IS NOT NULL))
+  GROUP BY "l"."field_id", "l"."crop_year";
+
+
+ALTER VIEW "public"."field_soil_ph_v" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."field_soil_ph_v" IS 'Topsoil pH and organic matter per field from the latest soil test that measured pH: what weights a label''s flat re-crop interval.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."field_soil_profiles" (
@@ -12576,6 +14420,17 @@ CREATE TABLE IF NOT EXISTS "public"."gas_sites" (
 ALTER TABLE "public"."gas_sites" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."grant_aliases" (
+    "external_key" "text" NOT NULL,
+    "grant_id" "uuid" NOT NULL,
+    "title" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."grant_aliases" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."grants" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "title" "text" NOT NULL,
@@ -12595,11 +14450,50 @@ CREATE TABLE IF NOT EXISTS "public"."grants" (
     "source" "text" DEFAULT 'manual'::"text" NOT NULL,
     "external_key" "text",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "cost_share_pct" numeric,
+    "eligible_costs" "text",
+    "contact_name" "text",
+    "contact_email" "text",
+    "contact_phone" "text",
+    "application_url" "text",
+    "application_pdf_path" "text",
+    "project_md" "text",
+    "details_checked_at" timestamp with time zone,
+    "meeting_email_sent_at" timestamp with time zone,
+    CONSTRAINT "grants_cost_share_pct_check" CHECK ((("cost_share_pct" IS NULL) OR (("cost_share_pct" > (0)::numeric) AND ("cost_share_pct" <= (100)::numeric))))
 );
 
 
 ALTER TABLE "public"."grants" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."grants"."cost_share_pct" IS 'Share of eligible project costs the program pays, 0-100.';
+
+
+
+COMMENT ON COLUMN "public"."grants"."eligible_costs" IS 'What the program pays for (eligible expenses), in a sentence or two.';
+
+
+
+COMMENT ON COLUMN "public"."grants"."application_url" IS 'The application form or guide: a PDF when the program has one.';
+
+
+
+COMMENT ON COLUMN "public"."grants"."application_pdf_path" IS 'The application form saved in the grant-docs bucket.';
+
+
+
+COMMENT ON COLUMN "public"."grants"."project_md" IS 'What we would use this grant for; feeds the apply-with-Claude prompt.';
+
+
+
+COMMENT ON COLUMN "public"."grants"."details_checked_at" IS 'When the details lookup last read the program''s pages.';
+
+
+
+COMMENT ON COLUMN "public"."grants"."meeting_email_sent_at" IS 'When the app last sent the meeting-request email.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."grazing_disposition_returns" (
@@ -12670,8 +14564,14 @@ CREATE TABLE IF NOT EXISTS "public"."grazing_dispositions" (
     "sort_order" integer DEFAULT 0 NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "max_grazing_days" integer,
+    "season_start_md" "text",
+    "season_end_md" "text",
     CONSTRAINT "grazing_dispositions_brands_array" CHECK (("jsonb_typeof"("brands") = 'array'::"text")),
-    CONSTRAINT "grazing_dispositions_other_lands_array" CHECK (("jsonb_typeof"("other_lands") = 'array'::"text"))
+    CONSTRAINT "grazing_dispositions_max_grazing_days_check" CHECK ((("max_grazing_days" IS NULL) OR ("max_grazing_days" >= 0))),
+    CONSTRAINT "grazing_dispositions_other_lands_array" CHECK (("jsonb_typeof"("other_lands") = 'array'::"text")),
+    CONSTRAINT "grazing_dispositions_season_end_md_check" CHECK ((("season_end_md" IS NULL) OR ("season_end_md" ~ '^[01][0-9]-[0-3][0-9]$'::"text"))),
+    CONSTRAINT "grazing_dispositions_season_start_md_check" CHECK ((("season_start_md" IS NULL) OR ("season_start_md" ~ '^[01][0-9]-[0-3][0-9]$'::"text")))
 );
 
 
@@ -12691,6 +14591,18 @@ COMMENT ON COLUMN "public"."grazing_dispositions"."other_lands" IS 'Other land f
 
 
 COMMENT ON COLUMN "public"."grazing_dispositions"."brands" IS 'Registered brands on the cattle grazing it: [{owner, description, location, livestock}].';
+
+
+
+COMMENT ON COLUMN "public"."grazing_dispositions"."max_grazing_days" IS 'Days a year the lease allows cattle on it. The grazing planner warns past it.';
+
+
+
+COMMENT ON COLUMN "public"."grazing_dispositions"."season_start_md" IS 'First day of the allowed grazing season, MM-DD.';
+
+
+
+COMMENT ON COLUMN "public"."grazing_dispositions"."season_end_md" IS 'Last day of the allowed grazing season, MM-DD.';
 
 
 
@@ -12740,7 +14652,11 @@ CREATE TABLE IF NOT EXISTS "public"."grazing_pastures" (
     "active" boolean DEFAULT true NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "ranch_id" "uuid",
-    "pasture_id" "uuid"
+    "pasture_id" "uuid",
+    "grass_quality_source" "text" DEFAULT 'manual'::"text" NOT NULL,
+    "grass_quality_rel" numeric,
+    "grass_quality_set_on" "date",
+    CONSTRAINT "grazing_pastures_quality_source_check" CHECK (("grass_quality_source" = ANY (ARRAY['manual'::"text", 'satellite'::"text"])))
 );
 
 
@@ -12748,6 +14664,14 @@ ALTER TABLE "public"."grazing_pastures" OWNER TO "postgres";
 
 
 COMMENT ON COLUMN "public"."grazing_pastures"."pasture_id" IS 'The mapped polygon this grazing entry refers to. Null where no boundary has been drawn, or where the entry covers ground the satellite does not see.';
+
+
+
+COMMENT ON COLUMN "public"."grazing_pastures"."grass_quality_source" IS 'manual = somebody typed it and the satellite pass leaves it alone; satellite = set by apply_pasture_grass_ratings from measured canopy cover.';
+
+
+
+COMMENT ON COLUMN "public"."grazing_pastures"."grass_quality_rel" IS 'Peak canopy cover as a ratio to the ranch median that year, averaged over the seasons measured. 1.00 is the middle paddock, which Sam calls Fair.';
 
 
 
@@ -12760,7 +14684,7 @@ CREATE OR REPLACE VIEW "public"."pasture_forage_index" WITH ("security_invoker"=
     "o"."evi2_mean",
     "o"."ndre_mean",
     "o"."quality",
-    "round"(COALESCE(((0.5 * GREATEST((0)::numeric, LEAST((1)::numeric, (("o"."ndre_mean" - 0.10) / 0.45)))) + (0.5 * GREATEST((0)::numeric, LEAST((1)::numeric, (("o"."evi2_mean" - 0.05) / 0.65))))), GREATEST((0)::numeric, LEAST((1)::numeric, (("o"."evi2_mean" - 0.05) / 0.65))), GREATEST((0)::numeric, LEAST((1)::numeric, (("o"."ndvi_mean" - 0.15) / 0.60)))), 4) AS "forage_index"
+    "round"(COALESCE((("public"."sat_band_scaled"("o"."ndre_mean", 0.10, 0.45) + "public"."sat_band_scaled"("o"."evi2_mean", 0.05, 0.65)) / (2)::numeric), "public"."sat_band_scaled"("o"."ndre_mean", 0.10, 0.45), "public"."sat_band_scaled"("o"."evi2_mean", 0.05, 0.65), "public"."sat_band_scaled"("o"."ndvi_mean", 0.15, 0.60)), 4) AS "forage_index"
    FROM ("public"."sat_observations" "o"
      JOIN "public"."pastures" "p" ON (("p"."id" = "o"."subject_id")))
   WHERE (("o"."subject_type" = 'pasture'::"text") AND ("o"."quality" <> 'rejected'::"text") AND "o"."harmonized" AND ("o"."ndvi_mean" IS NOT NULL));
@@ -12896,6 +14820,33 @@ CREATE OR REPLACE VIEW "public"."grazing_pasture_status" WITH ("security_invoker
 ALTER VIEW "public"."grazing_pasture_status" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."grazing_plan" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "ranch_id" "uuid" NOT NULL,
+    "plan_year" integer NOT NULL,
+    "herd_count_id" "uuid",
+    "pasture_id" "uuid" NOT NULL,
+    "start_date" "date" NOT NULL,
+    "end_date" "date" NOT NULL,
+    "head_count" integer,
+    "notes" "text",
+    "sort_order" integer DEFAULT 0 NOT NULL,
+    "created_by" "uuid" DEFAULT "auth"."uid"(),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "grazing_plan_dates" CHECK (("end_date" >= "start_date")),
+    CONSTRAINT "grazing_plan_head_count_check" CHECK ((("head_count" IS NULL) OR ("head_count" >= 0))),
+    CONSTRAINT "grazing_plan_plan_year_check" CHECK ((("plan_year" >= 2000) AND ("plan_year" <= 2100)))
+);
+
+
+ALTER TABLE "public"."grazing_plan" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."grazing_plan" IS 'The grazing planner: each row is one planned stay of a herd group in a pasture. Steps run in sort_order; each starts on the previous one''s end date.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."grazing_restriction_alerts" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "alert_key" "text" NOT NULL,
@@ -12944,6 +14895,146 @@ CREATE TABLE IF NOT EXISTS "public"."hail_inspections" (
 ALTER TABLE "public"."hail_inspections" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."handling_catalog" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "site_id" "uuid",
+    "key" "text",
+    "name" "text" NOT NULL,
+    "category" "text" NOT NULL,
+    "width_ft" numeric NOT NULL,
+    "depth_ft" numeric NOT NULL,
+    "color" "text" DEFAULT '#64748b'::"text" NOT NULL,
+    "description" "text",
+    "panel_type" "text",
+    "gate_type" "text",
+    "animal_type" "text",
+    "counted" boolean DEFAULT true NOT NULL,
+    "sort_order" integer DEFAULT 0 NOT NULL,
+    "height_ft" numeric DEFAULT 5 NOT NULL,
+    CONSTRAINT "handling_catalog_animal_type_check" CHECK (("animal_type" = ANY (ARRAY['cow'::"text", 'bull'::"text", 'calf'::"text"]))),
+    CONSTRAINT "handling_catalog_depth_ft_check" CHECK (("depth_ft" > (0)::numeric)),
+    CONSTRAINT "handling_catalog_gate_type_check" CHECK (("gate_type" = ANY (ARRAY['swinging'::"text", 'two-panel'::"text", 'drive-over'::"text"]))),
+    CONSTRAINT "handling_catalog_panel_type_check" CHECK (("panel_type" = ANY (ARRAY['bars'::"text", 'wind-fence'::"text"]))),
+    CONSTRAINT "handling_catalog_width_ft_check" CHECK (("width_ft" > (0)::numeric))
+);
+
+
+ALTER TABLE "public"."handling_catalog" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."handling_catalog" IS 'The equipment that can be placed, to scale. site_id null is the built-in kit shared by every yard; a row with a site_id is that yard''s own addition.';
+
+
+
+COMMENT ON COLUMN "public"."handling_catalog"."height_ft" IS 'How tall the piece stands, in feet. For panels and gates this equals depth_ft, which for those rows has always meant height.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."handling_inventory" (
+    "site_id" "uuid" NOT NULL,
+    "catalog_id" "uuid" NOT NULL,
+    "quantity" integer DEFAULT 0 NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    CONSTRAINT "handling_inventory_quantity_check" CHECK (("quantity" >= 0))
+);
+
+
+ALTER TABLE "public"."handling_inventory" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."handling_items" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "version_id" "uuid" NOT NULL,
+    "catalog_id" "uuid" NOT NULL,
+    "lng" numeric NOT NULL,
+    "lat" numeric NOT NULL,
+    "rotation" numeric DEFAULT 0 NOT NULL,
+    "swing_deg" numeric DEFAULT 0 NOT NULL
+);
+
+
+ALTER TABLE "public"."handling_items" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."handling_items"."swing_deg" IS 'Degrees the gate leaf is swung open, clockwise from shut. 0 on anything that is not a gate.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."handling_layers" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "site_id" "uuid" NOT NULL,
+    "name" "text" NOT NULL,
+    "type" "text" DEFAULT 'other'::"text" NOT NULL,
+    "kml_content" "text" NOT NULL,
+    "color" "text" DEFAULT '#38bdf8'::"text" NOT NULL,
+    "visible" boolean DEFAULT true NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "handling_layers_type_check" CHECK (("type" = ANY (ARRAY['electrical'::"text", 'water'::"text", 'gas'::"text", 'other'::"text"])))
+);
+
+
+ALTER TABLE "public"."handling_layers" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."handling_paths" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "version_id" "uuid" NOT NULL,
+    "points" "jsonb" NOT NULL,
+    "is_closed" boolean DEFAULT false NOT NULL,
+    "label" "text",
+    "color" "text" DEFAULT '#facc15'::"text" NOT NULL,
+    "stroke_width" numeric DEFAULT 2 NOT NULL,
+    "usage_type" "text" DEFAULT 'holding'::"text" NOT NULL,
+    "assigned_classes" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    CONSTRAINT "handling_paths_usage_type_check" CHECK (("usage_type" = ANY (ARRAY['crowding'::"text", 'working'::"text", 'holding'::"text", 'pasture'::"text"])))
+);
+
+
+ALTER TABLE "public"."handling_paths" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."handling_paths" IS 'A drawn line on a layout. Closed means it is a pen: its area comes from the points and its capacity from the area, so neither can drift from the shape on the screen. The prototype kept pens in a second table and had to be taught to delete them alongside the line.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."handling_sites" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "ranch_id" "uuid",
+    "name" "text" NOT NULL,
+    "center_lng" numeric,
+    "center_lat" numeric,
+    "zoom" numeric,
+    "notes" "text",
+    "sort_order" integer DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."handling_sites" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."handling_sites" IS 'A corral yard that handling layouts are drawn on. Its ranch supplies the herd the pens are fit-checked against.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."handling_versions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "site_id" "uuid" NOT NULL,
+    "name" "text" NOT NULL,
+    "is_base" boolean DEFAULT false NOT NULL,
+    "notes" "text",
+    "sort_order" integer DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_by" "uuid"
+);
+
+
+ALTER TABLE "public"."handling_versions" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."herd_counts" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "ranch_id" "uuid",
@@ -12962,9 +15053,12 @@ CREATE TABLE IF NOT EXISTS "public"."herd_counts" (
     "target_gain_lb" numeric,
     "ration_note" "text",
     "background_head" integer,
+    "au_override" boolean DEFAULT false NOT NULL,
+    "feeding_method" "text" DEFAULT 'free_choice'::"text" NOT NULL,
     CONSTRAINT "herd_counts_background_head_check" CHECK (("background_head" >= 0)),
     CONSTRAINT "herd_counts_bcs_check" CHECK ((("bcs" >= (1)::numeric) AND ("bcs" <= (5)::numeric))),
     CONSTRAINT "herd_counts_feed_class_check" CHECK (("feed_class" = ANY (ARRAY['cow'::"text", 'bred_heifer'::"text", 'heifer_calf'::"text", 'backgrounder'::"text", 'bull'::"text"]))),
+    CONSTRAINT "herd_counts_feeding_method_check" CHECK (("feeding_method" = ANY (ARRAY['free_choice'::"text", 'measured'::"text"]))),
     CONSTRAINT "herd_counts_head_count_check" CHECK (("head_count" >= 0)),
     CONSTRAINT "herd_counts_target_bcs_check" CHECK ((("target_bcs" >= (1)::numeric) AND ("target_bcs" <= (5)::numeric))),
     CONSTRAINT "herd_counts_target_gain_lb_check" CHECK ((("target_gain_lb" >= (0)::numeric) AND ("target_gain_lb" <= (4)::numeric)))
@@ -12987,6 +15081,14 @@ COMMENT ON COLUMN "public"."herd_counts"."bcs" IS 'Body condition, Canadian 1–
 
 
 COMMENT ON COLUMN "public"."herd_counts"."background_head" IS 'Calves only: how many are kept after weaning to background (the rest are sold at weaning). Before the ranch''s weaning date the calves are at side and fed through the cows; from it this many are fed as their own group.';
+
+
+
+COMMENT ON COLUMN "public"."herd_counts"."au_override" IS 'True when au_equivalent was typed on purpose and should be used instead of avg_weight_lb / 1000.';
+
+
+
+COMMENT ON COLUMN "public"."herd_counts"."feeding_method" IS 'free_choice = bales in a feeder, eaten to appetite; measured = a limit-fed amount that meets the need.';
 
 
 
@@ -13360,6 +15462,26 @@ CREATE TABLE IF NOT EXISTS "public"."jd_equipment_alerts" (
 ALTER TABLE "public"."jd_equipment_alerts" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."jd_export_requests" (
+    "operation_id" "uuid" NOT NULL,
+    "jd_id" "text" NOT NULL,
+    "request_id" "text",
+    "status" "text" DEFAULT 'CLAIMED'::"text" NOT NULL,
+    "requested_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "checked_at" timestamp with time zone,
+    "expires_at" timestamp with time zone,
+    "polls" integer DEFAULT 0 NOT NULL,
+    "note" "text"
+);
+
+
+ALTER TABLE "public"."jd_export_requests" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."jd_export_requests" IS 'In-flight Operations Data Export requests, one per Deere operation, shared by jd-op-sessions-background and pl-grids-background. Disposable: delete a row and the next run asks Deere again.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."jd_guidance_lines" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "field_id" "uuid" NOT NULL,
@@ -13393,61 +15515,6 @@ CREATE TABLE IF NOT EXISTS "public"."jd_operators" (
 
 
 ALTER TABLE "public"."jd_operators" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "public"."jd_product_aliases" (
-    "deere_name" "text" NOT NULL,
-    "product_id" "uuid",
-    "ignored" boolean DEFAULT false NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
-);
-
-
-ALTER TABLE "public"."jd_product_aliases" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "public"."jd_products" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "name" "text" NOT NULL,
-    "unit" "text" NOT NULL,
-    "price_per_unit" numeric,
-    "pmra_registration" "text",
-    "notes" "text",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "price_updated_on" "date",
-    "price_source" "text",
-    "category" "text" DEFAULT 'chemical'::"text" NOT NULL,
-    "label_note" "text",
-    "manual_last_applied" "date",
-    "manual_crops" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
-    CONSTRAINT "jd_products_category_check" CHECK (("category" = ANY (ARRAY['chemical'::"text", 'fertilizer'::"text", 'other'::"text"]))),
-    CONSTRAINT "jd_products_price_per_unit_check" CHECK (("price_per_unit" >= (0)::numeric)),
-    CONSTRAINT "jd_products_unit_check" CHECK (("unit" = ANY (ARRAY['L'::"text", 'kg'::"text"])))
-);
-
-
-ALTER TABLE "public"."jd_products" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."jd_products"."price_updated_on" IS 'Date of the invoice the current price came from. Null means somebody typed it.';
-
-
-
-COMMENT ON COLUMN "public"."jd_products"."category" IS 'Which pricing list this appears under. Fertiliser is sold by the tonne and read under Fertilizer; chemicals under Chemicals.';
-
-
-
-COMMENT ON COLUMN "public"."jd_products"."label_note" IS 'Why there is no PMRA label, in a sentence: "Plant biostimulant, CFIA not PMRA". Shown in place of the Link button.';
-
-
-
-COMMENT ON COLUMN "public"."jd_products"."manual_last_applied" IS 'Last application date typed by a person, for products the Deere record misses. The newer of this and the Deere date is shown.';
-
-
-
-COMMENT ON COLUMN "public"."jd_products"."manual_crops" IS 'Crops a person says this product has gone on, added to the crops the Deere record shows.';
-
 
 
 CREATE TABLE IF NOT EXISTS "public"."land_lease_payments" (
@@ -13511,6 +15578,75 @@ COMMENT ON COLUMN "public"."land_leases"."direction" IS '''in'' = land we rent f
 
 COMMENT ON COLUMN "public"."land_leases"."crop_ids" IS 'Crops the deal covers on its fields; null = every crop. Lets a split field carry one deal per crop.';
 
+
+
+CREATE TABLE IF NOT EXISTS "public"."water_quality_samples" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "source" "text" NOT NULL,
+    "station_id" "text" NOT NULL,
+    "sampled_at" timestamp with time zone NOT NULL,
+    "parameter" "text" NOT NULL,
+    "value" numeric NOT NULL,
+    "below_dl" boolean DEFAULT false NOT NULL,
+    "unit" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "water_quality_samples_source_check" CHECK (("source" = ANY (ARRAY['aepa'::"text", 'idwq'::"text", 'own'::"text"])))
+);
+
+
+ALTER TABLE "public"."water_quality_samples" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."water_quality_stations" (
+    "station_id" "text" NOT NULL,
+    "source" "text" NOT NULL,
+    "name" "text" NOT NULL,
+    "water_source" "text",
+    "for_credit" boolean DEFAULT false NOT NULL,
+    "lat" numeric,
+    "lon" numeric,
+    "active" boolean DEFAULT true NOT NULL,
+    CONSTRAINT "water_quality_stations_source_check" CHECK (("source" = ANY (ARRAY['aepa'::"text", 'idwq'::"text", 'own'::"text"]))),
+    CONSTRAINT "water_quality_stations_water_source_check" CHECK ((("water_source" IS NULL) OR (("length"("btrim"("water_source")) >= 1) AND ("length"("btrim"("water_source")) <= 80))))
+);
+
+
+ALTER TABLE "public"."water_quality_stations" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."livestock_water_district" WITH ("security_invoker"='true') AS
+ WITH "season" AS (
+         SELECT "st"."water_source",
+            "st"."name" AS "station_name",
+            "s"."parameter",
+            "s"."value",
+            "s"."sampled_at"
+           FROM ("public"."water_quality_samples" "s"
+             JOIN "public"."water_quality_stations" "st" ON (("st"."station_id" = "s"."station_id")))
+          WHERE ("st"."for_credit" AND ("st"."water_source" IS NOT NULL) AND ("s"."parameter" = ANY (ARRAY['tds_mg_l'::"text", 'so4_mg_l'::"text", 'no3n_mg_l'::"text", 'ph'::"text", 'na_mg_l'::"text", 'hco3_mg_l'::"text", 'hardness_mg_l'::"text", 'm_iron'::"text", 'm_copper'::"text", 'm_molybdenum'::"text", 'm_selenium'::"text", 'fluoride_mg_l'::"text"])) AND ((EXTRACT("month" FROM ("s"."sampled_at" AT TIME ZONE 'America/Edmonton'::"text")) >= (5)::numeric) AND (EXTRACT("month" FROM ("s"."sampled_at" AT TIME ZONE 'America/Edmonton'::"text")) <= (9)::numeric)) AND ("s"."sampled_at" >= "make_date"(((EXTRACT("year" FROM "now"()))::integer - 5), 1, 1)))
+        )
+ SELECT "water_source",
+    "round"(("percentile_cont"((0.5)::double precision) WITHIN GROUP (ORDER BY (("value")::double precision)) FILTER (WHERE ("parameter" = 'tds_mg_l'::"text")))::numeric) AS "tds_mg_l",
+    "round"(("percentile_cont"((0.5)::double precision) WITHIN GROUP (ORDER BY (("value")::double precision)) FILTER (WHERE ("parameter" = 'so4_mg_l'::"text")))::numeric, 1) AS "so4_mg_l",
+    "round"(("percentile_cont"((0.5)::double precision) WITHIN GROUP (ORDER BY (("value")::double precision)) FILTER (WHERE ("parameter" = 'no3n_mg_l'::"text")))::numeric, 3) AS "no3n_mg_l",
+    "round"(("percentile_cont"((0.5)::double precision) WITHIN GROUP (ORDER BY (("value")::double precision)) FILTER (WHERE ("parameter" = 'ph'::"text")))::numeric, 2) AS "ph",
+    "round"(("percentile_cont"((0.5)::double precision) WITHIN GROUP (ORDER BY (("value")::double precision)) FILTER (WHERE ("parameter" = 'na_mg_l'::"text")))::numeric, 1) AS "na_mg_l",
+    "round"((("percentile_cont"((0.5)::double precision) WITHIN GROUP (ORDER BY (("value")::double precision)) FILTER (WHERE ("parameter" = 'hco3_mg_l'::"text")))::numeric * 0.8202), 0) AS "alkalinity_mg_l",
+    "round"(("percentile_cont"((0.5)::double precision) WITHIN GROUP (ORDER BY (("value")::double precision)) FILTER (WHERE ("parameter" = 'hardness_mg_l'::"text")))::numeric) AS "hardness_mg_l",
+    "round"((("percentile_cont"((0.5)::double precision) WITHIN GROUP (ORDER BY (("value")::double precision)) FILTER (WHERE ("parameter" = 'm_iron'::"text")))::numeric / (1000)::numeric), 3) AS "fe_mg_l",
+    "round"((("percentile_cont"((0.5)::double precision) WITHIN GROUP (ORDER BY (("value")::double precision)) FILTER (WHERE ("parameter" = 'm_copper'::"text")))::numeric / (1000)::numeric), 4) AS "cu_mg_l",
+    "round"((("percentile_cont"((0.5)::double precision) WITHIN GROUP (ORDER BY (("value")::double precision)) FILTER (WHERE ("parameter" = 'm_molybdenum'::"text")))::numeric / (1000)::numeric), 4) AS "mo_mg_l",
+    "round"((("percentile_cont"((0.5)::double precision) WITHIN GROUP (ORDER BY (("value")::double precision)) FILTER (WHERE ("parameter" = 'm_selenium'::"text")))::numeric / (1000)::numeric), 4) AS "se_mg_l",
+    "round"(("percentile_cont"((0.5)::double precision) WITHIN GROUP (ORDER BY (("value")::double precision)) FILTER (WHERE ("parameter" = 'fluoride_mg_l'::"text")))::numeric, 2) AS "f_mg_l",
+    "count"(*) AS "samples",
+    "count"(DISTINCT "station_name") AS "stations",
+    "string_agg"(DISTINCT "station_name", '; '::"text" ORDER BY "station_name") AS "station_names",
+    "max"("sampled_at") AS "latest_sample"
+   FROM "season"
+  GROUP BY "water_source";
+
+
+ALTER VIEW "public"."livestock_water_district" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."manure_applications" (
@@ -14190,7 +16326,8 @@ CREATE OR REPLACE VIEW "public"."partner_fields_v" AS
             ELSE NULL::"text"
         END AS "grazing_note",
     "route_via",
-    "route_through"
+    "route_through",
+    "never_grazed"
    FROM "public"."fields" "f"
   WHERE (( SELECT "public"."is_partner"() AS "is_partner") AND ( SELECT "public"."mfa_ok"() AS "mfa_ok") AND ("id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")));
 
@@ -14325,6 +16462,30 @@ CREATE OR REPLACE VIEW "public"."partner_season_progress_v" AS
 ALTER VIEW "public"."partner_season_progress_v" OWNER TO "postgres";
 
 
+CREATE OR REPLACE VIEW "public"."pasture_adjacency" WITH ("security_invoker"='true') AS
+ WITH "p" AS (
+         SELECT "pa"."id",
+            "public"."st_transform"("pa"."boundary", 32612) AS "g"
+           FROM "public"."pastures" "pa"
+          WHERE (("pa"."boundary" IS NOT NULL) AND (EXISTS ( SELECT 1
+                   FROM "public"."grazing_pastures" "gp"
+                  WHERE ("gp"."pasture_id" = "pa"."id"))))
+        )
+ SELECT "a"."id" AS "pasture_a",
+    "b"."id" AS "pasture_b",
+    "round"(("public"."st_length"("public"."st_intersection"("public"."st_boundary"("a"."g"), "public"."st_buffer"("b"."g", (20)::double precision))))::numeric) AS "shared_m"
+   FROM ("p" "a"
+     JOIN "p" "b" ON ((("a"."id" < "b"."id") AND "public"."st_dwithin"("a"."g", "b"."g", (20)::double precision))))
+  WHERE ("public"."st_length"("public"."st_intersection"("public"."st_boundary"("a"."g"), "public"."st_buffer"("b"."g", (20)::double precision))) >= (50)::double precision);
+
+
+ALTER VIEW "public"."pasture_adjacency" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."pasture_adjacency" IS 'Pasture pairs (lowest id first) sharing at least 50 m of fence, from the drawn boundaries.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."pasture_biomass_calibration" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "pasture_id" "uuid",
@@ -14360,6 +16521,306 @@ CREATE OR REPLACE VIEW "public"."pasture_calibration_readiness" WITH ("security_
 
 
 ALTER VIEW "public"."pasture_calibration_readiness" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."stubble_grazing" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "ranch_id" "uuid" NOT NULL,
+    "field_id" "uuid",
+    "name" "text" NOT NULL,
+    "acres" numeric NOT NULL,
+    "yield_bu" numeric NOT NULL,
+    "herd_count_id" "uuid",
+    "start_date" "date",
+    "weather_loss_pct" numeric DEFAULT 15 NOT NULL,
+    "ears_counted" numeric,
+    "snow_state" "text" DEFAULT 'open'::"text" NOT NULL,
+    "notes" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "stubble_grazing_acres_check" CHECK (("acres" > (0)::numeric)),
+    CONSTRAINT "stubble_grazing_ears_counted_check" CHECK (("ears_counted" >= (0)::numeric)),
+    CONSTRAINT "stubble_grazing_snow_state_check" CHECK (("snow_state" = ANY (ARRAY['open'::"text", 'snow'::"text", 'crust'::"text"]))),
+    CONSTRAINT "stubble_grazing_weather_loss_pct_check" CHECK ((("weather_loss_pct" >= (0)::numeric) AND ("weather_loss_pct" <= (90)::numeric))),
+    CONSTRAINT "stubble_grazing_yield_bu_check" CHECK (("yield_bu" > (0)::numeric))
+);
+
+
+ALTER TABLE "public"."stubble_grazing" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."stubble_grazing" IS 'Corn stalks grazed in winter: 8 lb of grazeable DM per bushel (UNL), less a chinook/wind allowance; the cow-days replace stored feed.';
+
+
+
+CREATE OR REPLACE VIEW "public"."pasture_field_crops" WITH ("security_invoker"='true') AS
+ WITH "plan" AS (
+         SELECT "cp"."field_id",
+            "cp"."crop_year",
+            "cp"."crop_id",
+            "cp"."planned_acres",
+            "cp"."yield_per_acre_override",
+            "count"(*) OVER (PARTITION BY "cp"."field_id", "cp"."crop_year") AS "n_crops",
+            "sum"("cp"."planned_acres") OVER (PARTITION BY "cp"."field_id", "cp"."crop_year") AS "sum_acres"
+           FROM "public"."crop_plans" "cp"
+        ), "years" AS (
+         SELECT DISTINCT "crop_plans"."crop_year"
+           FROM "public"."crop_plans"
+        )
+ SELECT "gp"."id" AS "grazing_pasture_id",
+    "gp"."ranch_id",
+    "gp"."pasture_id",
+    "f"."id" AS "field_id",
+    "f"."name" AS "field_name",
+    COALESCE("f"."open_to_pasture", false) AS "open_to_pasture",
+    COALESCE("f"."grazed_after_harvest", false) AS "grazed_after_harvest",
+    "o"."overlap_acres" AS "acres_in",
+    "o"."field_acres",
+    "y"."crop_year",
+    "p"."crop_id",
+    "c"."name" AS "crop_name",
+        CASE
+            WHEN (COALESCE("p"."n_crops", (1)::bigint) <= 1) THEN (1)::numeric
+            ELSE COALESCE(("p"."planned_acres" / NULLIF("p"."sum_acres", (0)::numeric)), ((1)::numeric / ("p"."n_crops")::numeric))
+        END AS "crop_share",
+    COALESCE("sc"."yield_per_acre", "p"."yield_per_acre_override", "c"."default_yield_per_acre") AS "yield_per_acre",
+        CASE
+            WHEN ("sc"."yield_per_acre" IS NOT NULL) THEN 'scale'::"text"
+            WHEN ("p"."yield_per_acre_override" IS NOT NULL) THEN 'plan'::"text"
+            WHEN ("c"."default_yield_per_acre" IS NOT NULL) THEN 'crop default'::"text"
+            ELSE NULL::"text"
+        END AS "yield_source",
+    ("c"."yield_unit")::"text" AS "yield_unit",
+    "h"."harvest_on",
+        CASE
+            WHEN ("h"."season_on" IS NOT NULL) THEN 'season'::"text"
+            WHEN ("h"."finished_on" IS NOT NULL) THEN 'finished'::"text"
+            WHEN ("h"."deere_on" IS NOT NULL) THEN 'deere'::"text"
+            ELSE NULL::"text"
+        END AS "harvest_source",
+    "h"."last_harvest_on",
+    "t"."tilled_on",
+    "t"."tilled_how",
+    "sg"."id" AS "stubble_grazing_id",
+    "sg"."name" AS "stubble_grazing_name"
+   FROM ((((((((("public"."grazing_pastures" "gp"
+     JOIN "public"."field_pasture_overlap" "o" ON (("o"."pasture_id" = "gp"."pasture_id")))
+     JOIN "public"."fields" "f" ON ((("f"."id" = "o"."field_id") AND "f"."active")))
+     CROSS JOIN "years" "y")
+     LEFT JOIN "plan" "p" ON ((("p"."field_id" = "f"."id") AND ("p"."crop_year" = "y"."crop_year"))))
+     LEFT JOIN "public"."crops" "c" ON (("c"."id" = "p"."crop_id")))
+     LEFT JOIN LATERAL ( SELECT "v"."yield_per_acre"
+           FROM "public"."crop_yields_v" "v"
+          WHERE (("v"."field_id" = "f"."id") AND ("v"."crop_year" = "y"."crop_year") AND ("v"."crop_id" = "p"."crop_id") AND ("v"."source" = 'scale'::"text") AND ("v"."yield_per_acre" IS NOT NULL))
+          ORDER BY "v"."scale_at" DESC NULLS LAST
+         LIMIT 1) "sc" ON (true))
+     LEFT JOIN LATERAL ( SELECT "s"."season_on",
+            "s"."finished_on",
+            "s"."deere_on",
+            COALESCE("s"."season_on", "s"."finished_on", "s"."deere_on") AS "harvest_on",
+            NULLIF(GREATEST(COALESCE("s"."season_on", '-infinity'::"date"), COALESCE("s"."pass_last", '-infinity'::"date"), COALESCE("s"."deere_on", '-infinity'::"date")), '-infinity'::"date") AS "last_harvest_on"
+           FROM ( SELECT ( SELECT "min"("fcs"."harvest_date") AS "min"
+                           FROM "public"."field_crop_seasons" "fcs"
+                          WHERE (("fcs"."field_id" = "f"."id") AND ("fcs"."crop_year" = "y"."crop_year"))) AS "season_on",
+                    ( SELECT "min"((("w"."finished_at" AT TIME ZONE "public"."farm_tz"()))::"date") AS "min"
+                           FROM "public"."field_work_records" "w"
+                          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "y"."crop_year") AND ("w"."counts_as" = 'harvest'::"text") AND "w"."field_finished" AND ("w"."finished_at" IS NOT NULL))) AS "finished_on",
+                    ( SELECT "max"(((COALESCE("w"."finished_at", "w"."started_at") AT TIME ZONE "public"."farm_tz"()))::"date") AS "max"
+                           FROM "public"."field_work_records" "w"
+                          WHERE (("w"."field_id" = "f"."id") AND ("w"."crop_year" = "y"."crop_year") AND ("w"."counts_as" = 'harvest'::"text"))) AS "pass_last",
+                    ( SELECT "max"(((COALESCE("op"."ended_at", "op"."started_at") AT TIME ZONE "public"."farm_tz"()))::"date") AS "max"
+                           FROM "public"."jd_field_operations" "op"
+                          WHERE (("op"."field_id" = "f"."id") AND ("op"."crop_season" = "y"."crop_year") AND ("op"."operation_type" = 'harvest'::"text") AND ("op"."duplicate_of" IS NULL) AND ("op"."not_ours" IS NULL))) AS "deere_on") "s") "h" ON (true))
+     LEFT JOIN LATERAL ( SELECT "tt"."d" AS "tilled_on",
+            "tt"."how" AS "tilled_how"
+           FROM ( SELECT (("op"."started_at" AT TIME ZONE "public"."farm_tz"()))::"date" AS "d",
+                    'Deere tillage'::"text" AS "how"
+                   FROM "public"."jd_field_operations" "op"
+                  WHERE (("op"."field_id" = "f"."id") AND ("op"."operation_type" = 'tillage'::"text") AND ("op"."duplicate_of" IS NULL) AND ("op"."not_ours" IS NULL) AND ("op"."started_at" IS NOT NULL))
+                UNION ALL
+                 SELECT ((COALESCE("w"."started_at", "w"."finished_at") AT TIME ZONE "public"."farm_tz"()))::"date" AS "timezone",
+                    COALESCE(NULLIF("w"."work_type_other", ''::"text"), "replace"("w"."work_type", '_'::"text", ' '::"text")) AS "coalesce"
+                   FROM "public"."field_work_records" "w"
+                  WHERE (("w"."field_id" = "f"."id") AND ("w"."counts_as" = 'tillage'::"text") AND (COALESCE("w"."started_at", "w"."finished_at") IS NOT NULL))) "tt"
+          WHERE (("h"."harvest_on" IS NOT NULL) AND ("tt"."d" >= "h"."harvest_on") AND ("tt"."d" < "make_date"(("y"."crop_year" + 1), 7, 1)))
+          ORDER BY "tt"."d"
+         LIMIT 1) "t" ON (true))
+     LEFT JOIN LATERAL ( SELECT "s"."id",
+            "s"."name"
+           FROM "public"."stubble_grazing" "s"
+          WHERE (("s"."field_id" = "f"."id") AND ("s"."ranch_id" = "gp"."ranch_id") AND (("s"."start_date" IS NULL) OR (("s"."start_date" >= "make_date"("y"."crop_year", 7, 1)) AND ("s"."start_date" < "make_date"(("y"."crop_year" + 1), 7, 1)))))
+          ORDER BY "s"."created_at"
+         LIMIT 1) "sg" ON (true));
+
+
+ALTER VIEW "public"."pasture_field_crops" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."pasture_field_crops" IS 'Per Grazing-tab pasture and crop year: each field inside the fence, its acres inside, crop, yield, harvest and post-harvest tillage dates, and any winter stubble-grazing row on it. Read by src/lib/field-residue.ts (Grazing tab, Plan tab, move-out check).';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."pasture_gates" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "pasture_a" "uuid" NOT NULL,
+    "pasture_b" "uuid" NOT NULL,
+    "gate_geom" "public"."geometry"(Point,4326),
+    "note" "text",
+    "source" "text" DEFAULT 'manual'::"text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "is_open" boolean DEFAULT false NOT NULL,
+    "width_ft" numeric DEFAULT 10 NOT NULL,
+    CONSTRAINT "pasture_gates_ordered" CHECK (("pasture_a" < "pasture_b")),
+    CONSTRAINT "pasture_gates_source_check" CHECK (("source" = ANY (ARRAY['manual'::"text", 'mymap'::"text"])))
+);
+
+
+ALTER TABLE "public"."pasture_gates" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."pasture_gates" IS 'A gate between two pastures (one row per pair, lowest id first). The planner warns on a move between pastures with no row here.';
+
+
+
+COMMENT ON COLUMN "public"."pasture_gates"."is_open" IS 'Shut by default, so adding a gate never silently widens the water reach. Open means the neighbouring paddock''s water reaches through it.';
+
+
+
+COMMENT ON COLUMN "public"."pasture_gates"."width_ft" IS 'Nominal clear width. 10 ft is the farm average and the default. It does not enter the reach arithmetic: at a 700 m radius a 10 ft opening and a point differ by less than the gate pin was placed to.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."pasture_zones" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "pasture_id" "uuid" NOT NULL,
+    "kind" "text" DEFAULT 'water_distance'::"text" NOT NULL,
+    "label" "text" NOT NULL,
+    "band_order" integer NOT NULL,
+    "boundary" "public"."geometry"(MultiPolygon,4326) NOT NULL,
+    "boundary_analysis" "public"."geometry"(MultiPolygon,4326),
+    "acres" numeric,
+    "generated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "source_key" "text",
+    CONSTRAINT "pasture_zones_kind_check" CHECK (("kind" = ANY (ARRAY['water_distance'::"text", 'native_grass'::"text"])))
+);
+
+
+ALTER TABLE "public"."pasture_zones" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."pasture_grass_cover_years" WITH ("security_invoker"='true') AS
+ WITH "grass_zone" AS (
+         SELECT "z"."pasture_id",
+            "z"."id" AS "zone_id"
+           FROM "public"."pasture_zones" "z"
+          WHERE ("z"."kind" = 'native_grass'::"text")
+        ), "looks" AS (
+         SELECT "g"."id" AS "gid",
+            "g"."name",
+            "g"."ranch_id",
+            'grass'::"text" AS "source",
+            (EXTRACT("year" FROM "o"."sensed_on"))::integer AS "yr",
+            "public"."sat_fcover"("o"."ndvi_harmonized") AS "fcover"
+           FROM (("public"."grazing_pastures" "g"
+             JOIN "grass_zone" "gz" ON (("gz"."pasture_id" = "g"."pasture_id")))
+             JOIN "public"."sat_observations" "o" ON ((("o"."subject_type" = 'pasture_zone'::"text") AND ("o"."subject_id" = "gz"."zone_id"))))
+          WHERE ("g"."active" AND ("o"."quality" = ANY (ARRAY['full'::"text", 'partial'::"text"])) AND "o"."harmonized" AND ("o"."ndvi_harmonized" IS NOT NULL) AND ((EXTRACT("month" FROM "o"."sensed_on") >= (6)::numeric) AND (EXTRACT("month" FROM "o"."sensed_on") <= (8)::numeric)))
+        UNION ALL
+         SELECT "g"."id",
+            "g"."name",
+            "g"."ranch_id",
+            'paddock'::"text",
+            (EXTRACT("year" FROM "o"."sensed_on"))::integer AS "extract",
+            "public"."sat_fcover"("o"."ndvi_harmonized") AS "sat_fcover"
+           FROM (("public"."grazing_pastures" "g"
+             JOIN "public"."pastures" "p" ON (("p"."id" = "g"."pasture_id")))
+             JOIN "public"."sat_observations" "o" ON ((("o"."subject_type" = 'pasture'::"text") AND ("o"."subject_id" = "p"."id"))))
+          WHERE ("g"."active" AND ("o"."quality" = ANY (ARRAY['full'::"text", 'partial'::"text"])) AND "o"."harmonized" AND ("o"."ndvi_harmonized" IS NOT NULL) AND ((EXTRACT("month" FROM "o"."sensed_on") >= (6)::numeric) AND (EXTRACT("month" FROM "o"."sensed_on") <= (8)::numeric)))
+        ), "peak" AS (
+         SELECT "looks"."gid",
+            "looks"."name",
+            "looks"."ranch_id",
+            "looks"."source",
+            "looks"."yr",
+            "count"(*) AS "looks",
+            ("percentile_cont"((0.9)::double precision) WITHIN GROUP (ORDER BY (("looks"."fcover")::double precision)))::numeric AS "cover_p90"
+           FROM "looks"
+          GROUP BY "looks"."gid", "looks"."name", "looks"."ranch_id", "looks"."source", "looks"."yr"
+         HAVING ("count"(*) >= 6)
+        ), "paddock_source" AS (
+         SELECT "peak"."gid",
+                CASE
+                    WHEN "bool_or"(("peak"."source" = 'grass'::"text")) THEN 'grass'::"text"
+                    ELSE 'paddock'::"text"
+                END AS "use_source"
+           FROM "peak"
+          GROUP BY "peak"."gid"
+        ), "chosen" AS (
+         SELECT "p"."gid",
+            "p"."name",
+            "p"."ranch_id",
+            "p"."source",
+            "p"."yr",
+            "p"."looks",
+            "p"."cover_p90"
+           FROM ("peak" "p"
+             JOIN "paddock_source" "s" ON ((("s"."gid" = "p"."gid") AND ("s"."use_source" = "p"."source"))))
+        ), "mid" AS (
+         SELECT "chosen"."ranch_id",
+            "chosen"."yr",
+            ("percentile_cont"((0.5)::double precision) WITHIN GROUP (ORDER BY (("chosen"."cover_p90")::double precision)))::numeric AS "ranch_p50",
+            "count"(*) AS "paddocks"
+           FROM "chosen"
+          GROUP BY "chosen"."ranch_id", "chosen"."yr"
+        )
+ SELECT "c"."gid" AS "grazing_pasture_id",
+    "c"."name",
+    "c"."ranch_id",
+    "c"."yr",
+    "c"."source",
+    "c"."looks",
+    "round"("c"."cover_p90", 4) AS "cover_p90",
+    "round"("m"."ranch_p50", 4) AS "ranch_p50",
+    "m"."paddocks",
+    "round"(("c"."cover_p90" / NULLIF("m"."ranch_p50", (0)::numeric)), 3) AS "rel"
+   FROM ("chosen" "c"
+     JOIN "mid" "m" ON ((("m"."ranch_id" = "c"."ranch_id") AND ("m"."yr" = "c"."yr"))));
+
+
+ALTER VIEW "public"."pasture_grass_cover_years" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."pasture_grass_rating" WITH ("security_invoker"='true') AS
+ SELECT "grazing_pasture_id",
+    "name",
+    "ranch_id",
+    "count"(*) AS "seasons",
+    "sum"("looks") AS "looks",
+    "min"("yr") AS "first_year",
+    "max"("yr") AS "last_year",
+    "max"("source") AS "source",
+    "round"("avg"("cover_p90"), 4) AS "cover_p90",
+    "round"("avg"("rel"), 3) AS "rel",
+    (("max"("source") <> 'grass'::"text") AND (EXISTS ( SELECT 1
+           FROM ("public"."pasture_zones" "z"
+             JOIN "public"."grazing_pastures" "g" ON (("g"."pasture_id" = "z"."pasture_id")))
+          WHERE (("z"."kind" = 'native_grass'::"text") AND ("g"."id" = "y"."grazing_pasture_id"))))) AS "crop_confounded",
+    (("max"("looks") >= 8) AND (NOT (("max"("source") <> 'grass'::"text") AND (EXISTS ( SELECT 1
+           FROM ("public"."pasture_zones" "z"
+             JOIN "public"."grazing_pastures" "g" ON (("g"."pasture_id" = "z"."pasture_id")))
+          WHERE (("z"."kind" = 'native_grass'::"text") AND ("g"."id" = "y"."grazing_pasture_id"))))))) AS "enough",
+        CASE
+            WHEN ("avg"("rel") < 0.84) THEN 'Poor'::"text"
+            WHEN ("avg"("rel") < 1.18) THEN 'Fair'::"text"
+            WHEN ("avg"("rel") < 1.72) THEN 'Good'::"text"
+            ELSE 'Excellent'::"text"
+        END AS "rated",
+    "string_agg"((("yr" || ':'::"text") || "round"("rel", 2)), ' '::"text" ORDER BY "yr") AS "by_year"
+   FROM "public"."pasture_grass_cover_years" "y"
+  GROUP BY "grazing_pasture_id", "name", "ranch_id";
+
+
+ALTER VIEW "public"."pasture_grass_rating" OWNER TO "postgres";
 
 
 CREATE OR REPLACE VIEW "public"."pasture_map" WITH ("security_invoker"='true') AS
@@ -14462,6 +16923,119 @@ CREATE OR REPLACE VIEW "public"."pasture_rotation_order" WITH ("security_invoker
 ALTER VIEW "public"."pasture_rotation_order" OWNER TO "postgres";
 
 
+CREATE OR REPLACE VIEW "public"."pasture_season_factor" WITH ("security_invoker"='true') AS
+ WITH "win" AS (
+         SELECT (EXTRACT("year" FROM CURRENT_DATE))::integer AS "this_year",
+            LEAST((EXTRACT("doy" FROM CURRENT_DATE))::integer, (EXTRACT("doy" FROM "make_date"((EXTRACT("year" FROM CURRENT_DATE))::integer, 8, 31)))::integer) AS "to_doy"
+        ), "grass_zone" AS (
+         SELECT "z"."pasture_id",
+            "z"."id" AS "zone_id"
+           FROM "public"."pasture_zones" "z"
+          WHERE ("z"."kind" = 'native_grass'::"text")
+        ), "looks" AS (
+         SELECT "g_1"."id" AS "gid",
+            "g_1"."name",
+            'grass'::"text" AS "src",
+            (EXTRACT("year" FROM "o"."sensed_on"))::integer AS "yr",
+            (EXTRACT("doy" FROM "o"."sensed_on"))::integer AS "doy",
+            "public"."sat_fcover"("o"."ndvi_harmonized") AS "fcover"
+           FROM (("public"."grazing_pastures" "g_1"
+             JOIN "grass_zone" "gz" ON (("gz"."pasture_id" = "g_1"."pasture_id")))
+             JOIN "public"."sat_observations" "o" ON ((("o"."subject_type" = 'pasture_zone'::"text") AND ("o"."subject_id" = "gz"."zone_id"))))
+          WHERE ("g_1"."active" AND ("o"."quality" = ANY (ARRAY['full'::"text", 'partial'::"text"])) AND "o"."harmonized" AND ("o"."ndvi_harmonized" IS NOT NULL))
+        UNION ALL
+         SELECT "g_1"."id",
+            "g_1"."name",
+            'paddock'::"text",
+            (EXTRACT("year" FROM "o"."sensed_on"))::integer AS "extract",
+            (EXTRACT("doy" FROM "o"."sensed_on"))::integer AS "extract",
+            "public"."sat_fcover"("o"."ndvi_harmonized") AS "sat_fcover"
+           FROM (("public"."grazing_pastures" "g_1"
+             JOIN "public"."pastures" "p" ON (("p"."id" = "g_1"."pasture_id")))
+             JOIN "public"."sat_observations" "o" ON ((("o"."subject_type" = 'pasture'::"text") AND ("o"."subject_id" = "p"."id"))))
+          WHERE ("g_1"."active" AND ("o"."quality" = ANY (ARRAY['full'::"text", 'partial'::"text"])) AND "o"."harmonized" AND ("o"."ndvi_harmonized" IS NOT NULL))
+        ), "in_window" AS (
+         SELECT "l"."gid",
+            "l"."name",
+            "l"."src",
+            "l"."yr",
+            "l"."doy",
+            "l"."fcover",
+            "w"."this_year",
+            "w"."to_doy"
+           FROM ("looks" "l"
+             CROSS JOIN "win" "w")
+          WHERE (("l"."doy" >= (EXTRACT("doy" FROM "make_date"("l"."yr", 5, 1)))::integer) AND ("l"."doy" <= "w"."to_doy"))
+        ), "peak" AS (
+         SELECT "in_window"."gid",
+            "in_window"."name",
+            "in_window"."yr",
+            "in_window"."src",
+            "in_window"."this_year",
+            "count"(*) AS "looks",
+            ("percentile_cont"((0.9)::double precision) WITHIN GROUP (ORDER BY (("in_window"."fcover")::double precision)))::numeric AS "cover"
+           FROM "in_window"
+          GROUP BY "in_window"."gid", "in_window"."name", "in_window"."yr", "in_window"."src", "in_window"."this_year"
+         HAVING ("count"(*) >= 5)
+        ), "paddock_source" AS (
+         SELECT "peak"."gid",
+                CASE
+                    WHEN "bool_or"(("peak"."src" = 'grass'::"text")) THEN 'grass'::"text"
+                    ELSE 'paddock'::"text"
+                END AS "use_src"
+           FROM "peak"
+          GROUP BY "peak"."gid"
+        ), "chosen" AS (
+         SELECT "p"."gid",
+            "p"."name",
+            "p"."yr",
+            "p"."src",
+            "p"."this_year",
+            "p"."looks",
+            "p"."cover"
+           FROM ("peak" "p"
+             JOIN "paddock_source" "s" ON ((("s"."gid" = "p"."gid") AND ("s"."use_src" = "p"."src"))))
+        ), "grazed_this_year" AS (
+         SELECT DISTINCT "g_1"."id" AS "gid"
+           FROM ("public"."grazing_pastures" "g_1"
+             JOIN "public"."grazing_events" "e" ON (("e"."pasture_id" = "g_1"."pasture_id")))
+          WHERE (EXTRACT("year" FROM "e"."turned_in_on") = EXTRACT("year" FROM CURRENT_DATE))
+        ), "now_and_normal" AS (
+         SELECT "c"."gid",
+            "c"."name",
+            "max"("c"."cover") FILTER (WHERE ("c"."yr" = "c"."this_year")) AS "cover_now",
+            "max"("c"."looks") FILTER (WHERE ("c"."yr" = "c"."this_year")) AS "looks_now",
+            "avg"("c"."cover") FILTER (WHERE ("c"."yr" < "c"."this_year")) AS "cover_normal",
+            "count"(*) FILTER (WHERE ("c"."yr" < "c"."this_year")) AS "normal_years",
+            "max"("c"."src") AS "source"
+           FROM "chosen" "c"
+          GROUP BY "c"."gid", "c"."name"
+        )
+ SELECT "n"."gid" AS "grazing_pasture_id",
+    "n"."name",
+    "n"."source",
+    "n"."looks_now" AS "looks",
+    "n"."normal_years",
+    "round"("n"."cover_now", 4) AS "cover_now",
+    "round"("n"."cover_normal", 4) AS "cover_normal",
+    ("g"."gid" IS NOT NULL) AS "grazed_this_year",
+        CASE
+            WHEN ("g"."gid" IS NOT NULL) THEN NULL::numeric
+            WHEN (("n"."cover_now" IS NULL) OR ("n"."cover_normal" IS NULL) OR ("n"."cover_normal" <= (0)::numeric)) THEN NULL::numeric
+            WHEN (("n"."normal_years" < 2) OR ("n"."looks_now" < 5)) THEN NULL::numeric
+            ELSE "round"(GREATEST(0.5, LEAST(1.8, ("n"."cover_now" / "n"."cover_normal"))), 3)
+        END AS "factor"
+   FROM ("now_and_normal" "n"
+     LEFT JOIN "grazed_this_year" "g" ON (("g"."gid" = "n"."gid")));
+
+
+ALTER VIEW "public"."pasture_season_factor" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."pasture_season_factor" IS 'Peak canopy cover so far this season against the same calendar window in the two or more earlier years, per paddock, both sides read off the same polygon. NULL factor means fall back to rainfall: the paddock was grazed this year, or has too little history on one side.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."pasture_sprays" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "pasture_id" "uuid" NOT NULL,
@@ -14475,23 +17049,6 @@ CREATE TABLE IF NOT EXISTS "public"."pasture_sprays" (
 
 
 ALTER TABLE "public"."pasture_sprays" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "public"."pasture_zones" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "pasture_id" "uuid" NOT NULL,
-    "kind" "text" DEFAULT 'water_distance'::"text" NOT NULL,
-    "label" "text" NOT NULL,
-    "band_order" integer NOT NULL,
-    "boundary" "public"."geometry"(MultiPolygon,4326) NOT NULL,
-    "boundary_analysis" "public"."geometry"(MultiPolygon,4326),
-    "acres" numeric,
-    "generated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "pasture_zones_kind_check" CHECK (("kind" = 'water_distance'::"text"))
-);
-
-
-ALTER TABLE "public"."pasture_zones" OWNER TO "postgres";
 
 
 CREATE OR REPLACE VIEW "public"."pasture_underutilisation" WITH ("security_invoker"='true') AS
@@ -14519,7 +17076,7 @@ CREATE OR REPLACE VIEW "public"."pasture_underutilisation" WITH ("security_invok
     ("near"."sensed_on" = "far"."sensed_on") AS "same_day",
         CASE
             WHEN ("near"."sensed_on" <> "far"."sensed_on") THEN 'Bands last seen on different days — not comparable yet.'::"text"
-            WHEN (("far"."ndvi" - "near"."ndvi") >= 0.10) THEN ((('Roughly '::"text" || "far"."acres") || ' acres beyond 800 m of water are carrying noticeably more forage '::"text") || 'than the ground near it. A portable trough or a temporary cross-fence would put the herd on it.'::"text")
+            WHEN (("far"."ndvi" - "near"."ndvi") >= 0.10) THEN (((((('Roughly '::"text" || "far"."acres") || ' acres past '::"text") || "public"."pasture_water_radius_far_m"()) || ' m of water are carrying noticeably more '::"text") || 'forage than the ground near it. A portable trough or a temporary cross-fence '::"text") || 'would put the herd on it.'::"text")
             WHEN (("far"."ndvi" - "near"."ndvi") >= 0.05) THEN 'Mild — the far ground is a little greener. Worth watching rather than acting on.'::"text"
             WHEN (("near"."ndvi" - "far"."ndvi") >= 0.05) THEN 'Grazing is falling more heavily near water, which is the normal pattern.'::"text"
             ELSE 'Evenly grazed across the distance from water.'::"text"
@@ -14527,10 +17084,39 @@ CREATE OR REPLACE VIEW "public"."pasture_underutilisation" WITH ("security_invok
     (("near"."sensed_on" = "far"."sensed_on") AND (("far"."ndvi" - "near"."ndvi") >= 0.10)) AS "actionable"
    FROM (("public"."pastures" "p"
      JOIN "band_latest" "near" ON ((("near"."pasture_id" = "p"."id") AND ("near"."band_order" = 1))))
-     JOIN "band_latest" "far" ON ((("far"."pasture_id" = "p"."id") AND ("far"."band_order" = 2))));
+     JOIN "band_latest" "far" ON ((("far"."pasture_id" = "p"."id") AND ("far"."band_order" = 3))));
 
 
 ALTER VIEW "public"."pasture_underutilisation" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."pasture_water_gap" WITH ("security_invoker"='true') AS
+ SELECT "p"."id" AS "pasture_id",
+    "p"."name",
+    "p"."river_access",
+    "round"((("public"."st_area"(("p"."boundary")::"public"."geography") / (4046.8564224)::double precision))::numeric) AS "acres",
+    "n"."name" AS "nearest_source",
+    "n"."metres_outside",
+    (EXISTS ( SELECT 1
+           FROM "public"."grazing_pastures" "g"
+          WHERE (("g"."pasture_id" = "p"."id") AND "g"."active"))) AS "is_paddock"
+   FROM ("public"."pastures" "p"
+     LEFT JOIN LATERAL ( SELECT "w"."name",
+            "round"(("public"."st_distance"(("w"."geom")::"public"."geography", ("p"."boundary")::"public"."geography"))::numeric) AS "metres_outside"
+           FROM "public"."cattle_water" "w"
+          WHERE "w"."drinkable"
+          ORDER BY (("w"."geom")::"public"."geography" OPERATOR("public".<->) ("p"."boundary")::"public"."geography")
+         LIMIT 1) "n" ON (true))
+  WHERE (("p"."boundary" IS NOT NULL) AND ("p"."river_access" = 'none'::"text") AND (NOT (EXISTS ( SELECT 1
+           FROM "public"."cattle_water" "w"
+          WHERE ("w"."drinkable" AND ("public"."st_dwithin"(("w"."geom")::"public"."geography", ("p"."boundary")::"public"."geography", (30)::double precision) OR ("p"."id" = ANY ("w"."serves"))))))));
+
+
+ALTER VIEW "public"."pasture_water_gap" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."pasture_water_gap" IS 'Paddocks with no drinkable source inside the fence, in it, or naming them in `serves`, and no river frontage — so nothing a cow can walk to. The nearest source it had to refuse is reported with it.';
+
 
 
 CREATE OR REPLACE VIEW "public"."pasture_water_points" WITH ("security_invoker"='true') AS
@@ -14553,20 +17139,52 @@ CREATE OR REPLACE VIEW "public"."pasture_water_reach_geojson" WITH ("security_in
     "p"."name",
     "p"."river_access",
     "p"."river_access_ref",
-    ("public"."st_asgeojson"("r"."reach"))::"jsonb" AS "reach_geojson",
+    ("public"."st_asgeojson"("near"."boundary"))::"jsonb" AS "reach_geojson",
     ("public"."st_asgeojson"(
         CASE
-            WHEN ("r"."reach" IS NULL) THEN "p"."boundary"
-            ELSE "public"."st_multi"("public"."st_collectionextract"("public"."st_makevalid"("public"."st_difference"("p"."boundary", "r"."reach")), 3))
+            WHEN (("far"."boundary" IS NULL) AND ("near"."boundary" IS NULL) AND ("margin"."boundary" IS NULL)) THEN "p"."boundary"
+            ELSE "far"."boundary"
         END))::"jsonb" AS "beyond_geojson",
-    "round"(((COALESCE("public"."st_area"(("r"."reach")::"public"."geography"), (0)::double precision) / (4046.8564224)::double precision))::numeric) AS "reach_acres",
-    "round"(((("public"."st_area"(("p"."boundary")::"public"."geography") - COALESCE("public"."st_area"(("r"."reach")::"public"."geography"), (0)::double precision)) / (4046.8564224)::double precision))::numeric) AS "beyond_acres"
-   FROM ("public"."pastures" "p"
-     CROSS JOIN LATERAL ( SELECT "public"."pasture_water_reach"("p"."id") AS "reach") "r")
+    COALESCE("round"("near"."acres"), (0)::numeric) AS "reach_acres",
+        CASE
+            WHEN ("far"."acres" IS NOT NULL) THEN "round"("far"."acres")
+            WHEN (("near"."acres" IS NULL) AND ("margin"."acres" IS NULL)) THEN "round"((("public"."st_area"(("p"."boundary")::"public"."geography") / (4046.8564224)::double precision))::numeric)
+            ELSE (0)::numeric
+        END AS "beyond_acres",
+    ("public"."st_asgeojson"("margin"."boundary"))::"jsonb" AS "margin_geojson",
+    COALESCE("round"("margin"."acres"), (0)::numeric) AS "margin_acres",
+    (EXISTS ( SELECT 1
+           FROM "public"."pasture_zones" "z"
+          WHERE (("z"."pasture_id" = "p"."id") AND ("z"."kind" = 'water_distance'::"text")))) AS "has_water",
+    "public"."pasture_water_radius_m"() AS "near_m",
+    "public"."pasture_water_radius_far_m"() AS "far_m",
+    (EXISTS ( SELECT 1
+           FROM "public"."grazing_pastures" "g"
+          WHERE (("g"."pasture_id" = "p"."id") AND "g"."active"))) AS "is_paddock"
+   FROM ((("public"."pastures" "p"
+     LEFT JOIN "public"."pasture_zones" "near" ON ((("near"."pasture_id" = "p"."id") AND ("near"."kind" = 'water_distance'::"text") AND ("near"."band_order" = 1))))
+     LEFT JOIN "public"."pasture_zones" "margin" ON ((("margin"."pasture_id" = "p"."id") AND ("margin"."kind" = 'water_distance'::"text") AND ("margin"."band_order" = 2))))
+     LEFT JOIN "public"."pasture_zones" "far" ON ((("far"."pasture_id" = "p"."id") AND ("far"."kind" = 'water_distance'::"text") AND ("far"."band_order" = 3))))
   WHERE ("p"."boundary" IS NOT NULL);
 
 
 ALTER VIEW "public"."pasture_water_reach_geojson" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."pasture_water_reach_geojson" IS 'Each paddock split by distance from drinkable water, read from the prebuilt pasture_zones bands. Bands under 5 acres are dropped by the rebuild, so the three acre figures can fall a little short of the paddock total.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."pasture_zone_build" (
+    "pasture_id" "uuid" NOT NULL,
+    "source_key" "text" NOT NULL,
+    "bands" integer DEFAULT 0 NOT NULL,
+    "built_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "kind" "text" DEFAULT 'water_distance'::"text" NOT NULL
+);
+
+
+ALTER TABLE "public"."pasture_zone_build" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."pivot_control_log" (
@@ -15364,59 +17982,6 @@ CREATE TABLE IF NOT EXISTS "public"."power_bills" (
 ALTER TABLE "public"."power_bills" OWNER TO "postgres";
 
 
-CREATE OR REPLACE VIEW "public"."product_applications" WITH ("security_invoker"='true') AS
- WITH "lines" AS (
-         SELECT "o"."id" AS "operation_id",
-            "o"."field_id",
-            "o"."started_at",
-            "o"."ended_at",
-            "o"."crop_season",
-            "o"."operator_name",
-            COALESCE(("c"."value" ->> 'name'::"text"), ("p"."value" ->> 'name'::"text")) AS "applied_name",
-            COALESCE((("c"."value" -> 'rate'::"text") ->> 'value'::"text"), (("p"."value" -> 'rate'::"text") ->> 'value'::"text")) AS "rate_value",
-            COALESCE((("c"."value" -> 'rate'::"text") ->> 'unit'::"text"), (("p"."value" -> 'rate'::"text") ->> 'unit'::"text")) AS "rate_unit",
-            ("c"."value" IS NOT NULL) AS "from_mix",
-            ("p"."value" ->> 'name'::"text") AS "mix_name"
-           FROM (("public"."jd_field_operations" "o"
-             CROSS JOIN LATERAL "jsonb_array_elements"(
-                CASE
-                    WHEN ("jsonb_typeof"("o"."products") = 'array'::"text") THEN "o"."products"
-                    ELSE '[]'::"jsonb"
-                END) "p"("value"))
-             LEFT JOIN LATERAL "jsonb_array_elements"(
-                CASE
-                    WHEN ("jsonb_typeof"(("p"."value" -> 'components'::"text")) = 'array'::"text") THEN ("p"."value" -> 'components'::"text")
-                    ELSE '[]'::"jsonb"
-                END) "c"("value") ON (true))
-          WHERE ("o"."operation_type" = 'application'::"text")
-        )
- SELECT "l"."operation_id",
-    COALESCE("a"."product_id", "pr"."id") AS "product_id",
-    "l"."applied_name",
-    "l"."field_id",
-    "f"."name" AS "field_name",
-    ("l"."started_at")::"date" AS "applied_on",
-    "l"."crop_season",
-    "l"."operator_name",
-    "l"."mix_name",
-    "l"."from_mix",
-    (NULLIF("l"."rate_value", ''::"text"))::numeric AS "rate_value",
-    "l"."rate_unit",
-    COALESCE("l"."ended_at", (((("l"."started_at")::"date" + '1 day'::interval) - '00:00:01'::interval))::timestamp with time zone) AS "applied_at"
-   FROM ((("lines" "l"
-     LEFT JOIN "public"."jd_product_aliases" "a" ON (("lower"("a"."deere_name") = "lower"("l"."applied_name"))))
-     LEFT JOIN "public"."jd_products" "pr" ON (("lower"("pr"."name") = "lower"("l"."applied_name"))))
-     LEFT JOIN "public"."fields" "f" ON (("f"."id" = "l"."field_id")))
-  WHERE (("l"."applied_name" IS NOT NULL) AND ("l"."applied_name" <> ''::"text"));
-
-
-ALTER VIEW "public"."product_applications" OWNER TO "postgres";
-
-
-COMMENT ON VIEW "public"."product_applications" IS 'One row per product per application: which field, which day, at what rate.';
-
-
-
 CREATE TABLE IF NOT EXISTS "public"."product_documents" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "product_id" "uuid" NOT NULL,
@@ -15765,6 +18330,7 @@ CREATE TABLE IF NOT EXISTS "public"."ranches" (
     "calf_sale_month" integer,
     "steer_sale_weight_lb" integer,
     "heifer_sale_weight_lb" integer,
+    "herd_colour" "text",
     CONSTRAINT "ranches_calf_sale_month_check" CHECK ((("calf_sale_month" >= 1) AND ("calf_sale_month" <= 12))),
     CONSTRAINT "ranches_heifer_sale_weight_lb_check" CHECK ((("heifer_sale_weight_lb" >= 100) AND ("heifer_sale_weight_lb" <= 1500))),
     CONSTRAINT "ranches_steer_sale_weight_lb_check" CHECK ((("steer_sale_weight_lb" >= 100) AND ("steer_sale_weight_lb" <= 1500)))
@@ -15834,6 +18400,10 @@ COMMENT ON COLUMN "public"."ranches"."heifer_sale_weight_lb" IS 'Average weight 
 
 
 
+COMMENT ON COLUMN "public"."ranches"."herd_colour" IS 'The herd''s colour as it goes on a manifest (Red, Black). Fills the Colour column of a new manifest line.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."reminder_log" (
     "key" "text" NOT NULL,
     "sent_at" timestamp with time zone DEFAULT "now"() NOT NULL
@@ -15867,7 +18437,9 @@ CREATE TABLE IF NOT EXISTS "public"."research_folders" (
     "sort" integer DEFAULT 100 NOT NULL,
     "note" "text",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "research_folders_kind_check" CHECK (("kind" = ANY (ARRAY['section'::"text", 'crop'::"text", 'variety'::"text", 'chemical'::"text", 'topic'::"text"])))
+    "search_terms" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "about_terms" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    CONSTRAINT "research_folders_kind_check" CHECK (("kind" = ANY (ARRAY['section'::"text", 'crop'::"text", 'variety'::"text", 'chemical'::"text", 'topic'::"text", 'breed'::"text"])))
 );
 
 
@@ -15883,6 +18455,14 @@ COMMENT ON COLUMN "public"."research_folders"."crop_names" IS 'crops.name values
 
 
 COMMENT ON COLUMN "public"."research_folders"."aliases" IS 'Other names to search for: trade names, older crop names, synonyms.';
+
+
+
+COMMENT ON COLUMN "public"."research_folders"."search_terms" IS 'Complete search queries for research-discover.mjs, used instead of the folder name crossed with the standard questions. For a folder whose registered active is not what its subject is written about.';
+
+
+
+COMMENT ON COLUMN "public"."research_folders"."about_terms" IS 'Extra names that count as naming this shelf''s subject when research_score_chemicals() grades a paper -- a mode of action, an older chemical it replaces. Never a trade name.';
 
 
 
@@ -15991,36 +18571,32 @@ COMMENT ON VIEW "public"."research_folders_v" IS 'research_folders with the numb
 
 
 
-CREATE TABLE IF NOT EXISTS "public"."research_paper_chunks" (
-    "id" bigint NOT NULL,
+CREATE TABLE IF NOT EXISTS "public"."research_paper_about" (
     "paper_id" "uuid" NOT NULL,
-    "idx" integer NOT NULL,
-    "page_from" integer,
-    "page_to" integer,
-    "text" "text" NOT NULL,
-    "fts" "tsvector" GENERATED ALWAYS AS ("to_tsvector"('"english"'::"regconfig", "text")) STORED
+    "folder_id" "uuid" NOT NULL,
+    "term" "text" NOT NULL,
+    "in_title" boolean NOT NULL,
+    "in_abstract" boolean NOT NULL,
+    "mentions" integer NOT NULL,
+    "readable" boolean NOT NULL,
+    "about" smallint NOT NULL,
+    "scored_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "research_paper_about_about_check" CHECK ((("about" >= 0) AND ("about" <= 4)))
 );
 
 
-ALTER TABLE "public"."research_paper_chunks" OWNER TO "postgres";
+ALTER TABLE "public"."research_paper_about" OWNER TO "postgres";
 
 
-COMMENT ON TABLE "public"."research_paper_chunks" IS 'The readable text of each stored PDF, in pieces of about half a page, with the pages each piece spans.';
+COMMENT ON TABLE "public"."research_paper_about" IS 'Per paper per shelf: how much that paper is about that shelf''s subject. Rebuilt by research_score_folders().';
 
 
 
-CREATE SEQUENCE IF NOT EXISTS "public"."research_paper_chunks_id_seq"
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
+COMMENT ON COLUMN "public"."research_paper_about"."term" IS 'Which of the shelf''s names it matched -- an active ingredient, an alias, or one of the folder''s about_terms.';
 
 
-ALTER SEQUENCE "public"."research_paper_chunks_id_seq" OWNER TO "postgres";
 
-
-ALTER SEQUENCE "public"."research_paper_chunks_id_seq" OWNED BY "public"."research_paper_chunks"."id";
+COMMENT ON COLUMN "public"."research_paper_about"."about" IS '4 = named in the title. 3 = named in the abstract. 2 = named ten times or more inside the paper. 1 = named in passing, or the PDF cannot be read so we cannot tell. 0 = never named anywhere.';
 
 
 
@@ -16061,9 +18637,13 @@ CREATE OR REPLACE VIEW "public"."research_shelf_v" WITH ("security_invoker"='tru
     "p"."tags",
     "p"."status",
     "p"."fetch_note",
-    "p"."created_at"
-   FROM ("public"."research_papers" "p"
+    "p"."created_at",
+    "f"."id" AS "shelf_folder_id",
+    "ab"."about",
+    "ab"."mentions" AS "about_mentions"
+   FROM (("public"."research_papers" "p"
      JOIN "public"."research_folders" "f" ON (("f"."id" = "p"."folder_id")))
+     LEFT JOIN "public"."research_paper_about" "ab" ON ((("ab"."paper_id" = "p"."id") AND ("ab"."folder_id" = "f"."id"))))
 UNION ALL
  SELECT "f"."slug" AS "folder_slug",
     "f"."name" AS "folder_name",
@@ -16088,16 +18668,275 @@ UNION ALL
     "p"."tags",
     "p"."status",
     "p"."fetch_note",
-    "p"."created_at"
-   FROM (("public"."research_papers" "p"
+    "p"."created_at",
+    "f"."id" AS "shelf_folder_id",
+    "ab"."about",
+    "ab"."mentions" AS "about_mentions"
+   FROM ((("public"."research_papers" "p"
      JOIN "public"."research_paper_folders" "r" ON (("r"."paper_id" = "p"."id")))
-     JOIN "public"."research_folders" "f" ON (("f"."id" = "r"."folder_id")));
+     JOIN "public"."research_folders" "f" ON (("f"."id" = "r"."folder_id")))
+     LEFT JOIN "public"."research_paper_about" "ab" ON ((("ab"."paper_id" = "p"."id") AND ("ab"."folder_id" = "f"."id"))));
 
 
 ALTER VIEW "public"."research_shelf_v" OWNER TO "postgres";
 
 
-COMMENT ON VIEW "public"."research_shelf_v" IS 'Every paper on every folder it belongs to. home = false means it is cross-filed here and lives elsewhere.';
+COMMENT ON VIEW "public"."research_shelf_v" IS 'Every paper on every folder it belongs to. home = false means it is cross-filed here and lives elsewhere. about is set on the chemical shelves only.';
+
+
+
+CREATE OR REPLACE VIEW "public"."research_gaps_v" WITH ("security_invoker"='true') AS
+ WITH "shelf" AS (
+         SELECT "f_1"."slug",
+            "count"("s"."id") AS "papers",
+            "count"(*) FILTER (WHERE ("s"."status" = 'stored'::"text")) AS "stored",
+            "count"(*) FILTER (WHERE ("s"."status" <> 'stored'::"text")) AS "link_only",
+            "count"(*) FILTER (WHERE ("s"."region" = 'southern_alberta'::"text")) AS "southern",
+            "count"(*) FILTER (WHERE ("s"."region" = ANY (ARRAY['southern_alberta'::"text", 'alberta'::"text"]))) AS "alberta",
+            "count"(*) FILTER (WHERE ("s"."region" = ANY (ARRAY['southern_alberta'::"text", 'alberta'::"text", 'prairies'::"text", 'canada'::"text", 'northern_plains'::"text"]))) AS "near",
+            "count"(*) FILTER (WHERE ("s"."year" >= ((EXTRACT("year" FROM CURRENT_DATE))::integer - 10))) AS "recent",
+            "max"("s"."year") AS "newest"
+           FROM ("public"."research_folders" "f_1"
+             LEFT JOIN "public"."research_shelf_v" "s" ON (("s"."folder_slug" = "f_1"."slug")))
+          GROUP BY "f_1"."slug"
+        ), "acres" AS (
+         SELECT "f_1"."slug",
+            "sum"("cp"."planned_acres") AS "acres",
+            "count"(DISTINCT "cp"."crop_year") AS "plan_years",
+            "min"("cp"."crop_year") AS "plan_from",
+            "max"("cp"."crop_year") AS "plan_to"
+           FROM (("public"."research_folders" "f_1"
+             JOIN "public"."crops" "c" ON (("c"."name" = ANY ("f_1"."crop_names"))))
+             JOIN "public"."crop_plans" "cp" ON (("cp"."crop_id" = "c"."id")))
+          WHERE ("f_1"."kind" = 'crop'::"text")
+          GROUP BY "f_1"."slug"
+        ), "sprays" AS (
+         SELECT "f_1"."slug",
+            "count"(DISTINCT "pa"."operation_id") AS "passes",
+            "count"(DISTINCT "pa"."field_id") AS "fields_sprayed",
+            "count"(DISTINCT "pa"."crop_season") AS "seasons",
+            "max"("pa"."applied_on") AS "last_applied"
+           FROM (("public"."research_folders" "f_1"
+             JOIN "public"."jd_products" "jp" ON (("jp"."pmra_registration" = ANY ("f_1"."registration_numbers"))))
+             JOIN "public"."product_applications" "pa" ON (("pa"."product_id" = "jp"."id")))
+          WHERE ("f_1"."kind" = 'chemical'::"text")
+          GROUP BY "f_1"."slug"
+        )
+ SELECT "f"."slug",
+    "f"."name",
+    "f"."kind",
+    "f"."sort",
+    "pf"."slug" AS "parent_slug",
+    "pf"."name" AS "parent_name",
+    (COALESCE("sh"."papers", (0)::bigint))::integer AS "papers",
+    (COALESCE("sh"."stored", (0)::bigint))::integer AS "stored",
+    (COALESCE("sh"."link_only", (0)::bigint))::integer AS "link_only",
+    (COALESCE("sh"."southern", (0)::bigint))::integer AS "southern",
+    (COALESCE("sh"."alberta", (0)::bigint))::integer AS "alberta",
+    (COALESCE("sh"."near", (0)::bigint))::integer AS "near",
+    (COALESCE("sh"."recent", (0)::bigint))::integer AS "recent",
+    "sh"."newest",
+    ("round"("ac"."acres"))::integer AS "acres",
+    ("ac"."plan_years")::integer AS "plan_years",
+    "ac"."plan_from",
+    "ac"."plan_to",
+    ("sp"."passes")::integer AS "passes",
+    ("sp"."fields_sprayed")::integer AS "fields_sprayed",
+    ("sp"."seasons")::integer AS "seasons",
+    "sp"."last_applied"
+   FROM (((("public"."research_folders" "f"
+     LEFT JOIN "public"."research_folders" "pf" ON (("pf"."id" = "f"."parent_id")))
+     LEFT JOIN "shelf" "sh" ON (("sh"."slug" = "f"."slug")))
+     LEFT JOIN "acres" "ac" ON (("ac"."slug" = "f"."slug")))
+     LEFT JOIN "sprays" "sp" ON (("sp"."slug" = "f"."slug")))
+  WHERE ("f"."kind" <> 'section'::"text");
+
+
+ALTER VIEW "public"."research_gaps_v" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."research_gaps_v" IS 'One row per research shelf: what it holds, how near home that work was done, and how much we grow or spray the thing it is about.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."research_lexeme_df" (
+    "lexeme" "text" NOT NULL,
+    "docs" integer NOT NULL,
+    CONSTRAINT "research_lexeme_df_docs_check" CHECK (("docs" > 0))
+);
+
+
+ALTER TABLE "public"."research_lexeme_df" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."research_lexeme_df" IS 'How many chunks each lexeme appears in (ndoc >= 10 only), so research_search can pick its selective words with a lookup instead of one full GIN scan per word.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."research_numbers" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "paper_id" "uuid" NOT NULL,
+    "chunk_id" bigint,
+    "page" integer,
+    "measure" "text" NOT NULL,
+    "subject" "text" NOT NULL,
+    "crop_name" "text",
+    "active" "text",
+    "value_low" numeric,
+    "value_high" numeric,
+    "unit" "text",
+    "qualifier" "text",
+    "passage" "text" NOT NULL,
+    "confidence" smallint DEFAULT 2 NOT NULL,
+    "status" "text" DEFAULT 'unreviewed'::"text" NOT NULL,
+    "reviewed_by" "uuid",
+    "reviewed_at" timestamp with time zone,
+    "review_note" "text",
+    "model" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "research_numbers_confidence_check" CHECK ((("confidence" >= 1) AND ("confidence" <= 3))),
+    CONSTRAINT "research_numbers_measure_check" CHECK (("measure" = ANY (ARRAY['economic threshold'::"text", 'application rate'::"text", 'water volume'::"text", 'seeding rate'::"text", 'seeding depth'::"text", 'plant density'::"text", 'growth stage'::"text", 'timing window'::"text", 'pre-harvest interval'::"text", 're-crop interval'::"text", 'grazing restriction'::"text", 'fertilizer rate'::"text", 'soil temperature'::"text", 'soil moisture'::"text", 'soil test threshold'::"text", 'nutrient credit'::"text", 'irrigation amount'::"text", 'yield response'::"text"]))),
+    CONSTRAINT "research_numbers_status_check" CHECK (("status" = ANY (ARRAY['unreviewed'::"text", 'confirmed'::"text", 'rejected'::"text", 'not_for_us'::"text"])))
+);
+
+
+ALTER TABLE "public"."research_numbers" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."research_numbers" IS 'One figure lifted from one passage of one paper, with the passage, awaiting a manager''s confirmation. The app reads only confirmed rows.';
+
+
+
+CREATE OR REPLACE VIEW "public"."research_numbers_v" AS
+ SELECT "n"."id",
+    "n"."paper_id",
+    "n"."chunk_id",
+    "n"."page",
+    "n"."measure",
+    "n"."subject",
+    "n"."crop_name",
+    "n"."active",
+    "n"."value_low",
+    "n"."value_high",
+    "n"."unit",
+    "n"."qualifier",
+    "n"."passage",
+    "n"."confidence",
+    "n"."status",
+    "n"."reviewed_at",
+    "n"."review_note",
+    "n"."created_at",
+    "p"."title",
+    "p"."authors",
+    "p"."year",
+    "p"."source",
+    "p"."doi",
+    "p"."region",
+    "p"."storage_path",
+    "p"."source_url",
+        CASE "p"."region"
+            WHEN 'southern_alberta'::"text" THEN 0
+            WHEN 'alberta'::"text" THEN 1
+            WHEN 'prairies'::"text" THEN 2
+            WHEN 'canada'::"text" THEN 3
+            WHEN 'northern_plains'::"text" THEN 4
+            ELSE 5
+        END AS "region_rank",
+    ((
+        CASE
+            WHEN ("n"."crop_name" IS NULL) THEN 8
+            ELSE 0
+        END +
+        CASE "p"."region"
+            WHEN 'southern_alberta'::"text" THEN 0
+            WHEN 'alberta'::"text" THEN 1
+            WHEN 'prairies'::"text" THEN 2
+            WHEN 'canada'::"text" THEN 4
+            WHEN 'northern_plains'::"text" THEN 4
+            ELSE 6
+        END) +
+        CASE
+            WHEN ("n"."confidence" >= 3) THEN 0
+            ELSE 1
+        END) AS "judge_rank"
+   FROM ("public"."research_numbers" "n"
+     JOIN "public"."research_papers" "p" ON (("p"."id" = "n"."paper_id")));
+
+
+ALTER VIEW "public"."research_numbers_v" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."research_paper_chunks" (
+    "id" bigint NOT NULL,
+    "paper_id" "uuid" NOT NULL,
+    "idx" integer NOT NULL,
+    "page_from" integer,
+    "page_to" integer,
+    "text" "text" NOT NULL,
+    "fts" "tsvector" GENERATED ALWAYS AS ("to_tsvector"('"english"'::"regconfig", "text")) STORED,
+    "kind" "text" DEFAULT 'body'::"text" NOT NULL,
+    CONSTRAINT "research_paper_chunks_abstract_no_pages" CHECK ((("kind" <> 'abstract'::"text") OR (("page_from" IS NULL) AND ("page_to" IS NULL)))),
+    CONSTRAINT "research_paper_chunks_kind_check" CHECK (("kind" = ANY (ARRAY['body'::"text", 'abstract'::"text"])))
+);
+
+
+ALTER TABLE "public"."research_paper_chunks" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."research_paper_chunks" IS 'The readable text of each stored PDF, in pieces of about half a page, with the pages each piece spans.';
+
+
+
+CREATE SEQUENCE IF NOT EXISTS "public"."research_paper_chunks_id_seq"
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE "public"."research_paper_chunks_id_seq" OWNER TO "postgres";
+
+
+ALTER SEQUENCE "public"."research_paper_chunks_id_seq" OWNED BY "public"."research_paper_chunks"."id";
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."research_passages_read" (
+    "chunk_id" bigint NOT NULL,
+    "paper_id" "uuid",
+    "found" smallint DEFAULT 0 NOT NULL,
+    "model" "text",
+    "read_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."research_passages_read" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."research_passages_read" IS 'One row per passage already read for figures, including the ones that held none, so a run carries on rather than starting over.';
+
+
+
+CREATE OR REPLACE VIEW "public"."research_unfiled_crops_v" WITH ("security_invoker"='true') AS
+ SELECT "c"."id" AS "crop_id",
+    "c"."name",
+    ("round"("sum"("cp"."planned_acres")))::integer AS "acres",
+    ("count"(DISTINCT "cp"."crop_year"))::integer AS "plan_years",
+    "max"("cp"."crop_year") AS "plan_to"
+   FROM ("public"."crop_plans" "cp"
+     JOIN "public"."crops" "c" ON (("c"."id" = "cp"."crop_id")))
+  WHERE ((NOT (EXISTS ( SELECT 1
+           FROM "public"."research_folders" "f"
+          WHERE ("c"."name" = ANY ("f"."crop_names"))))) AND ("c"."name" <> ALL (ARRAY['Summer Fallow'::"text", 'Not farmed by us'::"text"])))
+  GROUP BY "c"."id", "c"."name"
+ HAVING ("sum"("cp"."planned_acres") > (0)::numeric);
+
+
+ALTER VIEW "public"."research_unfiled_crops_v" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."research_unfiled_crops_v" IS 'Crops with planned acres that no research folder claims - a crop added to the plan with nothing behind it.';
 
 
 
@@ -16120,6 +18959,46 @@ CREATE TABLE IF NOT EXISTS "public"."river_watch" (
 
 
 ALTER TABLE "public"."river_watch" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."river_wco_bands" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "segment_id" "uuid" NOT NULL,
+    "period_md" "text" NOT NULL,
+    "band_seq" integer NOT NULL,
+    "natural_flow_cms" numeric(7,2),
+    "wco_cms" numeric(6,2) NOT NULL
+);
+
+
+ALTER TABLE "public"."river_wco_bands" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."river_wco_bands" IS 'Schedule 1 of a water conservation objective: for each seven-day period, the objective as a step function of natural flow.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."river_wco_segments" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "slug" "text" NOT NULL,
+    "label" "text" NOT NULL,
+    "bounds" "text" NOT NULL,
+    "gauge_station" "text",
+    "gauge_label" "text",
+    "paper_id" "uuid",
+    "published" "text",
+    "winter_wco_cms" numeric(6,2),
+    "winter_window" "text",
+    "note" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."river_wco_segments" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."river_wco_segments" IS 'One row per river segment with a published water conservation objective. paper_id points at the schedule in the research library.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."road_routes" (
@@ -16244,6 +19123,73 @@ CREATE TABLE IF NOT EXISTS "public"."sat_api_usage" (
 
 
 ALTER TABLE "public"."sat_api_usage" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."sat_backfill_plans" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "subject_type" "text" DEFAULT 'pasture'::"text" NOT NULL,
+    "from_date" "date" NOT NULL,
+    "to_date" "date" NOT NULL,
+    "plan" "jsonb" NOT NULL,
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "sat_backfill_plans_check" CHECK (("to_date" >= "from_date")),
+    CONSTRAINT "sat_backfill_plans_subject_type_check" CHECK (("subject_type" = ANY (ARRAY['field'::"text", 'pasture'::"text"])))
+);
+
+
+ALTER TABLE "public"."sat_backfill_plans" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."sat_backfill_plans" IS 'The answer to "what would a satellite backfill over this range cost", stored because the background function that works it out cannot return a body.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."sat_backfill_runs" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "subject_type" "text" DEFAULT 'pasture'::"text" NOT NULL,
+    "from_date" "date" NOT NULL,
+    "to_date" "date" NOT NULL,
+    "phase" "text" DEFAULT 'observations'::"text" NOT NULL,
+    "cursor_date" "date",
+    "status" "text" DEFAULT 'running'::"text" NOT NULL,
+    "observations" integer DEFAULT 0 NOT NULL,
+    "images" integer DEFAULT 0 NOT NULL,
+    "units" numeric DEFAULT 0 NOT NULL,
+    "runs" integer DEFAULT 0 NOT NULL,
+    "detail" "text",
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "stalls" integer DEFAULT 0 NOT NULL,
+    CONSTRAINT "sat_backfill_runs_check" CHECK (("to_date" >= "from_date")),
+    CONSTRAINT "sat_backfill_runs_phase_check" CHECK (("phase" = ANY (ARRAY['observations'::"text", 'grading'::"text", 'images'::"text", 'finishing'::"text", 'done'::"text"]))),
+    CONSTRAINT "sat_backfill_runs_status_check" CHECK (("status" = ANY (ARRAY['running'::"text", 'done'::"text", 'failed'::"text", 'cancelled'::"text"]))),
+    CONSTRAINT "sat_backfill_runs_subject_type_check" CHECK (("subject_type" = ANY (ARRAY['field'::"text", 'pasture'::"text"])))
+);
+
+
+ALTER TABLE "public"."sat_backfill_runs" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."sat_backfill_runs" IS 'A resumable Sentinel-2 backfill. Each background run works to its deadline, advances cursor_date, and chains a fresh run; the pasture cron restarts a job that has gone quiet.';
+
+
+
+COMMENT ON COLUMN "public"."sat_backfill_runs"."phase" IS 'observations -> grading -> images -> finishing -> done. Grading comes before the pictures on purpose: a provisional grade decides which looks get photographed, and the regrade moves it.';
+
+
+
+COMMENT ON COLUMN "public"."sat_backfill_runs"."cursor_date" IS 'Start of the next observation window. The images phase needs no cursor: what is missing is a query against sat_images.';
+
+
+
+COMMENT ON COLUMN "public"."sat_backfill_runs"."units" IS 'Copernicus processing units spent by this job. A true-colour raster is 4; the NDVI/NDRE rasters are about 0.1 each.';
+
+
+
+COMMENT ON COLUMN "public"."sat_backfill_runs"."stalls" IS 'Consecutive runs that drew nothing while problems were reported. Reset by any progress; at 3 the job finishes and names the looks it could not draw.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."sat_scenes" (
@@ -16600,6 +19546,29 @@ COMMENT ON COLUMN "public"."scale_tickets"."clean_net_lb" IS 'The net less the c
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."sclerotinia_checklists" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "answers" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "notes" "text",
+    "filled_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."sclerotinia_checklists" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."sclerotinia_checklists" IS 'Alberta Agdex 149/632-4 sclerotinia checklist answers, one row per canola field per crop year.';
+
+
+
+COMMENT ON COLUMN "public"."sclerotinia_checklists"."answers" IS 'Point values chosen, keyed by question number as text (1-15). Absent means unanswered, which is not the same as 0.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."scouting_notes" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "field_id" "uuid",
@@ -16615,12 +19584,25 @@ CREATE TABLE IF NOT EXISTS "public"."scouting_notes" (
     "created_by" "uuid" DEFAULT "auth"."uid"(),
     "resolved_at" timestamp with time zone,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "count_value" numeric,
+    "count_unit" "text",
     CONSTRAINT "scouting_notes_category_check" CHECK (("category" = ANY (ARRAY['weed'::"text", 'insect'::"text", 'disease'::"text", 'other'::"text"]))),
+    CONSTRAINT "scouting_notes_count_pair_chk" CHECK ((("count_value" IS NULL) = ("count_unit" IS NULL))),
+    CONSTRAINT "scouting_notes_count_unit_chk" CHECK ((("count_unit" IS NULL) OR ("count_unit" = ANY (ARRAY['per_sweep'::"text", 'per_sample_10_sweeps'::"text", 'heads_per_adult'::"text", 'pct_stems'::"text"])))),
+    CONSTRAINT "scouting_notes_count_value_chk" CHECK ((("count_value" IS NULL) OR ("count_value" >= (0)::numeric))),
     CONSTRAINT "scouting_notes_severity_check" CHECK ((("severity" >= 1) AND ("severity" <= 3)))
 );
 
 
 ALTER TABLE "public"."scouting_notes" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."scouting_notes"."count_value" IS 'How many were counted, in count_unit. Null where nothing was counted.';
+
+
+
+COMMENT ON COLUMN "public"."scouting_notes"."count_unit" IS 'What count_value counts: see INSECT_UNITS in src/lib/insect-thresholds.ts.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."seed_report_bins" (
@@ -16786,24 +19768,6 @@ COMMENT ON COLUMN "public"."soil_test_assessments"."inputs_hash" IS 'Hash of the
 
 
 
-CREATE TABLE IF NOT EXISTS "public"."soil_test_reports" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "field_id" "uuid" NOT NULL,
-    "crop_year" integer NOT NULL,
-    "part_label" "text" DEFAULT ''::"text" NOT NULL,
-    "crop_label" "text",
-    "lab" "text",
-    "report_ref" "text",
-    "report_date" "date",
-    "source_file" "text",
-    "source_page" integer,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
-);
-
-
-ALTER TABLE "public"."soil_test_reports" OWNER TO "postgres";
-
-
 CREATE OR REPLACE VIEW "public"."soil_reports_needing_assessment" AS
  SELECT "r"."id" AS "report_id",
     "r"."field_id",
@@ -16835,50 +19799,6 @@ CREATE TABLE IF NOT EXISTS "public"."soil_sample_sites" (
 
 
 ALTER TABLE "public"."soil_sample_sites" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "public"."soil_test_samples" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "report_id" "uuid" NOT NULL,
-    "sample_code" "text" NOT NULL,
-    "depth_label" "text",
-    "depth_top_in" integer,
-    "depth_bottom_in" integer,
-    "om_pct" numeric,
-    "no3n_ppm" numeric,
-    "no3n_lb_ac" numeric,
-    "p_bicarb_ppm" numeric,
-    "p_melich3_ppm" numeric,
-    "k_ppm" numeric,
-    "so4s_ppm" numeric,
-    "ph" numeric,
-    "cec_meq" numeric,
-    "base_k_pct" numeric,
-    "base_mg_pct" numeric,
-    "base_ca_pct" numeric,
-    "base_h_pct" numeric,
-    "base_na_pct" numeric,
-    "mg_ppm" numeric,
-    "ca_ppm" numeric,
-    "na_ppm" numeric,
-    "zn_ppm" numeric,
-    "mn_ppm" numeric,
-    "fe_ppm" numeric,
-    "cu_ppm" numeric,
-    "b_ppm" numeric,
-    "soluble_salts" numeric,
-    "p_sat_pct" numeric,
-    "al_ppm" numeric,
-    "al_sat_pct" numeric,
-    "k_mg_ratio" numeric,
-    "cl_ppm" numeric,
-    "ec_ms_cm" numeric,
-    "enr" numeric,
-    "gfi" numeric
-);
-
-
-ALTER TABLE "public"."soil_test_samples" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."solar_daily" (
@@ -16942,35 +19862,6 @@ ALTER TABLE "public"."solar_sites" OWNER TO "postgres";
 
 
 COMMENT ON TABLE "public"."solar_sites" IS 'Solar plants on SolisCloud (one row each), with our own label and field link. Synced by solar-sync-background.';
-
-
-
-CREATE TABLE IF NOT EXISTS "public"."stubble_grazing" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "ranch_id" "uuid" NOT NULL,
-    "field_id" "uuid",
-    "name" "text" NOT NULL,
-    "acres" numeric NOT NULL,
-    "yield_bu" numeric NOT NULL,
-    "herd_count_id" "uuid",
-    "start_date" "date",
-    "weather_loss_pct" numeric DEFAULT 15 NOT NULL,
-    "ears_counted" numeric,
-    "snow_state" "text" DEFAULT 'open'::"text" NOT NULL,
-    "notes" "text",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "stubble_grazing_acres_check" CHECK (("acres" > (0)::numeric)),
-    CONSTRAINT "stubble_grazing_ears_counted_check" CHECK (("ears_counted" >= (0)::numeric)),
-    CONSTRAINT "stubble_grazing_snow_state_check" CHECK (("snow_state" = ANY (ARRAY['open'::"text", 'snow'::"text", 'crust'::"text"]))),
-    CONSTRAINT "stubble_grazing_weather_loss_pct_check" CHECK ((("weather_loss_pct" >= (0)::numeric) AND ("weather_loss_pct" <= (90)::numeric))),
-    CONSTRAINT "stubble_grazing_yield_bu_check" CHECK (("yield_bu" > (0)::numeric))
-);
-
-
-ALTER TABLE "public"."stubble_grazing" OWNER TO "postgres";
-
-
-COMMENT ON TABLE "public"."stubble_grazing" IS 'Corn stalks grazed in winter: 8 lb of grazeable DM per bushel (UNL), less a chinook/wind allowance; the cow-days replace stored feed.';
 
 
 
@@ -17320,40 +20211,6 @@ COMMENT ON TABLE "public"."water_quality_flags" IS 'Samples found over a water-q
 
 
 
-CREATE TABLE IF NOT EXISTS "public"."water_quality_samples" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "source" "text" NOT NULL,
-    "station_id" "text" NOT NULL,
-    "sampled_at" timestamp with time zone NOT NULL,
-    "parameter" "text" NOT NULL,
-    "value" numeric NOT NULL,
-    "below_dl" boolean DEFAULT false NOT NULL,
-    "unit" "text",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "water_quality_samples_source_check" CHECK (("source" = ANY (ARRAY['aepa'::"text", 'idwq'::"text", 'own'::"text"])))
-);
-
-
-ALTER TABLE "public"."water_quality_samples" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "public"."water_quality_stations" (
-    "station_id" "text" NOT NULL,
-    "source" "text" NOT NULL,
-    "name" "text" NOT NULL,
-    "water_source" "text",
-    "for_credit" boolean DEFAULT false NOT NULL,
-    "lat" numeric,
-    "lon" numeric,
-    "active" boolean DEFAULT true NOT NULL,
-    CONSTRAINT "water_quality_stations_source_check" CHECK (("source" = ANY (ARRAY['aepa'::"text", 'idwq'::"text", 'own'::"text"]))),
-    CONSTRAINT "water_quality_stations_water_source_check" CHECK ((("water_source" IS NULL) OR (("length"("btrim"("water_source")) >= 1) AND ("length"("btrim"("water_source")) <= 80))))
-);
-
-
-ALTER TABLE "public"."water_quality_stations" OWNER TO "postgres";
-
-
 CREATE OR REPLACE VIEW "public"."water_quality_summary" WITH ("security_invoker"='true') AS
  WITH "w" AS (
          SELECT "s"."id",
@@ -17687,7 +20544,7 @@ ALTER TABLE ONLY "public"."afsc_mdi_land"
 
 
 ALTER TABLE ONLY "public"."afsc_mdi_year"
-    ADD CONSTRAINT "afsc_mdi_year_pkey" PRIMARY KEY ("crop_year");
+    ADD CONSTRAINT "afsc_mdi_year_pkey" PRIMARY KEY ("crop_year", "ranch_id");
 
 
 
@@ -17811,6 +20668,11 @@ ALTER TABLE ONLY "public"."bale_weight_defaults"
 
 
 
+ALTER TABLE ONLY "public"."bee_placements"
+    ADD CONSTRAINT "bee_placements_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."bin_air_alerts"
     ADD CONSTRAINT "bin_air_alerts_pkey" PRIMARY KEY ("id");
 
@@ -17876,6 +20738,16 @@ ALTER TABLE ONLY "public"."canola_bloom"
 
 
 
+ALTER TABLE ONLY "public"."canola_bloom_scouting"
+    ADD CONSTRAINT "canola_bloom_scouting_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."canola_bloom_settings"
+    ADD CONSTRAINT "canola_bloom_settings_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."canola_isolation_reports"
     ADD CONSTRAINT "canola_isolation_reports_field_id_crop_year_key" UNIQUE ("field_id", "crop_year");
 
@@ -17888,6 +20760,11 @@ ALTER TABLE ONLY "public"."canola_isolation_reports"
 
 ALTER TABLE ONLY "public"."cash_bids"
     ADD CONSTRAINT "cash_bids_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."cattle_brand_ranch"
+    ADD CONSTRAINT "cattle_brand_ranch_pkey" PRIMARY KEY ("brand");
 
 
 
@@ -17931,8 +20808,28 @@ ALTER TABLE ONLY "public"."cattle_sales"
 
 
 
+ALTER TABLE ONLY "public"."cattle_scans"
+    ADD CONSTRAINT "cattle_scans_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."cattle_uploads"
+    ADD CONSTRAINT "cattle_uploads_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."cattle_water"
     ADD CONSTRAINT "cattle_water_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."cattle_water_tests"
+    ADD CONSTRAINT "cattle_water_tests_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."cattle_water_tests"
+    ADD CONSTRAINT "cattle_water_tests_water_id_sampled_on_key" UNIQUE ("water_id", "sampled_on");
 
 
 
@@ -17996,6 +20893,11 @@ ALTER TABLE ONLY "public"."chemical_labels"
 
 
 
+ALTER TABLE ONLY "public"."chemical_moa"
+    ADD CONSTRAINT "chemical_moa_pkey" PRIMARY KEY ("active");
+
+
+
 ALTER TABLE ONLY "public"."chemical_recrop_overrides"
     ADD CONSTRAINT "chemical_recrop_overrides_pkey" PRIMARY KEY ("registration_number");
 
@@ -18048,6 +20950,11 @@ ALTER TABLE ONLY "public"."combine_settings"
 
 ALTER TABLE ONLY "public"."combine_settings_used"
     ADD CONSTRAINT "combine_settings_used_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."contact_candidates"
+    ADD CONSTRAINT "contact_candidates_pkey" PRIMARY KEY ("id");
 
 
 
@@ -18116,6 +21023,36 @@ ALTER TABLE ONLY "public"."crop_inputs"
 
 
 
+ALTER TABLE ONLY "public"."crop_irrigation_refill"
+    ADD CONSTRAINT "crop_irrigation_refill_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."crop_irrigation_refill"
+    ADD CONSTRAINT "crop_irrigation_refill_sheet_id_depth_cm_texture_key" UNIQUE ("sheet_id", "depth_cm", "texture");
+
+
+
+ALTER TABLE ONLY "public"."crop_irrigation_sheets"
+    ADD CONSTRAINT "crop_irrigation_sheets_coef_crop_coef_variant_key" UNIQUE ("coef_crop", "coef_variant");
+
+
+
+ALTER TABLE ONLY "public"."crop_irrigation_sheets"
+    ADD CONSTRAINT "crop_irrigation_sheets_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."crop_irrigation_stages"
+    ADD CONSTRAINT "crop_irrigation_stages_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."crop_irrigation_stages"
+    ADD CONSTRAINT "crop_irrigation_stages_sheet_id_phase_key" UNIQUE ("sheet_id", "phase");
+
+
+
 ALTER TABLE ONLY "public"."crop_plan_options"
     ADD CONSTRAINT "crop_plan_options_field_id_crop_year_crop_id_key" UNIQUE ("field_id", "crop_year", "crop_id");
 
@@ -18153,16 +21090,6 @@ ALTER TABLE ONLY "public"."crop_prices"
 
 ALTER TABLE ONLY "public"."crop_prices"
     ADD CONSTRAINT "crop_prices_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "public"."crop_share_fields"
-    ADD CONSTRAINT "crop_share_fields_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "public"."crop_share_fields"
-    ADD CONSTRAINT "crop_share_fields_user_id_field_id_crop_year_key" UNIQUE ("user_id", "field_id", "crop_year");
 
 
 
@@ -18721,6 +21648,11 @@ ALTER TABLE ONLY "public"."grain_movements"
 
 
 
+ALTER TABLE ONLY "public"."grant_aliases"
+    ADD CONSTRAINT "grant_aliases_pkey" PRIMARY KEY ("external_key");
+
+
+
 ALTER TABLE ONLY "public"."grants"
     ADD CONSTRAINT "grants_external_key_key" UNIQUE ("external_key");
 
@@ -18771,6 +21703,11 @@ ALTER TABLE ONLY "public"."grazing_pastures"
 
 
 
+ALTER TABLE ONLY "public"."grazing_plan"
+    ADD CONSTRAINT "grazing_plan_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."grazing_restriction_alerts"
     ADD CONSTRAINT "grazing_restriction_alerts_alert_key_key" UNIQUE ("alert_key");
 
@@ -18788,6 +21725,46 @@ ALTER TABLE ONLY "public"."hail_inspections"
 
 ALTER TABLE ONLY "public"."hail_inspections"
     ADD CONSTRAINT "hail_inspections_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."handling_catalog"
+    ADD CONSTRAINT "handling_catalog_key_key" UNIQUE ("key");
+
+
+
+ALTER TABLE ONLY "public"."handling_catalog"
+    ADD CONSTRAINT "handling_catalog_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."handling_inventory"
+    ADD CONSTRAINT "handling_inventory_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."handling_items"
+    ADD CONSTRAINT "handling_items_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."handling_layers"
+    ADD CONSTRAINT "handling_layers_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."handling_paths"
+    ADD CONSTRAINT "handling_paths_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."handling_sites"
+    ADD CONSTRAINT "handling_sites_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."handling_versions"
+    ADD CONSTRAINT "handling_versions_pkey" PRIMARY KEY ("id");
 
 
 
@@ -18878,6 +21855,11 @@ ALTER TABLE ONLY "public"."jd_equipment"
 
 ALTER TABLE ONLY "public"."jd_equipment"
     ADD CONSTRAINT "jd_equipment_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."jd_export_requests"
+    ADD CONSTRAINT "jd_export_requests_pkey" PRIMARY KEY ("operation_id");
 
 
 
@@ -19151,8 +22133,23 @@ ALTER TABLE ONLY "public"."pasture_biomass_calibration"
 
 
 
+ALTER TABLE ONLY "public"."pasture_gates"
+    ADD CONSTRAINT "pasture_gates_pair" UNIQUE ("pasture_a", "pasture_b");
+
+
+
+ALTER TABLE ONLY "public"."pasture_gates"
+    ADD CONSTRAINT "pasture_gates_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."pasture_sprays"
     ADD CONSTRAINT "pasture_sprays_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."pasture_zone_build"
+    ADD CONSTRAINT "pasture_zone_build_pkey" PRIMARY KEY ("pasture_id", "kind");
 
 
 
@@ -19451,6 +22448,21 @@ ALTER TABLE ONLY "public"."research_folders"
 
 
 
+ALTER TABLE ONLY "public"."research_lexeme_df"
+    ADD CONSTRAINT "research_lexeme_df_pkey" PRIMARY KEY ("lexeme");
+
+
+
+ALTER TABLE ONLY "public"."research_numbers"
+    ADD CONSTRAINT "research_numbers_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."research_paper_about"
+    ADD CONSTRAINT "research_paper_about_pkey" PRIMARY KEY ("paper_id", "folder_id");
+
+
+
 ALTER TABLE ONLY "public"."research_paper_chunks"
     ADD CONSTRAINT "research_paper_chunks_paper_id_idx_key" UNIQUE ("paper_id", "idx");
 
@@ -19471,8 +22483,33 @@ ALTER TABLE ONLY "public"."research_papers"
 
 
 
+ALTER TABLE ONLY "public"."research_passages_read"
+    ADD CONSTRAINT "research_passages_read_pkey" PRIMARY KEY ("chunk_id");
+
+
+
 ALTER TABLE ONLY "public"."river_watch"
     ADD CONSTRAINT "river_watch_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."river_wco_bands"
+    ADD CONSTRAINT "river_wco_bands_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."river_wco_bands"
+    ADD CONSTRAINT "river_wco_bands_segment_id_period_md_band_seq_key" UNIQUE ("segment_id", "period_md", "band_seq");
+
+
+
+ALTER TABLE ONLY "public"."river_wco_segments"
+    ADD CONSTRAINT "river_wco_segments_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."river_wco_segments"
+    ADD CONSTRAINT "river_wco_segments_slug_key" UNIQUE ("slug");
 
 
 
@@ -19513,6 +22550,16 @@ ALTER TABLE ONLY "public"."sat_alerts"
 
 ALTER TABLE ONLY "public"."sat_api_usage"
     ADD CONSTRAINT "sat_api_usage_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."sat_backfill_plans"
+    ADD CONSTRAINT "sat_backfill_plans_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."sat_backfill_runs"
+    ADD CONSTRAINT "sat_backfill_runs_pkey" PRIMARY KEY ("id");
 
 
 
@@ -19563,6 +22610,16 @@ ALTER TABLE ONLY "public"."scale_ticket_photos"
 
 ALTER TABLE ONLY "public"."scale_tickets"
     ADD CONSTRAINT "scale_tickets_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."sclerotinia_checklists"
+    ADD CONSTRAINT "sclerotinia_checklists_field_id_crop_year_key" UNIQUE ("field_id", "crop_year");
+
+
+
+ALTER TABLE ONLY "public"."sclerotinia_checklists"
+    ADD CONSTRAINT "sclerotinia_checklists_pkey" PRIMARY KEY ("id");
 
 
 
@@ -19912,6 +22969,10 @@ CREATE INDEX "afsc_mdi_land_pasture_idx" ON "public"."afsc_mdi_land" USING "btre
 
 
 
+CREATE INDEX "afsc_mdi_land_ranch_idx" ON "public"."afsc_mdi_land" USING "btree" ("ranch_id", "sort");
+
+
+
 CREATE INDEX "ag_news_pick_idx" ON "public"."ag_news" USING "btree" ("score" DESC, "published_at" DESC);
 
 
@@ -19961,6 +23022,10 @@ CREATE INDEX "bale_check_readings_check_idx" ON "public"."bale_check_readings" U
 
 
 CREATE INDEX "bale_checks_date_idx" ON "public"."bale_checks" USING "btree" ("checked_on" DESC);
+
+
+
+CREATE INDEX "bee_placements_field_year_idx" ON "public"."bee_placements" USING "btree" ("crop_year", "field_id");
 
 
 
@@ -20052,7 +23117,15 @@ CREATE INDEX "cameras_river_station_idx" ON "public"."cameras" USING "btree" ("r
 
 
 
+CREATE INDEX "canola_bloom_scouting_field" ON "public"."canola_bloom_scouting" USING "btree" ("field_id", "crop_year");
+
+
+
 CREATE INDEX "cash_bids_crop_date" ON "public"."cash_bids" USING "btree" ("crop_id", "bid_on" DESC);
+
+
+
+CREATE UNIQUE INDEX "cattle_eid_key" ON "public"."cattle" USING "btree" ("eid") WHERE ("eid" IS NOT NULL);
 
 
 
@@ -20080,6 +23153,14 @@ CREATE INDEX "cattle_manifests_year_idx" ON "public"."cattle_manifests" USING "b
 
 
 
+CREATE INDEX "cattle_mob_idx" ON "public"."cattle" USING "btree" ("mob");
+
+
+
+CREATE INDEX "cattle_neckband_idx" ON "public"."cattle" USING "btree" ("neckband") WHERE ("neckband" IS NOT NULL);
+
+
+
 CREATE INDEX "cattle_ranch_idx" ON "public"."cattle" USING "btree" ("ranch_id");
 
 
@@ -20088,11 +23169,27 @@ CREATE INDEX "cattle_sales_year_idx" ON "public"."cattle_sales" USING "btree" ("
 
 
 
+CREATE INDEX "cattle_scans_at_idx" ON "public"."cattle_scans" USING "btree" ("scanned_at" DESC);
+
+
+
+CREATE INDEX "cattle_scans_eid_idx" ON "public"."cattle_scans" USING "btree" ("eid");
+
+
+
 CREATE INDEX "cattle_status_idx" ON "public"."cattle" USING "btree" ("status");
 
 
 
+CREATE INDEX "cattle_uploads_at_idx" ON "public"."cattle_uploads" USING "btree" ("uploaded_at" DESC);
+
+
+
 CREATE INDEX "cattle_water_geom_idx" ON "public"."cattle_water" USING "gist" ("geom");
+
+
+
+CREATE INDEX "cattle_water_tests_water_idx" ON "public"."cattle_water_tests" USING "btree" ("water_id", "sampled_on" DESC);
 
 
 
@@ -20177,6 +23274,10 @@ CREATE INDEX "combine_settings_used_latest" ON "public"."combine_settings_used" 
 
 
 CREATE INDEX "combine_settings_used_work_record" ON "public"."combine_settings_used" USING "btree" ("work_record_id") WHERE ("work_record_id" IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX "contact_candidates_key" ON "public"."contact_candidates" USING "btree" (COALESCE("lower"(NULLIF("email", ''::"text")), "lower"("company")));
 
 
 
@@ -20444,15 +23545,19 @@ CREATE INDEX "grain_movements_delivery_site_idx" ON "public"."grain_movements" U
 
 
 
+CREATE INDEX "grant_aliases_grant_idx" ON "public"."grant_aliases" USING "btree" ("grant_id");
+
+
+
 CREATE INDEX "grants_closes_idx" ON "public"."grants" USING "btree" ("closes_on");
 
 
 
+CREATE INDEX "grants_match_key_idx" ON "public"."grants" USING "btree" ("public"."grant_match_key"("title"));
+
+
+
 CREATE INDEX "grants_status_idx" ON "public"."grants" USING "btree" ("status");
-
-
-
-CREATE INDEX "grants_title_norm_idx" ON "public"."grants" USING "btree" ("regexp_replace"("lower"(TRIM(BOTH FROM "title")), '[^a-z0-9]+'::"text", ''::"text", 'g'::"text"));
 
 
 
@@ -20480,7 +23585,43 @@ CREATE INDEX "grazing_pastures_sort_idx" ON "public"."grazing_pastures" USING "b
 
 
 
+CREATE INDEX "grazing_plan_ranch_year" ON "public"."grazing_plan" USING "btree" ("ranch_id", "plan_year", "herd_count_id", "sort_order");
+
+
+
 CREATE INDEX "hail_inspections_status_idx" ON "public"."hail_inspections" USING "btree" ("status", "created_at" DESC);
+
+
+
+CREATE INDEX "handling_catalog_site_idx" ON "public"."handling_catalog" USING "btree" ("site_id", "sort_order");
+
+
+
+CREATE UNIQUE INDEX "handling_inventory_site_item" ON "public"."handling_inventory" USING "btree" ("site_id", "catalog_id");
+
+
+
+CREATE INDEX "handling_items_version_idx" ON "public"."handling_items" USING "btree" ("version_id");
+
+
+
+CREATE INDEX "handling_layers_site_idx" ON "public"."handling_layers" USING "btree" ("site_id");
+
+
+
+CREATE INDEX "handling_paths_version_idx" ON "public"."handling_paths" USING "btree" ("version_id");
+
+
+
+CREATE INDEX "handling_sites_ranch_idx" ON "public"."handling_sites" USING "btree" ("ranch_id", "sort_order");
+
+
+
+CREATE UNIQUE INDEX "handling_versions_one_base" ON "public"."handling_versions" USING "btree" ("site_id") WHERE "is_base";
+
+
+
+CREATE INDEX "handling_versions_site_idx" ON "public"."handling_versions" USING "btree" ("site_id", "sort_order");
 
 
 
@@ -20525,6 +23666,10 @@ CREATE INDEX "jd_equipment_category_idx" ON "public"."jd_equipment" USING "btree
 
 
 CREATE INDEX "jd_equipment_platform_idx" ON "public"."jd_equipment" USING "btree" ("platform_machine_id");
+
+
+
+CREATE INDEX "jd_export_requests_requested_idx" ON "public"."jd_export_requests" USING "btree" ("requested_at");
 
 
 
@@ -20784,6 +23929,30 @@ CREATE INDEX "research_folders_parent_idx" ON "public"."research_folders" USING 
 
 
 
+CREATE INDEX "research_numbers_active" ON "public"."research_numbers" USING "btree" ("active") WHERE ("active" IS NOT NULL);
+
+
+
+CREATE INDEX "research_numbers_crop" ON "public"."research_numbers" USING "btree" ("crop_name") WHERE ("crop_name" IS NOT NULL);
+
+
+
+CREATE INDEX "research_numbers_measure" ON "public"."research_numbers" USING "btree" ("measure", "status");
+
+
+
+CREATE UNIQUE INDEX "research_numbers_once" ON "public"."research_numbers" USING "btree" ("paper_id", COALESCE("chunk_id", (0)::bigint), "measure", "subject", COALESCE("value_low", ('-1'::integer)::numeric), COALESCE("unit", ''::"text"));
+
+
+
+CREATE INDEX "research_numbers_paper" ON "public"."research_numbers" USING "btree" ("paper_id");
+
+
+
+CREATE INDEX "research_paper_about_folder_idx" ON "public"."research_paper_about" USING "btree" ("folder_id", "about" DESC, "mentions" DESC);
+
+
+
 CREATE INDEX "research_paper_folders_folder_idx" ON "public"."research_paper_folders" USING "btree" ("folder_id");
 
 
@@ -20812,6 +23981,14 @@ CREATE INDEX "research_papers_tags_idx" ON "public"."research_papers" USING "gin
 
 
 
+CREATE INDEX "research_passages_read_paper" ON "public"."research_passages_read" USING "btree" ("paper_id");
+
+
+
+CREATE INDEX "river_wco_bands_period_idx" ON "public"."river_wco_bands" USING "btree" ("segment_id", "period_md", "band_seq");
+
+
+
 CREATE INDEX "rotation_advice_year_created" ON "public"."rotation_advice" USING "btree" ("crop_year", "created_at" DESC);
 
 
@@ -20833,6 +24010,18 @@ CREATE INDEX "sat_alerts_subject_idx" ON "public"."sat_alerts" USING "btree" ("s
 
 
 CREATE INDEX "sat_api_usage_day_idx" ON "public"."sat_api_usage" USING "btree" ("called_on" DESC, "provider");
+
+
+
+CREATE INDEX "sat_backfill_plans_recent_idx" ON "public"."sat_backfill_plans" USING "btree" ("subject_type", "created_at" DESC);
+
+
+
+CREATE UNIQUE INDEX "sat_backfill_runs_one_live_idx" ON "public"."sat_backfill_runs" USING "btree" ("subject_type") WHERE ("status" = 'running'::"text");
+
+
+
+CREATE INDEX "sat_backfill_runs_recent_idx" ON "public"."sat_backfill_runs" USING "btree" ("created_at" DESC);
 
 
 
@@ -20873,6 +24062,10 @@ CREATE UNIQUE INDEX "scale_tickets_load_idx" ON "public"."scale_tickets" USING "
 
 
 CREATE INDEX "scale_tickets_year_idx" ON "public"."scale_tickets" USING "btree" ("crop_year", "delivered_on" DESC);
+
+
+
+CREATE INDEX "sclerotinia_checklists_year_idx" ON "public"."sclerotinia_checklists" USING "btree" ("crop_year", "field_id");
 
 
 
@@ -21032,6 +24225,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."bee_placements" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."bin_air_alerts" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -21064,6 +24261,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."canola_bloom_scouting" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."canola_isolation_reports" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -21089,6 +24290,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."cattle_water" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."cattle_water_tests" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -21144,6 +24349,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."contact_candidates" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."contacts" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -21172,6 +24381,14 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."crop_irrigation_sheets" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."crop_irrigation_stages" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."crop_plan_options" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -21185,10 +24402,6 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."crop_prices" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
-
-
-
-CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."crop_share_fields" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -21416,7 +24629,39 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."grazing_plan" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."hail_inspections" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."handling_catalog" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."handling_inventory" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."handling_items" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."handling_layers" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."handling_paths" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."handling_sites" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."handling_versions" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -21516,6 +24761,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."pasture_gates" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."pasture_sprays" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -21565,6 +24814,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."scale_tickets" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."sclerotinia_checklists" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -21793,6 +25046,10 @@ CREATE OR REPLACE TRIGGER "fields_guard" BEFORE UPDATE ON "public"."fields" FOR 
 
 
 CREATE OR REPLACE TRIGGER "fixed_guard" BEFORE INSERT OR UPDATE ON "public"."crop_inputs" FOR EACH ROW EXECUTE FUNCTION "public"."fn_crop_inputs_fixed_guard"();
+
+
+
+CREATE OR REPLACE TRIGGER "gate_dirties_zones" AFTER INSERT OR DELETE OR UPDATE ON "public"."pasture_gates" FOR EACH ROW EXECUTE FUNCTION "public"."gate_dirties_zones"();
 
 
 
@@ -22124,6 +25381,16 @@ ALTER TABLE ONLY "public"."afsc_mdi_land"
 
 
 
+ALTER TABLE ONLY "public"."afsc_mdi_land"
+    ADD CONSTRAINT "afsc_mdi_land_ranch_id_fkey" FOREIGN KEY ("ranch_id") REFERENCES "public"."ranches"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."afsc_mdi_year"
+    ADD CONSTRAINT "afsc_mdi_year_ranch_id_fkey" FOREIGN KEY ("ranch_id") REFERENCES "public"."ranches"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."afsc_mdi_year"
     ADD CONSTRAINT "afsc_mdi_year_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "auth"."users"("id");
 
@@ -22181,6 +25448,21 @@ ALTER TABLE ONLY "public"."bale_checks"
 
 ALTER TABLE ONLY "public"."bale_weight_defaults"
     ADD CONSTRAINT "bale_weight_defaults_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."bee_placements"
+    ADD CONSTRAINT "bee_placements_contact_id_fkey" FOREIGN KEY ("contact_id") REFERENCES "public"."contacts"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."bee_placements"
+    ADD CONSTRAINT "bee_placements_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."bee_placements"
+    ADD CONSTRAINT "bee_placements_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
 
 
 
@@ -22339,6 +25621,16 @@ ALTER TABLE ONLY "public"."canola_bloom"
 
 
 
+ALTER TABLE ONLY "public"."canola_bloom_scouting"
+    ADD CONSTRAINT "canola_bloom_scouting_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."canola_bloom"
+    ADD CONSTRAINT "canola_bloom_task_id_fkey" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."canola_isolation_reports"
     ADD CONSTRAINT "canola_isolation_reports_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
 
@@ -22356,6 +25648,16 @@ ALTER TABLE ONLY "public"."cash_bids"
 
 ALTER TABLE ONLY "public"."cash_bids"
     ADD CONSTRAINT "cash_bids_series_id_fkey" FOREIGN KEY ("series_id") REFERENCES "public"."market_series"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."cattle_brand_ranch"
+    ADD CONSTRAINT "cattle_brand_ranch_ranch_id_fkey" FOREIGN KEY ("ranch_id") REFERENCES "public"."ranches"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."cattle_brand_ranch"
+    ADD CONSTRAINT "cattle_brand_ranch_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "auth"."users"("id");
 
 
 
@@ -22409,8 +25711,38 @@ ALTER TABLE ONLY "public"."cattle"
 
 
 
+ALTER TABLE ONLY "public"."cattle_scans"
+    ADD CONSTRAINT "cattle_scans_cattle_id_fkey" FOREIGN KEY ("cattle_id") REFERENCES "public"."cattle"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."cattle_scans"
+    ADD CONSTRAINT "cattle_scans_ranch_id_fkey" FOREIGN KEY ("ranch_id") REFERENCES "public"."ranches"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."cattle_scans"
+    ADD CONSTRAINT "cattle_scans_scanned_by_fkey" FOREIGN KEY ("scanned_by") REFERENCES "auth"."users"("id");
+
+
+
+ALTER TABLE ONLY "public"."cattle_uploads"
+    ADD CONSTRAINT "cattle_uploads_uploaded_by_fkey" FOREIGN KEY ("uploaded_by") REFERENCES "auth"."users"("id");
+
+
+
 ALTER TABLE ONLY "public"."cattle_water"
     ADD CONSTRAINT "cattle_water_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."cattle_water_tests"
+    ADD CONSTRAINT "cattle_water_tests_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id");
+
+
+
+ALTER TABLE ONLY "public"."cattle_water_tests"
+    ADD CONSTRAINT "cattle_water_tests_water_id_fkey" FOREIGN KEY ("water_id") REFERENCES "public"."cattle_water"("id") ON DELETE CASCADE;
 
 
 
@@ -22579,6 +25911,16 @@ ALTER TABLE ONLY "public"."combine_settings_used"
 
 
 
+ALTER TABLE ONLY "public"."contact_candidates"
+    ADD CONSTRAINT "contact_candidates_contact_id_fkey" FOREIGN KEY ("contact_id") REFERENCES "public"."contacts"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."contact_candidates"
+    ADD CONSTRAINT "contact_candidates_decided_by_fkey" FOREIGN KEY ("decided_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."contracts"
     ADD CONSTRAINT "contracts_buyer_contact_id_fkey" FOREIGN KEY ("buyer_contact_id") REFERENCES "public"."contacts"("id") ON DELETE SET NULL;
 
@@ -22629,6 +25971,21 @@ ALTER TABLE ONLY "public"."crop_inputs"
 
 
 
+ALTER TABLE ONLY "public"."crop_irrigation_refill"
+    ADD CONSTRAINT "crop_irrigation_refill_sheet_id_fkey" FOREIGN KEY ("sheet_id") REFERENCES "public"."crop_irrigation_sheets"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."crop_irrigation_sheets"
+    ADD CONSTRAINT "crop_irrigation_sheets_paper_id_fkey" FOREIGN KEY ("paper_id") REFERENCES "public"."research_papers"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."crop_irrigation_stages"
+    ADD CONSTRAINT "crop_irrigation_stages_sheet_id_fkey" FOREIGN KEY ("sheet_id") REFERENCES "public"."crop_irrigation_sheets"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."crop_plan_options"
     ADD CONSTRAINT "crop_plan_options_crop_id_fkey" FOREIGN KEY ("crop_id") REFERENCES "public"."crops"("id") ON DELETE CASCADE;
 
@@ -22661,21 +26018,6 @@ ALTER TABLE ONLY "public"."crop_planter_profiles"
 
 ALTER TABLE ONLY "public"."crop_prices"
     ADD CONSTRAINT "crop_prices_crop_id_fkey" FOREIGN KEY ("crop_id") REFERENCES "public"."crops"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."crop_share_fields"
-    ADD CONSTRAINT "crop_share_fields_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
-
-
-
-ALTER TABLE ONLY "public"."crop_share_fields"
-    ADD CONSTRAINT "crop_share_fields_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."crop_share_fields"
-    ADD CONSTRAINT "crop_share_fields_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE;
 
 
 
@@ -22990,6 +26332,11 @@ ALTER TABLE ONLY "public"."field_crop_seasons"
 
 
 ALTER TABLE ONLY "public"."field_crop_seasons"
+    ADD CONSTRAINT "field_crop_seasons_irrigation_stage_set_by_fkey" FOREIGN KEY ("irrigation_stage_set_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."field_crop_seasons"
     ADD CONSTRAINT "field_crop_seasons_zone_id_fkey" FOREIGN KEY ("zone_id") REFERENCES "public"."field_crop_zones"("id") ON DELETE CASCADE;
 
 
@@ -23274,6 +26621,11 @@ ALTER TABLE ONLY "public"."grain_movements"
 
 
 
+ALTER TABLE ONLY "public"."grant_aliases"
+    ADD CONSTRAINT "grant_aliases_grant_id_fkey" FOREIGN KEY ("grant_id") REFERENCES "public"."grants"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."grants"
     ADD CONSTRAINT "grants_assigned_to_fkey" FOREIGN KEY ("assigned_to") REFERENCES "public"."users"("id");
 
@@ -23319,6 +26671,26 @@ ALTER TABLE ONLY "public"."grazing_pastures"
 
 
 
+ALTER TABLE ONLY "public"."grazing_plan"
+    ADD CONSTRAINT "grazing_plan_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."grazing_plan"
+    ADD CONSTRAINT "grazing_plan_herd_count_id_fkey" FOREIGN KEY ("herd_count_id") REFERENCES "public"."herd_counts"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."grazing_plan"
+    ADD CONSTRAINT "grazing_plan_pasture_id_fkey" FOREIGN KEY ("pasture_id") REFERENCES "public"."pastures"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."grazing_plan"
+    ADD CONSTRAINT "grazing_plan_ranch_id_fkey" FOREIGN KEY ("ranch_id") REFERENCES "public"."ranches"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."grazing_restriction_alerts"
     ADD CONSTRAINT "grazing_restriction_alerts_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
 
@@ -23336,6 +26708,56 @@ ALTER TABLE ONLY "public"."hail_inspections"
 
 ALTER TABLE ONLY "public"."hail_inspections"
     ADD CONSTRAINT "hail_inspections_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."handling_catalog"
+    ADD CONSTRAINT "handling_catalog_site_id_fkey" FOREIGN KEY ("site_id") REFERENCES "public"."handling_sites"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."handling_inventory"
+    ADD CONSTRAINT "handling_inventory_catalog_id_fkey" FOREIGN KEY ("catalog_id") REFERENCES "public"."handling_catalog"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."handling_inventory"
+    ADD CONSTRAINT "handling_inventory_site_id_fkey" FOREIGN KEY ("site_id") REFERENCES "public"."handling_sites"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."handling_items"
+    ADD CONSTRAINT "handling_items_catalog_id_fkey" FOREIGN KEY ("catalog_id") REFERENCES "public"."handling_catalog"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."handling_items"
+    ADD CONSTRAINT "handling_items_version_id_fkey" FOREIGN KEY ("version_id") REFERENCES "public"."handling_versions"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."handling_layers"
+    ADD CONSTRAINT "handling_layers_site_id_fkey" FOREIGN KEY ("site_id") REFERENCES "public"."handling_sites"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."handling_paths"
+    ADD CONSTRAINT "handling_paths_version_id_fkey" FOREIGN KEY ("version_id") REFERENCES "public"."handling_versions"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."handling_sites"
+    ADD CONSTRAINT "handling_sites_ranch_id_fkey" FOREIGN KEY ("ranch_id") REFERENCES "public"."ranches"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."handling_versions"
+    ADD CONSTRAINT "handling_versions_site_id_fkey" FOREIGN KEY ("site_id") REFERENCES "public"."handling_sites"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."handling_versions"
+    ADD CONSTRAINT "handling_versions_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
 
 
 
@@ -23431,6 +26853,11 @@ ALTER TABLE ONLY "public"."jd_equipment_alerts"
 
 ALTER TABLE ONLY "public"."jd_equipment"
     ADD CONSTRAINT "jd_equipment_farm_id_fkey" FOREIGN KEY ("farm_id") REFERENCES "public"."farms"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."jd_export_requests"
+    ADD CONSTRAINT "jd_export_requests_operation_id_fkey" FOREIGN KEY ("operation_id") REFERENCES "public"."jd_field_operations"("id") ON DELETE CASCADE;
 
 
 
@@ -23739,8 +27166,23 @@ ALTER TABLE ONLY "public"."pasture_biomass_calibration"
 
 
 
+ALTER TABLE ONLY "public"."pasture_gates"
+    ADD CONSTRAINT "pasture_gates_pasture_a_fkey" FOREIGN KEY ("pasture_a") REFERENCES "public"."pastures"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."pasture_gates"
+    ADD CONSTRAINT "pasture_gates_pasture_b_fkey" FOREIGN KEY ("pasture_b") REFERENCES "public"."pastures"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."pasture_sprays"
     ADD CONSTRAINT "pasture_sprays_pasture_id_fkey" FOREIGN KEY ("pasture_id") REFERENCES "public"."pastures"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."pasture_zone_build"
+    ADD CONSTRAINT "pasture_zone_build_pasture_id_fkey" FOREIGN KEY ("pasture_id") REFERENCES "public"."pastures"("id") ON DELETE CASCADE;
 
 
 
@@ -23944,6 +27386,31 @@ ALTER TABLE ONLY "public"."research_folders"
 
 
 
+ALTER TABLE ONLY "public"."research_numbers"
+    ADD CONSTRAINT "research_numbers_chunk_id_fkey" FOREIGN KEY ("chunk_id") REFERENCES "public"."research_paper_chunks"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."research_numbers"
+    ADD CONSTRAINT "research_numbers_paper_id_fkey" FOREIGN KEY ("paper_id") REFERENCES "public"."research_papers"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."research_numbers"
+    ADD CONSTRAINT "research_numbers_reviewed_by_fkey" FOREIGN KEY ("reviewed_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."research_paper_about"
+    ADD CONSTRAINT "research_paper_about_folder_id_fkey" FOREIGN KEY ("folder_id") REFERENCES "public"."research_folders"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."research_paper_about"
+    ADD CONSTRAINT "research_paper_about_paper_id_fkey" FOREIGN KEY ("paper_id") REFERENCES "public"."research_papers"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."research_paper_chunks"
     ADD CONSTRAINT "research_paper_chunks_paper_id_fkey" FOREIGN KEY ("paper_id") REFERENCES "public"."research_papers"("id") ON DELETE CASCADE;
 
@@ -23966,6 +27433,26 @@ ALTER TABLE ONLY "public"."research_papers"
 
 ALTER TABLE ONLY "public"."research_papers"
     ADD CONSTRAINT "research_papers_folder_id_fkey" FOREIGN KEY ("folder_id") REFERENCES "public"."research_folders"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."research_passages_read"
+    ADD CONSTRAINT "research_passages_read_chunk_id_fkey" FOREIGN KEY ("chunk_id") REFERENCES "public"."research_paper_chunks"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."research_passages_read"
+    ADD CONSTRAINT "research_passages_read_paper_id_fkey" FOREIGN KEY ("paper_id") REFERENCES "public"."research_papers"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."river_wco_bands"
+    ADD CONSTRAINT "river_wco_bands_segment_id_fkey" FOREIGN KEY ("segment_id") REFERENCES "public"."river_wco_segments"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."river_wco_segments"
+    ADD CONSTRAINT "river_wco_segments_paper_id_fkey" FOREIGN KEY ("paper_id") REFERENCES "public"."research_papers"("id") ON DELETE SET NULL;
 
 
 
@@ -23996,6 +27483,16 @@ ALTER TABLE ONLY "public"."rotation_feedback"
 
 ALTER TABLE ONLY "public"."sat_alerts"
     ADD CONSTRAINT "sat_alerts_task_id_fkey" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."sat_backfill_plans"
+    ADD CONSTRAINT "sat_backfill_plans_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."sat_backfill_runs"
+    ADD CONSTRAINT "sat_backfill_runs_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
 
 
 
@@ -24046,6 +27543,11 @@ ALTER TABLE ONLY "public"."scale_tickets"
 
 ALTER TABLE ONLY "public"."scale_tickets"
     ADD CONSTRAINT "scale_tickets_crop_id_fkey" FOREIGN KEY ("crop_id") REFERENCES "public"."crops"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."sclerotinia_checklists"
+    ADD CONSTRAINT "sclerotinia_checklists_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
 
 
 
@@ -24446,6 +27948,9 @@ ALTER TABLE "public"."bale_checks" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."bale_weight_defaults" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."bee_placements" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."bin_air_alerts" ENABLE ROW LEVEL SECURITY;
 
 
@@ -24491,6 +27996,12 @@ CREATE POLICY "cameras_write" ON "public"."cameras" USING (( SELECT "public"."is
 ALTER TABLE "public"."canola_bloom" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."canola_bloom_scouting" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."canola_bloom_settings" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."canola_isolation_reports" ENABLE ROW LEVEL SECURITY;
 
 
@@ -24506,6 +28017,9 @@ ALTER TABLE "public"."cash_bids" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."cattle" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."cattle_brand_ranch" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."cattle_cost_assumptions" ENABLE ROW LEVEL SECURITY;
@@ -24542,6 +28056,12 @@ CREATE POLICY "cattle_sales_write" ON "public"."cattle_sales" USING (( SELECT "p
 
 
 
+ALTER TABLE "public"."cattle_scans" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."cattle_uploads" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."cattle_water" ENABLE ROW LEVEL SECURITY;
 
 
@@ -24549,11 +28069,18 @@ CREATE POLICY "cattle_water_read" ON "public"."cattle_water" FOR SELECT TO "auth
 
 
 
+ALTER TABLE "public"."cattle_water_tests" ENABLE ROW LEVEL SECURITY;
+
+
 CREATE POLICY "cattle_water_write" ON "public"."cattle_water" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 CREATE POLICY "change" ON "public"."bale_checks" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("checked_by" = ( SELECT "auth"."uid"() AS "uid")))) WITH CHECK ((( SELECT "public"."is_manager"() AS "is_manager") OR ("checked_by" = ( SELECT "auth"."uid"() AS "uid"))));
+
+
+
+CREATE POLICY "change_own_or_mgr" ON "public"."canola_bloom_scouting" FOR UPDATE TO "authenticated" USING ((("created_by" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."is_manager"() AS "is_manager")));
 
 
 
@@ -24606,6 +28133,9 @@ CREATE POLICY "chemical_labels_write" ON "public"."chemical_labels" USING (( SEL
 
 
 
+ALTER TABLE "public"."chemical_moa" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."chemical_recrop_overrides" ENABLE ROW LEVEL SECURITY;
 
 
@@ -24628,6 +28158,9 @@ ALTER TABLE "public"."combine_settings" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."combine_settings_used" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."contact_candidates" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."contacts" ENABLE ROW LEVEL SECURITY;
@@ -24665,6 +28198,15 @@ ALTER TABLE "public"."crop_history" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."crop_inputs" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."crop_irrigation_refill" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."crop_irrigation_sheets" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."crop_irrigation_stages" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."crop_plan_options" ENABLE ROW LEVEL SECURITY;
 
 
@@ -24675,9 +28217,6 @@ ALTER TABLE "public"."crop_planter_profiles" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."crop_prices" ENABLE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "public"."crop_share_fields" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."crop_succession_rules" ENABLE ROW LEVEL SECURITY;
@@ -24720,6 +28259,10 @@ CREATE POLICY "delete_own" ON "public"."field_work_records" FOR DELETE TO "authe
 
 
 CREATE POLICY "delete_own" ON "public"."scouting_notes" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
+
+
+
+CREATE POLICY "delete_own_or_mgr" ON "public"."canola_bloom_scouting" FOR DELETE TO "authenticated" USING ((("created_by" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."is_manager"() AS "is_manager")));
 
 
 
@@ -25098,6 +28641,9 @@ CREATE POLICY "gas_sites_write" ON "public"."gas_sites" TO "authenticated" USING
 ALTER TABLE "public"."grain_movements" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."grant_aliases" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."grants" ENABLE ROW LEVEL SECURITY;
 
 
@@ -25124,10 +28670,34 @@ ALTER TABLE "public"."grazing_herd" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."grazing_pastures" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."grazing_plan" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."grazing_restriction_alerts" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."hail_inspections" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."handling_catalog" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."handling_inventory" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."handling_items" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."handling_layers" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."handling_paths" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."handling_sites" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."handling_versions" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."herd_counts" ENABLE ROW LEVEL SECURITY;
@@ -25461,6 +29031,10 @@ ALTER TABLE "public"."input_items" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."input_movements" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "insert_active" ON "public"."canola_bloom_scouting" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
+
+
+
 CREATE POLICY "insert_active" ON "public"."combine_settings_used" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -25538,6 +29112,15 @@ CREATE POLICY "jd_equipment_read" ON "public"."jd_equipment" FOR SELECT USING ((
 
 
 CREATE POLICY "jd_equipment_write" ON "public"."jd_equipment" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+ALTER TABLE "public"."jd_export_requests" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "jd_export_requests_read" ON "public"."jd_export_requests" FOR SELECT TO "authenticated" USING (("public"."is_active"() AND (EXISTS ( SELECT 1
+   FROM "public"."users" "u"
+  WHERE (("u"."id" = "auth"."uid"()) AND "u"."active" AND ("u"."role" = ANY (ARRAY['manager'::"public"."user_role", 'admin'::"public"."user_role"])))))));
 
 
 
@@ -25806,6 +29389,14 @@ CREATE POLICY "mfa_required" ON "public"."canola_bloom" AS RESTRICTIVE TO "authe
 
 
 
+CREATE POLICY "mfa_required" ON "public"."canola_bloom_scouting" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."canola_bloom_settings" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
 CREATE POLICY "mfa_required" ON "public"."canola_isolation_reports" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
@@ -25815,6 +29406,10 @@ CREATE POLICY "mfa_required" ON "public"."cash_bids" AS RESTRICTIVE TO "authenti
 
 
 CREATE POLICY "mfa_required" ON "public"."cattle" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."cattle_brand_ranch" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -25839,6 +29434,14 @@ CREATE POLICY "mfa_required" ON "public"."cattle_manifests" AS RESTRICTIVE TO "a
 
 
 CREATE POLICY "mfa_required" ON "public"."cattle_sales" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."cattle_scans" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."cattle_uploads" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -25887,6 +29490,10 @@ CREATE POLICY "mfa_required" ON "public"."chemical_label_crops" AS RESTRICTIVE T
 
 
 CREATE POLICY "mfa_required" ON "public"."chemical_labels" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."chemical_moa" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -25971,10 +29578,6 @@ CREATE POLICY "mfa_required" ON "public"."crop_planter_profiles" AS RESTRICTIVE 
 
 
 CREATE POLICY "mfa_required" ON "public"."crop_prices" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
-
-
-
-CREATE POLICY "mfa_required" ON "public"."crop_share_fields" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -26298,6 +29901,10 @@ CREATE POLICY "mfa_required" ON "public"."grazing_pastures" AS RESTRICTIVE TO "a
 
 
 
+CREATE POLICY "mfa_required" ON "public"."grazing_plan" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
 CREATE POLICY "mfa_required" ON "public"."grazing_restriction_alerts" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
@@ -26510,6 +30117,10 @@ CREATE POLICY "mfa_required" ON "public"."pasture_biomass_calibration" AS RESTRI
 
 
 
+CREATE POLICY "mfa_required" ON "public"."pasture_gates" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
 CREATE POLICY "mfa_required" ON "public"."pasture_sprays" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
@@ -26659,6 +30270,26 @@ CREATE POLICY "mfa_required" ON "public"."reminder_log" AS RESTRICTIVE TO "authe
 
 
 CREATE POLICY "mfa_required" ON "public"."report_favourites" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."research_folders" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."research_paper_about" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."research_paper_chunks" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."research_paper_folders" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."research_papers" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -27207,6 +30838,10 @@ CREATE POLICY "partner_read" ON "public"."chemical_label_crops" FOR SELECT TO "a
 
 
 CREATE POLICY "partner_read" ON "public"."chemical_labels" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
+
+
+
+CREATE POLICY "partner_read" ON "public"."chemical_moa" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_partner"() AS "is_partner"));
 
 
 
@@ -27844,7 +31479,17 @@ CREATE POLICY "pasture_calibration_write" ON "public"."pasture_biomass_calibrati
 
 
 
+ALTER TABLE "public"."pasture_gates" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."pasture_sprays" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."pasture_zone_build" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "pasture_zone_build_read" ON "public"."pasture_zone_build" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
 
 
 ALTER TABLE "public"."pasture_zones" ENABLE ROW LEVEL SECURITY;
@@ -28172,6 +31817,10 @@ CREATE POLICY "read_all" ON "public"."bale_weight_defaults" FOR SELECT TO "authe
 
 
 
+CREATE POLICY "read_all" ON "public"."bee_placements" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."bin_air_alerts" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -28212,11 +31861,23 @@ CREATE POLICY "read_all" ON "public"."canola_bloom" FOR SELECT TO "authenticated
 
 
 
+CREATE POLICY "read_all" ON "public"."canola_bloom_scouting" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."canola_bloom_settings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."cash_bids" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
 CREATE POLICY "read_all" ON "public"."cattle" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."cattle_brand_ranch" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -28233,6 +31894,18 @@ CREATE POLICY "read_all" ON "public"."cattle_manifest_lines" FOR SELECT TO "auth
 
 
 CREATE POLICY "read_all" ON "public"."cattle_manifests" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."cattle_scans" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."cattle_uploads" FOR SELECT USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."cattle_water_tests" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -28272,6 +31945,10 @@ CREATE POLICY "read_all" ON "public"."chemical_grazing_rules" FOR SELECT TO "aut
 
 
 
+CREATE POLICY "read_all" ON "public"."chemical_moa" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."chemical_recrop_overrides" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -28301,6 +31978,10 @@ CREATE POLICY "read_all" ON "public"."combine_settings" FOR SELECT TO "authentic
 
 
 CREATE POLICY "read_all" ON "public"."combine_settings_used" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."contact_candidates" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -28336,6 +32017,18 @@ CREATE POLICY "read_all" ON "public"."crop_inputs" FOR SELECT TO "authenticated"
 
 
 
+CREATE POLICY "read_all" ON "public"."crop_irrigation_refill" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."crop_irrigation_sheets" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."crop_irrigation_stages" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."crop_plan_options" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -28349,12 +32042,6 @@ CREATE POLICY "read_all" ON "public"."crop_planter_profiles" FOR SELECT TO "auth
 
 
 CREATE POLICY "read_all" ON "public"."crop_prices" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
-
-
-
-CREATE POLICY "read_all" ON "public"."crop_share_fields" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") OR ("user_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("user_id" IN ( SELECT "users"."id"
-   FROM "public"."users"
-  WHERE ("users"."farm_id" = ( SELECT "public"."partner_farm_id"() AS "partner_farm_id"))))));
 
 
 
@@ -28582,6 +32269,10 @@ CREATE POLICY "read_all" ON "public"."grain_movements" FOR SELECT TO "authentica
 
 
 
+CREATE POLICY "read_all" ON "public"."grant_aliases" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."grants" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -28602,11 +32293,43 @@ CREATE POLICY "read_all" ON "public"."grazing_pastures" FOR SELECT TO "authentic
 
 
 
+CREATE POLICY "read_all" ON "public"."grazing_plan" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."grazing_restriction_alerts" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
 CREATE POLICY "read_all" ON "public"."hail_inspections" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."handling_catalog" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."handling_inventory" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."handling_items" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."handling_layers" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."handling_paths" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."handling_sites" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."handling_versions" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -28730,6 +32453,10 @@ CREATE POLICY "read_all" ON "public"."partner_fields" FOR SELECT TO "authenticat
 
 
 
+CREATE POLICY "read_all" ON "public"."pasture_gates" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."pasture_sprays" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -28770,6 +32497,18 @@ CREATE POLICY "read_all" ON "public"."research_folders" FOR SELECT TO "authentic
 
 
 
+CREATE POLICY "read_all" ON "public"."research_lexeme_df" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."research_numbers" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."research_paper_about" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."research_paper_chunks" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -28782,7 +32521,19 @@ CREATE POLICY "read_all" ON "public"."research_papers" FOR SELECT TO "authentica
 
 
 
+CREATE POLICY "read_all" ON "public"."research_passages_read" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "read_all" ON "public"."river_watch" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."river_wco_bands" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."river_wco_segments" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -28803,6 +32554,10 @@ CREATE POLICY "read_all" ON "public"."scale_ticket_photos" FOR SELECT TO "authen
 
 
 CREATE POLICY "read_all" ON "public"."scale_tickets" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."sclerotinia_checklists" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -28946,6 +32701,14 @@ CREATE POLICY "read_all" ON "public"."yield_adjustments" FOR SELECT TO "authenti
 
 
 
+CREATE POLICY "read_managers" ON "public"."sat_backfill_plans" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "read_managers" ON "public"."sat_backfill_runs" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
 CREATE POLICY "readings_delete" ON "public"."bin_readings" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
@@ -28971,6 +32734,15 @@ ALTER TABLE "public"."report_favourites" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."research_folders" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."research_lexeme_df" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."research_numbers" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."research_paper_about" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."research_paper_chunks" ENABLE ROW LEVEL SECURITY;
 
 
@@ -28980,7 +32752,16 @@ ALTER TABLE "public"."research_paper_folders" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."research_papers" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."research_passages_read" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."river_watch" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."river_wco_bands" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."river_wco_segments" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."road_routes" ENABLE ROW LEVEL SECURITY;
@@ -29033,6 +32814,12 @@ CREATE POLICY "sat_api_usage_write" ON "public"."sat_api_usage" USING ("public".
 
 
 
+ALTER TABLE "public"."sat_backfill_plans" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."sat_backfill_runs" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."sat_daily" ENABLE ROW LEVEL SECURITY;
 
 
@@ -29080,6 +32867,9 @@ ALTER TABLE "public"."scale_ticket_photos" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."scale_tickets" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."sclerotinia_checklists" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."scouting_notes" ENABLE ROW LEVEL SECURITY;
@@ -29306,7 +33096,15 @@ CREATE POLICY "wn_read" ON "public"."weather_normals" FOR SELECT TO "authenticat
 
 
 
+CREATE POLICY "write_active" ON "public"."cattle_scans" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
 CREATE POLICY "write_active" ON "public"."eshepherd_activations" TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "write_active" ON "public"."grant_aliases" TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") AND (NOT ( SELECT "public"."is_partner"() AS "is_partner")))) WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND (NOT ( SELECT "public"."is_partner"() AS "is_partner"))));
 
 
 
@@ -29374,11 +33172,79 @@ CREATE POLICY "write_all" ON "public"."truck_inspections" FOR INSERT TO "authent
 
 
 
+CREATE POLICY "write_managers" ON "public"."bee_placements" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."cattle_water_tests" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."chemical_moa" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."contact_candidates" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."crop_irrigation_refill" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."crop_irrigation_sheets" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."crop_irrigation_stages" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."handling_catalog" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."handling_inventory" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."handling_items" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."handling_layers" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."handling_paths" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."handling_sites" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."handling_versions" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
 CREATE POLICY "write_managers" ON "public"."product_documents" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
 CREATE POLICY "write_managers" ON "public"."research_folders" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."research_lexeme_df" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."research_numbers" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."research_paper_about" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -29391,6 +33257,22 @@ CREATE POLICY "write_managers" ON "public"."research_paper_folders" TO "authenti
 
 
 CREATE POLICY "write_managers" ON "public"."research_papers" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."research_passages_read" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."river_wco_bands" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."river_wco_segments" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_managers" ON "public"."sclerotinia_checklists" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -29434,6 +33316,10 @@ CREATE POLICY "write_mgr" ON "public"."canola_bloom" TO "authenticated" USING ((
 
 
 
+CREATE POLICY "write_mgr" ON "public"."canola_bloom_settings" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
 CREATE POLICY "write_mgr" ON "public"."cash_bids" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
@@ -29442,7 +33328,15 @@ CREATE POLICY "write_mgr" ON "public"."cattle" TO "authenticated" USING (( SELEC
 
 
 
+CREATE POLICY "write_mgr" ON "public"."cattle_brand_ranch" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
 CREATE POLICY "write_mgr" ON "public"."cattle_groups" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."cattle_uploads" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -29543,10 +33437,6 @@ CREATE POLICY "write_mgr" ON "public"."crop_planter_profiles" TO "authenticated"
 
 
 CREATE POLICY "write_mgr" ON "public"."crop_prices" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
-
-
-
-CREATE POLICY "write_mgr" ON "public"."crop_share_fields" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -29754,6 +33644,10 @@ CREATE POLICY "write_mgr" ON "public"."grazing_pastures" TO "authenticated" USIN
 
 
 
+CREATE POLICY "write_mgr" ON "public"."grazing_plan" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
 CREATE POLICY "write_mgr" ON "public"."hail_inspections" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
@@ -29855,6 +33749,10 @@ CREATE POLICY "write_mgr" ON "public"."partner_crops" TO "authenticated" USING (
 
 
 CREATE POLICY "write_mgr" ON "public"."partner_fields" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."pasture_gates" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -30891,6 +34789,17 @@ GRANT ALL ON FUNCTION "public"."apply_mfa_policies"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."apply_pasture_grass_ratings"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."apply_pasture_grass_ratings"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."apply_pasture_grass_ratings"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."approve_contact_candidate"("p_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."approve_contact_candidate"("p_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."area_scale_yield"("p_field" "uuid", "p_crop" "uuid", "p_year" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."area_scale_yield"("p_field" "uuid", "p_crop" "uuid", "p_year" integer) TO "service_role";
 
@@ -30948,15 +34857,33 @@ GRANT ALL ON FUNCTION "public"."checklist_add_job"("p_run" "uuid", "p_run_locati
 
 
 
+REVOKE ALL ON FUNCTION "public"."checklist_add_place"("p_run" "uuid", "p_name" "text", "p_geojson" "jsonb", "p_category" "text", "p_colour" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."checklist_add_place"("p_run" "uuid", "p_name" "text", "p_geojson" "jsonb", "p_category" "text", "p_colour" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."checklist_add_place"("p_run" "uuid", "p_name" "text", "p_geojson" "jsonb", "p_category" "text", "p_colour" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."checklist_delete_job"("p_run_item" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."checklist_delete_job"("p_run_item" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."checklist_delete_job"("p_run_item" "uuid") TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."checklist_delete_place"("p_run_location" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."checklist_delete_place"("p_run_location" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."checklist_delete_place"("p_run_location" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."checklist_edit_job"("p_run_item" "uuid", "p_text" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."checklist_edit_job"("p_run_item" "uuid", "p_text" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."checklist_edit_job"("p_run_item" "uuid", "p_text" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."checklist_edit_place"("p_run_location" "uuid", "p_name" "text", "p_geojson" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."checklist_edit_place"("p_run_location" "uuid", "p_name" "text", "p_geojson" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."checklist_edit_place"("p_run_location" "uuid", "p_name" "text", "p_geojson" "jsonb") TO "service_role";
 
 
 
@@ -31454,6 +35381,7 @@ GRANT ALL ON FUNCTION "public"."fn_crop_plan_yield_basis"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."fn_dedupe_grants"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_dedupe_grants"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."fn_dedupe_grants"() TO "authenticated";
 
 
 
@@ -31545,6 +35473,12 @@ GRANT ALL ON FUNCTION "public"."fn_irrigation_event_adjust"() TO "service_role";
 REVOKE ALL ON FUNCTION "public"."fn_map_feature_to_checklist"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_map_feature_to_checklist"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_map_feature_to_checklist"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."fn_merge_grants"("p_keeper" "uuid", "p_loser" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."fn_merge_grants"("p_keeper" "uuid", "p_loser" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_merge_grants"("p_keeper" "uuid", "p_loser" "uuid") TO "service_role";
 
 
 
@@ -31909,6 +35843,11 @@ GRANT ALL ON FUNCTION "public"."fn_zone_applied_depths"("p_field_id" "uuid", "p_
 REVOKE ALL ON FUNCTION "public"."fn_zone_day_depths"("p_field_id" "uuid", "p_crop_year" integer, "p_sectors" "jsonb", "p_lon" double precision, "p_lat" double precision, "p_radius_m" double precision) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_zone_day_depths"("p_field_id" "uuid", "p_crop_year" integer, "p_sectors" "jsonb", "p_lon" double precision, "p_lat" double precision, "p_radius_m" double precision) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_zone_day_depths"("p_field_id" "uuid", "p_crop_year" integer, "p_sectors" "jsonb", "p_lon" double precision, "p_lat" double precision, "p_radius_m" double precision) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."gate_dirties_zones"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."gate_dirties_zones"() TO "service_role";
 
 
 
@@ -32616,6 +36555,24 @@ GRANT ALL ON FUNCTION "public"."gettransactionid"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."grant_duplicate_count"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."grant_duplicate_count"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."grant_duplicate_count"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."grant_find_match"("p_title" "text", "p_url" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."grant_find_match"("p_title" "text", "p_url" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."grant_find_match"("p_title" "text", "p_url" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."grant_match_key"("p_title" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."grant_match_key"("p_title" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."grant_match_key"("p_title" "text") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."gserialized_gist_joinsel_2d"("internal", "oid", "internal", smallint) TO "postgres";
 GRANT ALL ON FUNCTION "public"."gserialized_gist_joinsel_2d"("internal", "oid", "internal", smallint) TO "anon";
 GRANT ALL ON FUNCTION "public"."gserialized_gist_joinsel_2d"("internal", "oid", "internal", smallint) TO "authenticated";
@@ -33038,15 +36995,24 @@ GRANT ALL ON FUNCTION "public"."partner_task_ids"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."pasture_water_radius_far_m"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."pasture_water_radius_far_m"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."pasture_water_radius_m"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."pasture_water_radius_m"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."pasture_water_radius_m"() TO "service_role";
 
 
 
-REVOKE ALL ON FUNCTION "public"."pasture_water_reach"("p_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."pasture_water_reach"("p_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."pasture_water_reach"("p_id" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."pasture_water_reach_at"("p_id" "uuid", "p_radius" numeric) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."pasture_water_reach_at"("p_id" "uuid", "p_radius" numeric) TO "service_role";
 
 
 
@@ -33551,6 +37517,12 @@ GRANT ALL ON FUNCTION "public"."quickbooks_company"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."rebuild_pasture_grass_zones"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."rebuild_pasture_grass_zones"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."rebuild_pasture_grass_zones"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."rebuild_pasture_zones"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."rebuild_pasture_zones"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."rebuild_pasture_zones"() TO "service_role";
@@ -33597,8 +37569,34 @@ GRANT ALL ON FUNCTION "public"."report_app_issue"("p_kind" "text", "p_fingerprin
 
 
 
+GRANT ALL ON FUNCTION "public"."research_flat"("t" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."research_flat"("t" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."research_refresh_lexeme_df"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."research_refresh_lexeme_df"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."research_refresh_lexeme_df"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."research_score_folder"("p_folder" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."research_score_folder"("p_folder" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."research_score_folders"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."research_score_folders"() TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."research_search"("q" "text", "max_rows" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."research_search"("q" "text", "max_rows" integer) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."research_text_coverage"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."research_text_coverage"() TO "service_role";
 
 
 
@@ -33638,6 +37636,16 @@ GRANT ALL ON FUNCTION "public"."run_nightly_upkeep_soil"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."sat_apply_harmonization"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."sat_apply_harmonization"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."sat_band_scaled"("v" numeric, "lo" numeric, "span" numeric) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."sat_band_scaled"("v" numeric, "lo" numeric, "span" numeric) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."sat_fcover"("ndvi" numeric) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."sat_fcover"("ndvi" numeric) TO "service_role";
 
 
 
@@ -33703,6 +37711,11 @@ GRANT ALL ON FUNCTION "public"."set_boundary_analysis"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."set_contact_candidate_status"("p_id" "uuid", "p_status" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."set_contact_candidate_status"("p_id" "uuid", "p_status" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."set_crop_moisture_levels"("p_crop" "uuid", "p_dry_min" numeric, "p_dry_max" numeric, "p_tough_max" numeric) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_crop_moisture_levels"("p_crop" "uuid", "p_dry_min" numeric, "p_dry_max" numeric, "p_tough_max" numeric) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_crop_moisture_levels"("p_crop" "uuid", "p_dry_min" numeric, "p_dry_max" numeric, "p_tough_max" numeric) TO "service_role";
@@ -33718,6 +37731,12 @@ GRANT ALL ON FUNCTION "public"."set_crop_moisture_levels"("p_crop" "uuid", "p_dr
 REVOKE ALL ON FUNCTION "public"."set_freeze_watch"("p_low" numeric, "p_high" numeric) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_freeze_watch"("p_low" numeric, "p_high" numeric) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_freeze_watch"("p_low" numeric, "p_high" numeric) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."set_gates_open"("p_open" boolean, "p_ranch" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_gates_open"("p_open" boolean, "p_ranch" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."set_gates_open"("p_open" boolean, "p_ranch" "uuid") TO "service_role";
 
 
 
@@ -36646,6 +40665,12 @@ GRANT ALL ON FUNCTION "public"."start_monthly_checklist"("p_copy" "uuid") TO "se
 
 
 
+REVOKE ALL ON FUNCTION "public"."suggest_trough_sites"("p_id" "uuid", "p_count" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."suggest_trough_sites"("p_id" "uuid", "p_count" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."suggest_trough_sites"("p_id" "uuid", "p_count" integer) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."topo_cells"("p_surface" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."topo_cells"("p_surface" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."topo_cells"("p_surface" "uuid") TO "service_role";
@@ -36985,6 +41010,11 @@ GRANT ALL ON TABLE "public"."bale_weight_defaults" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."bee_placements" TO "authenticated";
+GRANT ALL ON TABLE "public"."bee_placements" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."bin_air_alerts" TO "authenticated";
 GRANT ALL ON TABLE "public"."bin_air_alerts" TO "service_role";
 
@@ -37050,6 +41080,16 @@ GRANT ALL ON TABLE "public"."canola_bloom" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."canola_bloom_scouting" TO "authenticated";
+GRANT ALL ON TABLE "public"."canola_bloom_scouting" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."canola_bloom_settings" TO "authenticated";
+GRANT ALL ON TABLE "public"."canola_bloom_settings" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."canola_isolation_reports" TO "authenticated";
 GRANT ALL ON TABLE "public"."canola_isolation_reports" TO "service_role";
 
@@ -37062,6 +41102,11 @@ GRANT ALL ON TABLE "public"."cash_bids" TO "service_role";
 
 GRANT ALL ON TABLE "public"."cattle" TO "authenticated";
 GRANT ALL ON TABLE "public"."cattle" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."cattle_brand_ranch" TO "authenticated";
+GRANT ALL ON TABLE "public"."cattle_brand_ranch" TO "service_role";
 
 
 
@@ -37095,6 +41140,16 @@ GRANT ALL ON TABLE "public"."cattle_sales" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."cattle_scans" TO "authenticated";
+GRANT ALL ON TABLE "public"."cattle_scans" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."cattle_uploads" TO "authenticated";
+GRANT ALL ON TABLE "public"."cattle_uploads" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."cattle_water" TO "authenticated";
 GRANT ALL ON TABLE "public"."cattle_water" TO "service_role";
 
@@ -37107,6 +41162,11 @@ GRANT ALL ON TABLE "public"."pastures" TO "service_role";
 
 GRANT ALL ON TABLE "public"."cattle_water_points" TO "authenticated";
 GRANT ALL ON TABLE "public"."cattle_water_points" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."cattle_water_tests" TO "authenticated";
+GRANT ALL ON TABLE "public"."cattle_water_tests" TO "service_role";
 
 
 
@@ -37165,6 +41225,11 @@ GRANT ALL ON TABLE "public"."chemical_labels" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."chemical_moa" TO "authenticated";
+GRANT ALL ON TABLE "public"."chemical_moa" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."chemical_recrop_overrides" TO "authenticated";
 GRANT ALL ON TABLE "public"."chemical_recrop_overrides" TO "service_role";
 
@@ -37207,6 +41272,11 @@ GRANT ALL ON TABLE "public"."combine_settings" TO "service_role";
 
 GRANT ALL ON TABLE "public"."combine_settings_used" TO "authenticated";
 GRANT ALL ON TABLE "public"."combine_settings_used" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."contact_candidates" TO "authenticated";
+GRANT ALL ON TABLE "public"."contact_candidates" TO "service_role";
 
 
 
@@ -37265,6 +41335,21 @@ GRANT ALL ON TABLE "public"."crop_inputs" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."crop_irrigation_refill" TO "authenticated";
+GRANT ALL ON TABLE "public"."crop_irrigation_refill" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."crop_irrigation_sheets" TO "authenticated";
+GRANT ALL ON TABLE "public"."crop_irrigation_sheets" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."crop_irrigation_stages" TO "authenticated";
+GRANT ALL ON TABLE "public"."crop_irrigation_stages" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."crop_plan_options" TO "authenticated";
 GRANT ALL ON TABLE "public"."crop_plan_options" TO "service_role";
 
@@ -37292,11 +41377,6 @@ GRANT ALL ON TABLE "public"."crop_position" TO "service_role";
 
 GRANT ALL ON TABLE "public"."crop_prices" TO "authenticated";
 GRANT ALL ON TABLE "public"."crop_prices" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."crop_share_fields" TO "authenticated";
-GRANT ALL ON TABLE "public"."crop_share_fields" TO "service_role";
 
 
 
@@ -37585,6 +41665,36 @@ GRANT ALL ON TABLE "public"."field_inspections" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."jd_product_aliases" TO "authenticated";
+GRANT ALL ON TABLE "public"."jd_product_aliases" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."jd_products" TO "authenticated";
+GRANT ALL ON TABLE "public"."jd_products" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."product_applications" TO "authenticated";
+GRANT ALL ON TABLE "public"."product_applications" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."product_moa_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."product_moa_v" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."field_moa_history_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."field_moa_history_v" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."field_moa_unknown_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."field_moa_unknown_v" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."sat_observations" TO "authenticated";
 GRANT ALL ON TABLE "public"."sat_observations" TO "service_role";
 
@@ -37637,6 +41747,21 @@ GRANT ALL ON TABLE "public"."water_balance_daily" TO "service_role";
 
 GRANT ALL ON TABLE "public"."field_season_water" TO "authenticated";
 GRANT ALL ON TABLE "public"."field_season_water" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."soil_test_reports" TO "authenticated";
+GRANT ALL ON TABLE "public"."soil_test_reports" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."soil_test_samples" TO "authenticated";
+GRANT ALL ON TABLE "public"."soil_test_samples" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."field_soil_ph_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."field_soil_ph_v" TO "service_role";
 
 
 
@@ -37755,6 +41880,11 @@ GRANT ALL ON TABLE "public"."gas_sites" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."grant_aliases" TO "authenticated";
+GRANT ALL ON TABLE "public"."grant_aliases" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."grants" TO "authenticated";
 GRANT ALL ON TABLE "public"."grants" TO "service_role";
 
@@ -37805,6 +41935,11 @@ GRANT ALL ON TABLE "public"."grazing_pasture_status" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."grazing_plan" TO "authenticated";
+GRANT ALL ON TABLE "public"."grazing_plan" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."grazing_restriction_alerts" TO "authenticated";
 GRANT ALL ON TABLE "public"."grazing_restriction_alerts" TO "service_role";
 
@@ -37812,6 +41947,41 @@ GRANT ALL ON TABLE "public"."grazing_restriction_alerts" TO "service_role";
 
 GRANT ALL ON TABLE "public"."hail_inspections" TO "authenticated";
 GRANT ALL ON TABLE "public"."hail_inspections" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."handling_catalog" TO "authenticated";
+GRANT ALL ON TABLE "public"."handling_catalog" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."handling_inventory" TO "authenticated";
+GRANT ALL ON TABLE "public"."handling_inventory" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."handling_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."handling_items" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."handling_layers" TO "authenticated";
+GRANT ALL ON TABLE "public"."handling_layers" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."handling_paths" TO "authenticated";
+GRANT ALL ON TABLE "public"."handling_paths" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."handling_sites" TO "authenticated";
+GRANT ALL ON TABLE "public"."handling_sites" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."handling_versions" TO "authenticated";
+GRANT ALL ON TABLE "public"."handling_versions" TO "service_role";
 
 
 
@@ -37911,6 +42081,11 @@ GRANT ALL ON TABLE "public"."jd_equipment_alerts" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."jd_export_requests" TO "authenticated";
+GRANT ALL ON TABLE "public"."jd_export_requests" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."jd_guidance_lines" TO "authenticated";
 GRANT ALL ON TABLE "public"."jd_guidance_lines" TO "service_role";
 
@@ -37921,16 +42096,6 @@ GRANT ALL ON TABLE "public"."jd_operators" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."jd_product_aliases" TO "authenticated";
-GRANT ALL ON TABLE "public"."jd_product_aliases" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."jd_products" TO "authenticated";
-GRANT ALL ON TABLE "public"."jd_products" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."land_lease_payments" TO "authenticated";
 GRANT ALL ON TABLE "public"."land_lease_payments" TO "service_role";
 
@@ -37938,6 +42103,21 @@ GRANT ALL ON TABLE "public"."land_lease_payments" TO "service_role";
 
 GRANT ALL ON TABLE "public"."land_leases" TO "authenticated";
 GRANT ALL ON TABLE "public"."land_leases" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."water_quality_samples" TO "authenticated";
+GRANT ALL ON TABLE "public"."water_quality_samples" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."water_quality_stations" TO "authenticated";
+GRANT ALL ON TABLE "public"."water_quality_stations" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."livestock_water_district" TO "authenticated";
+GRANT ALL ON TABLE "public"."livestock_water_district" TO "service_role";
 
 
 
@@ -38116,6 +42296,11 @@ GRANT ALL ON TABLE "public"."partner_season_progress_v" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."pasture_adjacency" TO "authenticated";
+GRANT ALL ON TABLE "public"."pasture_adjacency" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."pasture_biomass_calibration" TO "authenticated";
 GRANT ALL ON TABLE "public"."pasture_biomass_calibration" TO "service_role";
 
@@ -38123,6 +42308,36 @@ GRANT ALL ON TABLE "public"."pasture_biomass_calibration" TO "service_role";
 
 GRANT ALL ON TABLE "public"."pasture_calibration_readiness" TO "authenticated";
 GRANT ALL ON TABLE "public"."pasture_calibration_readiness" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."stubble_grazing" TO "authenticated";
+GRANT ALL ON TABLE "public"."stubble_grazing" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pasture_field_crops" TO "authenticated";
+GRANT ALL ON TABLE "public"."pasture_field_crops" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pasture_gates" TO "authenticated";
+GRANT ALL ON TABLE "public"."pasture_gates" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pasture_zones" TO "authenticated";
+GRANT ALL ON TABLE "public"."pasture_zones" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pasture_grass_cover_years" TO "authenticated";
+GRANT ALL ON TABLE "public"."pasture_grass_cover_years" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pasture_grass_rating" TO "authenticated";
+GRANT ALL ON TABLE "public"."pasture_grass_rating" TO "service_role";
 
 
 
@@ -38136,18 +42351,23 @@ GRANT ALL ON TABLE "public"."pasture_rotation_order" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."pasture_season_factor" TO "authenticated";
+GRANT ALL ON TABLE "public"."pasture_season_factor" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."pasture_sprays" TO "authenticated";
 GRANT ALL ON TABLE "public"."pasture_sprays" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."pasture_zones" TO "authenticated";
-GRANT ALL ON TABLE "public"."pasture_zones" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."pasture_underutilisation" TO "authenticated";
 GRANT ALL ON TABLE "public"."pasture_underutilisation" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pasture_water_gap" TO "authenticated";
+GRANT ALL ON TABLE "public"."pasture_water_gap" TO "service_role";
 
 
 
@@ -38158,6 +42378,11 @@ GRANT ALL ON TABLE "public"."pasture_water_points" TO "service_role";
 
 GRANT ALL ON TABLE "public"."pasture_water_reach_geojson" TO "authenticated";
 GRANT ALL ON TABLE "public"."pasture_water_reach_geojson" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pasture_zone_build" TO "authenticated";
+GRANT ALL ON TABLE "public"."pasture_zone_build" TO "service_role";
 
 
 
@@ -38263,11 +42488,6 @@ GRANT ALL ON TABLE "public"."power_bill_sites" TO "service_role";
 
 GRANT ALL ON TABLE "public"."power_bills" TO "authenticated";
 GRANT ALL ON TABLE "public"."power_bills" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."product_applications" TO "authenticated";
-GRANT ALL ON TABLE "public"."product_applications" TO "service_role";
 
 
 
@@ -38381,13 +42601,8 @@ GRANT ALL ON TABLE "public"."research_folders_v" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."research_paper_chunks" TO "authenticated";
-GRANT ALL ON TABLE "public"."research_paper_chunks" TO "service_role";
-
-
-
-GRANT ALL ON SEQUENCE "public"."research_paper_chunks_id_seq" TO "authenticated";
-GRANT ALL ON SEQUENCE "public"."research_paper_chunks_id_seq" TO "service_role";
+GRANT ALL ON TABLE "public"."research_paper_about" TO "authenticated";
+GRANT ALL ON TABLE "public"."research_paper_about" TO "service_role";
 
 
 
@@ -38401,8 +42616,58 @@ GRANT ALL ON TABLE "public"."research_shelf_v" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."research_gaps_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."research_gaps_v" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."research_lexeme_df" TO "authenticated";
+GRANT ALL ON TABLE "public"."research_lexeme_df" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."research_numbers" TO "authenticated";
+GRANT ALL ON TABLE "public"."research_numbers" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."research_numbers_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."research_numbers_v" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."research_paper_chunks" TO "authenticated";
+GRANT ALL ON TABLE "public"."research_paper_chunks" TO "service_role";
+
+
+
+GRANT ALL ON SEQUENCE "public"."research_paper_chunks_id_seq" TO "authenticated";
+GRANT ALL ON SEQUENCE "public"."research_paper_chunks_id_seq" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."research_passages_read" TO "authenticated";
+GRANT ALL ON TABLE "public"."research_passages_read" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."research_unfiled_crops_v" TO "authenticated";
+GRANT ALL ON TABLE "public"."research_unfiled_crops_v" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."river_watch" TO "authenticated";
 GRANT ALL ON TABLE "public"."river_watch" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."river_wco_bands" TO "authenticated";
+GRANT ALL ON TABLE "public"."river_wco_bands" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."river_wco_segments" TO "authenticated";
+GRANT ALL ON TABLE "public"."river_wco_segments" TO "service_role";
 
 
 
@@ -38433,6 +42698,16 @@ GRANT ALL ON TABLE "public"."sat_alerts" TO "service_role";
 
 GRANT ALL ON TABLE "public"."sat_api_usage" TO "authenticated";
 GRANT ALL ON TABLE "public"."sat_api_usage" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."sat_backfill_plans" TO "authenticated";
+GRANT ALL ON TABLE "public"."sat_backfill_plans" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."sat_backfill_runs" TO "authenticated";
+GRANT ALL ON TABLE "public"."sat_backfill_runs" TO "service_role";
 
 
 
@@ -38511,6 +42786,11 @@ GRANT ALL ON TABLE "public"."scale_tickets" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."sclerotinia_checklists" TO "authenticated";
+GRANT ALL ON TABLE "public"."sclerotinia_checklists" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."scouting_notes" TO "authenticated";
 GRANT ALL ON TABLE "public"."scouting_notes" TO "service_role";
 
@@ -38556,11 +42836,6 @@ GRANT ALL ON TABLE "public"."soil_test_assessments" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."soil_test_reports" TO "authenticated";
-GRANT ALL ON TABLE "public"."soil_test_reports" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."soil_reports_needing_assessment" TO "authenticated";
 GRANT ALL ON TABLE "public"."soil_reports_needing_assessment" TO "service_role";
 
@@ -38568,11 +42843,6 @@ GRANT ALL ON TABLE "public"."soil_reports_needing_assessment" TO "service_role";
 
 GRANT ALL ON TABLE "public"."soil_sample_sites" TO "authenticated";
 GRANT ALL ON TABLE "public"."soil_sample_sites" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."soil_test_samples" TO "authenticated";
-GRANT ALL ON TABLE "public"."soil_test_samples" TO "service_role";
 
 
 
@@ -38588,11 +42858,6 @@ GRANT ALL ON TABLE "public"."solar_latest" TO "service_role";
 
 GRANT ALL ON TABLE "public"."solar_sites" TO "authenticated";
 GRANT ALL ON TABLE "public"."solar_sites" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."stubble_grazing" TO "authenticated";
-GRANT ALL ON TABLE "public"."stubble_grazing" TO "service_role";
 
 
 
@@ -38673,16 +42938,6 @@ GRANT ALL ON TABLE "public"."water_licences" TO "service_role";
 
 GRANT ALL ON TABLE "public"."water_quality_flags" TO "authenticated";
 GRANT ALL ON TABLE "public"."water_quality_flags" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."water_quality_samples" TO "authenticated";
-GRANT ALL ON TABLE "public"."water_quality_samples" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."water_quality_stations" TO "authenticated";
-GRANT ALL ON TABLE "public"."water_quality_stations" TO "service_role";
 
 
 
@@ -38815,6 +43070,7 @@ insert into storage.buckets (id, name, public) values ('contract-files', 'contra
 insert into storage.buckets (id, name, public) values ('equipment-photos', 'equipment-photos', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('field-files', 'field-files', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('field-work-photos', 'field-work-photos', false) on conflict (id) do nothing;
+insert into storage.buckets (id, name, public) values ('grant-docs', 'grant-docs', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('invoices', 'invoices', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('research-library', 'research-library', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('satellite-images', 'satellite-images', false) on conflict (id) do nothing;
@@ -38862,6 +43118,14 @@ drop policy if exists field_work_photos_insert on storage.objects;
 create policy field_work_photos_insert on storage.objects as PERMISSIVE for INSERT to authenticated with check (((bucket_id = 'field-work-photos'::text) AND public.is_active()));
 drop policy if exists field_work_photos_read on storage.objects;
 create policy field_work_photos_read on storage.objects as PERMISSIVE for SELECT to authenticated using (((bucket_id = 'field-work-photos'::text) AND public.is_active()));
+drop policy if exists grant_docs_delete on storage.objects;
+create policy grant_docs_delete on storage.objects as PERMISSIVE for DELETE to authenticated using (((bucket_id = 'grant-docs'::text) AND ( SELECT public.is_active() AS is_active) AND (NOT ( SELECT public.is_partner() AS is_partner))));
+drop policy if exists grant_docs_insert on storage.objects;
+create policy grant_docs_insert on storage.objects as PERMISSIVE for INSERT to authenticated with check (((bucket_id = 'grant-docs'::text) AND ( SELECT public.is_active() AS is_active) AND (NOT ( SELECT public.is_partner() AS is_partner))));
+drop policy if exists grant_docs_read on storage.objects;
+create policy grant_docs_read on storage.objects as PERMISSIVE for SELECT to authenticated using (((bucket_id = 'grant-docs'::text) AND ( SELECT public.is_active() AS is_active)));
+drop policy if exists grant_docs_update on storage.objects;
+create policy grant_docs_update on storage.objects as PERMISSIVE for UPDATE to authenticated using (((bucket_id = 'grant-docs'::text) AND ( SELECT public.is_active() AS is_active) AND (NOT ( SELECT public.is_partner() AS is_partner))));
 drop policy if exists "invoices readable by active users" on storage.objects;
 create policy "invoices readable by active users" on storage.objects as PERMISSIVE for SELECT to authenticated using (((bucket_id = 'invoices'::text) AND public.is_active()));
 drop policy if exists "invoices written by managers" on storage.objects;

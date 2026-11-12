@@ -18,6 +18,7 @@ import { useCropVarietyMutations, useYearUnlocks, type CropVarietyRow } from '@/
 import { ActualsTab } from '@/components/ActualsTab'
 import { QbAskBar } from '@/components/QbAskBar'
 import { FarmCostsTab } from '@/pages/plan/FarmCostsTab'
+import { BenchmarkTab } from '@/pages/plan/BenchmarkTab'
 import { PlannedVsActual } from '@/components/PlannedVsActual'
 import { money, money2, type PlanRowView } from '@/lib/planner'
 import { useCropZoneMutations } from '@/lib/cropZones'
@@ -131,7 +132,7 @@ function VarietyCell({
  * own place under Crops now.
  */
 // Farm costs is the fixed expense every budget here carries, so it is set here.
-const PLAN_TABS = ['plan', 'budget', 'breakeven', 'actuals', 'field work', 'farm costs'] as const
+const PLAN_TABS = ['plan', 'budget', 'breakeven', 'benchmark', 'actuals', 'field work', 'farm costs'] as const
 type PlanTab = (typeof PLAN_TABS)[number]
 
 export function PlannerPage() {
@@ -753,6 +754,11 @@ export function PlannerPage() {
         // The budget divided by the yield the plan expects. It sits next to the
         // budget because it is the budget, said in the unit a price is quoted in.
         <BreakevenTab year={cropYear} />
+      ) : tab === 'benchmark' ? (
+        // The same budget against Alberta's published cost and return
+        // benchmarks, which is the only outside number these pages can be
+        // compared with without modelling anything.
+        <BenchmarkTab budget={budget} />
       ) : (
         <ActualsTab budget={budget} locked={isLocked} />
       )}

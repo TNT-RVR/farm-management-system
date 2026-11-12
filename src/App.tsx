@@ -42,6 +42,9 @@ const WeighScalePage = lazy(() => import('@/pages/HarvestPage').then((m) => ({ d
 const PreHarvestPage = lazy(() => import('@/pages/HarvestPage').then((m) => ({ default: m.PreHarvestPage })))
 const HarvestReportsPage = lazy(() => import('@/pages/HarvestPage').then((m) => ({ default: m.HarvestReportsPage })))
 const ContactsPage = lazy(() => import('@/pages/ContactsPage').then((m) => ({ default: m.ContactsPage })))
+const ContactCandidatesPage = lazy(() =>
+  import('@/pages/ContactCandidatesPage').then((m) => ({ default: m.ContactCandidatesPage })),
+)
 const GrantsPage = lazy(() => import('@/pages/GrantsPage').then((m) => ({ default: m.GrantsPage })))
 const ResearchPage = lazy(() =>
   import('@/pages/ResearchPage').then((m) => ({ default: m.ResearchPage })),
@@ -60,6 +63,8 @@ const TruckInspectionsRedirect = lazy(() => import('@/pages/TruckInspectionCheck
 const CattlePage = lazy(() => import('@/pages/CattlePage').then((m) => ({ default: m.CattlePage })))
 const CattleRedirect = lazy(() => import('@/pages/CattlePage').then((m) => ({ default: m.CattleRedirect })))
 const CattleDetailPage = lazy(() => import('@/pages/CattleDetailPage').then((m) => ({ default: m.CattleDetailPage })))
+const RanchSummaryPage = lazy(() => import('@/pages/RanchSummaryPage').then((m) => ({ default: m.RanchSummaryPage })))
+const HandlingSystemPage = lazy(() => import('@/pages/HandlingSystemPage').then((m) => ({ default: m.HandlingSystemPage })))
 const WeatherPage = lazy(() => import('@/pages/WeatherPage').then((m) => ({ default: m.WeatherPage })))
 // Partner's spray restrictions
 const GrazingRestrictionsPage = lazy(() => import('@/pages/GrazingRestrictionsPage').then((m) => ({ default: m.GrazingRestrictionsPage })))
@@ -80,6 +85,8 @@ const ChemicalsPage = lazy(() => import('@/pages/ChemicalsPage').then((m) => ({ 
 const CalculatorPage = lazy(() => import('@/pages/CalculatorPage').then((m) => ({ default: m.CalculatorPage })))
 const SprayingPage = lazy(() => import('@/pages/SprayingPage').then((m) => ({ default: m.SprayingPage })))
 const SeedPlanterPage = lazy(() => import('@/pages/SeedPlanterPage').then((m) => ({ default: m.SeedPlanterPage })))
+const CanolaBloomPage = lazy(() => import('@/pages/CanolaBloomPage').then((m) => ({ default: m.CanolaBloomPage })))
+const FusariumPage = lazy(() => import('@/pages/FusariumPage').then((m) => ({ default: m.FusariumPage })))
 const CanolaReportsPage = lazy(() => import('@/pages/CanolaReportsPage').then((m) => ({ default: m.CanolaReportsPage })))
 const ReportsPage = lazy(() => import('@/pages/ReportsPage').then((m) => ({ default: m.ReportsPage })))
 const MissingPage = lazy(() => import('@/pages/MissingPage').then((m) => ({ default: m.MissingPage })))
@@ -162,9 +169,12 @@ export default function App() {
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/monthly" element={<MonthlyPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
+        <Route path="/contacts/suggested" element={<ContactCandidatesPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/grants" element={<GrantsPage />} />
         <Route path="/canola-reports" element={<CanolaReportsPage />} />
+        <Route path="/canola-bloom" element={<CanolaBloomPage />} />
+        <Route path="/fusarium" element={<FusariumPage />} />
         <Route path="/scouting" element={<ScoutingPage />} />
         <Route path="/leases" element={<LeasesPage />} />
         {/* No SubTabLayout here. "Inventory" and "Bins" were a tab bar across
@@ -213,6 +223,11 @@ export default function App() {
         <Route path="/cattle-markets" element={<CattlePage view="sales" />} />
         <Route path="/cattle-settings" element={<CattlePage view="settings" />} />
         <Route path="/cattle/:id" element={<CattleDetailPage />} />
+        <Route path="/ranch-summary" element={<RanchSummaryPage />} />
+        {/* Its own view and not a tab of Pastures: it is a full-screen drawing
+            board with six panels of its own, and sharing the tab row would
+            leave two rows of tabs above the map. */}
+        <Route path="/handling-system" element={<HandlingSystemPage />} />
         {/* Cattle went from twelve menu entries to five views with tabs (Sam,
             24 Oct 2026). The old addresses land on their tab, query kept. */}
         <Route path="/grazing" element={<CattleRedirect />} />

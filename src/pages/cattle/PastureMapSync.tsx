@@ -58,7 +58,7 @@ export function PastureMapSync({ isManager }: { isManager: boolean }) {
           </button>
         )}
       </div>
-      <div className="mt-2 space-y-1.5">
+      <div className="mt-2 grid gap-1.5 lg:grid-cols-2">
         {(ranches ?? []).map((r) => (
           <RanchMapLink key={r.id} ranch={r} isManager={isManager} />
         ))}

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useCropYear } from '@/lib/crop-year'
 import { useCrops, useYearUnlocks } from '@/lib/queries'
 import { deleteNeedsPlanRestore, fillYieldPair, isCropYearLocked } from '@/lib/crop-history-edit'
+import { cleanFromDockage, dockagePct } from '@/lib/clean-yield'
 import { ConfirmDialog } from '@/components/Modal'
 import { AddButton, RecordEditModal, type EditField } from '@/components/RecordEditor'
 import { fieldHarvestSoFar, useBinLoads, useDeliverySites, useSetLastLoad, useUseScaleYield, type FieldYield } from '@/lib/bin-loads'
@@ -20,6 +21,7 @@ import { AreaYieldEditor } from '@/components/AreaYieldEditor'
 import { AbnormalYearMark } from '@/components/AbnormalYearMark'
 import { abnormalIndex, abnormalKey, useAbnormalYears } from '@/lib/abnormal-yields'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { KgAside } from '@/components/KgAside'
 
 const SOURCE_LABEL: Record<string, string> = {
   scale: 'Scale loads',
@@ -242,6 +244,45 @@ export function FieldYieldHistory({
     />
   )
 
+  /**
+   * Dockage, the number that is actually on the plant's statement (Sam,
+   * 2 Nov 2026). Nobody knows their clean yield per acre, so asking for it
+   * got one field in sixty filled in. Type the percentage and both clean
+   * figures are worked out from the field-run ones.
+   */
+  const dockageCell = (h: FieldYield) => {
+    const shown = dockagePct(h.yield_per_acre, h.clean_yield_per_acre)
+    return (
+      <input
+        key={`${h.id}:dockage:${shown ?? ''}`}
+        type="number"
+        inputMode="decimal"
+        step="0.1"
+        disabled={!yearOpen(h.crop_year) || save.isPending || !(Number(h.yield_per_acre) > 0)}
+        defaultValue={shown ?? ''}
+        placeholder="—"
+        aria-label="Dockage %"
+        title={Number(h.yield_per_acre) > 0 ? "The plant's dockage. The clean figures follow from it." : 'Needs a pre-clean yield first.'}
+        onBlur={(e) => {
+          const v = e.target.value === '' ? null : Number(e.target.value)
+          if (v === shown) return
+          if (v == null) {
+            save.mutate({ id: h.id, patch: { clean_yield_per_acre: null, clean_total: null } })
+            return
+          }
+          const perAcre = cleanFromDockage(h.yield_per_acre, v)
+          if (perAcre == null) {
+            setError('Give the dockage as a percentage between 0 and 50.')
+            return
+          }
+          const pair = fillYieldPair(h.acres == null ? null : Number(h.acres), perAcre, null)
+          save.mutate({ id: h.id, patch: { clean_yield_per_acre: pair.perAcre, clean_total: pair.total } })
+        }}
+        className="w-16 rounded-md border border-gray-200 bg-white px-2 py-1 text-right text-sm tabular-nums disabled:bg-transparent disabled:text-gray-400"
+      />
+    )
+  }
+
   return (
     <div className="mt-4 space-y-3">
       {season.loads > 0 && (
@@ -350,6 +391,7 @@ export function FieldYieldHistory({
                   <th className={cn(TABLE_TH, 'text-right')}>Acres</th>
                   <th className={cn(TABLE_TH, 'text-right')} title="Field-run, before cleaning">Pre-clean / ac</th>
                   <th className={cn(TABLE_TH, 'text-right')} title="Field-run, before cleaning">Pre-clean total</th>
+                  <th className={cn(TABLE_TH, 'text-right')} title="The plant's dockage. Type this and the clean figures follow.">Dockage %</th>
                   <th className={cn(TABLE_TH, 'text-right')} title="What was left after cleaning">Clean / ac</th>
                   <th className={cn(TABLE_TH, 'text-right')} title="What was left after cleaning">Clean total</th>
                   <th className={TABLE_TH}>From</th>
@@ -388,6 +430,7 @@ export function FieldYieldHistory({
                         <td className="px-3 py-1.5 text-right whitespace-nowrap tabular-nums">
                           {l.yield_per_acre != null ? Number(l.yield_per_acre) : '—'}
                           {l.yield_unit && l.yield_per_acre != null && <span className="ml-1 text-xs text-gray-400">{l.yield_unit}</span>}
+                          <KgAside value={l.yield_per_acre} unit={l.yield_unit} per="" className="text-xs" lbPerBu={crops?.find((c) => c.id === l.crop_id)?.test_weight_lb_per_bu ?? null} />
                         </td>
                         <td className="px-3 py-1.5 text-right whitespace-nowrap tabular-nums">{total != null ? Number(total).toLocaleString('en-CA') : '—'}</td>
                         <td className="px-3 py-1.5 text-right text-gray-300">—</td>
@@ -431,6 +474,7 @@ export function FieldYieldHistory({
                         {cell(h, 'actual_yield_total', 'w-24')}
                         {unit && <span className="ml-1 text-xs text-gray-400">{unit}</span>}
                       </td>
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap">{dockageCell(h)}</td>
                       <td className="px-3 py-1.5 text-right whitespace-nowrap">
                         {cell(h, 'clean_yield_per_acre', 'w-20')}
                         {h.plan_yield_saved && h.clean_yield_per_acre != null && <PlanMark label="Plan uses this" />}
@@ -520,6 +564,7 @@ export function FieldYieldHistory({
             cropId={editingArea.cropId}
             cropName={cropName(editingArea.cropId)}
             unit={crops?.find((c) => c.id === editingArea.cropId)?.yield_unit ?? null}
+            lbPerBu={crops?.find((c) => c.id === editingArea.cropId)?.test_weight_lb_per_bu ?? null}
             acres={editingArea.acres}
             row={editingArea.row}
             onClose={() => setEditingArea(null)}
@@ -527,9 +572,10 @@ export function FieldYieldHistory({
         )}
         {history.some((h) => yearOpen(h.crop_year)) && (
           <HelpNote className="mx-4 mt-2" summary="Type per-acre or total; the other fills in." title="Entering yields">
-            Type the yield per acre or the total and the other follows from the acres, for both the pre-clean (field-run) yield and
-            the yield after clean-out. This season's plan, marketing position and bin estimate use the clean yield once it is
-            entered, and the pre-clean one, labelled as such, until then. A figure typed over the scale's is kept until
+            Type the yield per acre or the total and the other follows from the acres. For the clean-out, type the dockage
+            percentage off the plant&apos;s statement and both clean figures follow from it; a clean figure typed straight in works
+            the same. This season&apos;s plan, marketing position and bin estimate use the clean yield once it is
+            entered, and the pre-clean one, labelled as such, until then. A figure typed over the scale&apos;s is kept until
             "Use the scale figure". Past seasons are locked unless a manager unlocks the year.
           </HelpNote>
         )}

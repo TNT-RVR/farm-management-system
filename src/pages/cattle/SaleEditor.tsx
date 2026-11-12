@@ -34,11 +34,14 @@ export function SaleEditor({
   ranches,
   isManager,
   onClose,
+  onSaved,
 }: {
   existing?: CattleSale
   ranches: string[]
   isManager: boolean
   onClose: () => void
+  /** A new sale, once saved: the head-count prompt is offered from it. Not for corrections. */
+  onSaved?: (sale: { ranch: string; animal_class: string; head: number | null }) => void
 }) {
   const save = useSaveCattleSale()
   const del = useDeleteCattleSale()
@@ -247,6 +250,7 @@ export function SaleEditor({
                   notes: d.notes.trim() || null,
                 })
                 onClose()
+                if (!existing) onSaved?.({ ranch: d.ranch, animal_class: d.animal_class, head })
               }}
               className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
             >

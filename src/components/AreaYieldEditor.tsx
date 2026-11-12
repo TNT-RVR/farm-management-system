@@ -1,5 +1,6 @@
 import { RecordEditModal } from '@/components/RecordEditor'
 import { useSaveAreaYield, useUseAreaScale, type CropAreaYield } from '@/lib/cropAreaYields'
+import { KgAside } from '@/components/KgAside'
 
 /**
  * One crop's yield on a split field, for one year: a typed figure stands
@@ -12,6 +13,7 @@ export function AreaYieldEditor({
   cropId,
   cropName,
   unit,
+  lbPerBu,
   acres,
   row,
   onClose,
@@ -21,6 +23,8 @@ export function AreaYieldEditor({
   cropId: string
   cropName: string
   unit: string | null
+  /** The crop's test weight, so a yield in bushels can be weighed. */
+  lbPerBu: number | null
   /** The crop's area acres, for a row not yet made. */
   acres: number | null
   row: CropAreaYield | null
@@ -59,7 +63,9 @@ export function AreaYieldEditor({
     >
       {row?.scale_total != null && (
         <p className="text-xs text-gray-500">
-          Scale: {row.scale_total} {row.yield_unit} from {row.scale_loads} loads over {row.acres} ac.
+          Scale: {row.scale_total} {row.yield_unit}
+          <KgAside value={row.scale_total} unit={row.yield_unit} per="" lbPerBu={lbPerBu} /> from {row.scale_loads} loads over{' '}
+          {row.acres} ac.
         </p>
       )}
     </RecordEditModal>

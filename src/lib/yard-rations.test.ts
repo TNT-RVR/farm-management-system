@@ -29,6 +29,17 @@ describe('planFromYard', () => {
     for (const u of p.use) expect(u.usedLb).toBeLessThanOrEqual(u.haveLb + 1)
   })
 
+  it('keeps the reserve as a share of the pile: usable × (1 − reserve)', () => {
+    // Plenty of one feed: the plan may use at most 85% of it and keep 15% back.
+    const p = planFromYard({ ...base, groups: [grp('cows', 'cow', 300, 1400)], feeds: [feed('greenfeed', 'greenfeed', 58, 10, 1_400_000)] })!
+    const used = p.use[0].usedLb
+    if (!p.usesReserve) expect(used).toBeLessThanOrEqual(1_400_000 * 0.85 + 1)
+    // A yard just big enough at 85% keeps its reserve; ÷ 1.15 would have called it short.
+    const need = used
+    const snug = planFromYard({ ...base, groups: [grp('cows', 'cow', 300, 1400)], feeds: [feed('greenfeed', 'greenfeed', 58, 10, (need / 0.85) * 1.001)] })!
+    expect(snug.usesReserve).toBe(false)
+  })
+
   it('says how short the yard is when it cannot carry the herd', () => {
     const p = planFromYard({ ...base, groups: [grp('cows', 'cow', 300, 1400)], feeds: [feed('greenfeed', 'greenfeed', 58, 10, 200_000)] })!
     expect(p.usesReserve).toBe(true)

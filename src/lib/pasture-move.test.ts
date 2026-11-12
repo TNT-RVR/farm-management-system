@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { calvesAtSideAU, median, mobClass, MOVE_DEFAULTS, moveVerdict, type MoveInput } from './pasture-move'
+import { calvesAtSideAU, median, mobClass, MOVE_DEFAULTS, moveVerdict, seasonGrowthShare, type MoveInput } from './pasture-move'
 
 // A 500-acre Fair paddock at 300 mm projected (370 lb/ac), 80% utilisation:
-// 148,000 lb to graze when full. 400 AU eat 10,400 lb a day, so a full paddock
-// lasts about 14 days.
+// 148,000 lb a full season; in early July 95% of the season has grown, so
+// 140,600 lb to graze. 400 AU eat 10,400 lb a day, so it lasts about 13 days.
 const base: MoveInput = {
   pasture: 'Pasture N',
   acres: 500,
@@ -31,9 +31,9 @@ describe('moveVerdict', () => {
   it('stays put on a full paddock with days to spare', () => {
     const v = moveVerdict(base)
     expect(v.expectedLbAc).toBe(370)
-    expect(v.availableLb).toBe(148_000)
+    expect(v.availableLb).toBe(140_600)
     expect(v.daysOn).toBe(3)
-    expect(v.daysLeft).toBeCloseTo(148_000 / 10_400 - 3, 1)
+    expect(v.daysLeft).toBeCloseTo(140_600 / 10_400 - 3, 1)
     expect(v.move).toBe(false)
   })
 
@@ -59,7 +59,15 @@ describe('moveVerdict', () => {
     // paddocks were still at theirs: it was grazed before, so half the forage.
     const v = moveVerdict({ ...base, looks: [{ on: '2026-06-01', fi: 0.6 }, { on: '2026-06-30', fi: 0.3 }] })
     expect(v.shareStanding).toBe(0.5)
-    expect(v.availableLb).toBe(74_000)
+    expect(v.availableLb).toBe(70_300)
+  })
+
+  it('credits only the grass grown so far in spring', () => {
+    // Turned in mid-May: 30% of the season's growth is there, not all of it.
+    const may = moveVerdict({ ...base, turnedInOn: '2026-05-15', today: '2026-05-16', looks: [], rested: [] })
+    expect(may.availableLb).toBe(Math.round(148_000 * 0.3))
+    const aug = moveVerdict({ ...base, turnedInOn: '2026-08-15', today: '2026-08-16', looks: [], rested: [] })
+    expect(aug.availableLb).toBe(148_000)
   })
 
   it('does not mistake curing grass for grazing', () => {
@@ -110,6 +118,17 @@ describe('helpers', () => {
   })
 })
 
+describe('seasonGrowthShare', () => {
+  it('follows the mixed-grass curve by month, and is whole outside the growing months', () => {
+    expect(seasonGrowthShare('2026-04-20')).toBe(0.05)
+    expect(seasonGrowthShare('2026-05-01')).toBe(0.3)
+    expect(seasonGrowthShare('2026-06-30')).toBe(0.75)
+    expect(seasonGrowthShare('2026-07-10')).toBe(0.95)
+    expect(seasonGrowthShare('2026-09-01')).toBe(1)
+    expect(seasonGrowthShare('2027-02-01')).toBe(1)
+  })
+})
+
 describe('calves at side on the move-out check', () => {
   const base = { mobClass: 'Cows', mobHead: 270, cows: 277, calves: 320, calfAu: 0.48, countCalves: true, weaningDate: '2026-12-01', today: '2026-10-05' }
   it('adds a calf per cow, at the calves AU, until weaning', () => {
@@ -120,5 +139,11 @@ describe('calves at side on the move-out check', () => {
     expect(calvesAtSideAU({ ...base, today: '2026-12-01' })).toBe(0)
     expect(calvesAtSideAU({ ...base, mobClass: 'Bulls' })).toBe(0)
     expect(calvesAtSideAU({ ...base, countCalves: false })).toBe(0)
+  })
+  it('counts a calf by its age when the calving date is known', () => {
+    // Born 6 May, on 1 Oct it is in its fifth month: 8 lb of forage, 8/26 AU.
+    expect(calvesAtSideAU({ ...base, today: '2026-10-01', calving: { month: 5, day: 6 } })).toBeCloseTo(270 * (8 / 26), 6)
+    // A June calf barely eats grass yet.
+    expect(calvesAtSideAU({ ...base, today: '2026-06-01', calving: { month: 5, day: 6 } })).toBe(0)
   })
 })

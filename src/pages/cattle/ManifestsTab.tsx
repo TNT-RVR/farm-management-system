@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, FileText, Plus, Printer, Trash2 } from 'lucide-react'
+import { AlertTriangle, FileText, PenLine, Plus, Printer, Trash2 } from 'lucide-react'
 import { Select } from '@/components/Select'
 import { ConfirmDialog } from '@/components/Modal'
 import { supabase } from '@/lib/supabase'
@@ -19,8 +19,19 @@ import {
 } from '@/lib/manifests'
 import type { Database } from '@/lib/database.types'
 import { ManifestPrint } from '@/pages/cattle/ManifestPrint'
-import { useMyNamedSignature } from '@/lib/signature'
+import { useMyNamedSignature, useMySignature } from '@/lib/signature'
+import { useAuth } from '@/lib/auth'
+import { Link } from 'react-router-dom'
+import {
+  MANIFEST_CLASSES,
+  classForHerdName,
+  fillForClass,
+  refill,
+  type LineFill,
+} from '@/lib/manifest-fill'
 import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, RowCard } from '@/components/RowCards'
+import { useHerdTakeOff } from '@/pages/cattle/HerdTakeOff'
 
 type ManifestInsert = Database['public']['Tables']['cattle_manifests']['Insert']
 type ManifestLineInsert = Omit<
@@ -109,6 +120,7 @@ export function ManifestsTab({ cropYear, canEdit }: { cropYear: number; canEdit:
   const rememberRanch = useRememberRanchDetails()
   const [open, setOpen] = useState<string | 'new' | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<ManifestWithLines | null>(null)
+  const herdTakeOff = useHerdTakeOff()
 
   /**
    * Which manifest is being printed.
@@ -184,6 +196,13 @@ export function ManifestsTab({ cropYear, canEdit }: { cropYear: number; canEdit:
               await saveLines.mutateAsync({ manifestId: id, lines })
               if (rememberOn) await rememberRanch.mutateAsync({ ranchId: rememberOn, from: row })
               setOpen(null)
+              // A new manifest is cattle leaving: offer to take them off the head count. Not on an edit.
+              if (open === 'new')
+                herdTakeOff.offer({
+                  ranchId: row.ranch_id ?? null,
+                  items: lines.map((l) => ({ head: l.head ?? 0, hint: l.animal_class ?? l.sex ?? null })),
+                  source: 'this manifest',
+                })
             }}
             saving={save.isPending || saveLines.isPending}
           />
@@ -206,6 +225,11 @@ export function ManifestsTab({ cropYear, canEdit }: { cropYear: number; canEdit:
                   <span className="font-semibold text-gray-900">
                     {m.moved_on} · {totalHead(m.lines)} head
                   </span>
+                  {m.direction === 'in' && (
+                    <span className="rounded bg-brand-100 px-1.5 py-0.5 text-[11px] font-medium text-brand-900">
+                      arrived
+                    </span>
+                  )}
                   <span className="text-sm text-gray-600">
                     {m.destination_name ?? 'destination not set'}
                     {m.manifest_no ? ` · manifest ${m.manifest_no}` : ''}
@@ -284,7 +308,28 @@ export function ManifestsTab({ cropYear, canEdit }: { cropYear: number; canEdit:
                 </div>
 
                 {m.lines.length > 0 && (
-                  <div className="overflow-x-auto border-t border-gray-100">
+                  <CardList className="border-t border-gray-100">
+                    {m.lines.map((l) => (
+                      <RowCard
+                        key={l.id}
+                        heading={
+                          <span className="capitalize">
+                            {l.head ?? '—'} {l.animal_class ?? 'head'}
+                          </span>
+                        }
+                        facts={[
+                          { label: 'Sex', node: l.sex },
+                          { label: 'Colour', node: l.colour },
+                          { label: 'Avg lb', node: l.avg_weight_lb != null ? String(l.avg_weight_lb) : null },
+                          { label: 'Brand', node: l.brand },
+                          { label: 'Tags', node: l.tag_range },
+                        ]}
+                      />
+                    ))}
+                  </CardList>
+                )}
+                {m.lines.length > 0 && (
+                  <div className="hidden overflow-x-auto border-t border-gray-100 sm:block">
                     <table className="w-full text-sm">
                       <thead className={TABLE_HEAD}>
                         <tr>
@@ -329,6 +374,7 @@ export function ManifestsTab({ cropYear, canEdit }: { cropYear: number; canEdit:
         )}
       </div>
 
+      {herdTakeOff.node}
       {confirmDelete && (
         <ConfirmDialog
           title="Delete this manifest?"
@@ -365,7 +411,68 @@ function Block({ title, rows }: { title: string; rows: [string, string | null][]
   )
 }
 
-const CLASSES = ['steers', 'heifers', 'cows', 'bulls', 'calves', 'yearlings']
+const CLASSES = MANIFEST_CLASSES
+
+const sameName = (a: string | null | undefined, b: string | null | undefined) =>
+  (a ?? '').trim().toLowerCase().replace(/\s+/g, ' ') ===
+  (b ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+
+/**
+ * Sign the manifest with your own signature, from My account.
+ *
+ * The printed sheet already carries it, but only when "Signed by" is your own
+ * name spelled the way the app has it — which was a rule nothing on screen
+ * said, so a manifest signed "Sam" or "T. Hansen" printed a bare line and
+ * there was no way to tell before it came off the printer (Sam,
+ * 6 Nov 2026). The button writes the name that matches and shows the ink that
+ * will print. Nobody signs for anybody else: this is your signature on a form
+ * that names you, the same rule the seed report and the truck inspection keep.
+ */
+function SignAsMe({ signedBy, onSign }: { signedBy: string; onSign: (name: string) => void }) {
+  const { profile } = useAuth()
+  const mySig = useMySignature()
+  const myName = (profile?.full_name ?? '').trim()
+  if (!myName) return null
+  const isMe = sameName(signedBy, myName)
+
+  if (!mySig.data?.image) {
+    return (
+      <p className="mt-2 text-xs text-gray-500">
+        <Link
+          to="/settings/account?tab=profile"
+          className="font-medium text-brand-700 hover:underline"
+        >
+          Add your signature
+        </Link>{' '}
+        on My account and it prints on the manifests you sign.
+      </p>
+    )
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-3">
+      <img
+        src={mySig.data.image}
+        alt="Your signature"
+        className={cn(
+          'h-10 max-w-[12rem] rounded border bg-white object-contain p-1',
+          isMe ? 'border-gray-200' : 'border-dashed border-gray-300 opacity-50',
+        )}
+      />
+      {isMe ? (
+        <p className="text-xs text-gray-600">Your signature prints on this manifest.</p>
+      ) : (
+        <button
+          type="button"
+          onClick={() => onSign(myName)}
+          className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+        >
+          <PenLine className="h-3.5 w-3.5" /> Sign as {myName}
+        </button>
+      )}
+    </div>
+  )
+}
 
 function ManifestForm({
   cropYear,
@@ -397,6 +504,10 @@ function ManifestForm({
   const [d, setD] = useState<Draft>(() => {
     const base: Draft = {
       moved_on: existing?.moved_on ?? new Date().toISOString().slice(0, 10),
+      // Paperwork for cattle leaving is what a manifest has always been here,
+      // so that stays the default; 'in' is what puts a load on the arrivals
+      // list and gives it a respiratory note.
+      direction: existing?.direction ?? 'out',
     }
     if (!existing) return base
     for (const [k, v] of Object.entries(existing)) {
@@ -424,6 +535,35 @@ function ManifestForm({
   )
   const set = (k: string, v: string) => setD((x) => ({ ...x, [k]: v }))
   const { data: herd } = useHerdCounts(d.ranch_id ?? '')
+
+  /**
+   * What the farm knows about a line, once its class is chosen.
+   *
+   * Only once a ranch is picked: with none the herd query answers for every
+   * ranch, and a East Ranch cow weighs a hundred and fifty pounds more than a
+   * Home Ranch one.
+   */
+  const ranchRow = ranches.find((x) => x.id === d.ranch_id)
+  const fillFrom = {
+    herd: d.ranch_id ? (herd ?? null) : null,
+    colour: (ranchRow?.herd_colour as string) ?? null,
+    brand: d.brand ?? (ranchRow?.brand as string) ?? null,
+  }
+  const fillFor = (cls: string | undefined): LineFill => fillForClass(cls, fillFrom)
+
+  /** A line moved to another class, bringing with it what the class decides. */
+  const withClass = (line: LineDraft, next: string): LineDraft => {
+    const was = fillFor(line.animal_class)
+    const now = fillFor(next)
+    return {
+      ...line,
+      animal_class: next,
+      sex: refill(line.sex, was.sex, now.sex),
+      colour: refill(line.colour, was.colour, now.colour),
+      avg_weight_lb: refill(line.avg_weight_lb, was.avg_weight_lb, now.avg_weight_lb),
+      brand: refill(line.brand, was.brand, now.brand),
+    }
+  }
 
   /** Picking the ranch fills everything that belongs to the place. */
   const pickRanch = (id: string) => {
@@ -459,11 +599,26 @@ function ManifestForm({
     setLines(
       herd
         .filter((h) => h.head_count > 0)
-        .map((h) => ({
-          animal_class: h.class_name.toLowerCase(),
-          head: String(h.head_count),
-          brand: d.brand ?? '',
-        })),
+        .map((h) => {
+          // The ranch's own word for the class, in the manifest's: a line that
+          // said "replacement heifers" matched none of the six choices, so the
+          // dropdown showed blank and no sex followed from it.
+          const cls = classForHerdName(h.class_name)
+          const f = fillFor(cls)
+          return {
+            animal_class: cls,
+            head: String(h.head_count),
+            sex: f.sex,
+            colour: f.colour,
+            // This row's own weight, which is where the settings figure came
+            // from in the first place.
+            avg_weight_lb:
+              h.avg_weight_lb != null && Number(h.avg_weight_lb) > 0
+                ? String(Math.round(Number(h.avg_weight_lb)))
+                : f.avg_weight_lb,
+            brand: f.brand,
+          }
+        }),
     )
   }
 
@@ -495,7 +650,7 @@ function ManifestForm({
   )
 
   const text = (k: string, label: string, placeholder?: string) => (
-    <label className="text-[11px] font-medium text-gray-500">
+    <label className="text-xs font-medium text-gray-500">
       {label}
       <input
         value={d[k] ?? ''}
@@ -514,7 +669,7 @@ function ManifestForm({
       <div className="p-3">
 
       <div className="grid gap-2 sm:grid-cols-4">
-        <label className="text-[11px] font-medium text-gray-500">
+        <label className="text-xs font-medium text-gray-500">
           Date moved
           <input
             type="date"
@@ -524,8 +679,25 @@ function ManifestForm({
           />
         </label>
         {text('manifest_no', 'LIS manifest #', 'off the book')}
-        <label className="text-[11px] font-medium text-gray-500">
-          Cattle left
+        <label className="text-xs font-medium text-gray-500">
+          Which way
+          <Select
+            value={d.direction ?? 'out'}
+            ariaLabel="Direction"
+            size="sm"
+            className="mt-0.5"
+            onChange={(v) => set('direction', v)}
+            // "Leaving"/"Arriving", not "Cattle left"/"Cattle arrived": the
+            // ranch picker next to this one is itself labelled "Cattle left",
+            // and the two together read as the same field twice.
+            options={[
+              { value: 'out', label: 'Leaving' },
+              { value: 'in', label: 'Arriving' },
+            ]}
+          />
+        </label>
+        <label className="text-xs font-medium text-gray-500">
+          {d.direction === 'in' ? 'Arrived at' : 'Cattle left'}
           <Select
             value={d.ranch_id ?? ''}
             ariaLabel="Ranch"
@@ -538,7 +710,7 @@ function ManifestForm({
             ]}
           />
         </label>
-        <label className="text-[11px] font-medium text-gray-500">
+        <label className="text-xs font-medium text-gray-500">
           Purpose
           <Select
             value={d.purpose ?? ''}
@@ -562,7 +734,7 @@ function ManifestForm({
       </div>
 
       {d.ranch_id && (
-        <label className="mt-1 flex items-center gap-1.5 text-[11px] text-gray-600">
+        <label className="mt-1 flex items-center gap-1.5 text-xs text-gray-600">
           <input
             type="checkbox"
             checked={remember}
@@ -576,7 +748,7 @@ function ManifestForm({
 
       <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">To</p>
       <div className="grid gap-2 sm:grid-cols-3">
-        <label className="text-[11px] font-medium text-gray-500">
+        <label className="text-xs font-medium text-gray-500">
           From contacts
           <Select
             value={d.destination_contact_id ?? ''}
@@ -616,14 +788,14 @@ function ManifestForm({
         {d.ranch_id && (herd?.length ?? 0) > 0 && (
           <button
             onClick={fillFromHerd}
-            className="text-[11px] font-medium text-brand-700 hover:underline"
+            className="text-xs font-medium text-brand-700 hover:underline"
           >
             Start from the herd counts
           </button>
         )}
         <button
           onClick={() => setLines((l) => [...l, {}])}
-          className="ml-auto text-[11px] font-medium text-brand-700 hover:underline"
+          className="ml-auto text-xs font-medium text-brand-700 hover:underline"
         >
           + Add a line
         </button>
@@ -631,16 +803,16 @@ function ManifestForm({
 
       <div className="mt-1 space-y-1">
         {lines.map((l, i) => (
-          <div key={i} className="flex flex-wrap items-end gap-1.5">
-            <label className="text-[10px] text-gray-500">
+          <div key={i} className="grid grid-cols-2 items-end gap-1.5 rounded-md border border-gray-200 bg-white p-2 sm:flex sm:flex-wrap sm:border-0 sm:bg-transparent sm:p-0">
+            <label className="col-span-2 text-xs text-gray-500 sm:col-span-1">
               Class
               <Select
                 value={l.animal_class ?? ''}
                 ariaLabel="Class"
                 size="sm"
-                className="mt-0.5 w-28"
+                className="mt-0.5 w-full sm:w-28"
                 onChange={(v) =>
-                  setLines((xs) => xs.map((x, j) => (j === i ? { ...x, animal_class: v } : x)))
+                  setLines((xs) => xs.map((x, j) => (j === i ? withClass(x, v) : x)))
                 }
                 options={[
                   { value: '', label: '—' },
@@ -650,15 +822,15 @@ function ManifestForm({
             </label>
             {(
               [
-                ['head', 'Head', 'w-16'],
-                ['sex', 'Sex', 'w-16'],
-                ['colour', 'Colour', 'w-24'],
-                ['avg_weight_lb', 'Avg lb', 'w-20'],
-                ['brand', 'Brand', 'w-20'],
-                ['tag_range', 'Tags', 'w-36'],
+                ['head', 'Head', 'sm:w-16'],
+                ['sex', 'Sex', 'sm:w-16'],
+                ['colour', 'Colour', 'sm:w-24'],
+                ['avg_weight_lb', 'Avg lb', 'sm:w-20'],
+                ['brand', 'Brand', 'sm:w-20'],
+                ['tag_range', 'Tags', 'sm:w-36'],
               ] as const
             ).map(([k, label, w]) => (
-              <label key={k} className="text-[10px] text-gray-500">
+              <label key={k} className={cn('text-xs text-gray-500', k === 'tag_range' && 'col-span-2 sm:col-span-1')}>
                 {label}
                 <input
                   value={(l[k] as string) ?? ''}
@@ -668,7 +840,7 @@ function ManifestForm({
                     )
                   }
                   className={cn(
-                    'mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-sm',
+                    'mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-sm',
                     w,
                   )}
                 />
@@ -687,7 +859,7 @@ function ManifestForm({
 
       <div className="mt-3 grid gap-2 sm:grid-cols-3">
         {text('signed_by', 'Signed by')}
-        <label className="text-[11px] font-medium text-gray-500">
+        <label className="text-xs font-medium text-gray-500">
           Signed on
           <input
             type="date"
@@ -699,8 +871,16 @@ function ManifestForm({
         {text('notes', 'Notes')}
       </div>
 
+      <SignAsMe
+        signedBy={d.signed_by ?? ''}
+        onSign={(name) => {
+          set('signed_by', name)
+          if (!(d.signed_on ?? '').trim()) set('signed_on', new Date().toISOString().slice(0, 10))
+        }}
+      />
+
       {gaps.length > 0 && (
-        <p className="mt-2 rounded-md bg-amber-50 px-2.5 py-2 text-[11px] text-amber-900">
+        <p className="mt-2 rounded-md bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
           Still to fill: {gaps.map((g) => g.field).join(', ')}. It saves either way — a manifest
           being put together over two days is normal.
         </p>
@@ -740,6 +920,9 @@ function ManifestForm({
             ]) {
               ;(row as Record<string, unknown>)[k] = (d[k] ?? '').trim() || null
             }
+            // Not in the loop above: it is never null, and a blank would fail
+            // the column's check constraint rather than fall back to 'out'.
+            ;(row as Record<string, unknown>).direction = d.direction === 'in' ? 'in' : 'out'
             void onSave(row, cleanLines, remember ? (d.ranch_id ?? null) : null)
           }}
           className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"

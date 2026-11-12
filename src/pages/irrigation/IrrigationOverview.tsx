@@ -12,6 +12,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { OVERVIEW_HELP } from '@/lib/irrigation-overview-help'
 import { allocationRows, useAllocation, VERDICT } from './AllocationTab'
 import { IrrigationPlanner } from './IrrigationPlanner'
+import { CropTriggerCard } from './CropTriggerCard'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 const WaterSeasonReview = lazy(() => import('./WaterSeasonReview').then((m) => ({ default: m.WaterSeasonReview })))
@@ -37,7 +38,15 @@ function Depth({ mm, u, strong }: { mm: number | null; u: UnitSystem; strong?: b
  * it has had this year from rain and from the pivot, how much it is allowed,
  * and when its pivot last ran. A row opens that field's Detailed View.
  */
-export function IrrigationOverview({ year, onOpenField }: { year: number; onOpenField: (fieldId: string) => void }) {
+export function IrrigationOverview({
+  year,
+  isManager,
+  onOpenField,
+}: {
+  year: number
+  isManager: boolean
+  onOpenField: (fieldId: string) => void
+}) {
   const u = useUnitSystem()
   const { data: fields } = useFields()
   const { data: seasons, isLoading: seasonsLoading } = useFieldSeasons(year)
@@ -126,6 +135,11 @@ export function IrrigationOverview({ year, onOpenField }: { year: number; onOpen
       {/* The week's plan is the main table: it says what to do. The season
           totals below are the record behind it, folded until wanted. */}
       <IrrigationPlanner year={year} onPickField={onOpenField} />
+
+      {/* What the province's own sheet for each field's crop says about the
+          reading, which the plan above cannot know: it has one trigger rule
+          for every field, and Alberta's differs by crop and growth stage. */}
+      <CropTriggerCard year={year} isManager={isManager} />
 
       <Fold title={`Water so far, every field ${year}`} summary={foldSummary} storageKey="irr-overview-totals" className="overflow-hidden" bodyClassName="p-0">
         <p className="px-3 pt-3 text-xs text-gray-500">Most in need of water first. Tap a field for its Detailed View.</p>

@@ -93,6 +93,7 @@ export const farmMainRanchId = (): string | null => env('FARM_MAIN_RANCH_ID') ??
  */
 export const FRESH_OFF: Record<string, boolean> = {
   pregnancy: false,
+  collars: false,
   time_off: false,
   // The river chain, its water chemistry and the district's reservoirs are
   // the original farm's; another farm sets up its own (docs/CUSTOMIZING.md).

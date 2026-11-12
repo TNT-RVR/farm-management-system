@@ -9,6 +9,7 @@ import { useRanches } from '@/lib/ranches'
 import { cn } from '@/lib/utils'
 import { useFarmSettings } from '@/lib/farm-setup'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { CardList, RowCard } from '@/components/RowCards'
 
 type Animal = {
   animal_id: string
@@ -333,7 +334,38 @@ export function PregnancyTab({ ranchId, ranches, isManager }: { ranchId: string;
               {shown.length === 0 ? (
                 <p className="px-3 py-4 text-center text-xs text-gray-400">No animals match the filters.</p>
               ) : (
-                <div className="max-h-[70vh] overflow-auto">
+                <>
+                <CardList className="max-h-[70vh] overflow-auto">
+                  {shown.map((a) => (
+                    <RowCard
+                      key={a.animal_id}
+                      heading={<span className="tabular-nums">{a.tag}</span>}
+                      actions={<span className={cn('rounded-full border px-2 py-0.5 text-xs font-medium', CALL_STYLE[a.call])}>{CALL_LABEL[a.call]}</span>}
+                      facts={[
+                        { label: 'Mob', node: a.mob },
+                        {
+                          label: 'eShepherd status',
+                          node: (
+                            <>
+                              {a.info.label}
+                              {a.why && <span className="block text-[11px] text-gray-400">{a.why}</span>}
+                            </>
+                          ),
+                        },
+                        { label: 'Last heat', node: md(a.last_heat) },
+                        {
+                          label: 'Due (range)',
+                          node: a.due ? (
+                            <span className={cn('tabular-nums', a.due.tentative && 'italic text-gray-400')}>
+                              {md(a.due.likely)} <span className="text-gray-400">({md(a.due.from)} – {md(a.due.to)})</span>
+                            </span>
+                          ) : null,
+                        },
+                      ]}
+                    />
+                  ))}
+                </CardList>
+                <div className="hidden max-h-[70vh] overflow-auto sm:block">
                   <table className="w-full min-w-[640px] text-sm">
                     <thead className={cn(TABLE_HEAD, 'sticky top-0 shadow-[0_1px_0_#e5e7eb]')}>
                       <tr>
@@ -377,6 +409,7 @@ export function PregnancyTab({ ranchId, ranches, isManager }: { ranchId: string;
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
             </section>
           )

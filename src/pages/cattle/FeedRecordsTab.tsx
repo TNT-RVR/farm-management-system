@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { CalendarPlus, Pencil, Plus, Trash2, TriangleAlert } from 'lucide-react'
+import { CalendarPlus, Pencil, Plus, Repeat, Trash2, TriangleAlert } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { FeedOnHandPanel } from '@/pages/cattle/FeedOnHand'
 import { Select } from '@/components/Select'
@@ -24,7 +24,7 @@ import { useMainRanch, useRanches } from '@/lib/ranches'
 import { useFeedPlan } from '@/lib/feed'
 import { useFeedOnHand } from '@/lib/feed-inventory'
 import { checkFeeding, recentRates, type FedLine } from '@/lib/feed-check'
-import { coldUplift, effectiveTemp, type Warning } from '@/lib/cattle-nutrition'
+import { coldIntakeFactor, coldUplift, effectiveTemp, type Warning } from '@/lib/cattle-nutrition'
 import {
   feedValues,
   feedingWindow,
@@ -38,6 +38,7 @@ import {
 import { WarningList } from '@/pages/cattle/feed/bits'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { MenuButton } from '@/components/MenuButton'
+import { CardList, RowCard } from '@/components/RowCards'
 
 /**
  * The cattle manager's feed sheets, typed in.
@@ -211,6 +212,25 @@ export function FeedRecordsTab({
   // on, filled in (Sam, 7 Oct 2026).
   const [viewing, setViewing] = useState<RecordRow | null>(null)
   const [editing, setEditing] = useState<RecordRow | null>(null)
+  // The sheet "Repeat last feeding" copies onto today.
+  const [repeatFrom, setRepeatFrom] = useState<RecordRow | null>(null)
+  const openRepeat = (r: RecordRow) => {
+    setRepeatFrom(r)
+    setDay(today())
+    setAdding(true)
+  }
+  // Each group's most recent sheet (records come newest first).
+  const lastByGroup = useMemo(() => {
+    const seen = new Set<string>()
+    const out: RecordRow[] = []
+    for (const r of records ?? []) {
+      const k = `${r.ranch_id}|${r.herd_count_id ?? r.herd_group}`
+      if (seen.has(k)) continue
+      seen.add(k)
+      out.push(r)
+    }
+    return out
+  }, [records])
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
@@ -246,11 +266,6 @@ export function FeedRecordsTab({
       ),
     [records, typeById],
   )
-  const { data: plan } = useFeedPlan(ranchId)
-  const [now] = useState(() => new Date())
-  const turnout = plan ? feedingWindow(plan, now) : null
-  const daysToTurnout = turnout && turnout.feeding ? Math.round((turnout.to.getTime() - now.getTime()) / 86_400_000) : null
-
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -263,53 +278,68 @@ export function FeedRecordsTab({
             </p>
           </HelpNote>
         </div>
-        {/* One button for the one job (Sam, 29 Oct 2026). Recording a
-            feeding today and recording one over a period differ only in which
-            day it goes on, so they were one job wearing two buttons. The form
-            is a pop-up now, so the button stays put while it is open. */}
+        {/* Feeding is done every morning, so "Feed today" is the button; a
+            run of days is a choice inside the form. Repeat copies a group's
+            last sheet onto today, since most mornings are the same as the
+            last one. */}
         {canEdit && (
-          <MenuButton
-            label="Record feeding"
-            icon={CalendarPlus}
-            className="shrink-0"
-            choices={[
-              {
-                key: 'today',
-                label: 'Feed today',
-                hint: "Dated today",
-                icon: CalendarPlus,
-                onPick: () => {
-                  setDay(today())
-                  setAdding(true)
-                },
-              },
-              {
-                key: 'period',
-                label: 'A period',
-                hint: 'Over a run of days',
-                icon: Plus,
-                onPick: () => {
-                  setDay(null)
-                  setAdding(true)
-                },
-              },
-            ]}
-          />
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            {lastByGroup.length === 1 && (
+              <button
+                type="button"
+                onClick={() => openRepeat(lastByGroup[0])}
+                className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                <Repeat className="h-4 w-4" /> Repeat last feeding
+              </button>
+            )}
+            {lastByGroup.length > 1 && (
+              <MenuButton
+                label="Repeat last feeding"
+                icon={Repeat}
+                variant="plain"
+                choices={lastByGroup.map((r) => ({
+                  key: r.id,
+                  label: r.herd_group,
+                  hint: `${describePeriod(r.period_start, r.period_end)}${ranchId ? '' : ` · ${ranchName(r.ranch_id)}`}`,
+                  onPick: () => openRepeat(r),
+                }))}
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setRepeatFrom(null)
+                setDay(today())
+                setAdding(true)
+              }}
+              className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800"
+            >
+              <CalendarPlus className="h-4 w-4" /> Feed today
+            </button>
+          </div>
         )}
       </div>
 
       {/* In a pop-up, like the edit path right below (Sam, 29 Oct 2026):
           the same form opening two different ways was the odd part. */}
       {adding && (
-        <Modal title={day ? 'Feed today' : 'Feed over a period'} onClose={() => setAdding(false)} wide>
+        <Modal
+          title={repeatFrom ? `Repeat ${repeatFrom.herd_group}` : 'Record feeding'}
+          onClose={() => setAdding(false)}
+          wide
+        >
           <FeedRecordForm
-            ranchId={ranchId}
+            key={repeatFrom?.id ?? 'new'}
+            ranchId={repeatFrom?.ranch_id ?? ranchId}
             ranches={ranches}
             types={types ?? []}
             defaultDay={day}
+            template={repeatFrom ?? undefined}
             rates={recent.rates}
             onDone={() => {
               setAdding(false)
+              setRepeatFrom(null)
               void qc.invalidateQueries({ queryKey: ['feed_records'] })
             }}
             onCancel={() => setAdding(false)}
@@ -322,9 +352,6 @@ export function FeedRecordsTab({
         ranchName={ranchId ? ranchName(ranchId) : undefined}
         types={types ?? []}
         canEdit={canEdit}
-        rates={recent.rates}
-        rateWindow={{ from: recent.from, to: recent.to }}
-        daysToTurnout={daysToTurnout}
       />
 
       {ranchId && <LastWeekCheck ranchId={ranchId} records={records ?? []} />}
@@ -580,7 +607,28 @@ function FeedRecordDetail({
           ['Notes', r.notes],
         ]}
       />
-      <div className="mt-3 overflow-x-auto rounded-lg border border-gray-200">
+      <CardList className="mt-3 rounded-lg border border-gray-200">
+        {r.feed_record_lines
+          .slice()
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map((l) => {
+            const perBale = l.lb_per_bale != null ? Number(l.lb_per_bale) : lbPerBaleFor(l.feed_type_id)
+            const lb = poundsFor({ quantity: Number(l.quantity), unit: l.unit, lbPerBale: perBale })
+            return (
+              <RowCard
+                key={l.id}
+                heading={l.feed_type_name}
+                facts={[
+                  { label: 'Amount', node: describeQuantity({ quantity: Number(l.quantity), unit: l.unit }) },
+                  { label: 'lb / bale', node: l.unit === 'lb' ? null : (perBale ?? '—') },
+                  { label: 'Pounds', node: lb == null ? '—' : lbs(lb) },
+                  { label: 'Use', node: PURPOSE_LABEL[l.purpose] },
+                ]}
+              />
+            )
+          })}
+      </CardList>
+      <div className="mt-3 hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
         <table className="w-full text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -643,6 +691,7 @@ function FeedRecordForm({
   types,
   defaultDay,
   existing,
+  template,
   rates,
   onDone,
   onCancel,
@@ -654,33 +703,41 @@ function FeedRecordForm({
   defaultDay?: string | null
   /** The record being corrected; the form opens filled with it. */
   existing?: RecordRow
+  /** A past sheet to copy (group, feeds, amounts) onto a new record dated defaultDay. */
+  template?: RecordRow
   /** Lb a day each feed has gone out at lately, for "how long will it last". */
   rates: Map<string, number>
   onDone: () => void
   onCancel: () => void
 }) {
   const mainRanch = useMainRanch()
+  // What fills the form: the record being corrected, or the sheet being repeated.
+  const source = existing ?? template
   const [ranch, setRanch] = useState(
-    existing?.ranch_id || ranchId || (ranches.find((r) => r.id === mainRanch?.id) ?? ranches[0])?.id || '',
+    source?.ranch_id || ranchId || (ranches.find((r) => r.id === mainRanch?.id) ?? ranches[0])?.id || '',
   )
   const { data: groups } = useHerdCounts(ranch || undefined)
-  const [groupId, setGroupId] = useState<string>(existing?.herd_count_id ?? '')
-  const [group, setGroup] = useState(existing?.herd_group ?? 'Cows')
+  const [groupId, setGroupId] = useState<string>(source?.herd_count_id ?? '')
+  const [group, setGroup] = useState(source?.herd_group ?? 'Cows')
   // One day is a period of one day. The schema already carries both ends, so a
   // daily entry needs no second shape — and a month of daily entries still
   // averages correctly, because the summary works off the dates rather than
   // off how the record was created.
   const [start, setStart] = useState(existing?.period_start ?? defaultDay ?? '')
   const [end, setEnd] = useState(existing?.period_end ?? defaultDay ?? '')
-  const [head, setHead] = useState(existing?.head_count != null ? String(existing.head_count) : '')
+  // One day unless asked for a run of days; a saved run opens as a run.
+  const [overPeriod, setOverPeriod] = useState(
+    existing ? existing.period_start !== existing.period_end : !defaultDay,
+  )
+  const [head, setHead] = useState(source?.head_count != null ? String(source.head_count) : '')
   const [notes, setNotes] = useState(existing?.notes ?? '')
   const [lines, setLines] = useState<DraftLine[]>(() =>
-    existing?.feed_record_lines.length
-      ? existing.feed_record_lines
+    source?.feed_record_lines.length
+      ? source.feed_record_lines
           .slice()
           .sort((a, b) => a.sort_order - b.sort_order)
           .map((l) => ({
-            key: l.id,
+            key: existing ? l.id : Math.random().toString(36).slice(2),
             feedTypeId: l.feed_type_id ?? '',
             name: l.feed_type_name,
             quantity: String(Number(l.quantity)),
@@ -765,6 +822,7 @@ function FeedRecordForm({
         daysToTurnout: Math.max(1, Math.round((win.to.getTime() - Date.parse(start + 'T12:00:00')) / 86_400_000)),
         cold,
         muddy: plan.muddy,
+        effTempC: wx?.t != null && wx.w != null ? effectiveTemp(wx.t, wx.w, plan.sheltered) : null,
       },
     })
     if (!c) return null
@@ -915,31 +973,50 @@ function FeedRecordForm({
           />
         </label>
         <label className="text-xs text-gray-600">
-          First day
+          {overPeriod ? 'First day' : 'Day'}
           <input
             type="date"
             value={start}
-            onChange={(e) => setStart(e.target.value)}
+            onChange={(e) => {
+              setStart(e.target.value)
+              if (!overPeriod) setEnd(e.target.value)
+            }}
             className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
           />
         </label>
-        <label className="text-xs text-gray-600">
-          Last day
-          <input
-            type="date"
-            value={end}
-            onChange={(e) => setEnd(e.target.value)}
-            className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-          />
-        </label>
+        {overPeriod && (
+          <label className="text-xs text-gray-600">
+            Last day
+            <input
+              type="date"
+              value={end}
+              onChange={(e) => setEnd(e.target.value)}
+              className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+            />
+          </label>
+        )}
       </div>
 
-      <HelpNote className="mt-1" summary="Split the month when the head count changes partway." title="Why split the month">
-        <p>
-          Split the month when the head count changes partway - that is what the paper sheets do when
-          cattle are sold, because an average across a count that changed is an average of nothing.
-        </p>
-      </HelpNote>
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <button
+          type="button"
+          onClick={() => {
+            if (overPeriod) setEnd(start)
+            setOverPeriod((o) => !o)
+          }}
+          className="text-xs text-brand-700 hover:underline"
+        >
+          {overPeriod ? 'Just one day' : 'Over a run of days'}
+        </button>
+        {overPeriod && (
+          <HelpNote summary="Split the month when the head count changes partway." title="Why split the month">
+            <p>
+              Split the month when the head count changes partway - that is what the paper sheets do when
+              cattle are sold, because an average across a count that changed is an average of nothing.
+            </p>
+          </HelpNote>
+        )}
+      </div>
 
       <div className="mt-3 space-y-1.5">
         {lines.map((l) => {
@@ -1051,6 +1128,7 @@ function FeedRecordForm({
           <p className="text-xs text-gray-600">
             {check.dmPerHead.toFixed(1)} lb dry matter eaten a head a day (after waste) · {check.cowTdnPerHead.toFixed(1)} lb energy{check.cowTdnPerHead < check.tdnPerHead - 0.05 ? ' (after the calves’ share)' : ''} against a need of{' '}
             {check.needTdn.toFixed(1)}
+            {check.appetiteDm != null && <> · free choice they would eat about {check.appetiteDm.toFixed(1)} lb</>}
             {check.wx?.t != null && check.wx.w != null && (
               <> — {check.wx.t.toFixed(0)} °C, {check.wx.w.toFixed(0)} km/h wind, feels {effectiveTemp(check.wx.t, check.wx.w, plan?.sheltered).toFixed(0)} °C{check.cold > 0 ? ` (+${Math.round(check.cold * 100)}% for cold)` : ''}</>
             )}
@@ -1125,6 +1203,11 @@ function LastWeekCheck({ ranchId, records }: { ranchId: string; records: RecordR
         const wx = forecast?.days.find((d) => d.date === x.period_start)
         return wx?.t != null && wx.w != null ? coldUplift(wx.t, wx.w, plan.coat, plan.sheltered) : 0
       })
+      // Free-choice appetite over the same days.
+      const appetite = recs.map((x) => {
+        const wx = forecast?.days.find((d) => d.date === x.period_start)
+        return wx?.t != null && wx.w != null ? coldIntakeFactor(effectiveTemp(wx.t, wx.w, plan.sheltered)) : 1
+      })
       const mid = recs[Math.floor(recs.length / 2)].period_start
       const win = feedingWindow(plan, new Date(mid + 'T12:00:00'))
       const c = checkFeeding({
@@ -1139,6 +1222,7 @@ function LastWeekCheck({ ranchId, records }: { ranchId: string; records: RecordR
           daysToTurnout: Math.max(1, Math.round((win.to.getTime() - Date.parse(mid + 'T12:00:00')) / 86_400_000)),
           cold: colds.reduce((s, x) => s + x, 0) / colds.length,
           muddy: plan.muddy,
+          intakeFactor: appetite.reduce((s, x) => s + x, 0) / appetite.length,
         },
       })
       if (!c) continue

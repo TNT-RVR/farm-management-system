@@ -36,6 +36,7 @@ import { useCropVarietySettings } from '@/lib/crop-variety-settings-data'
 import { VarietyFigures, VarietySettingsEditor } from '@/pages/crops/CropVarietyRows'
 import { askConfirm } from '@/components/askConfirm'
 import { CARD_HEAD } from '@/lib/table-style'
+import { KgAside } from '@/components/KgAside'
 
 type CropUpdate = Database['public']['Tables']['crops']['Update']
 type InputCategory = CropInputRow['category']
@@ -61,6 +62,7 @@ function CropForm({ crop, readonly }: { crop: CropRow; readonly: boolean }) {
     yield_range: planYieldText({ yield_per_acre_override: null, yield_low: crop.yield_low_per_acre, yield_high: crop.yield_high_per_acre }),
     yield_unit: crop.yield_unit,
     test_weight_lb_per_bu: crop.test_weight_lb_per_bu?.toString() ?? '',
+    est_cleanout_pct: crop.est_cleanout_pct?.toString() ?? '',
     days_to_maturity: crop.days_to_maturity?.toString() ?? '',
     color: cropColour(crop),
     active: crop.active,
@@ -93,6 +95,7 @@ function CropForm({ crop, readonly }: { crop: CropRow; readonly: boolean }) {
         test_weight_lb_per_bu: form.test_weight_lb_per_bu
           ? Number(form.test_weight_lb_per_bu)
           : null,
+        est_cleanout_pct: form.est_cleanout_pct.trim() === '' ? null : Math.min(99, Math.max(0, Number(form.est_cleanout_pct))),
         days_to_maturity: form.days_to_maturity ? Math.round(Number(form.days_to_maturity)) : null,
         color: form.color,
         active: form.active,
@@ -208,6 +211,20 @@ function CropForm({ crop, readonly }: { crop: CropRow; readonly: boolean }) {
             className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
           />
         </label>
+        {/* Values each scale ticket until the field's yield after clean-out is entered (Sam, 2 Nov 2026). */}
+        <label className="text-xs text-gray-500" title="Used to value a truck load until the field's yield after clean-out is entered">
+          Estimated clean-out %
+          <input
+            type="number"
+            min={0}
+            max={99}
+            step={0.1}
+            disabled={readonly}
+            value={form.est_cleanout_pct}
+            onChange={(e) => set('est_cleanout_pct', e.target.value)}
+            className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+          />
+        </label>
         <label className="text-xs text-gray-500">
           Days to maturity
           <input
@@ -279,8 +296,9 @@ function CropForm({ crop, readonly }: { crop: CropRow; readonly: boolean }) {
 /**
  * A canola's herbicide trait, which decides whose canola may follow whose on
  * a field (canola-trait.ts). Unset shows as a prompt, never a guess. The
- * stand-in for a company not yet chosen has no trait to set, and says what it
- * averages instead.
+ * A stand-in for a kind or company not yet chosen has no trait to set, and
+ * says what it averages instead -- the only place that says so, now that the
+ * bean stand-in is called plainly "Dry Beans".
  */
 function TraitSetting({
   crop,
@@ -297,14 +315,19 @@ function TraitSetting({
   onChange: (v: TraitSetting | '') => void
   members: string[]
 }) {
-  if (crop.average_of?.length)
+  if (crop.average_of?.length) {
+    const canola = isCanola(name)
     return (
       <p className="mt-3 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600">
-        Stands in for a seed canola whose company isn't chosen yet. Its price, input budget, normal yield and sister value are the
-        average of {members.length ? members.join(', ') : 'the company crops'}, kept in step as theirs change — change those, not
-        these. No herbicide trait until the company is known.
+        {canola
+          ? "Stands in for a seed canola whose company isn't chosen yet."
+          : 'Stands in for whichever of these gets planted, before the kind is chosen.'}{' '}
+        Its price, input budget, normal yield and sister value are the average of{' '}
+        {members.length ? members.join(', ') : 'its members'}, kept in step as theirs change — change those, not these.
+        {canola ? ' No herbicide trait until the company is known.' : ''}
       </p>
     )
+  }
   if (!isCanola(name) && !value) return null
   return (
     <div className="mt-3 flex flex-wrap items-end gap-3">
@@ -349,6 +372,7 @@ function ExpectedYieldNote({ crop }: { crop: CropRow }) {
       Estimates use{' '}
       <b className="text-gray-700">
         {(Math.round(e.value * 10) / 10).toLocaleString('en-CA')} {crop.yield_unit}/ac
+        <KgAside value={e.value} unit={crop.yield_unit} lbPerBu={crop.test_weight_lb_per_bu} />
       </b>{' '}
       — {e.label}. A field with five harvested seasons of {crop.name} uses its own average.
     </p>

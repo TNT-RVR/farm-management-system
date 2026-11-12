@@ -7,15 +7,18 @@
  *   1. NEED, THERMONEUTRAL: pounds of energy (TDN) and protein (CP) a head a
  *      day for the class and stage, from the NASEM 2016 tables (as regenerated
  *      in Arkansas MP391), scaled to the group's weight by (W / ref)^0.75.
- *   2. ADJUSTMENTS: +1.8% energy per °C the wind-chilled temperature is below
- *      the coat's lower critical temperature (3.6% when wet); +10% for mud;
+ *   2. ADJUSTMENTS: +1.8% MAINTENANCE energy per °C the wind-chilled
+ *      temperature is below the coat's lower critical temperature (3.6% when
+ *      wet); +10% of maintenance for mud;
  *      extra energy to put condition back on before calving. Protein is not
  *      raised for cold — no source shows a cold effect on protein.
  *   3. THE RATION: the group's feeds, as shares of the dry matter. Pounds of
  *      dry matter that meet the energy need = TDN need ÷ the mix's TDN. If that
  *      is more than the animal can eat (the intake cap, set by how good the
  *      feed is), the feed cannot carry her and grain is worked out to close the
- *      gap (Pearson square).
+ *      gap (Pearson square). A group fed FREE CHOICE (bales in a feeder) eats
+ *      to appetite instead — freeChoiceIntake, by feed quality, cold, mud and
+ *      stage — and the energy over need is shown as condition put on.
  *   4. AS FED AND OFFERED: dry matter ÷ the feed's DM %, then grossed up for
  *      what is wasted at feeding.
  *
@@ -150,12 +153,23 @@ export type GroupInput = {
   head: number
   /** Typical weight today, lb (no scale: see the info button). */
   weightLb: number
+  /** No weight entered: `weightLb` is the class's typical weight (animal-units.ts defaultWeightLb). */
+  weightMissing?: boolean
   /** Canadian 1–5 body condition score. */
   bcs: number
   targetBcs: number
   /** Growing cattle only, lb/day. */
   targetGainLb: number | null
+  /**
+   * How the group is fed. Free choice (bales in a feeder): they eat to
+   * appetite and the energy over need goes on as condition. Measured: they are
+   * fed the amount that meets the need. Absent = measured.
+   */
+  feeding?: FeedingMethod
 }
+
+export type FeedingMethod = 'free_choice' | 'measured'
+export const FEEDING_METHOD_LABEL: Record<FeedingMethod, string> = { free_choice: 'Free-choice bales', measured: 'Measured amount' }
 
 export type Conditions = {
   onDate: Date
@@ -170,21 +184,64 @@ export type Conditions = {
   freeChoice?: boolean
   /** Effective temperature, °C, for the intake uplift in the cold. Null = no uplift. */
   effTempC?: number | null
+  /**
+   * Free-choice appetite multiplier for the weather (coldIntakeFactor), when
+   * it is an average over days — a month of the season. Wins over effTempC.
+   */
+  intakeFactor?: number
 }
 
 export type Need = {
   /** Thermoneutral requirement, lb/head/day. */
   base: Req
+  /** Maintenance part of the base TDN, lb/head/day — what cold and mud raise. */
+  maintTdnLb: number
   /** TDN after cold, mud and condition, lb/head/day. */
   tdnLb: number
   cpLb: number
-  /** Parts of the TDN need, as fractions of the base. */
+  /** Adjustments as fractions: cold and mud of maintenance, condition and fat credit of the base. */
   parts: { cold: number; mud: number; condition: number; fatCredit: number }
   stage: string
   lactating: boolean
   daysToCalving: number | null
   /** A nursing calf's own forage, lb DM/head/day, eaten from the same ration. */
   calfDmLb: number
+  /** The group's weight, lb — what one condition score is a share of. */
+  weightLb: number
+}
+
+/**
+ * What a Canadian condition score costs, and gives back.
+ *
+ * One score is about 14% of a cow's weight (BCRC: 200 lb on a 1,400 lb cow;
+ * Oklahoma State: 7% per US score, two US scores to one Canadian). Putting a
+ * pound of that back on costs about 1.97 Mcal NEg (NDSU AS-1198), and a pound
+ * of TDN in a 55% TDN winter ration carries about 0.48 Mcal NEg (NASEM 2016:
+ * ME 1.99 Mcal/kg DM gives NEg 0.58), so about 4.1 lb TDN a pound. A 1,200 lb
+ * cow needs about 690 lb of TDN over need to go up one score.
+ *
+ * Losing it gives back less than it cost: body fat burned for maintenance is
+ * used more efficiently than feed is laid down as fat (NRC 1996: 0.8 against
+ * 0.6). The report's own check — a 10% shortfall costs a dry cow 0.3–0.5 lb a
+ * day (NMSU CR575) — puts it at about 2.5 lb TDN a pound lost.
+ *
+ * Until 3 Nov 2026 this used a fit to BCRC's "20% more energy for 90 days per
+ * score" — 18 × scores ÷ days. That works out to about 0.9 lb TDN a pound of
+ * gain, a quarter of what the body composition says, so it put condition on
+ * free-choice cows about four times too fast and under-fed thin cows.
+ */
+export const CONDITION_SHARE_OF_WEIGHT = 0.14
+export const TDN_LB_PER_LB_GAINED = 4.1
+export const TDN_LB_PER_LB_LOST = 2.5
+
+/** Lb of TDN over need to put on one Canadian condition score. */
+export function tdnPerScoreGained(weightLb: number): number {
+  return CONDITION_SHARE_OF_WEIGHT * Math.max(100, weightLb) * TDN_LB_PER_LB_GAINED
+}
+
+/** Lb of TDN a score of condition supplies when the animal is under-fed. */
+export function tdnPerScoreLost(weightLb: number): number {
+  return CONDITION_SHARE_OF_WEIGHT * Math.max(100, weightLb) * TDN_LB_PER_LB_LOST
 }
 
 /** Lb/day TDN and CP a head needs. */
@@ -249,18 +306,44 @@ export function groupNeed(g: GroupInput, c: Conditions): Need {
     stage = `growing ${gain.toFixed(2)} lb/day`
   }
 
-  // Condition: 20% more energy over 90 days or 30% over 60 per Canadian score
-  // (BCRC) — both fit 18 × scores to gain ÷ days. Days are to calving for
+  // Condition: the TDN a score costs (tdnPerScoreGained), spread over the days
+  // left, as a share of the base need — at most 35%. Days are to calving for
   // bred females, to turnout for the rest.
   const days = daysToCalving != null && !lactating ? daysToCalving : c.daysToTurnout
   const short = Math.max(0, g.targetBcs - g.bcs)
-  const condition = short > 0 && days > 0 ? Math.min(0.35, (18 * short) / Math.max(30, days)) : 0
+  const condition = short > 0 && days > 0 && base.tdn > 0 ? Math.min(0.35, (short * tdnPerScoreGained(W)) / Math.max(30, days) / base.tdn) : 0
   // A fat cow in mid pregnancy can be fed a little under need.
   const fatCredit = g.feedClass === 'cow' && !lactating && st.month <= 10 && g.bcs >= 3.5 ? -0.05 : 0
   const mud = c.muddy ? 0.1 : 0
   const cold = Math.max(0, c.cold)
-  const tdnLb = base.tdn * (1 + cold + mud + condition + fatCredit)
-  return { base, tdnLb, cpLb: base.cp, parts: { cold, mud, condition, fatCredit }, stage, lactating, daysToCalving, calfDmLb }
+  // Cold and mud raise what it costs to keep the animal alive — maintenance —
+  // not the milk, the calf she is carrying or the gain. Applying them to the
+  // whole need (as this did until 2 Nov 2026) over-fed a nursing cow in the
+  // cold by the cold % of her milk. Condition and the fat credit stay on the
+  // whole need: they are a share of the ration, not of maintenance.
+  const maintTdnLb = Math.min(base.tdn, maintenanceTdnLb(W))
+  const tdnLb = base.tdn * (1 + condition + fatCredit) + maintTdnLb * (cold + mud)
+  return { base, maintTdnLb, tdnLb, cpLb: base.cp, parts: { cold, mud, condition, fatCredit }, stage, lactating, daysToCalving, calfDmLb, weightLb: W }
+}
+
+/**
+ * Mcal of NEm in a lb of TDN: 0.934. From the NASEM 2016 chain
+ * at a winter forage of 55% TDN — DE 4.409 Mcal/kg TDN, ME = 0.82 DE (1.99
+ * Mcal/kg DM), NEm = 1.37 ME − 0.138 ME² + 0.0105 ME³ − 1.12 = 1.13 Mcal/kg
+ * DM, which is 2.06 Mcal per kg of TDN, 0.934 per lb. The tables this file
+ * reads are already in lb of TDN, so maintenance is put in the same unit.
+ */
+const NEM_MCAL_PER_LB_TDN = 0.934
+
+/**
+ * Maintenance energy, lb of TDN a day: NASEM 2016 NEm = 0.077 Mcal ×
+ * SBW^0.75 (shrunk body weight, kg = 0.96 × full weight). A 1,200 lb cow:
+ * 8.4 Mcal, 9.0 lb TDN — most of her mid-pregnancy need (10.3 lb), about
+ * half of it at peak milk (16.1 lb).
+ */
+export function maintenanceTdnLb(weightLb: number): number {
+  const sbwKg = (0.96 * Math.max(100, weightLb)) / 2.20462
+  return (0.077 * Math.pow(sbwKg, 0.75)) / NEM_MCAL_PER_LB_TDN
 }
 
 /** How much dry matter the animal can eat, lb/day, given how good the ration is. */
@@ -284,6 +367,157 @@ export function intakeCap(g: GroupInput, need: Need, rationTdnPct: number, c: Co
   // The last three weeks before calving the rumen has less room.
   if (need.daysToCalving != null && !need.lactating && need.daysToCalving <= 21) cap *= 0.9
   return cap
+}
+
+// ---------------------------------------------------------------------------
+// Free choice: what cattle eat when the bales are in front of them
+// ---------------------------------------------------------------------------
+
+/**
+ * Voluntary intake of a dry (non-nursing) beef cow, % of body weight, by how
+ * good the forage is (its TDN). Extension figures from the NASEM 2016 intake
+ * equations: coarse straw about 1.5–1.8%, average grass hay 2.0–2.2%, good
+ * legume hay or green feed 2.5–2.7%. Rumen fill sets the limit on poor feed;
+ * better feed passes faster, so she eats more of it.
+ */
+const APPETITE_TDN = [40, 45, 50, 55, 60, 65, 70]
+const APPETITE_PCT = [1.5, 1.7, 1.9, 2.1, 2.35, 2.55, 2.7]
+/** A nursing cow eats about a third of a point of body weight more (NASEM; Hibberd & Thrift). */
+const LACTATION_PCT = 0.35
+
+/** Appetite, % of body weight a day, for a ration of this TDN %. */
+export function appetitePct(rationTdnPct: number, lactating = false): number {
+  const t = Math.max(APPETITE_TDN[0], Math.min(APPETITE_TDN[APPETITE_TDN.length - 1], rationTdnPct))
+  return interp(APPETITE_TDN, APPETITE_PCT, t) + (lactating ? LACTATION_PCT : 0)
+}
+
+/**
+ * Weather and appetite (NRC 1996 intake adjustments, trimmed to the modest
+ * end): cattle eat a few percent more below about 15 °C, up to a tenth more in
+ * hard cold; in a blizzard-cold day (wind-chilled below about −30 °C) they
+ * bunch up out of the wind and eat less.
+ */
+const INTAKE_T = [-35, -28, -15, -5, 5, 15]
+const INTAKE_F = [0.95, 1.1, 1.08, 1.05, 1.02, 1.0]
+export function coldIntakeFactor(effTempC: number): number {
+  return interp(INTAKE_T, INTAKE_F, Math.min(15, effTempC))
+}
+
+/** Mud cuts intake about 15% (NRC 1996: 0.85 in 10–20 cm of mud). */
+export const MUD_INTAKE = 0.85
+
+/**
+ * Fat cattle eat less (NRC 1996 body-fat adjustment, 21–32% empty-body fat,
+ * read across to the Canadian 1–5 score: 3 ≈ 21%, 5 ≈ 32%). This is what stops
+ * a free-choice cow on good hay getting fatter without end.
+ */
+const FAT_BCS = [3, 3.5, 4, 4.5, 5]
+const FAT_F = [1, 0.97, 0.9, 0.82, 0.73]
+export function fatIntakeFactor(bcs: number): number {
+  return interp(FAT_BCS, FAT_F, Math.max(3, Math.min(5, bcs)))
+}
+
+/**
+ * Dry matter a head eats a day fed free choice, lb — the cow's own, the calf
+ * at side's share not included. Waste at the feeder is on top, as it is for a
+ * measured ration.
+ */
+export function freeChoiceIntake(g: GroupInput, need: Need, rationTdnPct: number, c: Conditions): number {
+  const W = Math.max(100, g.weightLb)
+  let dm: number
+  if (g.feedClass === 'backgrounder' || g.feedClass === 'heifer_calf') {
+    // The most a calf eats (intakeCap: the table's intake + 10%, for a
+    // ration of about 62% TDN), scaled by how much more or less of this
+    // ration a rumen holds.
+    dm = need.base.dmi * 1.1 * (appetitePct(rationTdnPct) / appetitePct(62))
+  } else {
+    dm = ((W * appetitePct(rationTdnPct, need.lactating)) / 100) * fatIntakeFactor(g.bcs)
+  }
+  dm *= c.intakeFactor ?? (c.effTempC != null ? coldIntakeFactor(c.effTempC) : 1)
+  if (c.muddy) dm *= MUD_INTAKE
+  // Late pregnancy: the calf takes room from the rumen.
+  if (need.daysToCalving != null && !need.lactating) {
+    if (need.daysToCalving <= 21) dm *= 0.9
+    else if (need.daysToCalving <= 60) dm *= 0.96
+  }
+  return dm
+}
+
+/**
+ * Condition a day from energy over need, Canadian score: TDN over the
+ * maintenance-and-pregnancy need ÷ what a score costs (tdnPerScoreGained), or,
+ * short of it, ÷ what a score gives back (tdnPerScoreLost). Counts the planned
+ * condition gain and the fat-cow credit too, so it is the whole change the
+ * feeding makes.
+ */
+export function conditionPerDay(need: Need, surplusTdnLb: number): number {
+  const over = (need.parts.condition + need.parts.fatCredit) * need.base.tdn + surplusTdnLb
+  return over >= 0 ? over / tdnPerScoreGained(need.weightLb) : over / tdnPerScoreLost(need.weightLb)
+}
+
+/**
+ * Growing cattle: gain over the target a day from energy over need, lb —
+ * about ten points of TDN in the ration per extra lb (the rule groupNeed sets
+ * the calves' need by).
+ */
+export function extraGainPerDay(need: Need, surplusTdnLb: number): number {
+  return need.base.dmi > 0 ? surplusTdnLb / (need.base.dmi * 0.1) : 0
+}
+
+/** A ration with `straw` at `strawShare` (0–1) of the dry matter and the other feeds scaled to the rest. */
+function withStraw(lines: RationLine[], straw: FeedValue, strawShare: number, strawWastePct: number): RationLine[] {
+  const others = lines.filter((l) => l.feed.id !== straw.id && l.sharePct > 0)
+  const total = others.reduce((s, l) => s + l.sharePct, 0)
+  if (total <= 0) return [{ feed: straw, sharePct: 100, wastePct: strawWastePct }]
+  return [
+    ...others.map((l) => ({ ...l, sharePct: (l.sharePct / total) * (1 - strawShare) * 100 })),
+    { feed: straw, sharePct: strawShare * 100, wastePct: strawWastePct },
+  ]
+}
+
+/**
+ * Straw that takes free-choice cattle's surplus off: the least share of this
+ * straw at which the energy they eat comes down to the need, kept inside the
+ * straw limits (60% of the ration, 1.25% of body weight). Null when the group
+ * has no surplus or the straw is no plainer than the ration.
+ */
+export function strawToCutSurplus(
+  g: GroupInput,
+  c: Conditions,
+  lines: RationLine[],
+  straw: FeedValue,
+  strawWastePct: number,
+): { sharePct: number; ration: GroupRation; cutsAll: boolean } | null {
+  const now = solveRation(g, c, lines)
+  if (now.feeding !== 'free_choice' || now.surplusTdnLb <= 0 || straw.tdnPct >= now.mixTdnPct) return null
+  const W = Math.max(100, g.weightLb)
+  const total = lines.reduce((s, l) => s + Math.max(0, l.sharePct), 0)
+  const s0 = total > 0 ? Math.max(0, lines.find((l) => l.feed.id === straw.id)?.sharePct ?? 0) / total : 0
+  const at = (s: number) => solveRation(g, c, withStraw(lines, straw, s, strawWastePct))
+  const strawOk = (r: GroupRation) => (r.lines.find((l) => l.feed.id === straw.id)?.dmLb ?? 0) <= 0.0125 * W + 1e-6
+  // The most straw the limits allow.
+  let hi = Math.max(s0, 0.6)
+  if (!strawOk(at(hi))) {
+    let a = s0
+    let b = hi
+    for (let i = 0; i < 30; i++) {
+      const m = (a + b) / 2
+      if (strawOk(at(m))) a = m
+      else b = m
+    }
+    hi = a
+  }
+  if (hi <= s0 + 1e-4) return null
+  const top = at(hi)
+  if (top.surplusTdnLb > 0) return { sharePct: hi * 100, ration: top, cutsAll: false }
+  let a = s0
+  let b = hi
+  for (let i = 0; i < 30; i++) {
+    const m = (a + b) / 2
+    if (at(m).surplusTdnLb > 0) a = m
+    else b = m
+  }
+  return { sharePct: b * 100, ration: at(b), cutsAll: true }
 }
 
 // ---------------------------------------------------------------------------
@@ -339,6 +573,17 @@ export type GroupRation = {
   /** 32% protein supplement to add, lb as fed per head. */
   addSupplementLb: number
   warnings: Warning[]
+  feeding: FeedingMethod
+  /**
+   * Energy eaten over the need, lb TDN a head a day: what free-choice cattle
+   * put on. About 0 for a measured ration that meets the need; below 0 when
+   * the feed can't carry them.
+   */
+  surplusTdnLb: number
+  /** Condition change a day, Canadian score (conditionPerDay); null for growing cattle. */
+  bcsPerDay: number | null
+  /** Growing cattle: gain over the target, lb a day; null for the rest. */
+  extraGainLb: number | null
 }
 
 export function solveRation(g: GroupInput, c: Conditions, lines: RationLine[]): GroupRation {
@@ -347,17 +592,21 @@ export function solveRation(g: GroupInput, c: Conditions, lines: RationLine[]): 
   const warnings: Warning[] = []
   const used = lines.filter((l) => l.sharePct > 0 && l.feed.tdnPct > 0 && l.feed.dmPct > 0)
   const total = used.reduce((s, l) => s + l.sharePct, 0)
+  const feeding: FeedingMethod = g.feeding ?? 'measured'
+  const growingClass = g.feedClass === 'backgrounder' || g.feedClass === 'heifer_calf'
   if (!used.length || total <= 0) {
-    return { need, mixTdnPct: 0, mixCpPct: 0, capLb: 0, dmLb: 0, energyMetPct: 0, proteinMetPct: 0, lines: [], addGrainLb: 0, addSupplementLb: 0, warnings: [{ code: 'NO_RATION', level: 'notice', text: 'No ration set for this group — add its feeds to see pounds and bales a day.' }] }
+    return { need, mixTdnPct: 0, mixCpPct: 0, capLb: 0, dmLb: 0, energyMetPct: 0, proteinMetPct: 0, lines: [], addGrainLb: 0, addSupplementLb: 0, warnings: [{ code: 'NO_RATION', level: 'notice', text: 'No ration set for this group — add its feeds to see pounds and bales a day.' }], feeding, surplusTdnLb: 0, bcsPerDay: null, extraGainLb: null }
   }
   const share = (l: RationLine) => l.sharePct / total
   const mixTdn = used.reduce((s, l) => s + share(l) * l.feed.tdnPct, 0)
   const mixCp = used.reduce((s, l) => s + share(l) * l.feed.cpPct, 0)
-  const cap = intakeCap(g, need, mixTdn, c)
+  // Free choice: appetite is both what they eat and the most they can eat.
+  const cap = feeding === 'free_choice' ? freeChoiceIntake(g, need, mixTdn, c) : intakeCap(g, need, mixTdn, c)
 
-  // Pounds of this mix that meet energy, but never more than she can eat.
+  // Measured: pounds of this mix that meet energy, but never more than she
+  // can eat. Free choice: she eats to appetite whatever the need.
   const toMeet = need.tdnLb / (mixTdn / 100)
-  let dm = Math.min(toMeet, cap)
+  let dm = feeding === 'free_choice' ? cap : Math.min(toMeet, cap)
   let addGrainDm = 0
   const grainLine = used.find((l) => l.feed.category === 'grain')
   const grain = grainLine?.feed ?? BARLEY
@@ -413,9 +662,14 @@ export function solveRation(g: GroupInput, c: Conditions, lines: RationLine[]): 
     if (n > 1.0) warnings.push({ code: 'W12', level: 'red', text: `${l.feed.name} tested ${n.toFixed(2)}% nitrate — dangerous. Keep it under 25–50% of the ration and adapt slowly.` })
     else if (n >= 0.5) warnings.push({ code: 'W12', level: 'amber', text: `${l.feed.name} tested ${n.toFixed(2)}% nitrate — dilute it and bring pregnant cows onto it slowly.` })
   }
-  if (need.parts.cold > 0.5) warnings.push({ code: 'W24', level: 'red', text: `Cold adds ${(need.parts.cold * 100).toFixed(0)}% to the energy need — more than feed can cover. Bedding, windbreak and denser feed.` })
+  if (need.parts.cold > 0.5) warnings.push({ code: 'W24', level: 'red', text: `Cold adds ${(need.parts.cold * 100).toFixed(0)}% to maintenance energy — more than feed can cover. Bedding, windbreak and denser feed.` })
 
+  const surplusTdnLb = eatenTdn - need.tdnLb
   return {
+    feeding,
+    surplusTdnLb,
+    bcsPerDay: growingClass ? null : conditionPerDay(need, surplusTdnLb),
+    extraGainLb: growingClass ? extraGainPerDay(need, surplusTdnLb) : null,
     need,
     mixTdnPct: mixTdn,
     mixCpPct: mixCp,

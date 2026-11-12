@@ -1,4 +1,5 @@
 import type { Database } from './database.types'
+import { kgAside } from '@/lib/lbs-kg'
 
 /**
  * A variety's own settings under its crop (Sam, 13 Oct 2026): two pinto
@@ -311,7 +312,7 @@ export function varietySummary(v: Partial<Record<VarietyKey, unknown>>, yieldUni
 export function varietyParts(v: Partial<Record<VarietyKey, unknown>>, yieldUnit = ''): { key: VarietyKey; text: string }[] {
   const parts: { key: VarietyKey; text: string }[] = []
   const push = (key: VarietyKey, text: string) => parts.push({ key, text })
-  if (isSet(v.default_yield_per_acre)) push('default_yield_per_acre', `${n(v.default_yield_per_acre)}${yieldUnit ? ` ${yieldUnit}` : ''}/ac normal`)
+  if (isSet(v.default_yield_per_acre)) push('default_yield_per_acre', `${n(v.default_yield_per_acre)}${yieldUnit ? ` ${yieldUnit}` : ''}/ac${kgAside(Number(v.default_yield_per_acre), yieldUnit)} normal`)
   if (isSet(v.days_to_maturity)) push('days_to_maturity', `${n(v.days_to_maturity)} days`)
   if (isSet(v.test_weight_lb_per_bu)) push('test_weight_lb_per_bu', `${n(v.test_weight_lb_per_bu)} lb/bu`)
   if (isSet(v.moisture_dry_min)) push('moisture_dry_min', `too dry < ${n(v.moisture_dry_min)}%`)

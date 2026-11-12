@@ -9,10 +9,10 @@ import {
   ArrowUpDown,
   Check,
   ExternalLink,
+  Merge,
   Pencil,
   Plus,
   RefreshCw,
-  Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
@@ -23,12 +23,14 @@ import { useUsers } from '@/lib/queries'
 import {
   ACTIVE_GRANT_STATUSES,
   ARCHIVED_GRANT_STATUSES,
-  claudeGrantPrompt,
   GRANT_STATUS_COLOR,
   GRANT_STATUS_LABEL,
   GRANT_STATUSES,
   isArchivedGrant,
   moneyRange,
+  useGrantDedupe,
+  useGrantDuplicateCount,
+  useGrantMerge,
   useGrantMutations,
   useGrants,
   useGrantsPull,
@@ -43,6 +45,8 @@ import { cn } from '@/lib/utils'
 import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
 import { askConfirm } from '@/components/askConfirm'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { coverLabel } from '@/lib/grant-kit'
+import { GrantActions, GrantDetailsEditor, GrantFacts } from '@/pages/grants/GrantKit'
 
 const closesLabel = (d: string | null) => {
   if (!d) return 'Ongoing'
@@ -199,24 +203,67 @@ function TasksSection({ grantId }: { grantId: string }) {
   )
 }
 
+/**
+ * "This one is the same grant as that one."
+ *
+ * The sweep catches a programme written two ways, but not two names for the
+ * same thing that share no words — Alberta Innovates lists its Agriculture &
+ * Environment program under its old name as well, and only a person can tell.
+ * Picking the other grant folds this row into it and keeps anything this row
+ * held that the other was missing.
+ */
+function MergeIntoControl({ grant, onDone }: { grant: GrantRow; onDone: () => void }) {
+  const { data: grants } = useGrants()
+  const merge = useGrantMerge()
+  const [picking, setPicking] = useState(false)
+
+  const others = (grants ?? [])
+    .filter((g) => g.id !== grant.id)
+    .sort((a, b) => a.title.localeCompare(b.title))
+
+  if (!picking)
+    return (
+      <button
+        onClick={() => setPicking(true)}
+        title="Fold this into another grant that is the same programme"
+        className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-900"
+      >
+        <Merge className="h-3.5 w-3.5" /> Duplicate of…
+      </button>
+    )
+
+  return (
+    <Select
+      value=""
+      size="sm"
+      ariaLabel="Merge this grant into"
+      className="w-56"
+      onChange={async (v) => {
+        const other = others.find((g) => g.id === v)
+        if (!other) return
+        if (
+          await askConfirm(
+            `Merge "${grant.title}" into "${other.title}"? This row goes away; anything on it that "${other.title}" is missing moves across.`,
+          )
+        ) {
+          merge.mutate({ keeper: other.id, loser: grant.id })
+          onDone()
+        }
+      }}
+      options={[
+        { value: '', label: 'Merge this into…' },
+        ...others.map((g) => ({ value: g.id, label: g.title })),
+      ]}
+    />
+  )
+}
+
 function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void }) {
   const { update, remove } = useGrantMutations()
   const { data: users } = useUsers()
   const partner = usePartnerView()
-  const [copied, setCopied] = useState(false)
   const set = (patch: Parameters<typeof update.mutate>[0]['patch']) =>
     update.mutate({ id: grant.id, patch })
-
-  const draftWithClaude = async () => {
-    try {
-      await navigator.clipboard.writeText(claudeGrantPrompt(grant))
-      setCopied(true)
-      setTimeout(() => setCopied(false), 4000)
-    } catch {
-      /* ignore */
-    }
-    window.open('https://claude.ai/new', '_blank', 'noopener')
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-0 sm:items-center sm:p-4">
@@ -287,16 +334,24 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
             )}
           </div>
 
-          {/* Facts */}
-          <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-            <Fact label="Amount">{moneyRange(grant.amount_min, grant.amount_max)}</Fact>
-            <Fact label="Closes">{closesLabel(grant.closes_on)}</Fact>
-            <Fact label="Region">{grant.region ?? '—'}</Fact>
-          </div>
+          <GrantFacts grant={grant} closes={closesLabel(grant.closes_on)} />
+          <GrantActions grant={grant} />
 
           {/* A partner keeps his own status, owner and notes; the grant itself is the list's. */}
           <fieldset disabled={partner} className="min-w-0 space-y-4">
-          <Field label="Eligibility">
+          <Field label="Our project">
+            <textarea
+              defaultValue={grant.project_md ?? ''}
+              rows={2}
+              placeholder="What we would use this grant for: the work, roughly what it costs, when."
+              onBlur={(e) =>
+                e.target.value.trim() !== (grant.project_md ?? '') &&
+                set({ project_md: e.target.value.trim() || null })
+              }
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+            />
+          </Field>
+          <Field label="Who is eligible">
             <textarea
               defaultValue={grant.eligibility_summary ?? ''}
               rows={2}
@@ -355,6 +410,7 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
               />
             </label>
           </fieldset>
+          {!partner && <GrantDetailsEditor grant={grant} />}
 
           <div className="border-t border-gray-100 pt-3">
             <TasksSection grantId={grant.id} />
@@ -386,6 +442,7 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
                 <Archive className="h-3.5 w-3.5" /> Restore to active
               </button>
             )}
+            {!partner && <MergeIntoControl grant={grant} onDone={onClose} />}
             {!partner && (
             <button
               onClick={async () => {
@@ -402,25 +459,12 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
             </button>
             )}
           </div>
-          <button
-            onClick={draftWithClaude}
-            className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-800"
-          >
-            <Sparkles className="h-4 w-4" />{' '}
-            {copied ? 'Prompt copied — paste into Claude' : 'Draft with Claude'}
-          </button>
         </div>
       </div>
     </div>
   )
 }
 
-const Fact = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <div>
-    <p className="text-xs text-gray-500">{label}</p>
-    <p className="font-medium text-gray-900">{children}</p>
-  </div>
-)
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <div>
     <p className="mb-1 text-xs font-medium text-gray-500">{label}</p>
@@ -502,6 +546,8 @@ export function GrantsPage() {
   const { data: grants } = useGrants()
   const { add } = useGrantMutations()
   const pull = useGrantsPull()
+  const { data: dupes } = useGrantDuplicateCount()
+  const dedupe = useGrantDedupe()
   const [openId, setOpenId] = useState<string | null>(null)
   const [tab, setTab] = useTab('grants', ['active', 'archived'] as const)
   const [statusFilter, setStatusFilter] = useState<'all' | GrantStatus>('all')
@@ -555,6 +601,16 @@ export function GrantsPage() {
       {GRANT_STATUS_LABEL[g.status]}
     </span>
   )
+  // The amount, with the share of the project it covers under it when known.
+  const amountCell = (g: GrantRow) => {
+    const cover = coverLabel(g.cost_share_pct)
+    return (
+      <>
+        {moneyRange(g.amount_min, g.amount_max)}
+        {cover && <span className="block text-xs text-gray-400">{cover.replace(' of eligible costs', ' of costs')}</span>}
+      </>
+    )
+  }
   const websiteLink = (g: GrantRow) =>
     g.url ? (
       <a
@@ -594,7 +650,7 @@ export function GrantsPage() {
         <div>
           <h1 className="text-lg font-semibold text-gray-900">Grants</h1>
           <p className="text-xs text-gray-500">
-            Alberta farm &amp; cattle funding — track, assign, and draft with Claude.
+            Alberta farm &amp; cattle funding: track it, ask them about it, apply with Claude.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -608,6 +664,26 @@ export function GrantsPage() {
               ...tabStatuses.map((s) => ({ value: s, label: GRANT_STATUS_LABEL[s] })),
             ]}
           />
+          {/* Only while there is something to merge. The weekly pull sweeps on
+              its way out, so this is normally absent. */}
+          {hasManagerAccess(profile?.role) && (dupes ?? 0) > 0 && (
+            <button
+              onClick={async () => {
+                if (
+                  await askConfirm(
+                    `${dupes} row${dupes === 1 ? ' is a second listing' : 's are second listings'} of a grant already here. Merge them? Each survivor keeps whatever the others held that it was missing.`,
+                  )
+                )
+                  dedupe.mutate()
+              }}
+              disabled={dedupe.isPending}
+              title="Fold rows that name the same programme into one"
+              className="flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-60"
+            >
+              <Merge className="h-3.5 w-3.5" />
+              Merge {dupes} duplicate{dupes === 1 ? '' : 's'}
+            </button>
+          )}
           {hasManagerAccess(profile?.role) && (
             <button
               onClick={() => pull.mutate()}
@@ -679,7 +755,7 @@ export function GrantsPage() {
               actions={archiveButton(g)}
               facts={[
                 { label: 'Status', node: statusBadge(g) },
-                { label: 'Amount', node: moneyRange(g.amount_min, g.amount_max) },
+                { label: 'Amount', node: amountCell(g) },
                 { label: 'Closes', node: closesLabel(g.closes_on) },
                 {
                   label: 'Eligible',
@@ -719,9 +795,7 @@ export function GrantsPage() {
                     <p className="font-medium text-gray-900">{g.title}</p>
                     <p className="text-xs text-gray-400">{g.funder ?? ''}</p>
                   </td>
-                  <td className="px-3 py-2 tabular-nums text-gray-700">
-                    {moneyRange(g.amount_min, g.amount_max)}
-                  </td>
+                  <td className="px-3 py-2 tabular-nums text-gray-700">{amountCell(g)}</td>
                   <td className="max-w-xs px-3 py-2 text-xs text-gray-500">
                     <span className="line-clamp-2">{g.eligibility_summary ?? '\u2014'}</span>
                   </td>

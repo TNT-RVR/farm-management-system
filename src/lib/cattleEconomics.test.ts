@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_CULL_PCT,
   breakEven,
   compareStrategies,
   lockInSignals,
@@ -31,14 +32,34 @@ const costs = (over: Partial<CattleCosts> = {}): CattleCosts => ({
 })
 
 describe('breakEven', () => {
-  it('divides by the calves actually sold, not by the cows', () => {
-    // 92% weaning and 2% death loss means about nine calves carry the cost of
-    // ten cows. Dividing by cows understates the break-even by a tenth.
+  it('divides by the calves actually weaned, not by the cows', () => {
+    // A 92% weaning rate means about nine calves carry the cost of ten cows.
+    // Weaning % is calves weaned ÷ cows exposed, so the 2% death loss is
+    // already in it — it is not taken off a second time.
     const b = breakEven(costs(), 450)!
     expect(b.costPerCow).toBe(1300)
-    expect(b.calvesPerCow).toBeCloseTo(0.92 * 0.98, 6)
-    expect(b.costPerCalf).toBeCloseTo(1300 / (0.92 * 0.98), 4)
+    expect(b.calvesPerCow).toBeCloseTo(0.92, 6)
+    expect(b.costPerCalf).toBeCloseTo(1300 / 0.92, 4)
     expect(b.costPerCalf).toBeGreaterThan(b.costPerCow)
+    expect(b.cullCreditPerCow).toBeNull()
+  })
+
+  it('takes the cull cows’ cheque off before the calves pay', () => {
+    // 12% culled at a $2,800 cheque is $336 a cow wintered.
+    const b = breakEven(costs(), 450, { cullCheque: 2800 })!
+    expect(b.cullPct).toBe(DEFAULT_CULL_PCT)
+    expect(b.cullCreditPerCow).toBeCloseTo(336, 6)
+    expect(b.costPerCalf).toBeCloseTo((1300 - 336) / 0.92, 6)
+    expect(b.perLb).toBeCloseTo((1300 - 336) / 0.92 / 450, 6)
+    expect(b.perCwt).toBeCloseTo(b.perLb! * 100, 6)
+    // The ranch's own cull % and other revenue.
+    const own = breakEven(costs({ cull_pct: 15 }), 450, { cullCheque: 2800, otherRevenuePerCow: 50 })!
+    expect(own.costPerCalf).toBeCloseTo((1300 - 420 - 50) / 0.92, 6)
+  })
+
+  it('falls back on calf loss when no weaning rate is entered', () => {
+    const b = breakEven(costs({ weaning_rate_pct: null, calf_loss_pct: 5 }), 450)!
+    expect(b.calvesPerCow).toBeCloseTo(0.95, 6)
   })
 
   it('gives the price a calf has to fetch', () => {
@@ -151,12 +172,28 @@ describe('lockInSignals', () => {
   })
 
   it('leans toward locking in when the bid is high against our own record', () => {
-    expect(lockInSignals(base).find((s) => s.label === 'Against our own history')!.lean).toBe('lock')
+    const h = lockInSignals(base).find((s) => s.label === 'Against our own history')!
+    expect(h.lean).toBe('lock')
+    expect(h.reading).toBe('Highest price in 6 years')
   })
 
   it('leans toward waiting when a curve slopes up', () => {
     const s = lockInSignals({ ...base, curveSlope: 12 })
-    expect(s.find((x) => x.label === 'Forward curve')!.lean).toBe('wait')
+    const curve = s.find((x) => x.label === 'Later months on the futures board')!
+    expect(curve.lean).toBe('wait')
+    expect(curve.reading).toBe('Later months bid US$12.00/cwt higher')
+  })
+
+  it('names the price it compares with break-even, and quotes today’s beside a forward bid', () => {
+    // Home Ranch, 3 Nov 2026: December bid $6.66, today $7.37, break-even $3.87.
+    const s = lockInSignals({ ...base, forwardPricePerLb: 6.66, breakEvenPerLb: 3.87, forwardMonth: 'December', todayPricePerLb: 7.37 })
+    const be = s.find((x) => x.label.endsWith('vs break-even'))!
+    expect(be.label).toBe('December bid vs break-even')
+    expect(be.reading).toBe('+$2.79/lb')
+    expect(be.why).toContain('$7.37')
+    expect(be.why).toContain('+$3.50/lb')
+    const today = lockInSignals({ ...base, priceKind: 'today', forwardPricePerLb: 7.37, breakEvenPerLb: 3.87 })
+    expect(today.find((x) => x.label.endsWith('vs break-even'))!.label).toBe("Today's price vs break-even")
   })
 
   it('omits a signal it has too little history for', () => {

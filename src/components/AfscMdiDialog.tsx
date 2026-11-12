@@ -3,7 +3,15 @@ import { ExternalLink } from 'lucide-react'
 import { Modal } from '@/components/Modal'
 import { HelpNote } from '@/components/HelpNote'
 import { Fold } from '@/components/Fold'
-import { COVERAGE_OPTIONS, useMdiPreviousYear, useSaveMdiYear, type MdiYear } from '@/lib/afsc-mdi'
+import {
+  COVERAGE_OPTIONS,
+  suggestedTypes,
+  useMdiPreviousYear,
+  useSaveMdiYear,
+  type MdiLand,
+  type MdiYear,
+} from '@/lib/afsc-mdi'
+import type { Ranch } from '@/lib/ranches'
 
 /**
  * The year's answers for AFSC's pasture insurance.
@@ -21,49 +29,86 @@ import { COVERAGE_OPTIONS, useMdiPreviousYear, useSaveMdiYear, type MdiYear } fr
 const STATION_TOOL = 'https://experience.arcgis.com/experience/132ef3c4e1444047984503852df8990e?org=AFSC1'
 const STATION_NORMALS = 'https://afsc.ca/wp-content/uploads/2026/01/Weather-Station-Normals-2026.pdf'
 
-type Draft = Partial<MdiYear> & { crop_year: number }
+type Draft = Partial<MdiYear> & { crop_year: number; ranch_id: string }
 
-export function AfscMdiDialog({ cropYear, current, onClose }: { cropYear: number; current: MdiYear | null; onClose: () => void }) {
-  const previous = useMdiPreviousYear(cropYear)
+export function AfscMdiDialog({
+  cropYear,
+  ranch,
+  current,
+  known,
+  suggested,
+  onClose,
+}: {
+  cropYear: number
+  ranch: Ranch
+  /** The saved row, if this ranch and year has one. */
+  current: MdiYear | null
+  /** The saved row over what the app already knows — the form's starting point. */
+  known: MdiYear
+  /** This ranch's parcels, for suggesting which pasture types to tick. */
+  suggested: MdiLand[]
+  onClose: () => void
+}) {
+  const previous = useMdiPreviousYear(cropYear, ranch.id)
 
   // The form starts from whatever it is going to start from, so it waits for
   // last year rather than opening empty and refilling itself underneath
   // whoever is already typing.
   if (!current && previous.isLoading) {
     return (
-      <Modal title={`Pasture insurance — ${cropYear}`} onClose={onClose} wide>
+      <Modal title={`Pasture insurance — ${ranch.name} ${cropYear}`} onClose={onClose} wide>
         <p className="py-6 text-center text-sm text-gray-500">Looking up last year’s answers…</p>
       </Modal>
     )
   }
-  return <Form cropYear={cropYear} current={current} previous={previous.data ?? null} onClose={onClose} />
+  return (
+    <Form
+      cropYear={cropYear}
+      ranch={ranch}
+      current={current}
+      known={known}
+      previous={previous.data ?? null}
+      suggested={suggested}
+      onClose={onClose}
+    />
+  )
 }
 
 /**
  * A year with no row of its own starts from the last one that has: the
  * identification number and the address never change, and the stations are
  * usually the same two again.
+ *
+ * A first year, with nothing behind it, starts from what the app already
+ * knows — the farm's name and the ranch's address — and from the pasture
+ * types its own parcels are. Those ticks are a suggestion to look at, not an
+ * answer: nothing reaches a form until this dialog is saved.
  */
-function startFrom(cropYear: number, current: MdiYear | null, previous: MdiYear | null): Draft {
-  if (current) return current
-  if (!previous) return { crop_year: cropYear }
-  // Last year's answers, under this year's number.
-  return { ...previous, crop_year: cropYear }
+function startFrom(cropYear: number, ranchId: string, current: MdiYear | null, known: MdiYear, previous: MdiYear | null, land: MdiLand[]): Draft {
+  if (current) return { ...current, crop_year: cropYear, ranch_id: ranchId }
+  if (previous) return { ...previous, crop_year: cropYear, ranch_id: ranchId }
+  return { ...known, ...suggestedTypes(land), crop_year: cropYear, ranch_id: ranchId }
 }
 
 function Form({
   cropYear,
+  ranch,
   current,
+  known,
   previous,
+  suggested,
   onClose,
 }: {
   cropYear: number
+  ranch: Ranch
   current: MdiYear | null
+  known: MdiYear
   previous: MdiYear | null
+  suggested: MdiLand[]
   onClose: () => void
 }) {
   const save = useSaveMdiYear()
-  const [d, setD] = useState<Draft>(() => startFrom(cropYear, current, previous))
+  const [d, setD] = useState<Draft>(() => startFrom(cropYear, ranch.id, current, known, previous, suggested))
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((p) => ({ ...p, [k]: v }))
 
@@ -73,17 +118,23 @@ function Form({
   const num = (v: string) => (v.trim() === '' ? null : Number(v))
 
   return (
-    <Modal title={`Pasture insurance — ${cropYear}`} onClose={onClose} wide>
+    <Modal title={`Pasture insurance — ${ranch.name} ${cropYear}`} onClose={onClose} wide>
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          save.mutate(d as Draft, { onSuccess: onClose })
+          save.mutate(d, { onSuccess: onClose })
         }}
         className="space-y-4"
       >
         {!current && previous && (
           <p className="rounded-md bg-brand-50 px-3 py-2 text-xs text-brand-900">
-            Started from {previous.crop_year}’s answers. Change what has moved and save.
+            Started from {previous.crop_year}’s answers for {ranch.name}. Change what has moved and save.
+          </p>
+        )}
+        {!current && !previous && (
+          <p className="rounded-md bg-brand-50 px-3 py-2 text-xs text-brand-900">
+            Started from what the app already knows about {ranch.name}, and from the types its own pastures are. Everything
+            AFSC alone can tell you — the identification number, the stations, the option and the price — is still blank.
           </p>
         )}
 

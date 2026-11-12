@@ -2,9 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { CELL_ACRES } from './pl-grid'
 import { FIXED_KEY, LAND_SHARE_KEY, autoFixed, autoInputs, autoOutput, fixedAreasFrom, fixedLines, forMap, mergeLines, type SavedLine } from './profit-loss-lines'
 
-const prices: Record<string, { name: string; pricePerUnit: number | null }> = {
+const prices: Record<string, { name: string; pricePerUnit: number | null; unit?: string | null }> = {
   '46-0-0': { name: 'Tonne 46-0-0', pricePerUnit: 0.8 },
+  // No unit: every price entered before the unit travelled with it looks like
+  // this, and those are still taken on trust.
   'pinto seed': { name: 'Pinto seed', pricePerUnit: 2 },
+  'corn (short season)': { name: 'Corn (Short Season)', pricePerUnit: 4.5, unit: 'k seeds' },
+  'barley (cover crop)': { name: 'Barley (Cover Crop)', pricePerUnit: 1.1, unit: 'kg' },
+  // A seed somebody priced per kilogram, which a count cannot be multiplied by.
+  'yellow beans': { name: 'Yellow Beans', pricePerUnit: 3, unit: 'kg' },
 }
 const resolve = (n: string) => prices[n.trim().toLowerCase()] ?? null
 
@@ -50,6 +56,44 @@ describe('autoInputs', () => {
     const lb = 100 * 2 * CELL_ACRES
     expect(line.amount).toBeCloseTo(lb * 0.45359237, 9)
     expect(line.price).toBe(2)
+  })
+
+  /*
+   * The hole this closed. pl_op_grids held 19 seeding layers in `seeds1ac-1`
+   * — every corn, canola and bean field on the farm — and toCanonicalRate
+   * returned null for all of them, so `if (!conv) continue` dropped the line
+   * entirely. Not a wrong seed cost: no seed cost, and nothing on the page to
+   * say one was missing.
+   */
+  it('counts seed the planter metered by seed, instead of dropping the line', () => {
+    const grid = { ...seedGrid, product_name: 'Corn (Short Season)', rate_unit: 'seeds1ac-1', cells: [[0, 0, 34_000, 1]] as [number, number, number, number][] }
+    const [line] = autoInputs([seeding], [grid], 2026, 155.64, resolve)
+
+    expect(line).toBeDefined()
+    expect(line.label).toBe('Corn (Short Season)')
+    expect(line.unit).toBe('k seeds')
+    // 34,000 seeds on a cell's worth of an acre, counted in thousands.
+    expect(line.amount).toBeCloseTo(34 * CELL_ACRES, 9)
+    expect(line.price).toBe(4.5)
+    expect(line.problem).toBeNull()
+  })
+
+  it('still weighs seed the drill metered by weight', () => {
+    const grid = { ...seedGrid, product_name: 'Barley (Cover Crop)', rate_unit: 'lb1ac-1' }
+    const [line] = autoInputs([seeding], [grid], 2026, 155.64, resolve)
+    expect(line.unit).toBe('kg')
+    expect(line.price).toBe(1.1)
+  })
+
+  it('will not multiply a price per kilogram by a count of seeds', () => {
+    const grid = { ...seedGrid, product_name: 'Yellow Beans', rate_unit: 'seeds1ac-1' }
+    const [line] = autoInputs([seeding], [grid], 2026, 155.64, resolve)
+
+    // The quantity is still right and still shown; only the money is withheld.
+    expect(line.unit).toBe('k seeds')
+    expect(line.amount).toBeGreaterThan(0)
+    expect(line.price).toBeNull()
+    expect(line.problem).toMatch(/priced per kg .*planter counted k seeds/)
   })
 
   it('says so when a product has no price, instead of calling it free', () => {

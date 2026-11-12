@@ -90,7 +90,7 @@ export function FieldGrazingRestriction({ fieldId }: { fieldId: string }) {
           <p className="mt-1 pl-6 text-[11px] opacity-70">
             Read off each label by the app; the label is the law. All fields and pastures:{' '}
             <Link to="/cattle?tab=restrictions" className="underline">
-              Grazing restrictions
+              Spray restrictions
             </Link>
             .
           </p>
@@ -139,7 +139,7 @@ export function GrazingRestrictionBanner() {
         ))}
       </ul>
       <Link to="/cattle?tab=restrictions" className="mt-1 inline-block pl-6 text-xs underline">
-        Grazing restrictions — products and labels
+        Spray restrictions — products and labels
       </Link>
     </div>
   )

@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useHerdCounts } from '@/lib/cattle'
-import { costOfGain } from '@/lib/cost-of-gain'
-import { solveRation } from '@/lib/cattle-nutrition'
-import { feedValues, groupInput, rationLines, useFeedTests, useFeedTypesFull, useGroupRations, useUpdateFeedType } from '@/lib/winter-feeding'
+import { backgroundRation, costOfGain } from '@/lib/cost-of-gain'
+import { feedValues, groupInput, monthlyCold, rationLines, useFeedTests, useFeedTypesFull, useGroupRations, useUpdateFeedType, useWinterHistory } from '@/lib/winter-feeding'
 import { useFeedPlan } from '@/lib/feed'
+import { useRanches } from '@/lib/ranches'
+import type { Coat } from '@/lib/cattle-nutrition'
 import { CattleInfo } from './CattleInfo'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
 import { money as fmtMoney } from '@/lib/format'
@@ -25,6 +26,7 @@ export function CostOfGainWorksheet({
 }: {
   ranchId: string | null
   isManager: boolean
+  /** Post-weaning death loss, % (cattle_cost_assumptions.post_weaning_loss_pct). */
   deathLossPct: number | null
   /** The ranch's yardage for a backgrounded calf (Cattle settings): used until one is typed here. */
   calfYardage?: number | null
@@ -35,6 +37,11 @@ export function CostOfGainWorksheet({
   const { data: types } = useFeedTypesFull()
   const { data: tests } = useFeedTests()
   const { data: plan } = useFeedPlan(ranchId)
+  // The ranch's weaning day and its own winters' cold, so the calves are fed
+  // from weaning through the months they are actually on feed.
+  const { data: ranches } = useRanches()
+  const ranch = ranches?.find((r) => r.id === ranchId) ?? null
+  const { data: history } = useWinterHistory(ranch?.latitude ?? null, ranch?.longitude ?? null)
   const setType = useUpdateFeedType()
   const [days, setDays] = useState('150')
   const [yardage, setYardage] = useState('')
@@ -52,9 +59,21 @@ export function CostOfGainWorksheet({
     if (!calves || !plan) return null
     const g = groupInput(calves)
     const gain = g.targetGainLb ?? 1.5
-    // Fed at their weight halfway through: intake climbs as they grow.
-    const mid = { ...g, head: 1, weightLb: g.weightLb + (gain * d) / 2 }
-    const r = solveRation(mid, { onDate: new Date(), calvingMonth: plan.calving_month, calvingDay: plan.calving_day, daysToTurnout: d, cold: 0, muddy: false }, rationLines(calves.id, rations ?? [], values))
+    // From the weaning day (today when none is set), day by day: intake
+    // climbs as they grow, and the cold comes month by month.
+    const w = ranch?.weaning_date
+    const start = w && /^\d{4}-\d{2}-\d{2}/.test(w) ? new Date(Number(w.slice(0, 4)), Number(w.slice(5, 7)) - 1, Number(w.slice(8, 10))) : new Date()
+    const r = backgroundRation({
+      group: g,
+      lines: rationLines(calves.id, rations ?? [], values),
+      start,
+      days: d,
+      gainLbPerDay: gain,
+      coldByMonth: monthlyCold(history?.months, plan.coat as Coat, plan.sheltered),
+      calvingMonth: plan.calving_month,
+      calvingDay: plan.calving_day,
+      muddy: plan.muddy,
+    })
     const typeOf = (id: string) => (types ?? []).find((x) => x.id === id)
     const priceOf = (id: string) => {
       const t = typeOf(id)
@@ -65,8 +84,8 @@ export function CostOfGainWorksheet({
       const t = typeOf(id)
       return { priceNote: t?.price_note ?? null, priceFrom: t?.price_source === 'afsc' ? 'AFSC list' : t?.price_source === 'estimate' ? 'estimate' : t?.price_source === 'manual' ? 'typed' : null }
     }
-    const feeds = r.lines.map((l) => ({ id: l.feed.id, name: l.feed.name, asFedLbPerDay: l.offeredLb, pricePerTonne: priceOf(l.feed.id), ...fromOf(l.feed.id) }))
-    if (r.addGrainLb > 0.05) feeds.push({ id: 'grain', name: 'Grain to carry the gain', asFedLbPerDay: r.addGrainLb, pricePerTonne: null, priceNote: null, priceFrom: null })
+    const feeds = r.feeds.map((l) => ({ id: l.id, name: l.name, asFedLbPerDay: l.asFedLbPerDay, pricePerTonne: priceOf(l.id), ...fromOf(l.id) }))
+    if (r.addGrainLbPerDay > 0.05) feeds.push({ id: 'grain', name: 'Grain to carry the gain', asFedLbPerDay: r.addGrainLbPerDay, pricePerTonne: null, priceNote: null, priceFrom: null })
     return {
       gain,
       startLb: g.weightLb,
@@ -83,7 +102,7 @@ export function CostOfGainWorksheet({
         deathLossPct,
       }),
     }
-  }, [calves, plan, rations, values, types, d, yardage, vet, interest, calfValue, deathLossPct, calfYardage])
+  }, [calves, plan, rations, values, types, d, yardage, vet, interest, calfValue, deathLossPct, calfYardage, ranch?.weaning_date, history])
 
   const field = 'w-24 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums'
 

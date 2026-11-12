@@ -39,6 +39,14 @@ export type AutoLine = {
   passes: LineShare[]
   /** Why a figure is missing, when one is. */
   problem: string | null
+  /**
+   * Where this row's price is set, when it is not set here. A crop's sale
+   * price belongs to the crop, not to one field's books (Sam, 2 Nov 2026:
+   * "have the price for each crop pull from the crop information
+   * automatically ... when they click on it it takes them to the crop
+   * settings"), so the table shows it as a link rather than a box to type in.
+   */
+  priceAt?: string | null
 }
 
 export type SavedLine = {
@@ -141,10 +149,19 @@ export function autoInputs(
         r.qty += conv.rate
         r.perOp.set(o.id, (r.perOp.get(o.id) ?? 0) + conv.rate)
         r.source.add('planter')
-        const price = resolve(name)?.pricePerUnit ?? null
+        const product = resolve(name)
+        // A price in one unit cannot be multiplied by a total in another. Corn
+        // and canola are metered by seed and priced per thousand seeds; a seed
+        // priced per kilogram against a count is not a small error, it is a
+        // number with no meaning. Null unit means a price entered before the
+        // unit travelled with it, which is taken on trust as it always was.
+        const mismatched = product?.unit != null && product.unit !== conv.unit
+        const price = mismatched ? null : (product?.pricePerUnit ?? null)
         if (price == null) {
           r.priced = false
-          r.problem = 'no price in the price book'
+          r.problem = mismatched
+            ? `priced per ${product?.unit} in the price book, but the planter counted ${conv.unit}`
+            : 'no price in the price book'
         } else r.dollars += conv.rate * price
       }
     }
@@ -164,7 +181,11 @@ export function autoInputs(
 }
 
 /** The crop, from the scale, at the chosen price. */
-export function autoOutput(crop: { name: string | null; unit: string | null; total: number | null }, price: number | null, priceSource: string): AutoLine | null {
+export function autoOutput(
+  crop: { id?: string | null; name: string | null; unit: string | null; total: number | null },
+  price: number | null,
+  priceSource: string,
+): AutoLine | null {
   if (!crop.name) return null
   return {
     key: lineKey(crop.name),
@@ -173,6 +194,7 @@ export function autoOutput(crop: { name: string | null; unit: string | null; tot
     unit: crop.unit,
     price,
     amount: crop.total,
+    priceAt: crop.id ? `/crops/${crop.id}` : null,
     source: `scale, ${priceSource} price`,
     passes: [],
     problem: crop.total == null ? 'no scale loads yet' : price == null ? `no ${priceSource} price` : null,

@@ -11,7 +11,8 @@ export const FEED_HELP = {
     title: 'How the feed is worked out',
     body: [
       'Feed is budgeted by energy, not bales. Each group has a daily need for energy (TDN, pounds) and protein (CP, pounds), from the NASEM 2016 beef tables for its class and stage.',
-      'That need goes up for cold, mud and putting condition back on. The group’s ration — its feeds as shares of the dry matter — is then fed in the amount that meets the energy need, never more than the animal can eat.',
+      'That need goes up for cold, mud and putting condition back on. A group fed a measured amount gets its ration — its feeds as shares of the dry matter — in the amount that meets the energy need, never more than the animal can eat.',
+      'A group fed free-choice bales eats to appetite instead, need or not; the energy over need shows as condition put on.',
       'When the ration is too poor to meet the need at what they can eat, the gap is closed with grain, and the screen says how much.',
       'Last, dry matter is turned back into pounds as fed (÷ dry matter %) and grossed up for what is wasted at feeding.',
     ],
@@ -71,9 +72,10 @@ export const FEED_HELP = {
     title: 'Target condition',
     body: [
       '3.0 at calving for cows; 3.0–3.5 for first-calf heifers, which are still growing.',
-      'When the group is below target, energy goes up by 18 × (scores to gain) ÷ (days left): 20% for 90 days or 30% for 60 days for one score, which is BCRC’s figure. Days left are to calving for bred females, to turnout for the rest.',
+      'One score is about 14% of body weight — about 170 lb on a 1,200 lb cow. Putting it back on takes about 4 lb of TDN over need for every pound, about 690 lb of TDN a score; losing it gives back about 2.5 lb a pound.',
+      'When the group is below target, that energy is spread over the days left, up to 35% more than the base need. Days left are to calving for bred females, to turnout for the rest. Free-choice groups show the condition the extra feed puts on.',
     ],
-    source: 'BCRC body condition; the 18 × ÷ days fit is ours.',
+    source: 'BCRC (200 lb a score on a 1,400 lb cow); NDSU AS-1198 (1.97 Mcal NEg a lb); NASEM 2016; NMSU CR575.',
   },
   gain: {
     title: 'Target gain (growing cattle)',
@@ -146,6 +148,34 @@ export const FEED_HELP = {
       'The last three weeks before calving there is about 10% less room. Straw: at most 1.25% of body weight. Grain: amber over 0.5% of body weight, red over 1% or 8 lb in one feeding.',
     ],
     source: 'NASEM via MP391; Saskatchewan straw; K-State; Saskatchewan ration design.',
+  },
+  feeding: {
+    title: 'Free-choice bales or a measured amount',
+    body: [
+      'Measured amount (limit-fed): the plan works out the energy the group needs each day and feeds just enough of the ration to meet it.',
+      'Free-choice bales: with bales in a feeder, cattle eat to appetite whether they need it or not. The plan uses appetite instead: about 1.5–1.8% of body weight on coarse straw, 2.0–2.2% on average hay, 2.5–2.7% on good alfalfa or green feed, about a third of a point more for a nursing cow.',
+      'Appetite rises a few percent in the cold (up to about a tenth below −15 °C), falls in a blizzard, falls about 15% in mud and a little in the last two months before calving, and falls as they get fat (about 10% less at condition 4). Waste at the feeder is on top, as set on each feed.',
+      'The energy eaten over need goes on as condition (or extra gain for calves). When appetite can’t meet the need — a straw-heavy ration — the shortfall and grain to add show the same as for a measured ration.',
+    ],
+    source: 'NASEM 2016 intake equations; NRC 1996 intake adjustments for temperature and mud; BCRC body condition.',
+  },
+  condition: {
+    title: 'Condition from free choice',
+    body: [
+      'Energy eaten over need, worked back to condition with the same rule the need uses to put condition on: about 20% more energy for 90 days per Canadian score (18 × scores ÷ days).',
+      'It includes any condition the group was already being fed to gain (Target), and the small allowance a fat cow in mid pregnancy gets to lose.',
+      'For calves the extra shows as gain over the target, at about ten points of TDN per extra pound a day.',
+    ],
+    source: 'BCRC; NASEM 2016 via Arkansas MP391.',
+  },
+  saveFeed: {
+    title: 'Ways to save feed',
+    body: [
+      'Limit time at the bale feeder: cows on good hay meet their need in a few hours a day; locking them off the rest of the day brings intake toward a measured ration. The saving shown is free-choice feed less a measured ration over the same days.',
+      'Swap in straw: straw fills the rumen with less energy, so appetite meets need with less hay or green feed. The bales shown are the least straw that takes the surplus off, kept under 60% of the ration and 1.25% of body weight.',
+      'Cut waste: cone or basket feeders waste about 5%, against 12–20% for rings and unrolling, and a processor puts less on the ground than open-bottom rings.',
+    ],
+    source: 'Oklahoma State extension (limiting hay access time); Saskatchewan straw; report feeding-method table.',
   },
   share: {
     title: 'Ration: share of dry matter',

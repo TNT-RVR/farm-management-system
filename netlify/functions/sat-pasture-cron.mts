@@ -2,6 +2,7 @@ import type { Config } from '@netlify/functions'
 import { admin } from './_jd.mts'
 import { inSeason, shouldRunToday } from '../shared/sat-ingest.ts'
 import { runPastureIngest } from '../shared/sat-run.ts'
+import { liveJob } from '../shared/sat-backfill.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 
 // The pastures, on their own clock.
@@ -19,6 +20,13 @@ export default async () => {
   // Keys saved on Farm setup, where Netlify's environment has none.
   await hydrateSecrets()
   const now = new Date()
+
+  // The stalled-backfill check comes BEFORE the seasonal gate, because the gate
+  // drops this to Mondays under snow and a backfill is something a person
+  // started and is waiting on. A season of history is most likely to be asked
+  // for in the winter, which is exactly when the gate is shut.
+  await resumeBackfill()
+
   if (!shouldRunToday(now)) {
     const skip = { skipped: true, detail: 'off-season, and not the weekly Monday run' }
     console.log('Pasture satellite:', JSON.stringify(skip))
@@ -32,6 +40,34 @@ export default async () => {
   })
   console.log('Pasture satellite:', JSON.stringify(result))
   return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } })
+}
+
+/**
+ * Restart a backfill that has gone quiet.
+ *
+ * The backfill chains itself: each run starts the next while work remains. That
+ * is one fetch, and a fetch can be lost -- a cold start that times out, a
+ * deploy mid-run, a Netlify hiccup -- and when it is, the job simply stops with
+ * its cursor part way through and nothing says so. This is the thing that
+ * notices. Twenty-five minutes is comfortably past a thirteen-minute run, so a
+ * live chain is never interrupted and a dead one never waits more than the four
+ * hours between these runs.
+ */
+async function resumeBackfill() {
+  try {
+    const key = process.env.JOB_WORKER_KEY
+    if (!key || !process.env.URL) return
+    const job = await liveJob(admin(), 'pasture')
+    if (!job?.updated_at) return
+    if (Date.now() - Date.parse(job.updated_at) < 25 * 60_000) return
+    console.log('Pasture satellite: restarting the stalled backfill', job.id, job.phase, job.cursor_date)
+    await fetch(`${process.env.URL}/.netlify/functions/sat-backfill-background?subject=pasture`, {
+      method: 'POST',
+      headers: { 'x-worker-key': key, 'content-type': 'application/json' },
+    }).catch(() => {})
+  } catch (e) {
+    console.log('Pasture satellite: backfill check failed', (e as Error).message.slice(0, 120))
+  }
 }
 
 export const config: Config = { schedule: '0 2-22/4 * * *' }

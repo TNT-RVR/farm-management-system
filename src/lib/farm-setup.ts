@@ -36,6 +36,12 @@ export type Feature = {
   description: string
   paths: string[]
   parent?: string
+  /**
+   * Until the farm sets this switch, it follows that feature's. A switch
+   * split out of an existing one starts where the old one was, so nothing
+   * appears or disappears on the day it is added.
+   */
+  defaultFrom?: string
 }
 
 export const FEATURES: Feature[] = [
@@ -53,14 +59,15 @@ export const FEATURES: Feature[] = [
   {
     key: 'cattle',
     label: 'Cattle',
-    description: 'Herd, grazing, winter feed, cattle prices and the pasture map.',
-    // The five views, then the old addresses that now redirect into their tabs
+    description: 'Herd, grazing, winter feed, cattle prices, the pasture map and the corral designer.',
+    // The views, then the old addresses that now redirect into their tabs
     // (Sam, 24 Oct 2026), so a bookmark to one is closed off too.
     paths: [
       '/cattle',
       '/herd',
       '/feed',
       '/cattle-markets',
+      '/handling-system',
       '/cattle-settings',
       '/grazing',
       '/feed-records',
@@ -125,6 +132,16 @@ FEATURES.push(
     paths: [],
     parent: 'irrigation',
   },
+  // Split from 'pregnancy' (2 Nov 2026): a farm can run collars for where the
+  // mobs are without the heat and pregnancy tracking, or the other way round.
+  {
+    key: 'collars',
+    label: 'Virtual-fence collars',
+    description: 'Where the mobs are, from eShepherd collar exports, on the cattle Map.',
+    paths: [],
+    parent: 'cattle',
+    defaultFrom: 'pregnancy',
+  },
   {
     key: 'time_off',
     label: 'Staff time off',
@@ -162,6 +179,7 @@ export function useFarmSettings(): FarmSettings {
 export function featureOn(features: Record<string, unknown> | null | undefined, key: string): boolean {
   const f = FEATURES.find((x) => x.key === key)
   if (features?.[key] === false) return false
+  if (f?.defaultFrom && features?.[key] === undefined && !featureOn(features, f.defaultFrom)) return false
   if (f?.parent) return featureOn(features, f.parent)
   return true
 }

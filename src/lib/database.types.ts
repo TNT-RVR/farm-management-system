@@ -17,6 +17,12 @@ type HistorySource = 'manual' | 'fah_import' | 'jd_import' | 'rotation_xlsx' | '
 type BinPolicy = 'mixable' | 'segregate_by_field' | 'segregate_by_variety'
 /** What the crop is grown for, which is what the farm actually sorts by. */
 type CropCategory = 'seed' | 'commercial' | 'own_use'
+/**
+ * The four FAO-56 growth phases the water-balance engine walks from the
+ * planting date: initial, development, mid-season, late season. The Alberta
+ * irrigation-scheduling sheets' stages are mapped onto these.
+ */
+type CropStagePhase = 'ini' | 'dev' | 'mid' | 'late'
 type InputCategory = 'seed' | 'fert' | 'chem' | 'fuel' | 'custom' | 'other'
 type TaskStatus = 'open' | 'done'
 type TaskSource =
@@ -152,6 +158,38 @@ export type Database = {
         Update: Partial<Database['public']['Tables']['jd_guidance_lines']['Insert']>
         Relationships: []
       }
+      /** The agronomist's productivity zones. The map reads the geojson view; a
+          screen that only wants the numbers reads this and leaves the geometry. */
+      field_yield_zones: {
+        Row: {
+          id: string
+          field_id: string
+          zone: number
+          min_yield: number | null
+          max_yield: number | null
+          yield_unit: string | null
+          acres: number | null
+          legal_desc: string | null
+          source_file: string | null
+          source_name: string | null
+          imported_at: string
+        }
+        Insert: {
+          id?: string
+          field_id: string
+          zone: number
+          min_yield?: number | null
+          max_yield?: number | null
+          yield_unit?: string | null
+          acres?: number | null
+          legal_desc?: string | null
+          source_file?: string | null
+          source_name?: string | null
+          imported_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['field_yield_zones']['Insert']>
+        Relationships: []
+      }
       /** What a combine's display was last loaded with, per "Mark loaded" (20261017010000). fields: SnapshotField[] (lib/combine-monitor.ts). */
       combine_monitor_loads: {
         Row: {
@@ -246,14 +284,14 @@ export type Database = {
        * 20261028120000).
        */
       afsc_mdi_year: {
-        Row: { crop_year: number; identification_number: string | null; business_name: string | null; business_address: string | null; gst_bn: string | null; contact_person: string | null; contact_phone: string | null; contact_email: string | null; home_part: string | null; home_section: string | null; home_township: string | null; home_range: string | null; home_meridian: string | null; station_1: string | null; station_2: string | null; station_3: string | null; coverage_option: string | null; price_per_lb: number | null; insure_native: boolean; insure_improved: boolean; insure_bush: boolean; insure_community: boolean; notes: string | null; updated_at: string; updated_by: string | null }
-        Insert: { crop_year: number; identification_number?: string | null; business_name?: string | null; business_address?: string | null; gst_bn?: string | null; contact_person?: string | null; contact_phone?: string | null; contact_email?: string | null; home_part?: string | null; home_section?: string | null; home_township?: string | null; home_range?: string | null; home_meridian?: string | null; station_1?: string | null; station_2?: string | null; station_3?: string | null; coverage_option?: string | null; price_per_lb?: number | null; insure_native?: boolean; insure_improved?: boolean; insure_bush?: boolean; insure_community?: boolean; notes?: string | null; updated_by?: string | null }
+        Row: { crop_year: number; ranch_id: string; identification_number: string | null; business_name: string | null; business_address: string | null; gst_bn: string | null; contact_person: string | null; contact_phone: string | null; contact_email: string | null; home_part: string | null; home_section: string | null; home_township: string | null; home_range: string | null; home_meridian: string | null; station_1: string | null; station_2: string | null; station_3: string | null; coverage_option: string | null; price_per_lb: number | null; insure_native: boolean; insure_improved: boolean; insure_bush: boolean; insure_community: boolean; notes: string | null; updated_at: string; updated_by: string | null }
+        Insert: { crop_year: number; ranch_id: string; identification_number?: string | null; business_name?: string | null; business_address?: string | null; gst_bn?: string | null; contact_person?: string | null; contact_phone?: string | null; contact_email?: string | null; home_part?: string | null; home_section?: string | null; home_township?: string | null; home_range?: string | null; home_meridian?: string | null; station_1?: string | null; station_2?: string | null; station_3?: string | null; coverage_option?: string | null; price_per_lb?: number | null; insure_native?: boolean; insure_improved?: boolean; insure_bush?: boolean; insure_community?: boolean; notes?: string | null; updated_by?: string | null }
         Update: Partial<Database['public']['Tables']['afsc_mdi_year']['Insert']>
         Relationships: []
       }
       afsc_mdi_land: {
-        Row: { id: string; pasture_id: string | null; part: string | null; section: string | null; township: string | null; range: string | null; meridian: string | null; acres: number | null; pasture_type: string | null; tenure: string | null; title_name: string | null; sort: number; created_at: string }
-        Insert: { id?: string; pasture_id?: string | null; part?: string | null; section?: string | null; township?: string | null; range?: string | null; meridian?: string | null; acres?: number | null; pasture_type?: string | null; tenure?: string | null; title_name?: string | null; sort?: number }
+        Row: { id: string; ranch_id: string | null; pasture_id: string | null; part: string | null; section: string | null; township: string | null; range: string | null; meridian: string | null; acres: number | null; pasture_type: string | null; tenure: string | null; title_name: string | null; sort: number; created_at: string }
+        Insert: { id?: string; ranch_id?: string | null; pasture_id?: string | null; part?: string | null; section?: string | null; township?: string | null; range?: string | null; meridian?: string | null; acres?: number | null; pasture_type?: string | null; tenure?: string | null; title_name?: string | null; sort?: number }
         Update: Partial<Database['public']['Tables']['afsc_mdi_land']['Insert']>
         Relationships: []
       }
@@ -409,6 +447,18 @@ export type Database = {
         Update: Partial<Database['public']['Tables']['chemical_recrop_rules']['Insert']>
         Relationships: []
       }
+      /**
+       * Resistance group per active ingredient — herbicide (Canadian HRAC/WSSA
+       * numbers), fungicide (FRAC), insecticide (IRAC). Keyed on the active as
+       * the PMRA registry spells it with the bracket stripped
+       * (migration 20261104110000); read through product_moa_v.
+       */
+      chemical_moa: {
+        Row: { active: string; scheme: 'herbicide' | 'fungicide' | 'insecticide'; group_code: string; group_name: string; ph_sensitive: boolean; time_of_day: string | null; note: string | null }
+        Insert: { active: string; scheme: 'herbicide' | 'fungicide' | 'insecticide'; group_code: string; group_name: string; ph_sensitive?: boolean; time_of_day?: string | null; note?: string | null }
+        Update: Partial<Database['public']['Tables']['chemical_moa']['Insert']>
+        Relationships: []
+      }
       /** Grazing / feeding / slaughter / dairy intervals read off each label (src/lib/grazing-restrictions.ts). */
       chemical_grazing_rules: {
         Row: { id: string; registration_number: string; crop: string | null; crop_key: string | null; kind: 'graze' | 'feed' | 'slaughter' | 'dairy'; days: number | null; never: boolean; condition: string | null; quote: string | null; source: 'label' | 'manual'; extracted_at: string }
@@ -555,6 +605,10 @@ export type Database = {
           subject: string | null
           severity: number
           note: string | null
+          /** How many were counted, in count_unit; null where nothing was counted. */
+          count_value: number | null
+          /** What count_value counts — see INSECT_UNITS in src/lib/insect-thresholds.ts. */
+          count_unit: 'per_sweep' | 'per_sample_10_sweeps' | 'heads_per_adult' | 'pct_stems' | null
           photo_paths: string[]
           created_by: string | null
           resolved_at: string | null
@@ -571,6 +625,8 @@ export type Database = {
           subject?: string | null
           severity?: number
           note?: string | null
+          count_value?: number | null
+          count_unit?: 'per_sweep' | 'per_sample_10_sweeps' | 'heads_per_adult' | 'pct_stems' | null
           photo_paths?: string[]
           created_by?: string | null
           resolved_at?: string | null
@@ -1318,6 +1374,10 @@ export type Database = {
           /** Share of the clear pixels that look like canola petals (canola-bloom.ts). */
           yellow_fraction: number | string | null
           blue_mean: number | string | null
+          /** Share of the clear pixels that are crop (NDVI > 0.4). */
+          plant_fraction: number | string | null
+          aot_mean: number | string | null
+          band_means: Record<string, number | null> | null
           s1_vv_mean: number | string | null
           s1_vh_mean: number | string | null
         }
@@ -1579,9 +1639,16 @@ export type Database = {
           irrigated_ac: number
           grazeable_irrigated_ac: number
           grass_quality: string
+          /** 'satellite' = set from measured canopy cover; 'manual' = typed, and left alone. */
+          grass_quality_source: 'manual' | 'satellite'
+          /** Peak canopy cover as a ratio to the ranch median that year. 1.00 is Fair. */
+          grass_quality_rel: number | string | null
+          grass_quality_set_on: string | null
           active: boolean
           ranch_id: string | null
           created_at: string
+          /** The mapped pasture this paddock is, which is what grazing_events point at. */
+          pasture_id: string | null
         }
         Insert: {
           id?: string
@@ -1592,8 +1659,12 @@ export type Database = {
           irrigated_ac?: number
           grazeable_irrigated_ac?: number
           grass_quality?: string
+          grass_quality_source?: 'manual' | 'satellite'
+          grass_quality_rel?: number | string | null
+          grass_quality_set_on?: string | null
           active?: boolean
           ranch_id?: string | null
+          pasture_id?: string | null
         }
         Update: {
           name?: string
@@ -1603,6 +1674,9 @@ export type Database = {
           irrigated_ac?: number
           grazeable_irrigated_ac?: number
           grass_quality?: string
+          grass_quality_source?: 'manual' | 'satellite'
+          grass_quality_rel?: number | string | null
+          grass_quality_set_on?: string | null
           active?: boolean
         }
         Relationships: []
@@ -1714,6 +1788,10 @@ export type Database = {
           actives: string[]
           /** Trade names and other search terms. */
           aliases: string[]
+          /** Complete search queries for research-discover.mjs, used instead of this folder's names. */
+          search_terms: string[]
+          /** Extra names that count as naming this shelf's subject when scoring aboutness. */
+          about_terms: string[]
           sort: number
           note: string | null
           created_at: string
@@ -1728,6 +1806,8 @@ export type Database = {
           registration_numbers?: string[]
           actives?: string[]
           aliases?: string[]
+          search_terms?: string[]
+          about_terms?: string[]
           sort?: number
           note?: string | null
           created_at?: string
@@ -1742,6 +1822,8 @@ export type Database = {
           registration_numbers?: string[]
           actives?: string[]
           aliases?: string[]
+          search_terms?: string[]
+          about_terms?: string[]
           sort?: number
           note?: string | null
           created_at?: string
@@ -1779,6 +1861,16 @@ export type Database = {
           created_at: string
           /** Generated: title, authors, source and abstract. Filtered on, never selected. */
           fts: string | null
+          /**
+           * How reading the PDF's text went: 'pending', 'done', or 'no_text'
+           * for a scan with no text layer. The chunks themselves are in
+           * research_paper_chunks. Migration 20261101140000.
+           */
+          text_status: string
+          text_chars: number | null
+          text_chunks: number | null
+          text_note: string | null
+          text_read_at: string | null
         }
         Insert: {
           id?: string
@@ -1843,6 +1935,113 @@ export type Database = {
         Update: {
           paper_id?: string
           folder_id?: string
+        }
+        Relationships: []
+      }
+      /**
+       * One figure lifted out of one passage of one paper — a threshold, a
+       * rate, a stage — with the sentence it came from. Nothing reads a row
+       * until status is 'confirmed'. Migration 20261106160000.
+       */
+      research_numbers: {
+        Row: {
+          id: string
+          paper_id: string
+          chunk_id: number | null
+          page: number | null
+          /** One of the fixed list in the table's check constraint. */
+          measure: string
+          /** What it is about, in the paper's words. */
+          subject: string
+          /** Our own crop name, where the paper's folder already named one. */
+          crop_name: string | null
+          active: string | null
+          value_low: number | null
+          value_high: number | null
+          unit: string | null
+          /** The condition it holds under: 'per sweep', 'at 10% bloom'. */
+          qualifier: string | null
+          /** Copied from the paper. Checked to occur there before storing. */
+          passage: string
+          /** 1-3: how plainly the paper states it. */
+          confidence: number
+          /** 'unreviewed', 'confirmed' or 'rejected'. */
+          status: string
+          reviewed_by: string | null
+          reviewed_at: string | null
+          review_note: string | null
+          model: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          paper_id: string
+          chunk_id?: number | null
+          page?: number | null
+          measure: string
+          subject: string
+          crop_name?: string | null
+          active?: string | null
+          value_low?: number | null
+          value_high?: number | null
+          unit?: string | null
+          qualifier?: string | null
+          passage: string
+          confidence?: number
+          status?: string
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          review_note?: string | null
+          model?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          paper_id?: string
+          chunk_id?: number | null
+          page?: number | null
+          measure?: string
+          subject?: string
+          crop_name?: string | null
+          active?: string | null
+          value_low?: number | null
+          value_high?: number | null
+          unit?: string | null
+          qualifier?: string | null
+          passage?: string
+          confidence?: number
+          status?: string
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          review_note?: string | null
+          model?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      /** One row per passage already read for figures, the empty ones included, so a run carries on. */
+      research_passages_read: {
+        Row: {
+          chunk_id: number
+          paper_id: string | null
+          /** How many figures came out of it; zero is the normal answer. */
+          found: number
+          model: string | null
+          read_at: string
+        }
+        Insert: {
+          chunk_id: number
+          paper_id?: string | null
+          found?: number
+          model?: string | null
+          read_at?: string
+        }
+        Update: {
+          chunk_id?: number
+          paper_id?: string | null
+          found?: number
+          model?: string | null
+          read_at?: string
         }
         Relationships: []
       }
@@ -1982,13 +2181,15 @@ export type Database = {
         Row: {
           id: string
           name: string | null
-          kind: 'dugout' | 'pond' | 'trough' | 'spring' | 'well' | 'other'
+          kind: 'dugout' | 'pond' | 'trough' | 'trough_portable' | 'spring' | 'well' | 'other'
           drinkable: boolean
           /** PostGIS point; written as EWKT, read through cattle_water_points. */
           geom: string
           source: 'mymap' | 'manual'
           notes: string | null
           serves: string[]
+          /** Where the water comes from: the river, the canal, or null for its own. */
+          fed_by: 'oldman' | 'smrid' | null
           created_by: string | null
           created_at: string
           updated_at: string
@@ -1996,21 +2197,23 @@ export type Database = {
         Insert: {
           id?: string
           name?: string | null
-          kind?: 'dugout' | 'pond' | 'trough' | 'spring' | 'well' | 'other'
+          kind?: 'dugout' | 'pond' | 'trough' | 'trough_portable' | 'spring' | 'well' | 'other'
           drinkable?: boolean
           geom: string
           source?: 'mymap' | 'manual'
           notes?: string | null
           serves?: string[]
+          fed_by?: 'oldman' | 'smrid' | null
           created_by?: string | null
         }
         Update: {
           name?: string | null
-          kind?: 'dugout' | 'pond' | 'trough' | 'spring' | 'well' | 'other'
+          kind?: 'dugout' | 'pond' | 'trough' | 'trough_portable' | 'spring' | 'well' | 'other'
           drinkable?: boolean
           geom?: string
           notes?: string | null
           serves?: string[]
+          fed_by?: 'oldman' | 'smrid' | null
           updated_at?: string
         }
         Relationships: []
@@ -2294,6 +2497,10 @@ export type Database = {
           ration_note: string | null
           /** Calves only: how many are kept after weaning to background. */
           background_head: number | null
+          /** au_equivalent typed on purpose; otherwise AU = avg_weight_lb / 1000. */
+          au_override: boolean
+          /** Winter feeding: bales free choice (eaten to appetite) or a measured amount. */
+          feeding_method: 'free_choice' | 'measured'
         }
         Insert: {
           id?: string
@@ -2305,6 +2512,7 @@ export type Database = {
           notes?: string | null
           sort_order?: number
           updated_at?: string
+          feeding_method?: 'free_choice' | 'measured'
         }
         Update: {
           id?: string
@@ -2324,6 +2532,246 @@ export type Database = {
           target_gain_lb?: number | null
           ration_note?: string | null
           background_head?: number | null
+          au_override?: boolean
+          feeding_method?: 'free_choice' | 'measured'
+        }
+        Relationships: []
+      }
+      /** A corral yard the Handling System draws layouts on. */
+      handling_sites: {
+        Row: {
+          id: string
+          ranch_id: string | null
+          name: string
+          /** Where the map opens; saved on every pan and zoom. */
+          center_lng: number | null
+          center_lat: number | null
+          zoom: number | null
+          notes: string | null
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          ranch_id?: string | null
+          name: string
+          center_lng?: number | null
+          center_lat?: number | null
+          zoom?: number | null
+          notes?: string | null
+          sort_order?: number
+        }
+        Update: {
+          name?: string
+          ranch_id?: string | null
+          center_lng?: number | null
+          center_lat?: number | null
+          zoom?: number | null
+          notes?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      /** One layout of a yard. `is_base` is what is built today. */
+      handling_versions: {
+        Row: {
+          id: string
+          site_id: string
+          name: string
+          is_base: boolean
+          notes: string | null
+          sort_order: number
+          created_at: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          id?: string
+          site_id: string
+          name: string
+          is_base?: boolean
+          notes?: string | null
+          sort_order?: number
+          updated_by?: string | null
+        }
+        Update: {
+          name?: string
+          notes?: string | null
+          sort_order?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      /** What can be placed. site_id null is the built-in kit, shared by every yard. */
+      handling_catalog: {
+        Row: {
+          id: string
+          site_id: string | null
+          key: string | null
+          name: string
+          category: string
+          /** The long axis: a 10 ft panel is 10 ft of fence. */
+          width_ft: number
+          depth_ft: number
+          /** How tall it stands. Equals depth_ft on panels and gates, where that column has always meant height. */
+          height_ft: number
+          color: string
+          description: string | null
+          panel_type: 'bars' | 'wind-fence' | null
+          gate_type: 'swinging' | 'two-panel' | 'drive-over' | null
+          animal_type: 'cow' | 'bull' | 'calf' | null
+          /** false for the cattle and the tractor: dropped on for clearance, not kit. */
+          counted: boolean
+          sort_order: number
+        }
+        Insert: {
+          id?: string
+          site_id?: string | null
+          key?: string | null
+          name: string
+          category: string
+          width_ft: number
+          depth_ft: number
+          height_ft?: number
+          color?: string
+          description?: string | null
+          panel_type?: 'bars' | 'wind-fence' | null
+          gate_type?: 'swinging' | 'two-panel' | 'drive-over' | null
+          animal_type?: 'cow' | 'bull' | 'calf' | null
+          counted?: boolean
+          sort_order?: number
+        }
+        Update: {
+          name?: string
+          category?: string
+          width_ft?: number
+          depth_ft?: number
+          height_ft?: number
+          color?: string
+          description?: string | null
+          counted?: boolean
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      handling_items: {
+        Row: {
+          id: string
+          version_id: string
+          catalog_id: string
+          lng: number
+          lat: number
+          /** Degrees clockwise, about the item's own centre. */
+          rotation: number
+          /** Degrees a gate leaf is swung open, clockwise from shut. 0 on anything else. */
+          swing_deg: number
+        }
+        Insert: {
+          id?: string
+          version_id: string
+          catalog_id: string
+          lng: number
+          lat: number
+          rotation?: number
+          swing_deg?: number
+        }
+        Update: {
+          lng?: number
+          lat?: number
+          rotation?: number
+          swing_deg?: number
+          catalog_id?: string
+        }
+        Relationships: []
+      }
+      /** A drawn line. Closed means it is a pen, and its area comes from the points. */
+      handling_paths: {
+        Row: {
+          id: string
+          version_id: string
+          /** [[lng, lat], …] in the order they were clicked. */
+          points: [number, number][]
+          is_closed: boolean
+          label: string | null
+          color: string
+          stroke_width: number
+          usage_type: 'crowding' | 'working' | 'holding' | 'pasture'
+          /** herd_counts.class_name values; head is split evenly on the way past. */
+          assigned_classes: string[]
+        }
+        Insert: {
+          id?: string
+          version_id: string
+          points: [number, number][]
+          is_closed?: boolean
+          label?: string | null
+          color?: string
+          stroke_width?: number
+          usage_type?: 'crowding' | 'working' | 'holding' | 'pasture'
+          assigned_classes?: string[]
+        }
+        Update: {
+          points?: [number, number][]
+          is_closed?: boolean
+          label?: string | null
+          color?: string
+          stroke_width?: number
+          usage_type?: 'crowding' | 'working' | 'holding' | 'pasture'
+          assigned_classes?: string[]
+        }
+        Relationships: []
+      }
+      handling_inventory: {
+        Row: {
+          /** Its own key, because fn_audit fills audit_log.record_id from it. */
+          id: string
+          site_id: string
+          catalog_id: string
+          quantity: number
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          site_id: string
+          catalog_id: string
+          quantity?: number
+          updated_at?: string
+        }
+        Update: {
+          quantity?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      handling_layers: {
+        Row: {
+          id: string
+          site_id: string
+          name: string
+          type: 'electrical' | 'water' | 'gas' | 'other'
+          /** The uploaded KML as it came; parsed in the browser. */
+          kml_content: string
+          color: string
+          visible: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          site_id: string
+          name: string
+          type?: 'electrical' | 'water' | 'gas' | 'other'
+          kml_content: string
+          color?: string
+          visible?: boolean
+        }
+        Update: {
+          name?: string
+          type?: 'electrical' | 'water' | 'gas' | 'other'
+          color?: string
+          visible?: boolean
         }
         Relationships: []
       }
@@ -2801,6 +3249,7 @@ export type Database = {
         Row: {
           grazed_after_harvest: boolean
           open_to_pasture: boolean
+          never_grazed: boolean
           grazing_note: string | null
           rain_gauge_id: string | null
           id: string
@@ -2858,6 +3307,7 @@ export type Database = {
         }
         Update: {
           grazed_after_harvest?: boolean
+          never_grazed?: boolean
           open_to_pasture?: boolean
           grazing_note?: string | null
           rain_gauge_id?: string | null
@@ -3099,6 +3549,8 @@ export type Database = {
           weighed: boolean
           bin_policy: BinPolicy
           test_weight_lb_per_bu: number | null
+          /** Estimated clean-out, % of the field-run weight, until a field's clean yield is in. */
+          est_cleanout_pct: number | null
           cheatsheet_md: string | null
           crop_coefficient_id: string | null
           min_return_years: number
@@ -3157,6 +3609,8 @@ export type Database = {
           weighed?: boolean
           bin_policy?: BinPolicy
           test_weight_lb_per_bu?: number | null
+          /** Estimated clean-out, % of the field-run weight, until a field's clean yield is in. */
+          est_cleanout_pct?: number | null
           cheatsheet_md?: string | null
           crop_coefficient_id?: string | null
           min_return_years?: number
@@ -3207,6 +3661,8 @@ export type Database = {
           weighed?: boolean
           bin_policy?: BinPolicy
           test_weight_lb_per_bu?: number | null
+          /** Estimated clean-out, % of the field-run weight, until a field's clean yield is in. */
+          est_cleanout_pct?: number | null
           cheatsheet_md?: string | null
           crop_coefficient_id?: string | null
           min_return_years?: number
@@ -3379,6 +3835,27 @@ export type Database = {
         }
         Relationships: []
       }
+      grant_aliases: {
+        Row: {
+          external_key: string
+          grant_id: string
+          title: string | null
+          created_at: string
+        }
+        Insert: {
+          external_key: string
+          grant_id: string
+          title?: string | null
+          created_at?: string
+        }
+        Update: {
+          external_key?: string
+          grant_id?: string
+          title?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       grants: {
         Row: {
           id: string
@@ -3400,6 +3877,16 @@ export type Database = {
           external_key: string | null
           created_at: string
           updated_at: string
+          cost_share_pct: number | null
+          eligible_costs: string | null
+          contact_name: string | null
+          contact_email: string | null
+          contact_phone: string | null
+          application_url: string | null
+          application_pdf_path: string | null
+          project_md: string | null
+          details_checked_at: string | null
+          meeting_email_sent_at: string | null
         }
         Insert: {
           id?: string
@@ -3419,6 +3906,16 @@ export type Database = {
           assigned_to?: string | null
           source?: string
           external_key?: string | null
+          cost_share_pct?: number | null
+          eligible_costs?: string | null
+          contact_name?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          application_url?: string | null
+          application_pdf_path?: string | null
+          project_md?: string | null
+          details_checked_at?: string | null
+          meeting_email_sent_at?: string | null
         }
         Update: {
           title?: string
@@ -3436,6 +3933,16 @@ export type Database = {
           categories?: string[]
           assigned_to?: string | null
           updated_at?: string
+          cost_share_pct?: number | null
+          eligible_costs?: string | null
+          contact_name?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          application_url?: string | null
+          application_pdf_path?: string | null
+          project_md?: string | null
+          details_checked_at?: string | null
+          meeting_email_sent_at?: string | null
         }
         Relationships: []
       }
@@ -3970,33 +4477,6 @@ export type Database = {
         Update: Partial<Database['public']['Tables']['partner_access']['Row']>
         Relationships: []
       }
-      crop_share_fields: {
-        Row: {
-          id: string
-          user_id: string
-          field_id: string
-          crop_year: number
-          created_by: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          field_id: string
-          crop_year: number
-          created_by?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          field_id?: string
-          crop_year?: number
-          created_by?: string | null
-          created_at?: string
-        }
-        Relationships: []
-      }
       crop_history: {
         Row: {
           herbicide_trait: string | null
@@ -4521,6 +5001,8 @@ export type Database = {
           premises_id: string | null
           brand: string | null
           brand_location: string | null
+          /** The herd's colour, for a manifest's Colour column. */
+          herd_colour: string | null
           address: string | null
           owner_name: string | null
           owner_phone: string | null
@@ -4570,6 +5052,7 @@ export type Database = {
           premises_id?: string | null
           brand?: string | null
           brand_location?: string | null
+          herd_colour?: string | null
           address?: string | null
           owner_name?: string | null
           owner_phone?: string | null
@@ -4667,6 +5150,19 @@ export type Database = {
           location: string | null
           acquired_date: string | null
           notes_md: string | null
+          eshepherd_animal_id: string | null
+          eid: string | null
+          vid: string | null
+          neckband: string | null
+          stock_class: string | null
+          brand: string | null
+          weight_kg: number | null
+          weighed_on: string | null
+          expected_gain_kg: number | null
+          pregnancy_status: string | null
+          mob: string | null
+          eshepherd_note: string | null
+          last_upload_id: string | null
           created_at: string
         }
         Insert: {
@@ -4684,6 +5180,19 @@ export type Database = {
           location?: string | null
           acquired_date?: string | null
           notes_md?: string | null
+          eshepherd_animal_id?: string | null
+          eid?: string | null
+          vid?: string | null
+          neckband?: string | null
+          stock_class?: string | null
+          brand?: string | null
+          weight_kg?: number | null
+          weighed_on?: string | null
+          expected_gain_kg?: number | null
+          pregnancy_status?: string | null
+          mob?: string | null
+          eshepherd_note?: string | null
+          last_upload_id?: string | null
           created_at?: string
         }
         Update: {
@@ -4701,8 +5210,39 @@ export type Database = {
           location?: string | null
           acquired_date?: string | null
           notes_md?: string | null
+          eshepherd_animal_id?: string | null
+          eid?: string | null
+          vid?: string | null
+          neckband?: string | null
+          stock_class?: string | null
+          brand?: string | null
+          weight_kg?: number | null
+          weighed_on?: string | null
+          expected_gain_kg?: number | null
+          pregnancy_status?: string | null
+          mob?: string | null
+          eshepherd_note?: string | null
+          last_upload_id?: string | null
           created_at?: string
         }
+        Relationships: []
+      }
+      cattle_uploads: {
+        Row: { id: string; filename: string; uploaded_at: string; uploaded_by: string | null; row_count: number; created_count: number; updated_count: number; skipped_count: number; headers: unknown; rows: unknown; previous: unknown; undone_at: string | null; note: string | null }
+        Insert: { id?: string; filename: string; uploaded_at?: string; uploaded_by?: string | null; row_count?: number; created_count?: number; updated_count?: number; skipped_count?: number; headers?: unknown; rows?: unknown; previous?: unknown; undone_at?: string | null; note?: string | null }
+        Update: Partial<Database['public']['Tables']['cattle_uploads']['Insert']>
+        Relationships: []
+      }
+      cattle_scans: {
+        Row: { id: string; eid: string; cattle_id: string | null; scanned_at: string; scanned_by: string | null; source: string; ranch_id: string | null; note: string | null }
+        Insert: { id?: string; eid: string; cattle_id?: string | null; scanned_at?: string; scanned_by?: string | null; source?: string; ranch_id?: string | null; note?: string | null }
+        Update: Partial<Database['public']['Tables']['cattle_scans']['Insert']>
+        Relationships: []
+      }
+      cattle_brand_ranch: {
+        Row: { brand: string; ranch_id: string | null; note: string | null; updated_at: string; updated_by: string | null }
+        Insert: { brand: string; ranch_id?: string | null; note?: string | null; updated_at?: string; updated_by?: string | null }
+        Update: Partial<Database['public']['Tables']['cattle_brand_ranch']['Insert']>
         Relationships: []
       }
       cattle_events: {
@@ -4884,6 +5424,10 @@ export type Database = {
           /** 'person' ticked it; 'auto' means the app worked it out and says why. */
           irrigation_done_source: 'person' | 'auto' | null
           irrigation_done_note: string | null
+          /** Growth phase set by hand, overriding the one worked out from the planting date. */
+          irrigation_stage: CropStagePhase | null
+          irrigation_stage_set_at: string | null
+          irrigation_stage_set_by: string | null
         }
         Insert: {
           calibration_factor?: number
@@ -4908,6 +5452,9 @@ export type Database = {
           irrigation_done_by?: string | null
           irrigation_done_source?: 'person' | 'auto' | null
           irrigation_done_note?: string | null
+          irrigation_stage?: CropStagePhase | null
+          irrigation_stage_set_at?: string | null
+          irrigation_stage_set_by?: string | null
         }
         Update: {
           calibration_factor?: number
@@ -4929,7 +5476,163 @@ export type Database = {
           irrigation_done_by?: string | null
           irrigation_done_source?: 'person' | 'auto' | null
           irrigation_done_note?: string | null
+          irrigation_stage?: CropStagePhase | null
+          irrigation_stage_set_at?: string | null
+          irrigation_stage_set_by?: string | null
         }
+        Relationships: []
+      }
+      /**
+       * One row per Alberta "Irrigation scheduling for X in southern Alberta"
+       * sheet. `paper_id` is the PDF in the research library every figure came
+       * out of, so the page can link to the source.
+       */
+      crop_irrigation_sheets: {
+        Row: {
+          id: string
+          /** crop_coefficients.crop this sheet is for. */
+          coef_crop: string
+          /** crop_coefficients.variant, or '' for any variant of that crop. */
+          coef_variant: string
+          crop_label: string
+          paper_id: string
+          agdex: string | null
+          published: string | null
+          season_mm_low: number | null
+          season_mm_high: number | null
+          peak_mm_day: number | string | null
+          peak_when: string | null
+          root_zone_cm: number
+          root_note: string | null
+          final_note: string | null
+          establish_note: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          coef_crop: string
+          coef_variant?: string
+          crop_label: string
+          paper_id: string
+          agdex?: string | null
+          published?: string | null
+          season_mm_low?: number | null
+          season_mm_high?: number | null
+          peak_mm_day?: number | string | null
+          peak_when?: string | null
+          root_zone_cm: number
+          root_note?: string | null
+          final_note?: string | null
+          establish_note?: string | null
+          created_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['crop_irrigation_sheets']['Insert']>
+        Relationships: []
+      }
+      /** The sheet's trigger for one growth phase: the depth to read at and the per cent not to cross. */
+      crop_irrigation_stages: {
+        Row: {
+          id: string
+          sheet_id: string
+          phase: CropStagePhase
+          seq: number
+          stage_label: string
+          monitor_depth_cm: number
+          start_pct: number | string | null
+          floor_pct: number | string
+          note: string | null
+        }
+        Insert: {
+          id?: string
+          sheet_id: string
+          phase: CropStagePhase
+          seq: number
+          stage_label: string
+          monitor_depth_cm: number
+          start_pct?: number | string | null
+          floor_pct: number | string
+          note?: string | null
+        }
+        Update: Partial<Database['public']['Tables']['crop_irrigation_stages']['Insert']>
+        Relationships: []
+      }
+      /** "Table 1" of each sheet: what a texture's zone holds, and what it takes to refill. */
+      crop_irrigation_refill: {
+        Row: {
+          id: string
+          sheet_id: string
+          depth_cm: number
+          texture: string
+          taw_mm: number
+          refill_mm: number
+          depletion_pct: number | string
+        }
+        Insert: {
+          id?: string
+          sheet_id: string
+          depth_cm: number
+          texture: string
+          taw_mm: number
+          refill_mm: number
+          depletion_pct: number | string
+        }
+        Update: Partial<Database['public']['Tables']['crop_irrigation_refill']['Insert']>
+        Relationships: []
+      }
+      /** A river segment with a published water conservation objective. */
+      river_wco_segments: {
+        Row: {
+          id: string
+          slug: string
+          label: string
+          bounds: string
+          gauge_station: string | null
+          gauge_label: string | null
+          paper_id: string | null
+          published: string | null
+          winter_wco_cms: number | string | null
+          winter_window: string | null
+          note: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          slug: string
+          label: string
+          bounds: string
+          gauge_station?: string | null
+          gauge_label?: string | null
+          paper_id?: string | null
+          published?: string | null
+          winter_wco_cms?: number | string | null
+          winter_window?: string | null
+          note?: string | null
+          created_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['river_wco_segments']['Insert']>
+        Relationships: []
+      }
+      /** Schedule 1: for each seven-day period, the objective as a step function of natural flow. */
+      river_wco_bands: {
+        Row: {
+          id: string
+          segment_id: string
+          /** The seven-day period the threshold is read in, as MM-DD. */
+          period_md: string
+          band_seq: number
+          /** Null is the schedule's "<" row: the driest band, no lower threshold. */
+          natural_flow_cms: number | string | null
+          wco_cms: number | string
+        }
+        Insert: {
+          id?: string
+          segment_id: string
+          period_md: string
+          band_seq: number
+          natural_flow_cms?: number | string | null
+          wco_cms: number | string
+        }
+        Update: Partial<Database['public']['Tables']['river_wco_bands']['Insert']>
         Relationships: []
       }
       soil_test_reports: {
@@ -5352,6 +6055,10 @@ export type Database = {
           notes: string | null
           active: boolean
           sort_order: number
+          max_grazing_days: number | null
+          /** MM-DD */
+          season_start_md: string | null
+          season_end_md: string | null
           created_at: string
           updated_at: string
         }
@@ -5379,9 +6086,76 @@ export type Database = {
           notes?: string | null
           active?: boolean
           sort_order?: number
+          max_grazing_days?: number | null
+          season_start_md?: string | null
+          season_end_md?: string | null
           updated_at?: string
         }
         Update: Partial<Database['public']['Tables']['grazing_dispositions']['Insert']>
+        Relationships: []
+      }
+      /** The grazing planner: one planned stay of a herd group in a pasture. */
+      grazing_plan: {
+        Row: {
+          id: string
+          ranch_id: string
+          plan_year: number
+          herd_count_id: string | null
+          pasture_id: string
+          start_date: string
+          end_date: string
+          head_count: number | null
+          notes: string | null
+          sort_order: number
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          ranch_id: string
+          plan_year: number
+          herd_count_id?: string | null
+          pasture_id: string
+          start_date: string
+          end_date: string
+          head_count?: number | null
+          notes?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['grazing_plan']['Insert']>
+        Relationships: []
+      }
+      /** A gate between two pastures; the pair is stored lowest id first. */
+      pasture_gates: {
+        Row: {
+          id: string
+          pasture_a: string
+          pasture_b: string
+          /** GeoJSON Point when read; EWKT when written. */
+          gate_geom: Json | null
+          note: string | null
+          source: 'manual' | 'mymap'
+          /** Open carries the neighbouring paddock's water through. */
+          is_open: boolean
+          /** Nominal clear width, feet. Does not enter the reach arithmetic. */
+          width_ft: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          pasture_a: string
+          pasture_b: string
+          gate_geom?: string | null
+          note?: string | null
+          source?: 'manual' | 'mymap'
+          is_open?: boolean
+          width_ft?: number
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['pasture_gates']['Insert']>
         Relationships: []
       }
       /** One Stewardship Stock Return a grazing lease a year. */
@@ -5894,6 +6668,167 @@ export type Database = {
         Relationships: []
       }
       /** A canola field's flowering season from the satellite, kept by netlify/shared/canola-bloom.ts. */
+      /**
+       * Lab results for one of our own cattle water sources, read against
+       * Alberta Agdex 400/716-2 in src/lib/livestock-water.ts. Units are the
+       * guideline tables' own: mg/L, except the two nutrients and the toxin,
+       * which are ug/L.
+       */
+      cattle_water_tests: {
+        Row: {
+          id: string
+          water_id: string
+          sampled_on: string
+          lab: string | null
+          tds_mg_l: number | null
+          so4_mg_l: number | null
+          no3n_mg_l: number | null
+          na_mg_l: number | null
+          k_mg_l: number | null
+          cl_mg_l: number | null
+          alkalinity_mg_l: number | null
+          hardness_mg_l: number | null
+          ph: number | null
+          ec_us_cm: number | null
+          fe_mg_l: number | null
+          cu_mg_l: number | null
+          mo_mg_l: number | null
+          se_mg_l: number | null
+          mn_mg_l: number | null
+          f_mg_l: number | null
+          total_n_ug_l: number | null
+          total_p_ug_l: number | null
+          microcystin_ug_l: number | null
+          bloom_seen: boolean | null
+          notes: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          water_id: string
+          sampled_on: string
+          lab?: string | null
+          tds_mg_l?: number | null
+          so4_mg_l?: number | null
+          no3n_mg_l?: number | null
+          na_mg_l?: number | null
+          k_mg_l?: number | null
+          cl_mg_l?: number | null
+          alkalinity_mg_l?: number | null
+          hardness_mg_l?: number | null
+          ph?: number | null
+          ec_us_cm?: number | null
+          fe_mg_l?: number | null
+          cu_mg_l?: number | null
+          mo_mg_l?: number | null
+          se_mg_l?: number | null
+          mn_mg_l?: number | null
+          f_mg_l?: number | null
+          total_n_ug_l?: number | null
+          total_p_ug_l?: number | null
+          microcystin_ug_l?: number | null
+          bloom_seen?: boolean | null
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          sampled_on?: string
+          lab?: string | null
+          tds_mg_l?: number | null
+          so4_mg_l?: number | null
+          no3n_mg_l?: number | null
+          na_mg_l?: number | null
+          k_mg_l?: number | null
+          cl_mg_l?: number | null
+          alkalinity_mg_l?: number | null
+          hardness_mg_l?: number | null
+          ph?: number | null
+          ec_us_cm?: number | null
+          fe_mg_l?: number | null
+          cu_mg_l?: number | null
+          mo_mg_l?: number | null
+          se_mg_l?: number | null
+          mn_mg_l?: number | null
+          f_mg_l?: number | null
+          total_n_ug_l?: number | null
+          total_p_ug_l?: number | null
+          microcystin_ug_l?: number | null
+          bloom_seen?: boolean | null
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      /** Honey bee hives and leafcutter shelters in a field, from the Alberta seed canola pollinator guides. */
+      bee_placements: {
+        Row: {
+          id: string
+          field_id: string
+          crop_year: number
+          kind: 'honey' | 'leafcutter'
+          placed_on: string
+          removed_on: string | null
+          units: number | null
+          contact_id: string | null
+          note: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          field_id: string
+          crop_year: number
+          kind: 'honey' | 'leafcutter'
+          placed_on: string
+          removed_on?: string | null
+          units?: number | null
+          contact_id?: string | null
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['bee_placements']['Insert']>
+        Relationships: []
+      }
+      sclerotinia_checklists: {
+        Row: {
+          id: string
+          field_id: string
+          crop_year: number
+          answers: Json
+          notes: string | null
+          filled_on: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          field_id: string
+          crop_year: number
+          answers?: Json
+          notes?: string | null
+          filled_on?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          field_id?: string
+          crop_year?: number
+          answers?: Json
+          notes?: string | null
+          filled_on?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       canola_bloom: {
         Row: {
           field_id: string
@@ -5910,9 +6845,93 @@ export type Database = {
           notified_start_at: string | null
           notified_end_at: string | null
           updated_at: string
+          stage: 'none' | 'starting' | 'window' | 'full' | 'falling' | 'over' | null
+          confidence: 'high' | 'medium' | 'low' | null
+          baseline: number | string | null
+          model_score: number | string | null
+          station_id: string | null
+          forecast_start_on: string | null
+          typical_start_gdd: number | string | null
+          blind_since: string | null
+          blind_alerted_on: string | null
+          notified: Record<string, string>
+          task_id: string | null
+          truth_on: string | null
+          truth_source: 'scouting' | 'fungicide' | null
+          gdd_at_truth: number | string | null
+          gdd_at_start: number | string | null
+          first_fungicide_on: string | null
+          /** Every look of the summer: date, crop yellow share, source, quality, usable. */
+          looks: { d: string; s: number; src: 'sentinel' | 'landsat' | 'scout'; q: string | null; ok: boolean }[] | null
         }
         Insert: never
         Update: never
+        Relationships: []
+      }
+      /** The canola bloom settings, one row (id 1). */
+      canola_bloom_settings: {
+        Row: {
+          id: number
+          start_fraction: number | string
+          window_fraction: number | string
+          full_fraction: number | string
+          end_fraction: number | string
+          gate_gdd: number | string
+          latest_gdd: number | string
+          typical_start_gdd: number | string
+          haze_blue_max: number | string
+          haze_aot_max: number | string
+          min_valid: number | string
+          blind_days: number
+          variety_gate: Record<string, number>
+          updated_by: string | null
+          updated_at: string
+        }
+        Insert: never
+        Update: {
+          start_fraction?: number
+          window_fraction?: number
+          full_fraction?: number
+          end_fraction?: number
+          gate_gdd?: number
+          latest_gdd?: number
+          typical_start_gdd?: number
+          haze_blue_max?: number
+          haze_aot_max?: number
+          min_valid?: number
+          blind_days?: number
+          variety_gate?: Record<string, number>
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      /** "I saw it": a person's own read of a canola field's bloom. */
+      canola_bloom_scouting: {
+        Row: {
+          id: string
+          field_id: string
+          crop_year: number
+          seen_on: string
+          bloom_pct: number
+          note: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          field_id: string
+          crop_year: number
+          seen_on: string
+          bloom_pct: number
+          note?: string | null
+          created_by?: string | null
+        }
+        Update: {
+          seen_on?: string
+          bloom_pct?: number
+          note?: string | null
+        }
         Relationships: []
       }
       /** A custom manure hauler's invoice line, tied to the spread it paid for. Amount is before GST. */
@@ -6377,6 +7396,11 @@ export type Database = {
           cow_yardage_per_day: number | string | null
           calf_yardage_per_day: number | string | null
           cull_cow_price_cwt: number | string | null
+          /** Split of death_loss_pct (20261102100000). */
+          cow_death_pct: number | string | null
+          calf_loss_pct: number | string | null
+          post_weaning_loss_pct: number | string | null
+          cull_pct: number | string | null
           notes: string | null
           created_at: string
           updated_at: string
@@ -6395,6 +7419,10 @@ export type Database = {
           cow_yardage_per_day?: number | null
           calf_yardage_per_day?: number | null
           cull_cow_price_cwt?: number | null
+          cow_death_pct?: number | null
+          calf_loss_pct?: number | null
+          post_weaning_loss_pct?: number | null
+          cull_pct?: number | null
           notes?: string | null
           /** Set explicitly on upsert, where the insert default would not fire. */
           updated_at?: string
@@ -6609,7 +7637,7 @@ export type Database = {
           id: string
           name: string
           /** Canonical only — rates are normalised to litres or kilograms first. */
-          unit: 'L' | 'kg'
+          unit: 'L' | 'kg' | 'k seeds'
           price_per_unit: number | null
           pmra_registration: string | null
           notes: string | null
@@ -6620,13 +7648,19 @@ export type Database = {
           label_note: string | null
           manual_last_applied: string | null
           manual_crops: string[]
-          category: 'chemical' | 'fertilizer' | 'other'
+          category: 'chemical' | 'fertilizer' | 'seed' | 'other'
+          /**
+           * Actives for a line the registry cannot answer for ("Roundup"),
+           * spelled as chemicals.active_ingredients does, semicolon separated.
+           * Only where the contents are not in doubt (migration 20261104110000).
+           */
+          actives_manual: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
           name: string
-          unit: 'L' | 'kg'
+          unit: 'L' | 'kg' | 'k seeds'
           price_per_unit?: number | null
           pmra_registration?: string | null
           price_updated_on?: string | null
@@ -6634,7 +7668,8 @@ export type Database = {
           label_note?: string | null
           manual_last_applied?: string | null
           manual_crops?: string[]
-          category?: 'chemical' | 'fertilizer' | 'other'
+          actives_manual?: string | null
+          category?: 'chemical' | 'fertilizer' | 'seed' | 'other'
           notes?: string | null
         }
         Update: Partial<Database['public']['Tables']['jd_products']['Insert']> & {
@@ -7112,6 +8147,7 @@ export type Database = {
           empty_capture_id: string | null
           /** The truck was not weighed out; the empty weight is a best guess. */
           empty_guessed: boolean
+          direction: 'in' | 'out'
           driver_id: string | null
           driver: string | null
           note: string | null
@@ -7152,6 +8188,7 @@ export type Database = {
           full_capture_id?: string | null
           empty_capture_id?: string | null
           empty_guessed?: boolean
+          direction?: 'in' | 'out'
           driver_id?: string | null
           driver?: string | null
           note?: string | null
@@ -7192,6 +8229,7 @@ export type Database = {
           full_capture_id?: string | null
           empty_capture_id?: string | null
           empty_guessed?: boolean
+          direction?: 'in' | 'out'
           driver_id?: string | null
           driver?: string | null
           note?: string | null
@@ -8067,6 +9105,14 @@ export type Database = {
           created_by: string | null
           created_at: string
           updated_at: string
+          /** 'out' = cattle left on this manifest (the default). 'in' = cattle arrived. */
+          direction: string
+          /** Where the load came from, in the Alberta entry study's categories: ranch_direct | auction | backgrounding | own_ranch. */
+          source_kind: string | null
+          commingled: boolean | null
+          transport_km: number | null
+          rest_stop_h: number | null
+          arrival_note: string | null
         }
         Insert: {
           id?: string
@@ -8096,6 +9142,12 @@ export type Database = {
           created_by?: string | null
           created_at?: string
           updated_at?: string
+          direction?: string
+          source_kind?: string | null
+          commingled?: boolean | null
+          transport_km?: number | null
+          rest_stop_h?: number | null
+          arrival_note?: string | null
         }
         Update: {
           id?: string
@@ -8125,6 +9177,12 @@ export type Database = {
           created_by?: string | null
           created_at?: string
           updated_at?: string
+          direction?: string
+          source_kind?: string | null
+          commingled?: boolean | null
+          transport_km?: number | null
+          rest_stop_h?: number | null
+          arrival_note?: string | null
         }
         Relationships: []
       }
@@ -8836,6 +9894,46 @@ export type Database = {
        * figure). Migration 20261009030000. Read-only.
        */
       /**
+       * A lifted figure with its paper around it, which is what every screen
+       * wants. Migration 20261106160000. Read-only — review writes go to
+       * research_numbers itself.
+       */
+      research_numbers_v: {
+        Row: {
+          id: string
+          paper_id: string
+          chunk_id: number | null
+          page: number | null
+          measure: string
+          subject: string
+          crop_name: string | null
+          active: string | null
+          value_low: number | null
+          value_high: number | null
+          unit: string | null
+          qualifier: string | null
+          passage: string
+          confidence: number
+          status: string
+          reviewed_at: string | null
+          review_note: string | null
+          created_at: string
+          title: string
+          authors: string | null
+          year: number | null
+          source: string | null
+          doi: string | null
+          region: string
+          storage_path: string | null
+          source_url: string | null
+          /** 0 for southern Alberta up to 5 for elsewhere, so a list can sort by it. */
+          region_rank: number
+          /** Which to put in front of someone first: a named crop, then the nearest work. Lowest first. */
+          judge_rank: number
+        }
+        Relationships: []
+      }
+      /**
        * research_folders with the number of papers in the folder and in
        * everything under it. Migration 20261031120000. Read-only.
        */
@@ -8888,6 +9986,64 @@ export type Database = {
           status: string
           fetch_note: string | null
           created_at: string
+          /** The folder being shown, which on a cross-filed row is not folder_id. */
+          shelf_folder_id: string
+          /**
+           * How much the paper is about this shelf's active ingredient: 4 named
+           * in the title, 3 in the abstract, 2 ten times or more inside it, 1
+           * in passing, 0 never. Null on every shelf but the chemical ones.
+           * Migration 20261102140000.
+           */
+          about: number | null
+          /** How many times the active is named inside the paper. */
+          about_mentions: number | null
+        }
+        Relationships: []
+      }
+      /**
+       * One row per research shelf: what it holds, how near home that work was
+       * done, and how much we grow or spray the thing it is about. acres is
+       * null for a variety and for anything that is not a crop; passes is null
+       * for anything that is not a chemical. Migration 20261102120000.
+       */
+      research_gaps_v: {
+        Row: {
+          slug: string
+          name: string
+          kind: string
+          sort: number
+          parent_slug: string | null
+          parent_name: string | null
+          papers: number
+          stored: number
+          link_only: number
+          southern: number
+          alberta: number
+          near: number
+          recent: number
+          newest: number | null
+          acres: number | null
+          plan_years: number | null
+          plan_from: number | null
+          plan_to: number | null
+          passes: number | null
+          fields_sprayed: number | null
+          seasons: number | null
+          last_applied: string | null
+        }
+        Relationships: []
+      }
+      /**
+       * Crops with planned acres that no research folder claims. Migration
+       * 20261102120000.
+       */
+      research_unfiled_crops_v: {
+        Row: {
+          crop_id: string
+          name: string
+          acres: number | null
+          plan_years: number
+          plan_to: number
         }
         Relationships: []
       }
@@ -8914,6 +10070,71 @@ export type Database = {
           /** Marked not a normal year (abnormal_yield_years, migration 20261016070000). */
           exclude_from_averages: boolean
           abnormal_reason: string | null
+        }
+        Relationships: []
+      }
+      /**
+       * One row per product per active that has a resistance group: which
+       * groups a product puts in the tank (migration 20261104110000).
+       */
+      product_moa_v: {
+        Row: {
+          product_id: string
+          product_name: string
+          pmra_registration: string | null
+          active: string
+          scheme: 'herbicide' | 'fungicide' | 'insecticide'
+          group_code: string
+          group_name: string
+          /** Carryover the soil's own pH moves: weak acids on alkaline ground. */
+          ph_sensitive: boolean
+          /** One sentence, where the hour of the day changes the outcome. */
+          time_of_day: string | null
+          group_note: string | null
+        }
+        Relationships: []
+      }
+      /**
+       * Every application resolved to a resistance group: field, season, day,
+       * product and group (migration 20261104110000).
+       */
+      field_moa_history_v: {
+        Row: {
+          field_id: string
+          field_name: string | null
+          crop_season: number | null
+          applied_on: string
+          operation_id: string
+          product_id: string
+          product_name: string
+          active: string
+          scheme: 'herbicide' | 'fungicide' | 'insecticide'
+          group_code: string
+          group_name: string
+        }
+        Relationships: []
+      }
+      /**
+       * Applications whose product has no resistance group: how much the group
+       * counts on the spray check are missing (migration 20261104110000).
+       */
+      field_moa_unknown_v: {
+        Row: { field_id: string; crop_season: number | null; passes: number; products: number }
+        Relationships: []
+      }
+      /**
+       * Topsoil pH and organic matter per field, from the latest soil test that
+       * measured pH: what weights a label's flat re-crop interval
+       * (migration 20261104110000).
+       */
+      field_soil_ph_v: {
+        Row: {
+          field_id: string
+          crop_year: number
+          ph: number | null
+          ph_max: number | null
+          om_pct: number | null
+          samples: number
         }
         Relationships: []
       }
@@ -9027,6 +10248,29 @@ export type Database = {
         Relationships: []
       }
       /** Measured water-sulphur credit per water source (May–Sep median, last five seasons). */
+      /** The river's and the canal's own water, in the parameters Alberta's livestock chart reads. */
+      livestock_water_district: {
+        Row: {
+          water_source: 'oldman' | 'smrid'
+          tds_mg_l: number | string | null
+          so4_mg_l: number | string | null
+          no3n_mg_l: number | string | null
+          ph: number | string | null
+          na_mg_l: number | string | null
+          alkalinity_mg_l: number | string | null
+          hardness_mg_l: number | string | null
+          fe_mg_l: number | string | null
+          cu_mg_l: number | string | null
+          mo_mg_l: number | string | null
+          se_mg_l: number | string | null
+          f_mg_l: number | string | null
+          samples: number | string
+          stations: number | string
+          station_names: string | null
+          latest_sample: string | null
+        }
+        Relationships: []
+      }
       water_s_credit: {
         Row: {
           water_source: 'oldman' | 'smrid'
@@ -9430,7 +10674,7 @@ export type Database = {
         Row: {
           id: string
           name: string | null
-          kind: 'dugout' | 'pond' | 'trough' | 'spring' | 'well' | 'other'
+          kind: 'dugout' | 'pond' | 'trough' | 'trough_portable' | 'spring' | 'well' | 'other'
           drinkable: boolean
           source: 'mymap' | 'manual'
           notes: string | null
@@ -9441,10 +10685,59 @@ export type Database = {
           pasture_id: string | null
           pasture_name: string | null
           serves: string[] | null
+          fed_by: 'oldman' | 'smrid' | null
         }
         Relationships: []
       }
-      /** The ground within 800 m of drinkable water (and the river where a pasture fronts it), per pasture. */
+      /** Paddocks with no drinkable water inside the fence, in it, or naming them in `serves`, and no river frontage — nothing a cow can walk to. */
+      pasture_water_gap: {
+        Row: {
+          pasture_id: string
+          name: string
+          river_access: 'none' | 'all' | 'north_of'
+          acres: number | string | null
+          nearest_source: string | null
+          metres_outside: number | string | null
+          is_paddock: boolean | null
+        }
+        Relationships: []
+      }
+      /** Peak canopy cover so far this season against the same calendar window in earlier years, per paddock. A NULL factor means plan on rainfall instead. */
+      pasture_season_factor: {
+        Row: {
+          grazing_pasture_id: string
+          name: string
+          source: string | null
+          looks: number | string | null
+          normal_years: number | string | null
+          cover_now: number | string | null
+          cover_normal: number | string | null
+          grazed_this_year: boolean | null
+          factor: number | string | null
+        }
+        Relationships: []
+      }
+      /** Each paddock's measured grass rating: peak June–August canopy cover as a ratio to the ranch median. */
+      pasture_grass_rating: {
+        Row: {
+          grazing_pasture_id: string
+          name: string
+          ranch_id: string | null
+          seasons: number | string | null
+          looks: number | string | null
+          first_year: number | null
+          last_year: number | null
+          source: string | null
+          cover_p90: number | string | null
+          rel: number | string | null
+          crop_confounded: boolean | null
+          enough: boolean | null
+          rated: 'Excellent' | 'Good' | 'Fair' | 'Poor'
+          by_year: string | null
+        }
+        Relationships: []
+      }
+      /** Each pasture split by distance from drinkable water (the river included where it fronts one): within 250 m, the 250-800 m band, past 800 m. */
       pasture_water_reach_geojson: {
         Row: {
           pasture_id: string
@@ -9455,6 +10748,12 @@ export type Database = {
           beyond_geojson: Json | null
           reach_acres: number | string | null
           beyond_acres: number | string | null
+          margin_geojson: Json | null
+          margin_acres: number | string | null
+          has_water: boolean | null
+          near_m: number | string | null
+          far_m: number | string | null
+          is_paddock: boolean | null
         }
         Relationships: []
       }
@@ -9479,6 +10778,15 @@ export type Database = {
           ndre_slope: number | string | null
           readiness: 'overgrazed' | 'not_ready' | 'ready' | 'optimal' | 'overmature' | null
           readiness_reason: string | null
+        }
+        Relationships: []
+      }
+      /** Pastures sharing at least 50 m of fence (lowest id first). */
+      pasture_adjacency: {
+        Row: {
+          pasture_a: string
+          pasture_b: string
+          shared_m: number | string
         }
         Relationships: []
       }
@@ -9709,9 +11017,59 @@ export type Database = {
     }
     Functions: {
       /**
+       * Rows that are a second listing of a grant already on the list.
+       * Migration 20261109130000.
+       */
+      grant_duplicate_count: {
+        Args: Record<string, never>
+        Returns: number
+      }
+      /**
+       * The grant this title/url already belongs to, if any: the same page,
+       * a page folded into one, or the same programme under another name.
+       * Migration 20261109140000.
+       */
+      grant_find_match: {
+        Args: { p_title: string; p_url: string }
+        Returns: string | null
+      }
+      /** The programme a grant title names, decoration removed. */
+      grant_match_key: {
+        Args: { p_title: string }
+        Returns: string
+      }
+      /** Folds one grant into another and deletes it. Returns nothing. */
+      fn_merge_grants: {
+        Args: { p_keeper: string; p_loser: string }
+        Returns: undefined
+      }
+      /** Merges every set of grants naming one programme. Returns rows removed. */
+      fn_dedupe_grants: {
+        Args: Record<string, never>
+        Returns: number
+      }
+      /** Marks grants closed once their deadline has passed. Returns rows changed. */
+      fn_close_expired_grants: {
+        Args: Record<string, never>
+        Returns: number
+      }
+      /**
        * Passages from the research library that answer a question, with the
        * work done nearest here weighted up. One passage per paper.
        */
+      /**
+       * How much of the library the search can read: the paper itself, the
+       * abstract only, or nothing. Counted from the chunks, not text_status.
+       * Migration 20261106170000.
+       */
+      research_text_coverage: {
+        Args: Record<string, never>
+        Returns: {
+          full_text: number
+          abstract_only: number
+          nothing: number
+        }[]
+      }
       research_search: {
         Args: { q: string; max_rows?: number }
         Returns: {
@@ -9726,6 +11084,12 @@ export type Database = {
           pages: string | null
           passage: string
           rank: number
+          /**
+           * 'body' for a passage out of the paper, 'abstract' when the
+           * abstract is all we hold — 735 papers we could not download, or
+           * whose PDF is a scan. Migration 20261106160000.
+           */
+          kind: 'body' | 'abstract'
         }[]
       }
       /** Any active hand: switch a bin's fan or heater on or off, and nothing else on the bin. */
@@ -9956,6 +11320,14 @@ export type Database = {
       rebuild_pasture_zones: {
         Args: Record<string, never>
         Returns: number
+      }
+      set_gates_open: {
+        Args: { p_open: boolean; p_ranch?: string }
+        Returns: number
+      }
+      suggest_trough_sites: {
+        Args: { p_id: string; p_count?: number }
+        Returns: { ord: number; lon: number; lat: number; gains_ac: number }[]
       }
       import_pasture_water: {
         Args: { p_points: never }

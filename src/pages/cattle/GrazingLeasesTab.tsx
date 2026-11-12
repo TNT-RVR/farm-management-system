@@ -756,14 +756,14 @@ function ReturnEditor({
 
         <footer className="border-t border-gray-200 pt-3 text-[11px] text-gray-500">
           The province collects this under Alberta&rsquo;s Protection of Privacy Act and the Public
-          Lands Administration Regulation (PLAR). Questions: user-c6e1@gov.ab.ca
+          Lands Administration Regulation (PLAR). Questions: FP.StockReturnClientAdmin@gov.ab.ca
         </footer>
       </article>
 
       {/* The lease's own setup: how the app fills the form. Not part of the return. */}
       <Fold
         title="Lease setup"
-        summary={`${d.pasture_ids.length} pasture${d.pasture_ids.length === 1 ? '' : 's'} on it`}
+        summary={`${d.pasture_ids.length} pasture${d.pasture_ids.length === 1 ? '' : 's'} on it${d.max_grazing_days != null ? ` · ${d.max_grazing_days} days a year` : ''}`}
         storageKey="grazing-lease-setup"
       >
         <div className="space-y-3">
@@ -803,6 +803,22 @@ function ReturnEditor({
                 ))}
               </div>
             )}
+          </div>
+          {/* What the grazing planner holds the lease to (Plan tab on Pastures). */}
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Field label="Days allowed a year">
+              <Num
+                value={d.max_grazing_days ?? null}
+                onChange={(v) => setLease({ max_grazing_days: v == null ? null : Math.max(0, Math.round(v)) })}
+                disabled={locked}
+              />
+            </Field>
+            <Field label="Season opens">
+              <MonthDay value={d.season_start_md ?? null} onChange={(v) => setLease({ season_start_md: v })} disabled={locked} />
+            </Field>
+            <Field label="Season closes">
+              <MonthDay value={d.season_end_md ?? null} onChange={(v) => setLease({ season_end_md: v })} disabled={locked} />
+            </Field>
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -910,6 +926,28 @@ function Num({
       disabled={disabled}
       onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
       className={cn(input, 'w-28')}
+    />
+  )
+}
+
+/** A day of the year (MM-DD), picked on a date field; the year is not kept. */
+function MonthDay({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string | null
+  onChange: (v: string | null) => void
+  disabled?: boolean
+}) {
+  const year = new Date().getFullYear()
+  return (
+    <input
+      type="date"
+      value={value ? `${year}-${value}` : ''}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value ? e.target.value.slice(5, 10) : null)}
+      className={cn(input, 'w-40')}
     />
   )
 }

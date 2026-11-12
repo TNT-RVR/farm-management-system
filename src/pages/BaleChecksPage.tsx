@@ -31,6 +31,7 @@ import { useUsers } from '@/lib/queries'
 import { localDateKey } from '@/lib/ranchWeather'
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, RowCard } from '@/components/RowCards'
 
 // bale_checks is newer than the generated types.
 const db = supabase as unknown as SupabaseClient
@@ -44,7 +45,7 @@ const RISK_WORD: Record<RiskLevel, string> = { ok: 'OK', watch: 'Watch', danger:
  * insurer wants after a hay fire — Reports → Bale temperature & moisture log
  * prints it.
  */
-export function BaleChecksPage() {
+export function BaleChecksPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [params, setParams] = useSearchParams()
   const today = localDateKey()
   const yearAgo = `${Number(today.slice(0, 4)) - 1}${today.slice(4)}`
@@ -57,25 +58,36 @@ export function BaleChecksPage() {
       return p
     })
 
+  const actions = (
+    <div className="flex gap-2">
+      <Link to="/reports" className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50">
+        <FileText className="h-4 w-4" /> Report
+      </Link>
+      {!adding && (
+        <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800">
+          <Plus className="h-4 w-4" /> New check
+        </button>
+      )}
+    </div>
+  )
+
   return (
-    <div className="mx-auto max-w-4xl space-y-3 p-4 md:p-6">
-      <PageHeader
-        title="Bale checks"
-        icon={<Thermometer className="h-5 w-5 text-brand-700" />}
-        subtitle="Core temperature and moisture, a couple of bales of each kind, once a month"
-        actions={
-          <div className="flex gap-2">
-            <Link to="/reports" className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50">
-              <FileText className="h-4 w-4" /> Report
-            </Link>
-            {!adding && (
-              <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800">
-                <Plus className="h-4 w-4" /> New check
-              </button>
-            )}
-          </div>
-        }
-      />
+    <div className={cn('space-y-3', !embedded && 'mx-auto max-w-4xl p-4 md:p-6')}>
+      {/* Inside the Feed view's tab the tab names the page, so only the
+          one-line description and the buttons stay. */}
+      {embedded ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-gray-600">Core temperature and moisture, a couple of bales of each kind, once a month.</p>
+          {actions}
+        </div>
+      ) : (
+        <PageHeader
+          title="Bale checks"
+          icon={<Thermometer className="h-5 w-5 text-brand-700" />}
+          subtitle="Core temperature and moisture, a couple of bales of each kind, once a month"
+          actions={actions}
+        />
+      )}
       {adding && <CheckForm onDone={() => setAdding(false)} />}
       {isLoading && <p className="text-sm text-gray-500">Loading…</p>}
       {checks && !checks.length && !adding && <p className="text-sm text-gray-500">No checks in the last year yet.</p>}
@@ -277,7 +289,26 @@ function CheckRow({ check }: { check: BaleCheck }) {
       </button>
       {open && (
         <div className="border-t border-gray-100 pb-2 text-xs">
-          <div className="overflow-x-auto">
+          <CardList>
+            {rs.map((r, i) => (
+              <RowCard
+                key={r.id ?? i}
+                heading={
+                  <span>
+                    {r.feed_name}{' '}
+                    <span className={cn('ml-1 rounded px-1 py-0.5 text-[10px] font-semibold', RISK_STYLE[readingRisk(r)])}>{RISK_WORD[readingRisk(r)]}</span>
+                  </span>
+                }
+                facts={[
+                  { label: 'Stack', node: [r.stack, r.bale_label].filter(Boolean).join(' · ') },
+                  { label: 'Core', node: r.temp_c == null ? null : `${r.temp_c.toFixed(1)} °C / ${cToF(r.temp_c).toFixed(0)} °F` },
+                  { label: 'Moisture', node: r.moisture_pct == null ? null : `${r.moisture_pct}%` },
+                  { label: 'Note', node: r.notes },
+                ]}
+              />
+            ))}
+          </CardList>
+          <div className="hidden overflow-x-auto sm:block">
             <table className="w-full">
               <thead className={TABLE_HEAD}>
                 <tr>

@@ -13,6 +13,7 @@ const FIELDS: { key: keyof RanchRow; label: string; hint?: string; wide?: boolea
   { key: 'premises_id', label: 'Premises ID', hint: 'Alberta PID for this location' },
   { key: 'brand', label: 'Brand' },
   { key: 'brand_location', label: 'Brand location', hint: 'left rib, right hip' },
+  { key: 'herd_colour', label: 'Herd colour', hint: 'fills the Colour column on a manifest' },
   { key: 'address', label: 'Address', wide: true },
 ]
 
@@ -68,11 +69,11 @@ export function BrandSettings({ isManager }: { isManager: boolean }) {
       <h2 className="mb-1 text-sm font-semibold text-gray-900">Brand &amp; premises</h2>
       <p className="mb-2 text-xs text-gray-500">The top half of every manifest — set once per ranch.</p>
 
-      <div className="space-y-3">
+      <div className="grid items-start gap-3 lg:grid-cols-2">
         {(ranches ?? []).map((r) => {
           const dirty = Boolean(draft[r.id])
           return (
-            <div key={r.id} className="rounded-lg border border-gray-200 bg-white p-3">
+            <div key={r.id} className="@container rounded-lg border border-gray-200 bg-white p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold text-gray-800">{r.name}</h3>
                 {dirty && isManager && (
@@ -93,7 +94,7 @@ export function BrandSettings({ isManager }: { isManager: boolean }) {
                 )}
               </div>
 
-              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+              <div className="mt-2 grid gap-2 @sm:grid-cols-2 @xl:grid-cols-3">
                 {FIELDS.map((f) => (
                   <label
                     key={f.key as string}

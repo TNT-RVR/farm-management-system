@@ -132,7 +132,7 @@ export function YardPlanner({
                     <li key={s.feed.id} className="flex justify-between gap-2">
                       <span>{s.feed.name}</span>
                       <span className="tabular-nums">
-                        {n0(s.pct)}% of the group&apos;s DM (proposed) · {tonnes(s.asFedLb)} t over the winter
+                        {n0(s.pct)}% of the group&apos;s dry matter (proposed) · {tonnes(s.asFedLb)} t over the winter
                       </span>
                     </li>
                   ))}

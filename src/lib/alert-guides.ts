@@ -297,7 +297,7 @@ const G: Record<string, AlertGuide> = {
     steps: [
       'Check now where the herd is. If they are on the sprayed ground (or can reach it), move them or fence it off.',
       'For planned stubble grazing: change its start date on Cattle → Feed to after the date in the alert, or plan another field.',
-      'Open the field or the Grazing restrictions page and use "Open the label" to read the label\'s grazing section.',
+      'Open the field or the Spray restrictions tab and use "Open the label" to read the label\'s grazing section.',
       'If animals did graze it, check the label for a slaughter withdrawal (meat animals off treated fields a number of days before slaughter) and note it before anything is sold.',
     ],
     checks: [
@@ -383,7 +383,7 @@ const G: Record<string, AlertGuide> = {
     steps: [
       'Read the reasons at the top — each line is one test that said move.',
       'Look at the pasture, or ask whoever checked the cattle last. The estimate does not see what is underfoot.',
-      'If it is grazed down, pick the next pasture from the rotation list on the Cattle map (Ready or Optimal, with water inside 800 m) and move the herd — in the collar app if they are on virtual fence.',
+      'If it is grazed down, pick the next pasture from the rotation list on the Cattle map (Ready or Optimal, with water inside the recommended 250 m) and move the herd — in the collar app if they are on virtual fence.',
       'Import the new collar Status file so the app knows where the herd went; until then it still thinks they are here.',
       'If the grass is fine, raise the thresholds for that ranch on the Grazing tab (Move-out alert) rather than ignoring the alert.',
     ],

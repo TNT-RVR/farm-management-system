@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { satInSeason } from '../../src/lib/satSeason.ts'
 
 // Satellite ingestion, phase 1: Sentinel-2 NDVI for crop fields.
 //
@@ -59,7 +60,7 @@ export const CLOUD_PROBABILITY_MAX = 0.4
 const EVALSCRIPT = `//VERSION=3
 function setup() {
   return {
-    input: [{ bands: ["B02", "B03", "B04", "B05", "B08", "B11", "SCL", "CLP", "dataMask"] }],
+    input: [{ bands: ["B02", "B03", "B04", "B05", "B08", "B11", "AOT", "SCL", "CLP", "dataMask"] }],
     output: [
       { id: "ndvi", bands: 1, sampleType: "FLOAT32" },
       { id: "ndre", bands: 1, sampleType: "FLOAT32" },
@@ -68,6 +69,9 @@ function setup() {
       { id: "clp", bands: 1, sampleType: "FLOAT32" },
       { id: "yellow", bands: 1, sampleType: "FLOAT32" },
       { id: "blue", bands: 1, sampleType: "FLOAT32" },
+      { id: "plant", bands: 1, sampleType: "FLOAT32" },
+      { id: "aot", bands: 1, sampleType: "FLOAT32" },
+      { id: "refl", bands: 6, sampleType: "FLOAT32" },
       { id: "dataMask", bands: 1 }
     ]
   };
@@ -87,26 +91,26 @@ function evaluatePixel(s) {
   // Canola petals (canola-bloom.ts): a plant, red high next to green (not
   // plain leaves), blue low next to green (not soil between the rows). The
   // mean of this over the clear pixels is the share of the field in flower.
-  var yellow = ndvi > 0.4 && s.B04 / s.B03 > 0.65 && s.B02 / s.B03 < 0.6 ? 1 : 0;
+  var plant = ndvi > 0.4 ? 1 : 0;
+  var yellow = plant && s.B04 / s.B03 > 0.65 && s.B02 / s.B03 < 0.6 ? 1 : 0;
+  // plant: the share that is crop at all, so yellow can be taken over the crop
+  // alone. aot: the satellite's own haze reading. refl: each band's mean, for
+  // the bloom second opinion.
   return {
     ndvi: [ndvi], ndre: [ndre], evi2: [evi2], ndmi: [ndmi],
-    clp: [clp], yellow: [yellow], blue: [s.B02], dataMask: [valid]
+    clp: [clp], yellow: [yellow], blue: [s.B02], plant: [plant], aot: [s.AOT],
+    refl: [s.B02, s.B03, s.B04, s.B05, s.B08, s.B11], dataMask: [valid]
   };
 }`
 
 /** The growing season, inclusive. Outside it there is nothing under snow worth
  *  a daily look, so the cron drops to weekly rather than stopping — a February
  *  gap in the record is harder to explain later than a few wasted requests. */
-export const SEASON_START = { month: 4, day: 15 }
-export const SEASON_END = { month: 10, day: 31 }
+// The dates live in src/lib/satSeason.ts so the health monitor reads the same ones.
+export { SEASON_START, SEASON_END } from '../../src/lib/satSeason.ts'
 
 export function inSeason(d: Date): boolean {
-  const m = d.getUTCMonth() + 1
-  const day = d.getUTCDate()
-  if (m < SEASON_START.month || m > SEASON_END.month) return false
-  if (m === SEASON_START.month && day < SEASON_START.day) return false
-  if (m === SEASON_END.month && day > SEASON_END.day) return false
-  return true
+  return satInSeason(d.getUTCMonth() + 1, d.getUTCDate())
 }
 
 /**
@@ -226,6 +230,9 @@ export async function searchScenes(
   }))
 }
 
+/** The bands in the evalscript's refl output, in order. */
+export const REFL_BANDS = ['B02', 'B03', 'B04', 'B05', 'B08', 'B11'] as const
+
 export type Stat = {
   sensedOn: string
   validFraction: number
@@ -242,6 +249,12 @@ export type Stat = {
   yellowFraction: number | null
   /** Mean blue reflectance: high on a smoky day the cloud mask let through. */
   blueMean: number | null
+  /** Share of the clear pixels that are crop (NDVI > 0.4). */
+  plantFraction: number | null
+  /** Mean aerosol optical thickness: the satellite's own haze reading. */
+  aotMean: number | null
+  /** Mean reflectance per band. */
+  bandMeans: Record<string, number | null> | null
   raw: unknown
 }
 
@@ -386,6 +399,11 @@ export async function fetchStats(
       ndmiMean: numOrNull(band('ndmi')?.mean),
       yellowFraction: numOrNull(band('yellow')?.mean),
       blueMean: numOrNull(band('blue')?.mean),
+      plantFraction: numOrNull(band('plant')?.mean),
+      aotMean: numOrNull(band('aot')?.mean),
+      bandMeans: d.outputs?.refl?.bands
+        ? Object.fromEntries(REFL_BANDS.map((b, i) => [b, numOrNull(d.outputs?.refl?.bands?.[`B${i}`]?.stats?.mean)]))
+        : null,
       raw: d.outputs,
     })
   }
@@ -448,14 +466,17 @@ export async function runSatelliteIngest(
     subjectType?: 'field' | 'pasture' | 'pasture_zone' | 'n_strip'
     /** Only these subjects (the canola bloom backfill). */
     onlyIds?: string[]
+    /** A fixed date range instead of `days` back from today (a past summer). */
+    from?: string
+    to?: string
   } = {},
 ): Promise<IngestResult> {
   if (process.env.SAT_INGEST_ENABLED !== 'true') {
     return { ok: false, fields: 0, scenes: 0, observations: 0, detail: 'SAT_INGEST_ENABLED is not true' }
   }
   const days = opts.days ?? 14
-  const to = new Date().toISOString().slice(0, 10)
-  const from = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
+  const to = opts.to ?? new Date().toISOString().slice(0, 10)
+  const from = opts.from ?? new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
 
   // The analysis boundary, as GeoJSON, for the newest crop year we hold.
   // Fields and pastures differ only in which polygon table they come from; the
@@ -479,9 +500,10 @@ export async function runSatelliteIngest(
     return { ok: false, fields: 0, scenes: 0, observations: 0, detail: 'no field geometries' }
   }
 
-  let token: string
+  // Asked for once here only to fail fast on a bad credential; each subject
+  // takes its own below, because a run over every field outlives one token.
   try {
-    token = await getToken()
+    await getToken()
     await logApiCall(sb, 'token', true)
   } catch (e) {
     await logApiCall(sb, 'token', false, (e as Error).message)
@@ -520,7 +542,8 @@ export async function runSatelliteIngest(
       const bbox = bboxOf(geom)
       if (!bbox) continue
 
-      const scenes = await searchScenes(token, bbox, from, to)
+      // Fresh per subject: a run over every paddock can outlive the token.
+      const scenes = await searchScenes(await getToken(), bbox, from, to)
       await logApiCall(sb, 'catalog', true, `${s.name}: ${scenes.length} scenes`)
       if (scenes.length === 0) continue
 
@@ -551,7 +574,7 @@ export async function runSatelliteIngest(
       }
 
       // Statistics run on the projected polygon, so resx/resy mean metres.
-      const { days: stats, units } = await fetchStats(token, s.geojson_utm, s.utm_srid, from, to)
+      const { days: stats, units } = await fetchStats(await getToken(), s.geojson_utm, s.utm_srid, from, to)
       await logApiCall(sb, 'statistics', true, `${s.name}: ${stats.length} days`, units)
 
       // If the API sampled a handful of pixels, the request was wrong and the
@@ -616,6 +639,9 @@ export async function runSatelliteIngest(
             ndmi_mean: st.ndmiMean,
             yellow_fraction: st.yellowFraction,
             blue_mean: st.blueMean,
+            plant_fraction: st.plantFraction,
+            aot_mean: st.aotMean,
+            band_means: st.bandMeans as never,
             raw_stats: st.raw as never,
           },
           // Update rather than ignore: when the mask improves, the stored

@@ -1,7 +1,8 @@
-import { useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Pencil, Plus, Trash2, X } from 'lucide-react'
 import { Select } from '@/components/Select'
-import { ConfirmDialog } from '@/components/Modal'
+import { ConfirmDialog, LAYER, MODAL_OPENED } from '@/components/Modal'
 import { LatLngInput } from '@/components/LatLngInput'
 import { latLngText, readLatLng } from '@/lib/latlng-text'
 import { cn } from '@/lib/utils'
@@ -96,6 +97,13 @@ export function RecordEditModal({
   const [working, setWorking] = useState(false)
   const reason = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
+  // A dropdown left open in the record behind this closes, as it does for
+  // every other pop-up: its menu is drawn on the page body and sits above
+  // them all, so one left open would hang over this form.
+  useEffect(() => {
+    window.dispatchEvent(new Event(MODAL_OPENED))
+  }, [])
+
   /** Run a save or delete; close when it worked, keep the form and say why when it did not. */
   const attempt = async (run: () => void | Promise<unknown>) => {
     setFailed(null)
@@ -134,8 +142,10 @@ export function RecordEditModal({
     await attempt(() => onSave(patch))
   }
 
-  return (
-    <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center">
+  // Drawn on the page body and above the record it corrects: this form opens
+  // from a detail pop-up, which used to cover it (Sam, 2 Nov 2026).
+  return createPortal(
+    <div role="dialog" aria-modal="true" aria-label={title} className={`fixed inset-0 ${LAYER.edit} flex items-end justify-center bg-black/30 p-4 sm:items-center`}>
       <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-900">{title}</h2>
@@ -235,7 +245,8 @@ export function RecordEditModal({
           }}
         />
       )}
-    </div>
+    </div>,
+    document.body,
   )
 }
 

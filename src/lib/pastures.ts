@@ -1,6 +1,8 @@
+import { useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { MultiPolygon } from 'geojson'
 import { supabase } from './supabase'
+import { useRanches } from './ranches'
 import { nearestPerSubject } from './map-as-of'
 
 // Pastures, and whatever the satellite module currently knows about them.
@@ -44,6 +46,102 @@ export function usePastures() {
     },
     staleTime: 10 * 60_000,
   })
+}
+
+/** Which ranch each mapped pasture is linked to, from the Grazing tab's pasture list. */
+export function usePastureRanchLinks() {
+  return useQuery({
+    queryKey: ['pasture-ranch-links'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('grazing_pastures')
+        .select('pasture_id, ranch_id')
+        .not('pasture_id', 'is', null)
+      if (error) throw error
+      // grazing_pastures.pasture_id is in the database but not in the hand-kept types.
+      const rows = (data ?? []) as unknown as { pasture_id: string | null; ranch_id: string | null }[]
+      return new Map(rows.filter((r) => r.pasture_id && r.ranch_id).map((r) => [r.pasture_id!, r.ranch_id!]))
+    },
+    staleTime: 10 * 60_000,
+  })
+}
+
+/**
+ * The ranch a mapped pasture belongs to.
+ *
+ * Its Grazing-tab link when it has one; otherwise the ranch its legal
+ * description names — the farm's rough outer boundary is a East Ranch shape
+ * with no grazing link, and must not count as a Home Ranch paddock. Null when
+ * neither says, which shows it under All only.
+ */
+export function pastureRanchId(
+  p: Pick<Pasture, 'id' | 'ranch'>,
+  links: Map<string, string>,
+  ranches: { id: string; name: string }[],
+): string | null {
+  const linked = links.get(p.id)
+  if (linked) return linked
+  const named = (p.ranch ?? '').trim().toLowerCase()
+  if (!named) return null
+  return ranches.find((r) => r.name.trim().toLowerCase() === named)?.id ?? null
+}
+
+/** The pastures on one ranch; every pasture when ranchId is '' (All). */
+export function pasturesForRanch<T extends Pick<Pasture, 'id' | 'ranch'>>(
+  pastures: T[],
+  ranchId: string,
+  links: Map<string, string>,
+  ranches: { id: string; name: string }[],
+): T[] {
+  if (!ranchId) return pastures
+  return pastures.filter((p) => pastureRanchId(p, links, ranches) === ranchId)
+}
+
+/**
+ * The mapped pastures that are real paddocks — the ones a ranch's grazing list
+ * links to.
+ *
+ * `pastures` also holds farm outlines. "Farm Outer Boundary (Rough)" is a
+ * 2,922-acre shape covering the whole of East Ranch, and anything that treats
+ * it as a paddock says something silly: the water-reach view counts the herd as
+ * shut out of the entire farm, and the rotation order offers "move the cattle
+ * to the outer boundary" as the next step (Sam, 10 Nov 2026 — on East Ranch,
+ * which has no paddocks drawn, it was the only thing the list offered).
+ *
+ * Same rule as the `is_paddock` column on pasture_water_gap, so the two agree.
+ */
+export function paddocksOnly<T extends Pick<Pasture, 'id'>>(pastures: T[], links: Map<string, string>): T[] {
+  return pastures.filter((p) => links.has(p.id))
+}
+
+/**
+ * A test for "is this paddock on the ranch the Cattle filter is set to", for
+ * the cards that are keyed by pasture rather than by ranch.
+ *
+ * Always true when the filter is All, so a card can use it unconditionally.
+ * Sam, 10 Nov 2026: the East Ranch tab was showing Home Ranch's troughs and
+ * Home Ranch's unused acres, because those cards read every pasture.
+ */
+export function useOnRanch(ranchId: string): (pastureId: string | null | undefined) => boolean {
+  const { data: pastures } = useRanchScopedPastures(ranchId)
+  const { data: links } = usePastureRanchLinks()
+  const ids = useMemo(
+    () => new Set(paddocksOnly(pastures ?? [], links ?? new Map()).map((p) => p.id)),
+    [pastures, links],
+  )
+  return useCallback((pastureId) => !ranchId || (!!pastureId && ids.has(pastureId)), [ranchId, ids])
+}
+
+/** usePastures narrowed to the Ranch filter ('' = All). */
+export function useRanchScopedPastures(ranchId: string) {
+  const q = usePastures()
+  const { data: links } = usePastureRanchLinks()
+  const { data: ranches } = useRanches()
+  const data = useMemo(
+    () => (q.data ? pasturesForRanch(q.data, ranchId, links ?? new Map(), ranches ?? []) : undefined),
+    [q.data, ranchId, links, ranches],
+  )
+  return { data, isLoading: q.isLoading }
 }
 
 /** The satellite view of each crop field, for shading the main map. */
@@ -176,6 +274,45 @@ export function useFieldImagery(
         )
       }
       return out
+    },
+    staleTime: 30 * 60_000,
+  })
+}
+
+/** One satellite pass: the day it was taken and how many subjects it covered. */
+export type ImageryDay = { day: string; subjects: number }
+
+/**
+ * Every day there is imagery of this kind on file, newest last.
+ *
+ * The date picker needs these rather than a bare calendar. Sentinel-2 comes
+ * over every few days and cloud decides whether anything usable lands, so most
+ * dates hold no new picture — and a paddock is only in the pass that saw it,
+ * which is why the count matters: a day covering 3 of 17 paddocks makes a poor
+ * screenshot, and nothing on screen would otherwise say so.
+ */
+export function useImageryDays(
+  kind: 'truecolour' | 'ndvi' | 'ndvi_field' | 'ndre' = 'truecolour',
+  subjectType: 'field' | 'pasture' = 'pasture',
+) {
+  return useQuery({
+    queryKey: ['sat-imagery-days', kind, subjectType],
+    queryFn: async (): Promise<ImageryDay[]> => {
+      const { data, error } = await supabase
+        .from('sat_images')
+        .select('sensed_on, subject_id')
+        .eq('subject_type', subjectType)
+        .eq('kind', kind)
+      if (error) throw new Error(`reading imagery days: ${error.message}`)
+      const perDay = new Map<string, Set<string>>()
+      for (const r of (data ?? []) as unknown as { sensed_on: string; subject_id: string }[]) {
+        const set = perDay.get(r.sensed_on) ?? new Set<string>()
+        set.add(r.subject_id)
+        perDay.set(r.sensed_on, set)
+      }
+      return [...perDay.entries()]
+        .map(([day, subjects]) => ({ day, subjects: subjects.size }))
+        .sort((a, b) => a.day.localeCompare(b.day))
     },
     staleTime: 30 * 60_000,
   })

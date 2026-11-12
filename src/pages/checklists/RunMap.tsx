@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { CheckCircle2, Circle, CircleDot, List, Map as MapIcon, X } from 'lucide-react'
+import { CheckCircle2, Circle, CircleDot, List, Map as MapIcon, MapPin, Move, Pencil, Trash2, X } from 'lucide-react'
 import { ChecklistPlacesMap, type MapPlace } from '@/components/ChecklistPlacesMap'
+import { askConfirm } from '@/components/askConfirm'
 import { PillTabs } from '@/components/PillTabs'
 import {
   PLAIN_COLOUR,
@@ -11,8 +12,10 @@ import {
   usePhotoToTemplate,
   usePhotos,
   useRunLocations,
+  useRunPlaces,
   useSaveRunNote,
   useTemplateLocations,
+  type PlaceGeometry,
   type PlaceStatus,
   type RunLocation,
 } from '@/lib/checklist-map'
@@ -47,6 +50,13 @@ export function RunMap({
   const { data: places } = useRunLocations(run.id)
   const [view, setView] = useState<'map' | 'list'>('map')
   const [selected, setSelected] = useState<string | null>(null)
+  // Changing the points themselves is a manager's job: taking one off removes
+  // its jobs, its photos and its place in every later year.
+  const { profile } = useAuth()
+  const canEditPlaces = hasManagerAccess(profile?.role)
+  const placeEdit = useRunPlaces(run.id, run.template_id)
+  // 'add' drops a new pin; 'move' puts the open place where the next click is.
+  const [drawing, setDrawing] = useState<'none' | 'add' | 'move'>('none')
 
   const byPlace = useMemo(() => {
     const m = new Map<string, RunItemRow[]>()
@@ -78,7 +88,21 @@ export function RunMap({
             </span>
           ))}
         </span>
+        {canEditPlaces && view === 'map' && (
+          <button
+            type="button"
+            onClick={() => setDrawing((d) => (d === 'add' ? 'none' : 'add'))}
+            aria-pressed={drawing === 'add'}
+            className={cn(
+              'ml-auto flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium',
+              drawing === 'add' ? 'border-brand-700 bg-brand-700 text-white' : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50',
+            )}
+          >
+            <MapPin className="h-3.5 w-3.5" /> {drawing === 'add' ? 'Cancel' : 'Add a point'}
+          </button>
+        )}
       </div>
+      {placeEdit.add.isError && <p className="text-xs text-red-600">{(placeEdit.add.error as Error).message}</p>}
       {kinds.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-gray-800 px-3 py-1.5 text-xs text-white">
           {kinds.map((k) => (
@@ -95,7 +119,25 @@ export function RunMap({
 
       <div className={cn('grid gap-3', open && 'lg:grid-cols-[1fr_380px]')}>
         {view === 'map' ? (
-          <ChecklistPlacesMap places={mapPlaces} selected={selected} onSelect={setSelected} className="relative h-[65vh] min-h-[380px] w-full overflow-hidden rounded-lg border border-gray-200" />
+          <ChecklistPlacesMap
+            places={mapPlaces}
+            selected={selected}
+            onSelect={setSelected}
+            draw={drawing === 'none' ? 'none' : 'pin'}
+            onAddPin={(at) => {
+              const geojson: PlaceGeometry = { type: 'Point', coordinates: at }
+              if (drawing === 'move' && open) {
+                placeEdit.edit.mutate({ id: open.id, geojson })
+                setDrawing('none')
+                return
+              }
+              const name = window.prompt('Name this point (e.g. "#4 pump", "Shop yard hydrant")')
+              setDrawing('none')
+              if (!name?.trim()) return
+              placeEdit.add.mutate({ name: name.trim(), geojson }, { onSuccess: setSelected })
+            }}
+            className="relative h-[65vh] min-h-[380px] w-full overflow-hidden rounded-lg border border-gray-200"
+          />
         ) : (
           <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
             {(places ?? []).map((p) => {
@@ -116,7 +158,39 @@ export function RunMap({
             })}
           </ul>
         )}
-        {open && <PlacePanel key={open.id} run={run} place={open} items={byPlace.get(open.id) ?? []} userName={userName} onClose={() => setSelected(null)} />}
+        {open && (
+          <PlacePanel
+            key={open.id}
+            run={run}
+            place={open}
+            items={byPlace.get(open.id) ?? []}
+            userName={userName}
+            canEditPlace={canEditPlaces}
+            moving={drawing === 'move'}
+            onMove={() => {
+              setView('map')
+              setDrawing((d) => (d === 'move' ? 'none' : 'move'))
+            }}
+            onRename={(name) => placeEdit.edit.mutate({ id: open.id, name })}
+            onDelete={async () => {
+              const jobs = byPlace.get(open.id)?.length ?? 0
+              const ok = await askConfirm(
+                <>
+                  Take <b>{open.name}</b> off the {run.name}?{' '}
+                  {jobs > 0 && `Its ${jobs} job${jobs === 1 ? '' : 's'} and any photos go with it. `}
+                  It will not be on next year&rsquo;s checklist either. Past years keep their copy.
+                </>,
+                { confirmLabel: 'Delete the point' },
+              )
+              if (!ok) return
+              setSelected(null)
+              setDrawing('none')
+              placeEdit.remove.mutate(open.id)
+            }}
+            editError={(placeEdit.edit.error ?? placeEdit.remove.error) as Error | null}
+            onClose={() => setSelected(null)}
+          />
+        )}
       </div>
 
       {general.length > 0 && <GeneralItems run={run} items={general} />}
@@ -124,7 +198,31 @@ export function RunMap({
   )
 }
 
-function PlacePanel({ run, place, items, userName, onClose }: { run: RunRow; place: RunLocation; items: RunItemRow[]; userName: (id: string | null) => string; onClose: () => void }) {
+function PlacePanel({
+  run,
+  place,
+  items,
+  userName,
+  canEditPlace,
+  moving,
+  onMove,
+  onRename,
+  onDelete,
+  editError,
+  onClose,
+}: {
+  run: RunRow
+  place: RunLocation
+  items: RunItemRow[]
+  userName: (id: string | null) => string
+  canEditPlace: boolean
+  moving: boolean
+  onMove: () => void
+  onRename: (name: string) => void
+  onDelete: () => void
+  editError: Error | null
+  onClose: () => void
+}) {
   const check = useCheckRunItem(run.id)
   const saveNote = useSaveRunNote(run.id)
   const toTemplate = useNoteToTemplate(run.template_id)
@@ -166,6 +264,49 @@ function PlacePanel({ run, place, items, userName, onClose }: { run: RunRow; pla
           <X className="h-4 w-4" />
         </button>
       </div>
+
+      {canEditPlace && (
+        <>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                const name = window.prompt('Name for this point', place.name)
+                if (name?.trim() && name.trim() !== place.name) onRename(name.trim())
+              }}
+              className="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <Pencil className="h-3 w-3" /> Rename
+            </button>
+            <button
+              type="button"
+              onClick={onMove}
+              aria-pressed={moving}
+              className={cn(
+                'flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium',
+                moving ? 'border-brand-700 bg-brand-700 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50',
+              )}
+            >
+              <Move className="h-3 w-3" /> {moving ? 'Click the map' : 'Move'}
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              className="flex items-center gap-1 rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+            >
+              <Trash2 className="h-3 w-3" /> Delete
+            </button>
+          </div>
+          {/* A change here is a change to next year too, which is the point and
+              also the thing worth saying out loud before someone deletes. */}
+          <p className="mt-1 text-[11px] text-gray-400">
+            {place.template_location_id
+              ? 'Renaming, moving or deleting changes next year’s checklist too.'
+              : 'This point was added to this year only; it is not on the template.'}
+          </p>
+          {editError && <p className="mt-1 text-xs text-red-600">{editError.message}</p>}
+        </>
+      )}
 
       {place.instructions_md && <p className="mt-2 whitespace-pre-wrap text-gray-700">{place.instructions_md}</p>}
       {howTo.length > 0 && (

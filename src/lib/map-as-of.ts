@@ -19,6 +19,60 @@ export function asOfDay(raw: string | null | undefined, today: string): string |
   return raw < today ? raw : null
 }
 
+/**
+ * When the imagery on screen was actually taken.
+ *
+ * Each subject is imaged on its own pass, so a map rarely shows one day: this
+ * reports the span when they differ. Said plainly, because "as of 14 Oct"
+ * showing an image from the 4th is the one way a date picker can mislead.
+ */
+export function photoDateLabel(days: string[]): string {
+  const fmt = (d: string) =>
+    // en-CA, not the browser's locale: the rest of the app writes dates this
+    // way, and a label that reads "Aug 4" on one machine and "4 Aug" on another
+    // is also a label no test can pin down.
+    new Date(`${d}T00:00:00Z`).toLocaleDateString('en-CA', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'UTC',
+    })
+  const sorted = [...new Set(days)].sort()
+  const oldest = sorted[0]
+  const newest = sorted[sorted.length - 1]
+  return oldest === newest ? `Taken ${fmt(newest)}.` : `Taken ${fmt(oldest)} to ${fmt(newest)}.`
+}
+
+/**
+ * One capture day back or forward through `days`.
+ *
+ * A null `day` means "the latest", which is the last day in the list, so
+ * stepping is just walking that list. Landing on the newest day returns null
+ * again rather than that date: the map is then showing current imagery, and
+ * pinning today's date in the address would only go stale tomorrow.
+ *
+ * `moved` says whether there was anywhere to go, because null is both "the
+ * latest" and, at the ends, "no change" — a caller needs to tell them apart to
+ * know whether to disable its button.
+ */
+export function stepDay(
+  days: string[],
+  day: string | null,
+  dir: -1 | 1,
+): { day: string | null; moved: boolean } {
+  const sorted = [...new Set(days)].sort()
+  const stay = { day, moved: false }
+  if (!sorted.length) return stay
+  const last = sorted.length - 1
+  // Where we are standing. A date typed into the address need not be a capture
+  // day, so it stands on the last day up to it, or before the list entirely.
+  // Ascending and deduped, so the count of days up to it is its index, plus one.
+  const at = day == null ? last : sorted.filter((d) => d <= day).length - 1
+  const to = at === -1 ? (dir === 1 ? 0 : -1) : at + dir
+  if (to < 0 || to > last) return stay
+  return { day: to === last ? null : sorted[to], moved: true }
+}
+
 /** Days between two YYYY-MM-DD dates, ignoring sign. */
 const daysApart = (a: string, b: string) => Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000
 

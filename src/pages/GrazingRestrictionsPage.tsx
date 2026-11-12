@@ -14,6 +14,7 @@ import { useGrazingPicture, usePastureSprayMutations, usePastureSprays } from '@
 import { farmTz } from '@/lib/farm-context'
 import { CARD_HEAD } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
+import { HelpNote } from '@/components/HelpNote'
 
 /**
  * Every field and pasture a spray keeps livestock off, farm-wide.
@@ -25,7 +26,7 @@ import { cn } from '@/lib/utils'
  * crop fields only, so a pasture sprayed with a quad or by a custom
  * applicator is written down here — and last what the app cannot judge yet.
  */
-export function GrazingRestrictionsPage() {
+export function GrazingRestrictionsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { picture, today, isLoading, error } = useGrazingPicture()
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
@@ -42,12 +43,19 @@ export function GrazingRestrictionsPage() {
     .sort((a, b) => Number(b.eaten.length + b.inPastures.length > 0) - Number(a.eaten.length + a.inPastures.length > 0) || a.name.localeCompare(b.name))
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
+    <div className={cn('space-y-4', !embedded && 'mx-auto max-w-3xl p-4 md:p-6')}>
+      {/* Inside the Pastures view's tab, the tab is the heading. */}
       <div>
-        <h1 className="text-lg font-semibold text-gray-900">Grazing restrictions</h1>
-        <p className="text-sm text-gray-600">
-          What each sprayed product&apos;s label says about grazing the treated crop or feeding it to livestock, field by field and pasture by pasture. Read off the labels by the app — open the label to check it; the label is the law.
-        </p>
+        {!embedded && <h1 className="text-lg font-semibold text-gray-900">Spray restrictions</h1>}
+        <HelpNote
+          className="text-sm text-gray-600"
+          summary="What each sprayed label says about grazing or feeding the crop."
+          title="Where these come from"
+        >
+          <p>
+            What each sprayed product&apos;s label says about grazing the treated crop or feeding it to livestock, field by field and pasture by pasture. Read off the labels by the app — open the label to check it; the label is the law.
+          </p>
+        </HelpNote>
       </div>
 
       {clashes.length > 0 && (

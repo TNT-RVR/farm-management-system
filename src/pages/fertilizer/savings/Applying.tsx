@@ -19,6 +19,7 @@ import { S } from './sources'
 import { Empty, FieldLink, Table, ToolCard, ghost, input, money, n0, perLbFmt, td, tdNum } from './ui'
 import { fertYieldGoal } from '@/lib/yield-goal'
 import { useRetailerName } from '@/lib/products'
+import { KgAside } from '@/components/KgAside'
 
 /** Pounds an acre of one nutrient across a requirement's lines. */
 function lineLb(r: FieldRequirement, nutrient: 'N' | 'P' | 'K' | 'S'): number {
@@ -426,6 +427,7 @@ export function RemovalCard() {
                 {x.last?.yield_per_acre != null && (
                   <span className="block text-[10px] text-gray-400">
                     {n0(x.last.yield_per_acre)} {x.last.yield_unit}
+                    <KgAside value={x.last.yield_per_acre} unit={x.last.yield_unit} per="" />
                   </span>
                 )}
               </td>

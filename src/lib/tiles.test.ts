@@ -83,6 +83,11 @@ describe('the tile catalogue', () => {
     // Thirteen, and no more: a new default tile means retiring one. (Raised
     // from twelve on 28 Sep 2026 for the scouting report, which Sam asked to
     // be on everybody's home screen without taking anything else off it.)
+    //
+    // It sits at twelve on purpose since 6 Nov 2026: the rain radar came on
+    // and both Reference look-ups came off, "to give people a little bit of
+    // room to add a new tile if they want". The empty slot is the point —
+    // don't fill it without asking.
     expect(visible.length).toBeLessThanOrEqual(13)
     expect(visible.length + hidden.length).toBe(TILES.length)
   })

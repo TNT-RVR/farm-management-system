@@ -43,6 +43,11 @@ export type Disposition = {
   notes: string | null
   active: boolean
   sort_order: number
+  /** Days a year cattle may be on the lease; the grazing planner warns past it. */
+  max_grazing_days?: number | null
+  /** The allowed grazing season, MM-DD, the same every year. */
+  season_start_md?: string | null
+  season_end_md?: string | null
 }
 
 export type ReturnStatus = 'draft' | 'filed'
@@ -187,6 +192,9 @@ export function toDisposition(r: Record<string, unknown>): Disposition {
     notes: textOrNull(r.notes),
     active: r.active !== false,
     sort_order: numOrNull(r.sort_order) ?? 0,
+    max_grazing_days: numOrNull(r.max_grazing_days),
+    season_start_md: textOrNull(r.season_start_md),
+    season_end_md: textOrNull(r.season_end_md),
   }
 }
 
@@ -377,7 +385,13 @@ export function prefillLivestock(o: {
   // The Herd tab: classes merged into Alberta's, head summed, weight by head.
   type HerdAcc = { head: number; lbHead: number; withLb: number; start: string | null; end: string | null }
   const by = new Map<string, HerdAcc>()
-  const inYear = (d: string | null) => (d && d.slice(0, 4) === String(o.year) ? d.slice(0, 10) : null)
+  /**
+   * A herd date read as the year being asked about. The Herd tab keeps turnout
+   * and coming-off as a month and a day, so the stored year is not the answer
+   * to anything — before 6 Nov 2026 this required the years to match and so
+   * dropped every date the moment the calendar turned over.
+   */
+  const inYear = (d: string | null) => (d ? `${o.year}-${d.slice(5, 10)}` : null)
   for (const h of o.herd) {
     const c = albertaClass(h.class_name, h.feed_class)
     if (!c || !(h.head_count > 0)) continue

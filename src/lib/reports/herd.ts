@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { mobsNow, type ActivationRow } from '@/lib/eshepherd'
 import { yearAverage, type CattleSale } from '@/lib/cattleMarkets'
+import { auFor, type AuRow } from '@/lib/animal-units'
 import { fetchAll, longDate, num, pick, type Cell, type GatherContext, type ParamValues, type ReportData, type ReportGroup } from './framework'
 
 /**
@@ -26,6 +27,7 @@ export type HerdRow = {
   head_count: number
   avg_weight_lb: unknown
   au_equivalent: unknown
+  au_override?: boolean | null
   feed_class: string | null
   sort_order: number | null
   updated_at: string | null
@@ -111,7 +113,7 @@ export function herdGroups(o: {
     const rows = classes.map((c): Cell[] => {
       const n = Number(c.head_count) || 0
       const w = num(c.avg_weight_lb)
-      const auHead = num(c.au_equivalent)
+      const auHead = w == null && num(c.au_equivalent) == null ? null : auFor(c as AuRow)
       const perHead = isCalfClass(c) && w != null && o.calfPricePerLb != null ? w * o.calfPricePerLb : null
       gHead += n
       gAu += auHead != null ? auHead * n : 0
@@ -155,7 +157,7 @@ export async function loadHerd(asOf: string): Promise<HerdRead> {
   // The end of the chosen day on the browser's clock, which is the farm's.
   const asOfIso = new Date(`${asOf}T23:59:59.999`).toISOString()
   const [current, audit, ranches, activations, sales] = await Promise.all([
-    fetchAll<HerdRow>((a, b) => supabase.from('herd_counts').select('id, ranch_id, class_name, head_count, avg_weight_lb, au_equivalent, feed_class, sort_order, updated_at').order('id').range(a, b)),
+    fetchAll<HerdRow>((a, b) => supabase.from('herd_counts').select('id, ranch_id, class_name, head_count, avg_weight_lb, au_equivalent, au_override, feed_class, sort_order, updated_at').order('id').range(a, b)),
     fetchAll<HerdAudit>((a, b) =>
       supabase.from('audit_log').select('record_id, action, changed_at, old_values, new_values').eq('table_name', 'herd_counts').gt('changed_at', asOfIso).order('changed_at').order('id').range(a, b),
     ),

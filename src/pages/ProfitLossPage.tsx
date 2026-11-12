@@ -168,7 +168,11 @@ function ProfitLossField({
         areas: field ? fixedAreas.get(field.id) : null,
       }),
       ...(field ? operatingLines(field.id, season) : []),
-      autoOutput({ name: season?.cropName ?? null, unit: season?.yieldUnit ?? null, total: season?.yieldTotal ?? null }, autoPrice, priceMode),
+      autoOutput(
+        { id: season?.cropId ?? null, name: season?.cropName ?? null, unit: season?.yieldUnit ?? null, total: season?.yieldTotal ?? null },
+        autoPrice,
+        priceMode,
+      ),
     ].filter((l): l is NonNullable<typeof l> => l != null)
     return mergeLines(auto, saved ?? [])
   }, [ops, grids, cropYear, acres, resolve, season, autoPrice, priceMode, saved, fixed.perAcre, fixed.carriedFrom, fixedAreas, landSharePerAcre, field, operatingLines])
@@ -557,6 +561,7 @@ function ProfitLossField({
                 title="Inputs"
                 side="input"
                 lines={lines.filter((l) => l.side === 'input')}
+                removed={(saved ?? []).filter((s) => s.side === 'input' && s.removed)}
                 fieldId={field.id}
                 cropYear={cropYear}
                 acres={acres}
@@ -566,6 +571,7 @@ function ProfitLossField({
                 title="Outputs"
                 side="output"
                 lines={lines.filter((l) => l.side === 'output')}
+                removed={(saved ?? []).filter((s) => s.side === 'output' && s.removed)}
                 fieldId={field.id}
                 cropYear={cropYear}
                 acres={acres}

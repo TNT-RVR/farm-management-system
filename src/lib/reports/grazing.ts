@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase'
 import { isNoFence } from '@/lib/eshepherd'
 import { compareFieldNames } from '@/lib/queries'
 import { fetchAll, num, pick, yearParam, type Cell, type GatherContext, type ParamValues, type ReportData, type ReportGroup } from './framework'
+import { auFor as classAu, type AuRow } from '@/lib/animal-units'
 import { mobClass, mobRanchOf, type HerdRow } from './herd'
 
 /**
@@ -94,7 +95,7 @@ export function grazingGroups(o: {
     if (weight && weight > 0) return { au: weight / 1000, guessed: false }
     const ranch = ranchId ?? mobRanchOf(mob, o.ranches)?.id ?? null
     const c = mobClass(mob, o.herd.filter((h) => !ranch || h.ranch_id === ranch))
-    const au = num(c?.au_equivalent)
+    const au = c ? classAu(c as AuRow) : null
     return au ? { au, guessed: false } : { au: 1, guessed: true }
   }
   const row = (s: Stay, rest: ReturnType<typeof restAfter>): Cell[] => {
@@ -191,7 +192,7 @@ export async function gatherGrazing(p: ParamValues, ctx: GatherContext): Promise
     fetchAll<PastureRow>((a, b) => supabase.from('pastures').select('id, name, area_acres, min_rest_days').order('id').range(a, b)),
     fetchAll<{ pasture_id: string | null; ranch_id: string | null }>((a, b) => supabase.from('grazing_pastures').select('pasture_id, ranch_id').order('id').range(a, b)),
     fetchAll<{ id: string; name: string }>((a, b) => supabase.from('ranches').select('id, name').order('id').range(a, b)),
-    fetchAll<HerdRow>((a, b) => supabase.from('herd_counts').select('id, ranch_id, class_name, head_count, avg_weight_lb, au_equivalent, feed_class, sort_order, updated_at').order('id').range(a, b)),
+    fetchAll<HerdRow>((a, b) => supabase.from('herd_counts').select('id, ranch_id, class_name, head_count, avg_weight_lb, au_equivalent, au_override, feed_class, sort_order, updated_at').order('id').range(a, b)),
   ])
   const pastureRanch = new Map(links.filter((l) => l.pasture_id && l.ranch_id).map((l) => [l.pasture_id as string, l.ranch_id as string]))
   const r = grazingGroups({ year, today: ctx.today, events, activations, pastures, pastureRanch, ranches, herd, ranchId })

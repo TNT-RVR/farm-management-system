@@ -197,7 +197,7 @@ export function daybookQuery(day: string) {
           at: null,
           title: `${c.event_type}${c.product ? ` · ${c.product}` : ''}`,
           detail: c.notes ?? null,
-          to: c.cattle_id ? `/cattle/${c.cattle_id}` : '/herd?tab=herd',
+          to: c.cattle_id ? `/cattle/${c.cattle_id}` : '/herd?tab=animals',
         })
       }
       for (const f of feed ?? []) {

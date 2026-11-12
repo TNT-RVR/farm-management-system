@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appliedByProduct, passAcres, toCanonicalRate, toCanonicalTotal } from './applied'
+import { appliedByProduct, haToAcres, passAcres, toCanonicalRate, toCanonicalTotal } from './applied'
 import { LONG_PASS_MS, duration, spanMs } from './fieldOps'
 
 // The gallon question is the whole ballgame: US vs Imperial is a 20% swing in
@@ -27,6 +27,37 @@ describe('toCanonicalRate', () => {
   it('returns null for an unrecognised unit rather than guessing', () => {
     expect(toCanonicalRate(5, 'furlongs1ac-1')).toBeNull()
     expect(toCanonicalRate(undefined, 'l1ac-1')).toBeNull()
+  })
+
+  // The Operations Data Export is asked for in METRIC, which writes the
+  // per-point rate column as l1ha-1 where the old export wrote gal1ac-1. Until
+  // 9 Nov 2026 that fell through to null and `autoInputs` skipped the line
+  // entirely, so a seeding's seed cost would have vanished from the
+  // Profit/Loss without erroring. See docs/JD-OPERATIONS-EXPORT.md.
+  describe('per hectare, as METRIC writes it', () => {
+    const ACRES_PER_HA = haToAcres(1)
+
+    it('converts volume per hectare to the canonical per-acre litre', () => {
+      expect(toCanonicalRate(ACRES_PER_HA, 'l1ha-1')!.rate).toBeCloseTo(1, 9)
+      expect(toCanonicalRate(1, 'l1ha-1')!.unit).toBe('L')
+      expect(toCanonicalRate(1000 * ACRES_PER_HA, 'ml1ha-1')!.rate).toBeCloseTo(1, 9)
+    })
+
+    it('converts mass per hectare to the canonical per-acre kilogram', () => {
+      expect(toCanonicalRate(ACRES_PER_HA, 'kg1ha-1')!.rate).toBeCloseTo(1, 9)
+      expect(toCanonicalRate(1, 'kg1ha-1')!.unit).toBe('kg')
+      expect(toCanonicalRate(1000 * ACRES_PER_HA, 'g1ha-1')!.rate).toBeCloseTo(1, 9)
+    })
+
+    // The point of converting rather than re-gridding: one field can hold
+    // passes read under either system and still total correctly.
+    it('agrees with the per-acre unit it replaces', () => {
+      // 20 US gal/ac, the sampled pass above, is 187.06 L/ha.
+      const perAcre = toCanonicalRate(20, 'gal1ac-1')!
+      const perHectare = toCanonicalRate(20 * 3.785411784 * ACRES_PER_HA, 'l1ha-1')!
+      expect(perHectare.unit).toBe(perAcre.unit)
+      expect(perHectare.rate).toBeCloseTo(perAcre.rate, 9)
+    })
   })
 })
 
@@ -312,6 +343,31 @@ describe('appliedByProduct with as-applied totals', () => {
     const line = appliedByProduct([{ products: realPass.products }], 52.86).lines[0]
     expect(line.measuredTotal).toBeNull()
     expect(line.measuredCost).toBeNull()
+  })
+})
+
+describe('seed, counted rather than weighed', () => {
+  // The planter meters corn, canola and beans by seed. There is no
+  // grams-per-seed anywhere in the app and a thousand-kernel weight varies by
+  // variety and lot, so this must NOT become mass — it stays counted, in
+  // thousands, which is how seed is bought and how the invoice reads.
+  it('reads seeds an acre as thousands of seeds', () => {
+    expect(toCanonicalRate(34_000, 'seeds1ac-1')).toEqual({ rate: 34, unit: 'k seeds' })
+    expect(toCanonicalRate(0, 'seeds1ac-1')).toEqual({ rate: 0, unit: 'k seeds' })
+  })
+
+  it('reads the METRIC spelling to the same number of seeds', () => {
+    const perAcre = toCanonicalRate(34_000, 'seeds1ac-1')!
+    const perHectare = toCanonicalRate(34_000 * haToAcres(1), 'seeds1ha-1')!
+    expect(perHectare.unit).toBe('k seeds')
+    expect(perHectare.rate).toBeCloseTo(perAcre.rate, 9)
+  })
+
+  // Before 11 Nov 2026 this returned null, and autoInputs does
+  // `if (!conv) continue` — so every corn, canola and bean field's seed
+  // vanished from the Profit/Loss rather than showing up unpriced.
+  it('no longer returns null for the unit 19 of 25 seeding layers are in', () => {
+    expect(toCanonicalRate(34_000, 'seeds1ac-1')).not.toBeNull()
   })
 })
 

@@ -1,5 +1,40 @@
 import { describe, expect, it } from 'vitest'
-import { ageSentence, freshness, ndviColour, staleness, NO_DATA_COLOUR } from './pastures'
+import {
+  ageSentence,
+  freshness,
+  ndviColour,
+  paddocksOnly,
+  pastureRanchId,
+  pasturesForRanch,
+  staleness,
+  NO_DATA_COLOUR,
+} from './pastures'
+
+describe('pasturesForRanch', () => {
+  const ranches = [
+    { id: 'gl', name: 'Home Ranch' },
+    { id: 'bi', name: 'East Ranch' },
+  ]
+  const links = new Map([['a', 'gl']])
+  const pastures = [
+    { id: 'a', ranch: 'Home Ranch' },
+    { id: 'outer', ranch: 'East Ranch' },
+    { id: 'loose', ranch: null },
+  ]
+
+  it('keeps an unlinked East Ranch boundary out of Home Ranch', () => {
+    expect(pasturesForRanch(pastures, 'gl', links, ranches).map((p) => p.id)).toEqual(['a'])
+    expect(pasturesForRanch(pastures, 'bi', links, ranches).map((p) => p.id)).toEqual(['outer'])
+  })
+
+  it('prefers the grazing link over the legal description', () => {
+    expect(pastureRanchId({ id: 'a', ranch: 'East Ranch' }, links, ranches)).toBe('gl')
+  })
+
+  it('shows everything under All, including a pasture with no ranch', () => {
+    expect(pasturesForRanch(pastures, '', links, ranches)).toHaveLength(3)
+  })
+})
 
 describe('staleness', () => {
   it('splits on the spec §4.6 boundaries', () => {
@@ -76,5 +111,27 @@ describe('freshness', () => {
   it('says so plainly when nothing has been observed', () => {
     expect(freshness(null).label).toBe('no imagery yet')
     expect(freshness(null).tone).toBe('poor')
+  })
+})
+
+describe('paddocksOnly', () => {
+  // "Farm Outer Boundary (Rough)" is a real row in `pastures`: a 2,922-acre
+  // shape over the whole of East Ranch, with no grazing-list link.
+  const shapes = [{ id: 'B' }, { id: 'C' }, { id: 'outline' }]
+  const links = new Map([
+    ['B', 'gl'],
+    ['C', 'gl'],
+  ])
+
+  it('keeps the paddocks a ranch grazing list links to', () => {
+    expect(paddocksOnly(shapes, links).map((p) => p.id)).toEqual(['B', 'C'])
+  })
+
+  it('drops a farm outline, which is not somewhere to move cattle to', () => {
+    expect(paddocksOnly(shapes, links).some((p) => p.id === 'outline')).toBe(false)
+  })
+
+  it('gives nothing when the ranch has no paddocks drawn', () => {
+    expect(paddocksOnly([{ id: 'outline' }], new Map())).toEqual([])
   })
 })

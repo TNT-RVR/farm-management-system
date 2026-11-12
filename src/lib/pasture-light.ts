@@ -10,7 +10,21 @@ import { supabase } from './supabase'
  * been grazed at all this season, which is what makes an untouched paddock
  * green even without a rest count.
  */
-export type Light = 'red' | 'yellow' | 'green' | 'grey'
+export type Light = 'red' | 'yellow' | 'green' | 'grey' | 'dormant'
+
+/**
+ * Is the grass dormant on this date?
+ *
+ * Outside the ranch's growing season — the same April-to-October window its
+ * rainfall is counted over (ranches.precip_start_month / precip_end_month) —
+ * native grass browns off and NDVI falls every year. A November paddock
+ * reading "overgrazed, going backwards" is the season, not damage, so the
+ * readiness verdicts are set aside until the window opens again.
+ */
+export function isDormant(on: Date, startMonth = 4, endMonth = 10): boolean {
+  const m = on.getMonth() + 1
+  return startMonth <= endMonth ? m < startMonth || m > endMonth : m < startMonth && m > endMonth
+}
 
 export type ReadinessRow = {
   pasture_id: string
@@ -29,6 +43,7 @@ export const LIGHT_COLOUR: Record<Light, string> = {
   yellow: '#f59e0b',
   green: '#16a34a',
   grey: '#9ca3af',
+  dormant: '#a8a29e',
 }
 
 export const LIGHT_LABEL: Record<Light, string> = {
@@ -36,14 +51,17 @@ export const LIGHT_LABEL: Record<Light, string> = {
   yellow: 'Borderline',
   green: 'Good to graze',
   grey: 'No look yet',
+  dormant: 'Dormant',
 }
 
 export function trafficLight(
   row: ReadinessRow | undefined,
   grazedThisSeason: boolean,
+  dormant = false,
 ): { light: Light; why: string } {
   if (!row || row.readiness == null) return { light: 'grey', why: 'No satellite look of this paddock yet.' }
   if (row.cattle_on_now) return { light: 'red', why: 'Cattle are on it now.' }
+  if (dormant) return { light: 'dormant', why: 'Grass is dormant for the winter; readiness resumes in spring.' }
   if (row.readiness === 'overgrazed') return { light: 'red', why: 'Standing forage is below the residual floor.' }
   const rested = row.days_rested
   const min = row.min_rest_days ?? 0

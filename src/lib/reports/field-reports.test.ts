@@ -241,7 +241,7 @@ describe('PHI and grazing clearance', () => {
   })
 
   it('gives the safe harvest day, the spray behind it, the unknowns and the grazing date', () => {
-    const graze = { kind: 'graze' as const, product: 'Prestige', registration: '1', appliedOn: '2026-07-15', sourceId: 's', days: 7, never: false, until: '2026-07-22', crop: null, condition: null, quote: null, assumed: null, eatenBecause: [] }
+    const graze = { kind: 'graze' as const, product: 'Prestige', registration: '1', appliedOn: '2026-07-15', sourceId: 's', days: 7, never: false, until: '2026-07-22', crop: null, condition: null, quote: null, assumed: null, eatenBecause: [], endsAtHarvest: false, harvestedOn: null }
     const row = clearanceRow(
       'f1',
       'Green Feed',

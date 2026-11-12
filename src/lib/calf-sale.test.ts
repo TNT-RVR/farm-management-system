@@ -21,6 +21,12 @@ describe('calf sale weights per ranch', () => {
     expect(historyWeight(sales, 'Home Ranch', 'heifers')!.lb).toBe(547)
   })
 
+  it('weights a big lot by its head, not as one lot of four (the heifer page took a median until 3 Nov 2026)', () => {
+    // A median of the four newest lots read 424 lb here; Markets' head-weighted average reads more.
+    const h = [lot(2025, 'heifers', 120, 470), lot(2025, 'heifers', 10, 420), lot(2024, 'heifers', 10, 424), lot(2023, 'heifers', 10, 410)]
+    expect(historyWeight(h, 'Home Ranch', 'heifers')!.lb).toBe(Math.round((120 * 470 + 10 * 420 + 10 * 424 + 10 * 410) / 150))
+  })
+
   it('a typed weight wins; a blank one comes from history; none falls to Farm setup', () => {
     const farm = { calfSaleWeightLb: 450, calfSaleMonth: 12 }
     const bi = ranchSale({ name: 'East Ranch', steer_sale_weight_lb: 750, heifer_sale_weight_lb: 650, calf_sale_month: 11 }, sales, farm)

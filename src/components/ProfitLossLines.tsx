@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Plus, RotateCcw, X } from 'lucide-react'
 import { useDeleteLine, useSaveLine } from '@/lib/profit-loss-data'
 import { money, type Line, type SavedLine, type Side } from '@/lib/profit-loss-lines'
@@ -28,6 +29,7 @@ export function LinesTable({
   title,
   side,
   lines,
+  removed,
   fieldId,
   cropYear,
   acres,
@@ -36,6 +38,8 @@ export function LinesTable({
   title: string
   side: Side
   lines: Line[]
+  /** Automatic rows taken off this field, listed under the table so they can be put back. */
+  removed: SavedLine[]
   fieldId: string
   cropYear: number
   acres: number
@@ -101,16 +105,37 @@ export function LinesTable({
                 {l.problem && l.total == null && <p className="text-[10px] text-amber-700">{l.problem}</p>}
               </td>
               <td className="py-1 text-right">
-                <Cell
-                  value={l.price}
-                  prefix="$"
-                  suffix={l.unit ? `/${l.unit}` : ''}
-                  dp={l.price != null && l.price < 10 ? 3 : 2}
-                  edited={l.edited.price}
-                  canEdit={canEdit}
-                  onCommit={(v) => edit(l, 'price', v)}
-                  onReset={() => edit(l, 'price', null)}
-                />
+                {/* A crop's price has one home, the crop's own page: shown here,
+                    set there (Sam, 2 Nov 2026). A price typed over an earlier
+                    one keeps its reset arrow, so nothing is stranded. */}
+                {l.priceAt && !l.isManual ? (
+                  <span className="inline-flex items-center justify-end gap-1">
+                    <Link
+                      to={l.priceAt}
+                      title="Set this price on the crop"
+                      className={cn('tabular-nums underline decoration-dotted underline-offset-2 hover:text-brand-800', l.edited.price ? 'text-brand-800' : 'text-gray-700')}
+                    >
+                      {l.price == null ? '—' : `$${l.price.toLocaleString('en-CA', { maximumFractionDigits: l.price < 10 ? 3 : 2 })}`}
+                      {l.unit ? `/${l.unit}` : ''}
+                    </Link>
+                    {l.edited.price && canEdit && (
+                      <button type="button" onClick={() => edit(l, 'price', null)} title="Put the crop's own price back" className="text-gray-400 hover:text-brand-800">
+                        <RotateCcw className="h-3 w-3" />
+                      </button>
+                    )}
+                  </span>
+                ) : (
+                  <Cell
+                    value={l.price}
+                    prefix="$"
+                    suffix={l.unit ? `/${l.unit}` : ''}
+                    dp={l.price != null && l.price < 10 ? 3 : 2}
+                    edited={l.edited.price}
+                    canEdit={canEdit}
+                    onCommit={(v) => edit(l, 'price', v)}
+                    onReset={() => edit(l, 'price', null)}
+                  />
+                )}
               </td>
               <td className="py-1 text-right">
                 <Cell
@@ -158,6 +183,28 @@ export function LinesTable({
           </tr>
         </tfoot>
       </table>
+
+      {/* Taking a row off used to be one-way: it saved a "removed" row that
+          nothing ever showed again (Sam, 2 Nov 2026, on the overhead he took
+          off field 6: "now I cant get it back"). Each one is a button that
+          puts it back. */}
+      {canEdit && removed.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-500">
+          <span>Taken off:</span>
+          {removed.map((r) => (
+            <button
+              key={r.line_key}
+              type="button"
+              disabled={busy}
+              onClick={() => remove.mutate({ fieldId, cropYear, side, key: r.line_key })}
+              title="Put this row back"
+              className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2 py-0.5 text-gray-600 hover:border-brand-700 hover:text-brand-800 disabled:opacity-50"
+            >
+              <RotateCcw className="h-3 w-3" /> {r.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {canEdit &&
         (adding ? (

@@ -149,6 +149,36 @@ export type LandsatStat = {
   inPolygonPixels: number
 }
 
+/** A band on the true reflectance scale. */
+const refl = (band: string) => `(${band}*${L2_SCALE}${L2_OFFSET})`
+
+/**
+ * The canola flower test (src/lib/canola-bloom.ts) on Landsat's bands: a
+ * plant, red high next to green, blue low next to green. Each is multiplied by
+ * the clear test so its mean over the field, divided by the clear fraction, is
+ * the share over the clear pixels — the same trick as NDVI above.
+ */
+const PLANT_EXPRESSION = `where((${NDVI_EXPRESSION})>0.4,1,0)`
+const YELLOW_EXPRESSION =
+  `where((${NDVI_EXPRESSION})>0.4,where(${refl('red')}/${refl('green')}>0.65,where(${refl('blue')}/${refl('green')}<0.6,1,0),0),0)`
+
+export type LandsatBloom = { yellowFraction: number | null; plantFraction: number | null; blueMean: number | null }
+
+/** The yellow share, crop share and blue on one clear look: canola fields in summer only. */
+export async function fetchLandsatBloom(item: string, feature: unknown, clearFraction: number): Promise<LandsatBloom> {
+  const mean = async (assets: string[], expr: string) => {
+    const st = await itemStatistics(item, [...assets, 'qa_pixel'], `(${expr})*${CLEAR_EXPRESSION}`, feature)
+    const m = numOrNull(st?.mean)
+    return m == null || clearFraction <= 0 ? null : m / clearFraction
+  }
+  const [yellowFraction, plantFraction, blueMean] = await Promise.all([
+    mean(['blue', 'green', 'red', 'nir08'], YELLOW_EXPRESSION),
+    mean(['red', 'nir08'], PLANT_EXPRESSION),
+    mean(['blue'], refl('blue')),
+  ])
+  return { yellowFraction, plantFraction, blueMean }
+}
+
 /**
  * NDVI over the clear pixels of one field in one scene.
  *
@@ -193,11 +223,25 @@ export type LandsatResult = { fields: number; scenes: number; observations: numb
 
 export async function runLandsatIngest(
   sb: SupabaseClient,
-  opts: { days?: number; limitFields?: number; reprocess?: boolean; deadline?: number; subjectType?: 'field' | 'pasture' | 'pasture_zone' } = {},
+  opts: {
+    days?: number
+    limitFields?: number
+    reprocess?: boolean
+    deadline?: number
+    subjectType?: 'field' | 'pasture' | 'pasture_zone'
+    /** Only these subjects (the canola bloom backfill). */
+    onlyIds?: string[]
+    /** A fixed date range instead of `days` back from today. */
+    from?: string
+    to?: string
+    /** Canola fields being watched for flowers: their clear looks get the yellow test too. */
+    bloomIds?: Set<string>
+  } = {},
 ): Promise<LandsatResult> {
   const days = opts.days ?? 14
-  const to = new Date().toISOString().slice(0, 10)
-  const from = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
+  const to = opts.to ?? new Date().toISOString().slice(0, 10)
+  const from = opts.from ?? new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
+  const only = opts.onlyIds ? new Set(opts.onlyIds) : null
 
   // Fields and pastures differ only in which polygon table they come from; the
   // two functions return the same shape so one ingester serves both (§9.1 wants
@@ -224,6 +268,7 @@ export async function runLandsatIngest(
 
   let ranOutOfTime = 0
   for (const s of subjects as Subject[]) {
+    if (only && !only.has(s.field_id)) continue
     // Stop cleanly rather than be killed mid-field. Netlify caps a function's
     // wall clock, and an ingest over every field can exceed it; the per-scene
     // skip means the next run resumes exactly where this one stopped, so a
@@ -290,6 +335,12 @@ export async function runLandsatIngest(
           .single()
         if (!sceneRow) continue
 
+        // Canola in summer: the flower test as well, on a look clear enough to read.
+        const bloom =
+          opts.bloomIds?.has(s.field_id) && stat.clearFraction >= 0.3 && Number(item.sensedOn.slice(5, 7)) >= 6 && Number(item.sensedOn.slice(5, 7)) <= 8
+            ? await fetchLandsatBloom(item.id, feature, stat.clearFraction).catch(() => null)
+            : null
+
         const { error: obsErr } = await sb.from('sat_observations').upsert(
           {
             scene_id: sceneRow.id as string,
@@ -307,6 +358,9 @@ export async function runLandsatIngest(
             nodata_count: Math.round(stat.inPolygonPixels * (1 - stat.clearFraction)),
             resolution_m: 30,
             ndvi_mean: stat.ndvi,
+            yellow_fraction: bloom?.yellowFraction ?? null,
+            plant_fraction: bloom?.plantFraction ?? null,
+            blue_mean: bloom?.blueMean ?? null,
             // The whole point of §4.5. Landsat sits on its own NDVI scale until
             // 15 same-day pairs exist to regress against Sentinel-2, and an
             // unharmonized value in the curve is a step artifact that reads as

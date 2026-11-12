@@ -155,6 +155,13 @@ export const TAB_ENTRIES: TabEntry[] = [
     keywords: 'cattle grazing plan pasture moves',
   },
   {
+    label: 'Grazing plan',
+    page: 'Pastures',
+    to: '/cattle?tab=grazing-plan',
+    exact: true,
+    keywords: 'cattle grazing planner rotation schedule season lease days gates rest',
+  },
+  {
     label: 'Spray restrictions',
     page: 'Pastures',
     to: '/cattle?tab=restrictions',
@@ -162,11 +169,18 @@ export const TAB_ENTRIES: TabEntry[] = [
     keywords: 'cattle grazing restrictions label sprayed',
   },
   {
-    label: 'Herd',
+    label: 'Animals',
     page: 'Herd',
-    to: '/herd?tab=herd',
+    to: '/herd?tab=animals',
     exact: true,
-    keywords: 'cattle head count groups animals',
+    keywords: 'cattle head count groups animals herd register tags eshepherd',
+  },
+  {
+    label: 'Replacement heifers',
+    page: 'Herd',
+    to: '/herd?tab=replacements',
+    exact: true,
+    keywords: 'cattle replacements heifers keep retain cull buy raise',
   },
   {
     label: 'Pregnancy',
@@ -180,7 +194,7 @@ export const TAB_ENTRIES: TabEntry[] = [
     page: 'Feed',
     to: '/feed?tab=plan',
     exact: true,
-    keywords: 'cattle winter feed budget ration',
+    keywords: 'cattle winter feed budget ration swath grazing benchmark agriprofit cost per cow wintered',
   },
   {
     label: 'Feed records',
@@ -528,6 +542,27 @@ export const TAB_ENTRIES: TabEntry[] = [
     to: '/chemicals?tab=prices',
     exact: true,
     keywords: 'chemical prices pricing',
+  },
+  {
+    label: 'This season',
+    page: 'Canola bloom',
+    to: '/canola-bloom?tab=season',
+    exact: true,
+    keywords: 'canola flowering bloom yellow satellite fungicide window',
+  },
+  {
+    label: 'How it did',
+    page: 'Canola bloom',
+    to: '/canola-bloom?tab=tuning',
+    exact: true,
+    keywords: 'canola bloom settings thresholds tuning degree days variety',
+  },
+  {
+    label: 'Season report',
+    page: 'Canola bloom',
+    to: '/canola-bloom?tab=report',
+    exact: true,
+    keywords: 'canola bloom season report flowering length yield spray stage',
   },
   {
     label: 'Isolation',

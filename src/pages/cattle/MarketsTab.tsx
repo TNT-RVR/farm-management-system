@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   CartesianGrid,
   Line,
@@ -61,6 +62,8 @@ import { monthName, ranchSale, saleWeightSource } from '@/lib/calf-sale'
 import { useMainRanch, useRanches } from '@/lib/ranches'
 import type { CattleSale } from '@/lib/cattleMarkets'
 import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, RowCard } from '@/components/RowCards'
+import { useHerdTakeOff } from '@/pages/cattle/HerdTakeOff'
 
 const money = (v: number, dp = 2) => `$${v.toFixed(dp)}`
 
@@ -70,13 +73,34 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
   const [editing, setEditing] = useState<CattleSale | 'new' | null>(null)
+  const herdTakeOff = useHerdTakeOff()
+  // The Record sale tile opens here with ?sale=new.
+  const [params, setParams] = useSearchParams()
+  const askedNew = params.get('sale') === 'new'
+  const [seenNew, setSeenNew] = useState(false)
+  if (askedNew && isManager && !seenNew) {
+    setSeenNew(true)
+    setEditing('new')
+  }
+  if (!askedNew && seenNew) setSeenNew(false)
+  useEffect(() => {
+    if (!askedNew || !isManager) return
+    setParams(
+      (p) => {
+        p.delete('sale')
+        return p
+      },
+      { replace: true },
+    )
+  }, [askedNew, isManager, setParams])
   // What each ranch actually sells, and when (Sam, 5 Oct 2026): East Ranch
   // typed 750 lb steers / 650 lb heifers in November; Home Ranch from its own
   // sales, in December. Farm setup's one figure only where a ranch has neither.
   const farm = useFarmSettings()
   const mainRanch = useMainRanch()
   const { data: ranchRows } = useRanches()
-  const [saleRanchId, setSaleRanchId] = useState<string | null>(null)
+  // Cattle settings' "Break-even on Markets" link names its ranch (?ranch=).
+  const [saleRanchId, setSaleRanchId] = useState<string | null>(() => params.get('ranch'))
   const saleRanch = ranchRows?.find((r) => r.id === saleRanchId) ?? mainRanch
   const sale = useMemo(() => ranchSale(saleRanch, sales ?? [], farm), [saleRanch, sales, farm])
   const OUR_WEIGHT_LB = sale.steers.lb
@@ -279,7 +303,8 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
   return (
     <div className="space-y-4">
       {/* Headline */}
-      {(ranchRows ?? []).length > 1 && (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+      {(ranchRows ?? []).length > 1 ? (
         <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
           <span>Sale weights for</span>
           <div className="flex rounded-md border border-gray-200 p-0.5">
@@ -297,7 +322,18 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
             · sold in {saleMonthName}; steers {saleWeightSource(sale.steers)}, heifers {saleWeightSource(sale.heifers)}
           </span>
         </div>
+      ) : (
+        <span />
       )}
+        {isManager && (
+          <button
+            onClick={() => setEditing('new')}
+            className="flex shrink-0 items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-800"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add sale
+          </button>
+        )}
+      </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
           label="Last sale"
@@ -325,6 +361,7 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
         ourWeightLb={OUR_WEIGHT_LB}
         todayPricePerLb={headline.steers?.perLb ?? null}
         forwardPricePerLb={forwardPricePerLb}
+        forwardMonth={saleMonthName}
         onEditCosts={() => onGoToSettings?.(saleRanch?.id)}
         historyPricesPerLb={priced.map((y) => y.price!).filter((p) => p != null)}
         basis={basis?.basis ?? null}
@@ -343,14 +380,6 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
         <section className="rounded-lg border border-gray-200 bg-white p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h3 className="text-sm font-semibold text-gray-800">What the calves sold for</h3>
-            {isManager && (
-              <button
-                onClick={() => setEditing('new')}
-                className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-              >
-                <Plus className="h-3.5 w-3.5" /> Record a sale
-              </button>
-            )}
           </div>
           <HelpNote className="mt-0.5 text-xs" summary="Weighted by pounds; a hollow point was priced forward." title="About this chart">
             <p>
@@ -366,7 +395,26 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
             <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-800">
               Every lot ({(sales ?? []).length})
             </summary>
-            <div className="mt-2 max-h-72 overflow-auto rounded-lg border border-gray-200">
+            <CardList className="mt-2 max-h-96 overflow-auto rounded-lg border border-gray-200" empty="No sales recorded." isEmpty={!(sales ?? []).length}>
+              {(sales ?? []).map((s) => (
+                <RowCard
+                  key={s.id}
+                  heading={
+                    <span className="capitalize">
+                      {s.crop_year} · {s.animal_class} · {s.head ?? '—'} head
+                    </span>
+                  }
+                  onClick={isManager ? () => setEditing(s) : undefined}
+                  facts={[
+                    { label: 'Ranch', node: s.ranch },
+                    { label: 'Avg lb', node: s.avg_weight_lb != null ? s.avg_weight_lb.toFixed(0) : null },
+                    { label: '$/lb', node: s.price_per_lb != null ? money(s.price_per_lb) : 'no price' },
+                    { label: 'Buyer', node: s.buyer },
+                  ]}
+                />
+              ))}
+            </CardList>
+            <div className="mt-2 hidden max-h-72 overflow-auto rounded-lg border border-gray-200 sm:block">
               <table className="w-full text-xs">
                 <thead className={TABLE_HEAD}>
                   <tr>
@@ -423,8 +471,12 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
           ]}
           isManager={isManager}
           onClose={() => setEditing(null)}
+          onSaved={(s) =>
+            herdTakeOff.offer({ ranchName: s.ranch, items: [{ head: s.head ?? 0, hint: s.animal_class }], source: 'this sale' })
+          }
         />
       )}
+      {herdTakeOff.node}
 
       <Fold
         title="Market"
@@ -526,7 +578,31 @@ function HindsightTable({ hindsight }: { hindsight: ReturnType<typeof scoreHinds
           market data for are left unscored rather than counted as a draw.
         </p>
       </HelpNote>
-      <div className="mt-2 overflow-x-auto">
+      <CardList className="mt-2" empty="No forward sales recorded yet." isEmpty={hindsight.length === 0}>
+        {hindsight.map((h) => (
+          <RowCard
+            key={`${h.row.year}-${h.row.ranch}`}
+            heading={h.row.year}
+            actions={
+              h.advantage == null ? (
+                <Minus className="h-4 w-4 text-gray-300" />
+              ) : (
+                <span className={cn('text-sm tabular-nums', h.advantage >= 0 ? 'text-green-700' : 'text-red-700')}>
+                  {h.advantage >= 0 ? '+' : ''}
+                  {money(h.advantage)}
+                </span>
+              )
+            }
+            facts={[
+              { label: 'Sold', node: h.row.saleDate },
+              { label: 'Ahead', node: `${h.row.daysAhead} d` },
+              { label: 'Locked at', node: h.row.price != null ? `${money(h.row.price)}/lb` : null },
+              { label: 'Market at delivery', node: h.marketAtDelivery != null ? `${money(h.marketAtDelivery)}/lb` : 'not yet' },
+            ]}
+          />
+        ))}
+      </CardList>
+      <div className="mt-2 hidden overflow-x-auto sm:block">
         <table className="w-full text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -784,8 +860,6 @@ function TodayStat({ sex, weightLb, h, ranch, source }: { sex: 'steers' | 'heife
               ))}
               <p className="text-gray-500">
                 The weight is {ranch ? `${ranch}’s` : 'the farm’s'} {sex === 'steers' ? 'steer' : 'heifer'} sale weight ({source}) — set it in Cattle settings.
-                {sex === 'steers' &&
-                  ' Until 5 Oct 2026 this card took whichever market’s 500–600 lb row came first — Clyde, $660.50/cwt on 2 Oct — and slid it down 100 lb at $0.57/cwt a pound (the 500–600 and 600–700 lb averages across markets, $640.01 and $583.00): $660.50 + 100 × $0.57 = $717.50/cwt, or $7.17/lb. Clyde is not one of the farm’s markets and one row is not the market, so that is no longer done.'}
               </p>
             </div>
           </InfoPopover>

@@ -12,6 +12,8 @@ import { Fold } from '@/components/Fold'
 import { HelpNote } from '@/components/HelpNote'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
 import { useRanches } from '@/lib/ranches'
+import { useHerdCounts } from '@/lib/cattle'
+import { cullCowValue, useCowQuotes } from '@/lib/cull-cow'
 import { money as fmtMoney } from '@/lib/format'
 import { CARD_HEAD } from '@/lib/table-style'
 
@@ -34,6 +36,7 @@ export function CattleEconomics({
   ourWeightLb,
   todayPricePerLb,
   forwardPricePerLb,
+  forwardMonth,
   historyPricesPerLb,
   basis,
   basisHistory,
@@ -47,6 +50,8 @@ export function CattleEconomics({
   ourWeightLb: number
   todayPricePerLb: number | null
   forwardPricePerLb: number | null
+  /** The month the forward bid is for ("December"). */
+  forwardMonth?: string
   historyPricesPerLb: number[]
   basis: number | null
   basisHistory: number[]
@@ -60,7 +65,18 @@ export function CattleEconomics({
   const { data: ranchRows } = useRanches()
   const ranchId = ranchRows?.find((r) => r.name === ranch)?.id
 
-  const be = breakEven(costs ?? null, ourWeightLb)
+  // The cull cows sold each year pay part of the herd's cost: today's cull
+  // cheque (market first, the typed price behind it) at this ranch's cow weight.
+  const { data: counts } = useHerdCounts(ranchId ?? undefined)
+  const { data: cowQuotes } = useCowQuotes()
+  const cowRow = (counts ?? []).find((c) => c.feed_class === 'cow' || /\bcows?\b/i.test(c.class_name))
+  const cull = cullCowValue({
+    quotes: cowQuotes,
+    weightLb: cowRow ? Number(cowRow.avg_weight_lb) : null,
+    typedCwt: costs?.cull_cow_price_cwt ?? null,
+    today: new Date().toLocaleDateString('en-CA'),
+  })
+  const be = breakEven(costs ?? null, ourWeightLb, { cullCheque: cull.cheque })
   const vog =
     todayPricePerLb != null && heavierClass
       ? valueOfGain(
@@ -86,6 +102,9 @@ export function CattleEconomics({
     basisHistory,
     curveSlope,
     breakEvenPerLb: be?.perLb ?? null,
+    priceKind: forwardPricePerLb != null ? 'forward' : 'today',
+    forwardMonth,
+    todayPricePerLb,
   })
 
   return (
@@ -137,12 +156,21 @@ export function CattleEconomics({
               <Fig
                 label="Calves sold per cow"
                 value={be.calvesPerCow.toFixed(2)}
-                sub="after weaning and death loss"
+                sub="weaned per cow exposed"
               />
-              <Fig label="Per calf" value={money(be.costPerCalf, 0)} />
+              <Fig
+                label="Per calf"
+                value={money(be.costPerCalf, 0)}
+                sub={
+                  be.cullCreditPerCow != null
+                    ? `after ${money(be.cullCreditPerCow, 0)}/cow from culls (${be.cullPct}%)`
+                    : 'no cull cow price — no cull credit'
+                }
+              />
               <Fig
                 label={`Break-even at ${ourWeightLb} lb`}
                 value={be.perLb != null ? `${money(be.perLb)}/lb` : '—'}
+                sub={be.perCwt != null ? `${money(be.perCwt)}/cwt` : undefined}
                 tone={
                   be.perLb != null && todayPricePerLb != null
                     ? todayPricePerLb >= be.perLb

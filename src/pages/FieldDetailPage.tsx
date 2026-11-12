@@ -21,6 +21,7 @@ import { ReentryWarning } from '@/components/ReentryWarning'
 import { FieldGrazingRestriction } from '@/components/GrazingRestrictions'
 import { FieldInputsCard } from '@/components/FieldInputsCard'
 import { FieldSoilOverride } from '@/components/FieldSoilOverride'
+import { FieldSalinityCard } from '@/components/FieldSalinityCard'
 import { FieldSoilSurvey } from '@/components/FieldSoilSurvey'
 import { FieldSoilTestCard } from '@/components/FieldSoilTestCard'
 import type { Database } from '@/lib/database.types'
@@ -895,6 +896,7 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
           />
           <FieldSoilSurvey fieldId={field.id} className="mt-4" />
           <FieldSoilTestCard fieldId={field.id} />
+          <FieldSalinityCard fieldId={field.id} className="mt-4" />
           <div className="mt-4">
             <NotesEditor
               key={`${field.id}:soil:${field.soil_notes_md ?? ''}`}

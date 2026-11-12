@@ -12,7 +12,7 @@ export const grazingToday = () => albertaDay(new Date().toISOString())
 export function grazingDataQuery() {
   return {
     // Versioned: persisted offline, and an older shape would crash the screens.
-    queryKey: ['grazing-restrictions', 'v1'],
+    queryKey: ['grazing-restrictions', 'v2'],
     staleTime: 10 * 60_000,
     queryFn: () => loadGrazingData(supabase, grazingToday()),
   }

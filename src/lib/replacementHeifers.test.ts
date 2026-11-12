@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BULL_CALF_DISCOUNT,
+  bullCalfPricePerLb,
   heiferOverridesKey,
   loadHeiferOverrides,
   parseHeiferOverrides,
@@ -39,9 +41,21 @@ const base: HeiferInputs = {
 
 describe('replacement heifers', () => {
   it('prices each sale option net of gain cost and holding death loss', () => {
+    // 2% a year held: wintered holds four months, a yearling nine.
     expect(sale[0].netPerHead).toBeCloseTo(430 * 5.3, 6)
-    expect(sale[1].netPerHead).toBeCloseTo(550 * 4.6 * 0.98 - 168, 6)
-    expect(sale[2].netPerHead).toBeCloseTo(850 * 3.6 * 0.98 * 0.98 - 388, 6)
+    expect(sale[1].netPerHead).toBeCloseTo(550 * 4.6 * Math.pow(0.98, 4 / 12) - 168, 6)
+    expect(sale[2].netPerHead).toBeCloseTo(850 * 3.6 * Math.pow(0.98, 9 / 12) - 388, 6)
+  })
+  it('charges loss for time held, not for place in the list', () => {
+    const one = priceSaleOptions([{ key: 'yearling', label: 'Yearling', when: 'Sep', weightLb: 850, pricePerLb: 3.6, costPerHead: 0 }], 2)
+    expect(one[0].netPerHead).toBeCloseTo(sale[2].netPerHead! + 388, 6)
+    const told = priceSaleOptions([{ key: 'wintered', label: 'W', when: 'Apr', weightLb: 100, pricePerLb: 1, costPerHead: 0, monthsHeld: 12 }], 10)
+    expect(told[0].netPerHead).toBeCloseTo(90, 6)
+  })
+  it('prices bull calves off a bull quote, else under steers', () => {
+    expect(bullCalfPricePerLb(5.1, 5.6)).toBe(5.1)
+    expect(bullCalfPricePerLb(null, 5.6)).toBeCloseTo(5.6 * (1 - BULL_CALF_DISCOUNT), 6)
+    expect(bullCalfPricePerLb(null, null)).toBeNull()
   })
   it('replaces culls and deaths, and grows into spare grass when keeping pays', () => {
     const p = planHeifers(base)

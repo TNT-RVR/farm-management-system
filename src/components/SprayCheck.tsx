@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
+import { SprayWarnings } from '@/components/SprayWarnings'
 import { useQuery } from '@tanstack/react-query'
 import { ShieldCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -10,6 +11,19 @@ import { carryover, cropKey, type CarryoverHit } from '@/lib/rotation-engine'
 import { cn } from '@/lib/utils'
 import { CARD_HEAD } from '@/lib/table-style'
 
+/**
+ * The products this check can be run on.
+ *
+ * A registration OR actives entered by hand. It used to be a registration
+ * only, because the re-cropping half of the check reads the label and a label
+ * is reached through its registration — but that left out Roundup, which is
+ * the most-sprayed line on the farm at 52 passes, and Authority 480, the
+ * sulfentrazone. Both are perfectly real sprays somebody typed onto an invoice
+ * without a registration number, and both now carry their actives
+ * (jd_products.actives_manual), so the group, soil-pH and time-of-day warnings
+ * can all answer for them. The re-cropping list simply says it has no label to
+ * read, which is the truth and more use than the product not being there.
+ */
 function useSprayableProducts() {
   return useQuery({
     queryKey: ['spray-check-products'],
@@ -17,12 +31,12 @@ function useSprayableProducts() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('jd_products')
-        .select('id, name, pmra_registration')
+        .select('id, name, pmra_registration, actives_manual')
         .eq('category', 'chemical')
-        .not('pmra_registration', 'is', null)
+        .or('pmra_registration.not.is.null,actives_manual.not.is.null')
         .order('name')
       if (error) throw error
-      return (data ?? []) as { id: string; name: string; pmra_registration: string }[]
+      return (data ?? []) as { id: string; name: string; pmra_registration: string | null; actives_manual: string | null }[]
     },
   })
 }
@@ -92,7 +106,8 @@ export function SprayCheck({ fieldId }: { fieldId?: string }) {
       </h3>
       <div className="p-3">
       <p className="mt-0.5 text-xs text-gray-500">
-        Checks the product&apos;s label against the crops already planned for {cropYear + 1} and {cropYear + 2}. Planting taken as 1 May.
+        Against the crops planned for {cropYear + 1} and {cropYear + 2} (planting taken as 1 May), and against what
+        these fields have already had.
       </p>
 
       <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
@@ -134,7 +149,31 @@ export function SprayCheck({ fieldId }: { fieldId?: string }) {
         </div>
       )}
 
-      {product && !labelRead && (
+      {/* The resistance groups, the same group twice, the field's own pH and
+      the hour of the day. Draws nothing where nothing applies, and does not
+      wait on the label having been read: it reads the price book's actives and
+      the field's own history, which the re-crop check below cannot. */}
+      {product && (
+        <SprayWarnings
+          productId={product.id}
+          sprayOn={sprayOn}
+          fieldIds={[...picked]}
+          fieldName={(id) => activeFields.find((f) => f.id === id)?.name ?? 'Field'}
+        />
+      )}
+
+      {/* Two different gaps, which the one message used to conflate: a label
+      nobody has read yet is a job on the Rotation page, while a product with no
+      registration number has no label to read at all and wants fixing where
+      the price book is kept. */}
+      {product && !reg && (
+        <p className="mt-2 rounded bg-gray-50 px-2 py-1.5 text-xs text-gray-600">
+          No registration number is recorded for {product.name}, so there is no label to read for re-cropping. The
+          warnings above do not need one.{' '}
+          <SetupLink managerOnly to={SETUP_LINKS.chemicalPrices()}>Prices</SetupLink>
+        </p>
+      )}
+      {product && reg && !labelRead && (
         <p className="mt-2 rounded bg-gray-50 px-2 py-1.5 text-xs text-gray-600">
           {product.name}&apos;s label has not been read for re-cropping yet — run &ldquo;Read re-cropping rules from the labels&rdquo; on the Rotation page.{' '}
           <SetupLink managerOnly to={SETUP_LINKS.rotation()}>Rotation</SetupLink>

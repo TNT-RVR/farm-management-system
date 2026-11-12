@@ -151,9 +151,11 @@ async function handle(req: Request | null) {
         }
       } else {
         // Heartbeat sources: healthy if our job reported success recently enough.
-        // The FieldNET sync runs every three hours in winter, not every half hour.
+        // The FieldNET sync runs every three hours in winter, not every half hour,
+        // and the pasture satellite run only on Mondays.
         const age = minutesSince(r.last_success_at)
-        const staleAfter = heartbeatStaleAfterMin(r.source_key, r.stale_after_min, farmClock().month)
+        const clock = farmClock()
+        const staleAfter = heartbeatStaleAfterMin(r.source_key, r.stale_after_min, clock.month, clock.day)
         if (age == null) {
           status = 'unknown' // never reported yet — don't alert
           detail = 'Awaiting first successful run'

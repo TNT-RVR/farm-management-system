@@ -950,6 +950,7 @@ export function IrrigationPage({ section = 'aimm' }: { section?: IrrigationSecti
         ) : aimmTab === 'overview' ? (
           <IrrigationOverview
             year={cropYear}
+            isManager={isManager}
             onOpenField={(id) => {
               setDetailField(id)
               setAimmTab('detail')
