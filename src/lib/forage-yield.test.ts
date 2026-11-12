@@ -5,8 +5,6 @@ import {
   computePastures,
   forageYieldPerAcre,
   FORAGE_YIELD_IRRIGATION,
-  precipZoneEdges,
-  precipZones,
   type PastureRow,
 } from './forage-yield'
 
@@ -104,58 +102,62 @@ describe('seasonFactor', () => {
 describe('computePastures', () => {
   const dry = row({ id: 'dry', name: 'Dry' })
   const wet = row({ id: 'wet', name: 'Wet' })
-  const rain = { forecastMm: 270, projectedMm: 379 }
+  // Home Ranch's real shape: a 382 mm annual zone, a 270 mm normal season,
+  // and a wet year projected to 379 mm — so the season ran 1.404 of normal.
+  const rain = { forecastMm: 270, projectedMm: 379, zoneMm: 382, rainFactor: 379 / 270 }
 
-  it('costs a measured paddock on the normal rain, so a wet year is not counted twice', () => {
+  it('reads the row off the zone, never off this year’s rain', () => {
+    const [p] = computePastures([dry], rain, 0.8, null, null)
+    // 382 mm picks the row; the wet season scales what that row yields. The
+    // old rule looked the row up at 379 mm instead, which let a wet year
+    // promote the pasture to a zone it does not sit in.
+    expect(p.foragePerAcre).toBeCloseTo(forageYieldPerAcre(382, 'Fair') * (379 / 270), 6)
+    expect(p.foragePerAcre).not.toBeCloseTo(forageYieldPerAcre(379, 'Fair'), 2)
+  })
+
+  it('a dry year and a wet year sit in the same zone', () => {
+    const [wetYear] = computePastures([dry], rain, 0.8, null, null)
+    const [dryYear] = computePastures([dry], { ...rain, projectedMm: 190, rainFactor: 190 / 270 }, 0.8, null, null)
+    // Same row both times — only the multiplier moved.
+    expect(wetYear.foragePerAcre / wetYear.seasonFactor).toBeCloseTo(dryYear.foragePerAcre / dryYear.seasonFactor, 6)
+    expect(dryYear.foragePerAcre).toBeLessThan(wetYear.foragePerAcre)
+  })
+
+  it('prefers the satellite’s own measurement where there is one', () => {
     const [p] = computePastures([wet], rain, 0.8, null, new Map([['wet', 1.16]]))
-    // The normal season times the measured growth, NOT 379 mm times 1.16.
-    expect(p.foragePerAcre).toBeCloseTo(forageYieldPerAcre(270, 'Fair') * 1.16, 6)
-    expect(p.foragePerAcre).toBeLessThan(forageYieldPerAcre(379, 'Fair') * 1.16)
+    // The zone times the measured growth, and NOT also times the rain ratio:
+    // they measure the same weather and multiplying both counts it twice.
+    expect(p.foragePerAcre).toBeCloseTo(forageYieldPerAcre(382, 'Fair') * 1.16, 6)
+    expect(p.seasonFactor).toBe(1.16)
   })
 
-  it('costs an unmeasured paddock on this year’s projected rain', () => {
+  it('falls back to the rain ratio for a paddock the satellite has not watched', () => {
     const [p] = computePastures([dry], rain, 0.8, null, new Map([['wet', 1.16]]))
-    expect(p.foragePerAcre).toBeCloseTo(forageYieldPerAcre(379, 'Fair'), 6)
-    expect(p.seasonFactor).toBe(1)
+    expect(p.foragePerAcre).toBeCloseTo(forageYieldPerAcre(382, 'Fair') * (379 / 270), 6)
+    expect(p.seasonFactor).toBeCloseTo(379 / 270, 6)
   })
 
-  it('falls back to rainfall throughout when nothing is measured', () => {
-    const out = computePastures([dry, wet], rain, 0.8, null, null)
-    for (const p of out) expect(p.foragePerAcre).toBeCloseTo(forageYieldPerAcre(379, 'Fair'), 6)
+  it('shows a wet year as extra AUDs against a baseline that has not moved', () => {
+    // What the Grazing tab prints: "N AUDs in a normal year" is the same
+    // pastures with the season's multiplier set to 1, so the gap between that
+    // and the live figure is this year's rain and nothing else. If the zone
+    // moved with the weather too, the gap would overstate the rain.
+    const normal = computePastures([dry], { ...rain, rainFactor: 1 }, 0.8, null, null)[0]
+    const live = computePastures([dry], rain, 0.8, null, null)[0]
+    expect(live.auds / normal.auds).toBeCloseTo(379 / 270, 6)
+    expect(live.auds).toBeGreaterThan(normal.auds)
+
+    // And a dry year reads the other way, off the same baseline.
+    const poor = computePastures([dry], { ...rain, projectedMm: 160, rainFactor: 160 / 270 }, 0.8, null, null)[0]
+    const poorNormal = computePastures([dry], { ...rain, rainFactor: 1 }, 0.8, null, null)[0]
+    expect(poorNormal.auds).toBeCloseTo(normal.auds, 6)
+    expect(poor.auds).toBeLessThan(poorNormal.auds)
   })
 
-  it('uses the forecast when there is no projection, as a past season has none', () => {
+  it('reads as it always did when no zone is given, as a past season has none', () => {
     const [p] = computePastures([dry], { forecastMm: 270, projectedMm: null }, 0.8)
     expect(p.foragePerAcre).toBeCloseTo(forageYieldPerAcre(270, 'Fair'), 6)
-  })
-})
-
-describe('precipZones', () => {
-  it('reads the bands off the estimator, so the chart cannot drift from the table', () => {
-    expect(precipZones(400).map((z) => z.label)).toEqual(['under 250 mm', '250–350 mm', '350–450 mm'])
-    expect(precipZoneEdges()).toEqual([250, 350, 450, 550, 650])
-  })
-
-  it('marks the band under the table as not being one', () => {
-    const [lowest] = precipZones(400)
-    expect(lowest).toMatchObject({ lo: 0, hi: 250, inTable: false })
-    // Every band the estimator actually has yields for is flagged.
-    expect(precipZones(700).filter((z) => z.inTable).map((z) => z.lo)).toEqual([250, 350, 450, 550])
-  })
-
-  it('leaves the band above the table open-ended', () => {
-    const top = precipZones(900).at(-1)!
-    expect(top).toMatchObject({ lo: 650, hi: null, inTable: false })
-  })
-
-  it('shows only the bands a season could reach', () => {
-    // A 300 mm year needs no 550 mm band drawn above it.
-    expect(precipZones(350).some((z) => z.lo >= 350)).toBe(false)
-  })
-
-  it('never names a band after a grass quality', () => {
-    const names = precipZones(900).map((z) => z.label).join(' ')
-    for (const q of ['Poor', 'Fair', 'Good', 'Excellent']) expect(names).not.toContain(q)
+    expect(p.seasonFactor).toBe(1)
   })
 })
 

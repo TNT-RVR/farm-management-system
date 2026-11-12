@@ -217,9 +217,9 @@ function useGrazingCalc(ranch: Ranch) {
    * Where the satellite has watched a paddock grow and no cattle have been on
    * it this year, its own measured growth beats the rain gauge: a paddock that
    * caught a storm the gauge missed shows it, and so does one that did not.
-   * Those paddocks are costed on the NORMAL season's rain times their measured
-   * factor — the factor already IS this year, and using the wet-year rainfall
-   * as well would count the same weather twice.
+   * Those paddocks are costed on the zone times their measured factor — the
+   * factor already IS this year, and applying the rain ratio as well would
+   * count the same weather twice.
    */
   const { data: factors } = usePastureSeasonFactors(ranchId)
   const factorFor = useMemo(() => {
@@ -231,11 +231,12 @@ function useGrazingCalc(ranch: Ranch) {
     () => computePastures(pastures ?? [], rain, utilization, seasonCtx, factorFor),
     [pastures, rain, utilization, seasonCtx, factorFor],
   )
-  // The same pastures on a normal season, so the difference this year made is
-  // a number beside the plan rather than something only the plan knows.
+  // The same pastures in an ordinary year: the same zone, with the season's
+  // multiplier set to 1. So the difference this year made is a number beside
+  // the plan rather than something only the plan knows.
   const normalAuds = useMemo(
     () =>
-      computePastures(pastures ?? [], { forecastMm: rain.forecastMm, projectedMm: null }, utilization, seasonCtx)
+      computePastures(pastures ?? [], { ...rain, rainFactor: 1 }, utilization, seasonCtx)
         .reduce((a, p) => a + p.auds, 0),
     [pastures, rain, utilization, seasonCtx],
   )
@@ -456,6 +457,27 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                   {rain.pctOfNormal != null && ` · ${rain.pctOfNormal}% of normal`}
                 </p>
               )}
+              {/* What the forage table is actually read at: the zone picks the
+                  row, this season scales what the row yields. The zone is a
+                  classification of the ranch, so it is editable here rather
+                  than measured — see the ZoneHelp note under the table. */}
+              <p
+                className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-500"
+                title={
+                  rain.zoneSource === 'soil'
+                    ? `The forage row is read at ${n0(rain.zoneMm)} mm, the ranch's annual precipitation zone. The estimator's rows are soil climatic zones — 300 mm Brown, 400 mm Dark Brown — and both ranches sit on Brown Chernozem. This season is running at ${Math.round(rain.rainFactor * 100)}% of a normal one, which scales what that row yields.`
+                    : `No zone set for this ranch, so the forage row is read at ${n0(rain.zoneMm)} mm from measured rainfall. Set the zone from the soil climatic zone instead.`
+                }
+              >
+                <span>forage zone</span>
+                <NumCell
+                  value={rain.zoneMm}
+                  disabled={!isManager}
+                  onCommit={(v) => setRanchField({ forage_zone_mm: v > 0 ? v : null })}
+                  className="w-12 text-[11px]"
+                />
+                <span>mm · season ×{rain.rainFactor.toFixed(2)}</span>
+              </p>
             </>
           ) : (
             <>
@@ -503,13 +525,37 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
             {n0(totals.aums)} animal-unit months (AUMs) · {n0(totals.grazeable)} grazeable ac
             {totals.fieldAuds > 0 && ` · ${n0(totals.fieldAuds)} AUDs off the crop fields`}
           </p>
-          {rain.forecastSource === 'normal' && Math.round(normalAuds) !== Math.round(totals.auds) && (
-            <p
-              className="mt-0.5 text-[11px] text-gray-500"
-              title={`The same paddocks on a normal season: ${n0(rain.forecastMm)} mm and no measured growth`}
-            >
-              A normal season: {n0(normalAuds)} AUDs
-              {measuredCount > 0 && ` · ${measuredCount} paddock${measuredCount === 1 ? '' : 's'} measured from orbit`}
+          {/*
+            * What the weather is worth, in the unit the ranch thinks in.
+            *
+            * The baseline is the ranch's precipitation zone, which does not
+            * move year to year, so the gap between these two lines IS this
+            * year's rain and nothing else. Sam, 12 Nov 2026: a wet year has
+            * to show up as feed, without anyone reading the baseline as
+            * "what happened this year".
+            */}
+          {rain.forecastSource === 'normal' && normalAuds > 0 && (
+            <p className="mt-1 flex flex-wrap items-baseline gap-x-1.5 text-[11px]">
+              <span className="text-gray-500" title={`The same paddocks in an ordinary year: the ${n0(rain.zoneMm)} mm zone, with no scaling for this season and no measured growth. This figure does not move with the weather.`}>
+                {n0(normalAuds)} AUDs in a normal year
+              </span>
+              {Math.round(totals.auds) !== Math.round(normalAuds) && (
+                <span
+                  className={cn(
+                    'rounded px-1 py-0.5 font-medium',
+                    totals.auds >= normalAuds ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800',
+                  )}
+                  title={`This season is running at ${Math.round(rain.rainFactor * 100)}% of a normal one${measuredCount > 0 ? `, and ${measuredCount} paddock${measuredCount === 1 ? ' is' : 's are'} measured from orbit instead` : ''}. The zone it is read against has not changed.`}
+                >
+                  {totals.auds >= normalAuds ? '+' : ''}{n0(totals.auds - normalAuds)} AUDs from this year’s rain
+                  {' '}({Math.round(rain.rainFactor * 100)}%)
+                </span>
+              )}
+              {measuredCount > 0 && (
+                <span className="text-gray-400">
+                  · {measuredCount} paddock{measuredCount === 1 ? '' : 's'} measured from orbit
+                </span>
+              )}
             </p>
           )}
         </div>
@@ -559,7 +605,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
       {measured && measured.series.length > 0 && (
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <div className="mb-1 flex flex-wrap items-baseline justify-between gap-1">
-            <h2 className="text-sm font-semibold text-gray-900">This year's rainfall — {ranch.name}</h2>
+            <h2 className="text-sm font-semibold text-gray-900">This year's rain against normal — {ranch.name}</h2>
             {/* With Auto on, the mm to date and the share of normal are on the
                 rain card above; here they stay in the tooltip. */}
             <span
@@ -567,11 +613,16 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
               title={`${n0(measured.total_mm)} mm through ${throughLabel}${measured.normal ? ` · 10-year average to date ${n0(measured.normal.avg_to_date_mm)} mm` : ''}`}
             >
               {!ranch.precip_auto && `${n0(measured.total_mm)} mm through ${throughLabel} · `}
-              dotted lines are the estimator&apos;s rainfall rows
+              scales the forage · the {n0(rain.zoneMm)} mm zone sets the baseline
             </span>
           </div>
           <Suspense fallback={<p className="py-16 text-center text-sm text-gray-400">Loading chart…</p>}>
-            <RainGraph series={measured.series} normal={measured.normal?.cumulative} projectedMm={precip} />
+            <RainGraph
+              series={measured.series}
+              normal={measured.normal?.cumulative}
+              projectedMm={precip}
+              normalSeasonMm={measured.normal?.avg_season_mm}
+            />
           </Suspense>
         </div>
       )}
@@ -809,13 +860,24 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
           </table>
           <HelpNote
             className="border-t border-gray-100 px-3 py-2"
-            summary="Forage from the estimator's precipitation row and each pasture's grass quality."
+            summary="Forage from the ranch's precipitation zone, how the season is going, and each pasture's grass quality."
             title="How pasture capacity is worked out"
           >
             <p>
               1 Animal Unit eats 26 lbs/day (AUM = 780 lbs). Forage supply is looked up from the Alberta Forage
-              Manual&apos;s precipitation rows, fed this season&apos;s rainfall (the 10-year average when Auto), and
-              each pasture&apos;s grass quality, then reduced by the utilization rate. Crop fields inside a fence are counted from the farming side — stubble only after
+              Manual&apos;s table (p.205) at the ranch&apos;s precipitation zone and each pasture&apos;s grass quality,
+              then scaled by how this season is going and reduced by the utilization rate.
+            </p>
+            <p>
+              The zone is <em>annual</em> precipitation, and it is a classification rather than a measurement — the
+              manual reads it off the soil climatic zone, 300 mm for Brown and 400 mm for Dark Brown. Both ranches
+              sit on Brown Chernozem, so both are set to 300 mm, and no amount of rain moves a ranch to a wetter
+              zone. Edit it on the rain card if that is ever wrong.
+            </p>
+            <p>
+              What this year&apos;s weather does is scale what that row yields: the satellite&apos;s own measurement
+              of a paddock where there is one, otherwise the projected season against a normal one — never both,
+              because they measure the same weather. Crop fields inside a fence are counted from the farming side — stubble only after
               harvest, nothing once worked (the ⓘ under each pasture). The pasture is owned, so it carries no rent. Grey
               columns are calculated.
             </p>

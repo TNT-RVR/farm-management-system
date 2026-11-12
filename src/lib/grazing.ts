@@ -8,7 +8,7 @@ import { useGrazingPicture } from './grazing-restrictions-hooks'
 import { longest } from './grazing-restrictions'
 import type { Database } from './database.types'
 import type { Ranch } from './ranches'
-import { RAIN_NORMAL_YEARS, rainOutlook, type SeasonNormal } from './rain-normals'
+import { RAIN_NORMAL_YEARS, rainFactor, rainOutlook, type SeasonNormal } from './rain-normals'
 import type { GrassQuality } from './forage-yield'
 import { auFor, monthDayOf, pairAUDays, weightFor, type MonthDay } from './animal-units'
 
@@ -340,6 +340,11 @@ export type RanchPrecip = {
   series: { t: string; mm: number }[]
   /** The same season over the last ten whole years; null if the archive failed. */
   normal?: SeasonNormal | null
+  /**
+   * The long-term ANNUAL average over the same years — the figure that picks
+   * the forage estimator's row. Null if the archive failed.
+   */
+  annual_normal_mm?: number | null
 }
 
 export type GrazingRain = {
@@ -353,28 +358,68 @@ export type GrazingRain = {
   pctOfNormal: number | null
   /** This year so far plus a normal rest of season. */
   projectedMm: number | null
+  /**
+   * The precipitation zone the forage row is read from: the 10-year ANNUAL
+   * average, because that is what the estimator's rows measure. With Auto off
+   * it is the typed figure, so typing one pins the zone by hand.
+   */
+  zoneMm: number
+  zoneSource: 'soil' | 'annual' | 'manual' | 'season'
+  /**
+   * This season against its own normal — the multiplier on the zone's yield.
+   * 1 when there is nothing to compare against, so the zone stands alone.
+   */
+  rainFactor: number
 }
 
 /**
- * Which rain the grazing numbers use (Sam, 1 Oct 2026).
+ * Which rain the grazing numbers use (Sam, 1 Oct 2026, and 12 Nov 2026).
  *
  * The forecast is the 10-year average SEASON total, not this year's total to
  * date — read in May, a to-date total said there was almost no grass, because
  * the season had barely begun. This year's rain is kept beside it (as a % of
  * normal and a projected season) for in-season decisions. Manual mode, or no
  * archive, falls back to the typed figure.
+ *
+ * Two separate jobs, since 12 Nov 2026:
+ *
+ *   - `zoneMm` picks the forage estimator's ROW. It is a CLASSIFICATION of
+ *     where the ranch is, not a measurement, so it comes off the ranch row
+ *     (`forage_zone_mm`) — see the 20261112000000 migration for why the soil
+ *     map beats the rain gauge here. Measured annual rainfall is only the
+ *     fallback for a ranch nobody has classified. No amount of rain moves a
+ *     ranch to a wetter zone.
+ *   - `rainFactor` is how THIS season is going, and scales what that row
+ *     yields. With Auto off there is nothing to compare against, so it is 1
+ *     and the typed zone stands alone.
  */
-export function grazingRain(ranch: Pick<Ranch, 'precip_auto' | 'grazing_precip_mm'>, measured: RanchPrecip | null | undefined): GrazingRain {
+export function grazingRain(
+  ranch: Pick<Ranch, 'precip_auto' | 'grazing_precip_mm'> & { forage_zone_mm?: number | null },
+  measured: RanchPrecip | null | undefined,
+): GrazingRain {
   const normal = measured?.normal ?? null
   const auto = ranch.precip_auto && normal != null
   const outlook = measured && normal ? rainOutlook(measured.total_mm, normal) : null
+  const annual = measured?.annual_normal_mm ?? null
+  const forecastMm = auto ? normal!.avg_season_mm : ranch.grazing_precip_mm
+  // The ranch's own classification first, whatever the weather feed says.
+  // Then: Auto with an annual average, Auto without one (the archive gave a
+  // season but no year) keeping the season figure rather than guessing, and
+  // typed mode, which is whatever Sam typed.
+  const classified = ranch.forage_zone_mm ?? null
+  const zoneMm = classified ?? (auto ? (annual ?? forecastMm) : ranch.grazing_precip_mm)
+  const zoneSource: GrazingRain['zoneSource'] =
+    classified != null ? 'soil' : !auto ? 'manual' : annual != null ? 'annual' : 'season'
   return {
-    forecastMm: auto ? normal!.avg_season_mm : ranch.grazing_precip_mm,
+    forecastMm,
     forecastSource: auto ? 'normal' : 'manual',
     toDateMm: measured?.total_mm ?? null,
     normalToDateMm: normal?.avg_to_date_mm ?? null,
     pctOfNormal: outlook?.pctOfNormal ?? null,
     projectedMm: outlook?.projectedSeasonMm ?? null,
+    zoneMm,
+    zoneSource,
+    rainFactor: auto && outlook ? rainFactor(outlook.projectedSeasonMm, normal!.avg_season_mm) : 1,
   }
 }
 

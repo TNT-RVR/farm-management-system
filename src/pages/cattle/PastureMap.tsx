@@ -91,7 +91,10 @@ const OCCUPIED = 'pasture-occupied'
  * person to change 250 or 800 should be able to find what they are arguing
  * with. docs/grazing-distance-evidence.md has the rest.
  */
-const PINCHAK_PAPER = 'https://journals.uair.arizona.edu/index.php/jrm/article/viewFile/19203/18846'
+// The old journals.uair.arizona.edu copy still answers 200 and then lands you
+// on the library's front page — checked 12 Nov 2026. This is the repository
+// record, which holds the PDF.
+const PINCHAK_PAPER = 'https://repository.arizona.edu/handle/10150/644671'
 const BCRC_WATER = 'https://www.beefresearch.ca/pasture-101/fencing-water-infrastructure-on-pasture/'
 
 const HERD_SRC = 'herd'
@@ -1135,7 +1138,7 @@ export function PastureMap({
                               Pinchak et al. 1991 <ExternalLink className="h-3 w-3 shrink-0" />
                             </a>{' '}
                             is the measurement behind 366 m — three seasons of observed grazing on
-                            Wyoming foothill range. The quarter-mile ideal is the{' '}
+                            Wyoming foothill range. The 800 ft ideal is the{' '}
                             <a
                               href={BCRC_WATER}
                               target="_blank"

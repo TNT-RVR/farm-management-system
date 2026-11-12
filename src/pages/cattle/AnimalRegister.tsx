@@ -356,6 +356,11 @@ function UploadSummary({ result, onClose }: { result: UploadResult; onClose: () 
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
+      {result.spareCollars > 0 && (
+        <p className="mt-1 text-xs text-green-900">
+          {n0(result.spareCollars)} of those are neckbands with no animal fitted to them — collars on the shelf, not cattle.
+        </p>
+      )}
       {result.unplacedBrands.length > 0 && (
         <p className="mt-1 text-xs text-green-900">
           Brands with no ranch yet: {result.unplacedBrands.map((b) => `${b.brand} (${b.count})`).join(', ')}.

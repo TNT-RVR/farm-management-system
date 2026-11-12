@@ -4987,6 +4987,7 @@ export type Database = {
           name: string
           sort_order: number
           grazing_utilization_rate: number
+          forage_zone_mm: number | null
           grazing_precip_mm: number
           /** This ranch's own Google My Map; its "Pasture …" shapes become this ranch's pastures. */
           mymaps_url: string | null
@@ -5032,6 +5033,7 @@ export type Database = {
           name: string
           sort_order?: number
           grazing_utilization_rate?: number
+          forage_zone_mm?: number | null
           grazing_precip_mm?: number
           latitude?: number | null
           longitude?: number | null
@@ -5040,6 +5042,7 @@ export type Database = {
           name?: string
           sort_order?: number
           grazing_utilization_rate?: number
+          forage_zone_mm?: number | null
           grazing_precip_mm?: number
           mymaps_url?: string | null
           latitude?: number | null

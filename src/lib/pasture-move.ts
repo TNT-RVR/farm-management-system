@@ -59,8 +59,13 @@ export type MoveInput = {
   fieldLb?: number
   quality: string
   utilisation: number
-  /** This year's rain to date + a normal rest of season, mm. */
-  projectedSeasonMm: number
+  /**
+   * The precipitation zone that picks the estimator's row: the long-term
+   * ANNUAL average here, not this season's rain. See annualNormalMm.
+   */
+  zoneMm: number
+  /** This season against its own normal, scaling the zone's yield. 1 if unknown. */
+  rainFactor?: number
   /** This year's rain to date as % of the 10-year average to the same day. */
   pctOfNormal: number | null
   animalUnits: number
@@ -115,7 +120,8 @@ export function moveVerdict(inp: MoveInput): MoveVerdict {
   const looks = [...inp.looks].sort((a, b) => a.on.localeCompare(b.on))
   const daysOn = Math.max(0, days(inp.turnedInOn, inp.today))
   const dailyLb = inp.animalUnits * AU_LBS_PER_DAY
-  const expectedLbAc = forageYieldPerAcre(inp.projectedSeasonMm, inp.quality)
+  // The zone picks the row; the season scales what that row yields.
+  const expectedLbAc = forageYieldPerAcre(inp.zoneMm, inp.quality) * (inp.rainFactor ?? 1)
 
   const fiPeak = looks.length ? Math.max(...looks.map((l) => l.fi)) : null
   // The look that best says what stood at turn-in: the last one up to ten days

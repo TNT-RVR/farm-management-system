@@ -12,20 +12,24 @@ import {
   YAxis,
   type LegendPayload,
 } from 'recharts'
-import { precipZoneEdges, precipZones } from '@/lib/forage-yield'
 import { useWheelZoom } from '@/lib/useWheelZoom'
 
 /**
- * The precipitation bands, palest at the bottom.
+ * Drier than normal below, wetter above — two steps of one hue, palest at the
+ * bottom, because what it encodes is magnitude.
  *
- * A sequential ramp of one hue, light to dark, because the thing it encodes is
- * magnitude — more rain. Kept deliberately faint: the bands are there to tell
- * you which row of the estimator the year is in at a glance, and anything
- * stronger competes with the line that carries the actual number. The lowest
- * band is plain white, so "below the table" reads as absence rather than as
- * another shade of blue.
+ * This replaced a six-step ramp of the Forage Yield Estimator's rows. Those
+ * rows turned out to be LONG-TERM ANNUAL precipitation zones (p.205 of the
+ * Alberta Forage Manual heads them so), and this chart plots one growing
+ * season, so the curve could never reach the row the ranch actually sits in:
+ * at Home Ranch a 270 mm season against a 382 mm zone. Drawn behind a season
+ * curve the rows said "you are in the 250–350 row" about a ranch that is in
+ * the 350–450 one. The zone is a fixed property of where you ranch, so it is
+ * stated as a figure on the Grazing tab instead of drawn here, and what this
+ * chart shows is the one thing the season does decide: how this year compares
+ * with a normal one, which is the multiplier on the zone's yield.
  */
-const ZONE_FILL = ['#ffffff', '#f3f9ff', '#e9f4fe', '#ddeefd', '#d2e8fc', '#c7e2fb']
+const WET_FILL = ['#f3f9ff', '#ddeefd']
 
 /**
  * The two cumulative lines: solid for this year, dashed for the 10-year
@@ -78,27 +82,29 @@ function RainLegend({ payload }: { payload?: readonly LegendPayload[] }) {
  * the 10-year average running total to the same day when it is known — so a
  * dry year reads as a gap between two lines, not a number to remember.
  *
- * Behind it, the Forage Yield Estimator's own precipitation rows as bands. They
- * say which row the season is landing in, which is the only thing rainfall
- * decides: the pounds per acre also depend on each pasture's grass quality, and
- * that lives on the pasture, not on this chart. See precipZones() for the
- * mislabelling this replaced.
+ * What the chart is for: the grass forecast reads the forage row off the
+ * ranch's precipitation zone, which does not move, and then scales what that
+ * row yields by how this season is going against a normal one. This chart is
+ * that comparison, so every mark on it is part of the same question.
  *
- * `projectedMm` is the season total the calculator is actually planning on —
- * the rain so far plus a normal rest of season. It is drawn because flat band
- * edges against a climbing line are honest only at the end of the season: in
- * April the line is near zero and sits under every band, which reads as
- * disaster every spring. The projection is the value the bands should be read
- * against from May onward.
+ * `normalSeasonMm` is a normal season's whole total — the line this year is
+ * measured against, and the one place the multiplier comes from.
+ *
+ * `projectedMm` is what the calculator is planning on: the rain so far plus a
+ * normal rest of season. It is drawn because the measured line on its own is
+ * honest only at the end of the season — in April it is near zero, which
+ * reads as disaster every spring.
  */
 export function RainGraph({
   series,
   normal,
   projectedMm,
+  normalSeasonMm,
 }: {
   series: { t: string; mm: number }[]
   normal?: { md: string; mm: number }[]
   projectedMm?: number | null
+  normalSeasonMm?: number | null
 }) {
   const avgByMd = new Map((normal ?? []).map((n) => [n.md, n.mm]))
   const data = series.reduce<{ ms: number; cum: number; daily: number; avg: number | null }[]>((arr, p) => {
@@ -112,21 +118,25 @@ export function RainGraph({
     return arr
   }, [])
   const total = data.length ? data[data.length - 1].cum : 0
-  // Room for the projection too, or the line marking it would sit off the top.
-  const highest = Math.max(total, projectedMm ?? 0)
+  // Room for the projection and the normal line too, or either would sit off
+  // the top.
+  const highest = Math.max(total, projectedMm ?? 0, normalSeasonMm ?? 0)
   const maxY = Math.max(350, Math.ceil(highest / 50) * 50 + 50)
-  const zones = precipZones(maxY)
+  // A normal season splits the plot in two: below it is a drier year than
+  // usual, above it a wetter one. Nothing to label — the line itself is.
+  const bands = normalSeasonMm != null && normalSeasonMm > 0 && normalSeasonMm < maxY
+    ? [{ lo: 0, hi: normalSeasonMm }, { lo: normalSeasonMm, hi: maxY }]
+    : []
   /*
    * The daily bars are on their own scale, and once the plot area is shaded by
    * cumulative band a tall bar reads as a cumulative figure: an 18 mm day drawn
    * to full height looked like 300 mm of season. Giving the daily axis four
    * times the headroom it needs pins the bars into a strip along the bottom, so
    * they read as "it rained here, this much" against their own axis without
-   * climbing through bands that mean something else.
+   * climbing through a scale that means something else.
    */
   const dailyMax = data.reduce((m, d) => Math.max(m, d.daily), 0)
   const dailyTop = Math.max(Math.ceil(dailyMax / 5) * 5 * 4, 20)
-  const edges = precipZoneEdges().filter((mm) => mm < maxY)
   const dataMin = data.length ? data[0].ms : NaN
   const dataMax = data.length ? data[data.length - 1].ms : NaN
   const { attach, domain, reset, zoomed } = useWheelZoom(dataMin, dataMax)
@@ -147,13 +157,13 @@ export function RainGraph({
       <ResponsiveContainer width="100%" height={280}>
       <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
         {/* Bands first, so every mark draws over them. */}
-        {zones.map((z, i) => (
+        {bands.map((b, i) => (
           <ReferenceArea
-            key={z.label}
+            key={b.lo}
             yAxisId="cum"
-            y1={z.lo}
-            y2={z.hi ?? maxY}
-            fill={ZONE_FILL[Math.min(i, ZONE_FILL.length - 1)]}
+            y1={b.lo}
+            y2={b.hi}
+            fill={WET_FILL[i]}
             fillOpacity={1}
             ifOverflow="hidden"
           />
@@ -188,24 +198,27 @@ export function RainGraph({
         />
         <Legend verticalAlign="bottom" height={22} content={<RainLegend />} />
         {/*
-         * Each row edge, labelled with its own mm, sitting on the line.
+         * A normal season, with its own millimetres on the line.
          *
-         * The bands used to carry the label instead ("250–350 mm", printed just
-         * inside the band's top edge), which put a range beside a single line
-         * and left you guessing whether that line was the 250 or the 350 —
-         * Sam, 11 Nov 2026. One number on the line it marks cannot be read
-         * two ways, and the shading alone then says which side is wetter.
+         * One number on the line it marks, never a range: the bands used to
+         * carry a label like "250–350 mm" printed inside the band, which put a
+         * range beside a single line and left you guessing whether that line
+         * was the 250 or the 350 (Sam, 11 Nov 2026).
          */}
-        {edges.map((mm) => (
+        {normalSeasonMm != null && normalSeasonMm > 0 && (
           <ReferenceLine
-            key={mm}
             yAxisId="cum"
-            y={mm}
-            stroke="#cbd5e1"
+            y={normalSeasonMm}
+            stroke="#94a3b8"
             strokeDasharray="2 3"
-            label={{ value: `${mm} mm`, position: 'insideTopRight', fontSize: 9, fill: '#94a3b8' }}
+            label={{
+              value: `normal season ${Math.round(normalSeasonMm)} mm`,
+              position: 'insideTopRight',
+              fontSize: 9,
+              fill: '#94a3b8',
+            }}
           />
-        ))}
+        )}
         <Bar yAxisId="daily" dataKey="daily" name="Daily" fill="#bae6fd" />
         <Line yAxisId="cum" type="monotone" dataKey="cum" name="This year" stroke={THIS_YEAR.color} strokeWidth={THIS_YEAR.width} dot={false} />
         {avgByMd.size > 0 && (

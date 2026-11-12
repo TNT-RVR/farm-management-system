@@ -5,8 +5,8 @@ import type { PastureFieldRow } from '../../src/lib/field-residue.ts'
 import { calvesAtSideAU, median, mobClass, moveVerdict, type Look, type MoveVerdict } from '../../src/lib/pasture-move.ts'
 import { pastureLabel } from '../../src/lib/pastureLabel.ts'
 import { auFor as classAu } from '../../src/lib/animal-units.ts'
-import { RAIN_NORMAL_YEARS, rainOutlook } from '../../src/lib/rain-normals.ts'
-import { seasonNormal, seasonToDate } from './ranch-rain.ts'
+import { RAIN_NORMAL_YEARS, rainFactor, rainOutlook } from '../../src/lib/rain-normals.ts'
+import { ranchNormals, seasonToDate } from './ranch-rain.ts'
 import { farmTz } from '../../src/lib/farm-context.ts'
 
 /**
@@ -34,6 +34,7 @@ type Ranch = {
   precip_end_month: number
   grazing_utilization_rate: number | null
   grazing_precip_mm: number
+  forage_zone_mm: number | null
   move_alerts_on: boolean
   move_days_left_min: number
   move_forage_index_min: number
@@ -146,7 +147,10 @@ export async function runPastureMoveWatch(sb: SupabaseClient, today = new Date()
   const rested: Look[] = [...restedByDate.entries()].map(([on, xs]) => ({ on, fi: median(xs)! }))
 
   // Rain per ranch: this season to date against the last ten (the 10-year average, Sam 5 Oct 2026).
-  const rainBy = new Map<string, { toDate: number; pct: number | null; projected: number; normalSeason: number; normalToDate: number } | null>()
+  const rainBy = new Map<
+    string,
+    { toDate: number; pct: number | null; projected: number; normalSeason: number; normalToDate: number; annual: number | null } | null
+  >()
   await Promise.all(
     ranches.map(async (r) => {
       if (r.latitude == null || r.longitude == null) {
@@ -158,7 +162,7 @@ export async function runPastureMoveWatch(sb: SupabaseClient, today = new Date()
         const series = await seasonToDate(r.latitude, r.longitude, start, today)
         const toDate = series.reduce((s, p) => s + p.mm, 0)
         const through = series.at(-1)?.t ?? today
-        const normal = await seasonNormal(r.latitude, r.longitude, {
+        const { season: normal, annual_mm } = await ranchNormals(r.latitude, r.longitude, {
           thisYear: year,
           startMonth: r.precip_start_month,
           endMonth: r.precip_end_month,
@@ -176,6 +180,7 @@ export async function runPastureMoveWatch(sb: SupabaseClient, today = new Date()
           projected: o.projectedSeasonMm,
           normalSeason: normal.avg_season_mm,
           normalToDate: normal.avg_to_date_mm,
+          annual: annual_mm,
         })
       } catch {
         rainBy.set(r.id, null)
@@ -274,8 +279,12 @@ export async function runPastureMoveWatch(sb: SupabaseClient, today = new Date()
       fieldLb,
       quality,
       utilisation: util,
-      // No rain figure: plan on the manual season figure, as the Grazing tab does.
-      projectedSeasonMm: rain?.projected ?? Number(ranch.grazing_precip_mm),
+      // The row comes off the ranch's precipitation zone, which is a
+      // classification rather than a measurement, and this season scales it —
+      // the same rule as the Grazing tab, so the alert and the screen cannot
+      // disagree. Unclassified: measured annual, then the typed figure.
+      zoneMm: n(ranch.forage_zone_mm) ?? rain?.annual ?? Number(ranch.grazing_precip_mm),
+      rainFactor: rain ? rainFactor(rain.projected, rain.normalSeason) : 1,
       pctOfNormal: rain?.pct ?? null,
       animalUnits,
       turnedInOn,

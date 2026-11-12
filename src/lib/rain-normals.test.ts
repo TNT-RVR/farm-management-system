@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { rainOutlook, seasonDays, seasonEnd, seasonNormals, type DailyRain } from './rain-normals'
+import { annualNormalMm, rainFactor, rainOutlook, seasonDays, seasonEnd, seasonNormals, type DailyRain } from './rain-normals'
 
 /** Every day of Apr–Oct in a year, `mm` each day. */
 function season(year: number, mm: number): DailyRain[] {
@@ -58,5 +58,60 @@ describe('rainOutlook', () => {
 
   it('has no percentage before any normal rain has fallen', () => {
     expect(rainOutlook(0, { avg_season_mm: 300, avg_to_date_mm: 0 }).pctOfNormal).toBeNull()
+  })
+})
+
+/** Every day of a whole calendar year, `mm` each day. */
+function wholeYear(year: number, mm: number): DailyRain[] {
+  const out: DailyRain[] = []
+  for (let d = new Date(Date.UTC(year, 0, 1)); d.getUTCFullYear() === year; d.setUTCDate(d.getUTCDate() + 1)) {
+    out.push({ t: d.toISOString().slice(0, 10), mm })
+  }
+  return out
+}
+
+describe('annualNormalMm', () => {
+  it('averages the whole year, not the growing season', () => {
+    // 2025 has 365 days; 1 mm a day one year, 2 mm the next.
+    const daily = [...wholeYear(2024, 1), ...wholeYear(2025, 2)]
+    // (366 + 730) / 2 = 548.
+    expect(annualNormalMm(daily, [2024, 2025])).toBe(548)
+  })
+
+  it('is the figure that picks the forage row, and it is bigger than the season', () => {
+    // Winter rain counts here and not in Apr-Oct, which is the whole point:
+    // Home Ranch measures 270 mm over the season and 382 mm over the year.
+    const daily = [...wholeYear(2024, 1), ...wholeYear(2025, 1)]
+    const annual = annualNormalMm(daily, [2024, 2025])!
+    const season = seasonNormals(daily, { startMonth: 4, endMonth: 10, years: [2024, 2025], cutoffMd: '10-31' })!
+    expect(annual).toBeGreaterThan(season.avg_season_mm)
+  })
+
+  it('drops a year the archive is short of rather than averaging it in low', () => {
+    const daily = [...wholeYear(2024, 1), ...wholeYear(2025, 1).slice(0, 100)]
+    expect(annualNormalMm(daily, [2024, 2025])).toBe(366)
+  })
+
+  it('has nothing to say when no year is complete', () => {
+    expect(annualNormalMm(wholeYear(2025, 1).slice(0, 30), [2025])).toBeNull()
+  })
+})
+
+describe('rainFactor', () => {
+  it('is the projected season over a normal one', () => {
+    expect(rainFactor(379, 270)).toBeCloseTo(1.4037, 4)
+    expect(rainFactor(270, 270)).toBe(1)
+    expect(rainFactor(135, 270)).toBe(0.5)
+  })
+
+  it('falls back to 1 rather than to nothing', () => {
+    // No normal to compare against: the zone's yield stands unscaled, which
+    // is a plan, where a 0 would read as no grass at all.
+    expect(rainFactor(300, 0)).toBe(1)
+    expect(rainFactor(Number.NaN, 270)).toBe(1)
+  })
+
+  it('never goes negative', () => {
+    expect(rainFactor(-50, 270)).toBe(0)
   })
 })

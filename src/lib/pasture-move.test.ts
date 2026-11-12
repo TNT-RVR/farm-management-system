@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { calvesAtSideAU, median, mobClass, MOVE_DEFAULTS, moveVerdict, seasonGrowthShare, type MoveInput } from './pasture-move'
 
-// A 500-acre Fair paddock at 300 mm projected (370 lb/ac), 80% utilisation:
+// A 500-acre Fair paddock in the 300 mm zone (370 lb/ac) in a normal season,
+// 80% utilisation:
 // 148,000 lb a full season; in early July 95% of the season has grown, so
 // 140,600 lb to graze. 400 AU eat 10,400 lb a day, so it lasts about 13 days.
 const base: MoveInput = {
@@ -9,7 +10,8 @@ const base: MoveInput = {
   acres: 500,
   quality: 'Fair',
   utilisation: 0.8,
-  projectedSeasonMm: 300,
+  zoneMm: 300,
+  rainFactor: 1,
   pctOfNormal: 100,
   animalUnits: 400,
   turnedInOn: '2026-07-01',

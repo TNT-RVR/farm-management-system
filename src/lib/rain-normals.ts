@@ -101,6 +101,41 @@ export function seasonDays(year: number, startMonth: number, endMonth: number): 
   return n
 }
 
+/**
+ * The long-term ANNUAL average, over the same past years — what the Forage
+ * Yield Estimator's rows actually measure.
+ *
+ * Table 36 on p.205 of the Alberta Forage Manual heads its rows "Annual
+ * Precipitation Zones", and the manual's worked examples pick the row off the
+ * soil climatic zone (300 mm for Brown, 400 mm for Black), never off a gauge.
+ * So the row is a property of where you ranch, and this is the figure that
+ * picks it. How this particular season is going is a separate question, and
+ * scales the row's yield rather than moving to another row.
+ *
+ * The same machinery as the season normal, over months 1-12 to the year end —
+ * so a year short of days in the archive is dropped rather than averaged in
+ * short, exactly as a season is.
+ */
+export function annualNormalMm(daily: DailyRain[], years: number[]): number | null {
+  return seasonNormals(daily, { startMonth: 1, endMonth: 12, years, cutoffMd: '12-31' })?.avg_season_mm ?? null
+}
+
+/**
+ * How this season is going against its own normal, as a multiplier on the
+ * zone's yield.
+ *
+ * Projected season (the rain so far plus a normal rest of season) over the
+ * normal season total. In April that is close to 1 because almost all of the
+ * projection is still "a normal rest of season", and it converges on the real
+ * ratio as the year fills in — which is what stops the forage forecast reading
+ * as a disaster every spring. Floored at zero; not capped, because the
+ * satellite season factor it stands in for is not capped either.
+ */
+export function rainFactor(projectedSeasonMm: number, normalSeasonMm: number): number {
+  if (!(normalSeasonMm > 0) || !Number.isFinite(projectedSeasonMm)) return 1
+  return Math.max(0, projectedSeasonMm / normalSeasonMm)
+}
+
 /** The last day of the season month, as 'YYYY-MM-DD'. */
 export function seasonEnd(year: number, endMonth: number): string {
   return `${year}-${pad(endMonth)}-${pad(new Date(Date.UTC(year, endMonth, 0)).getUTCDate())}`

@@ -28,18 +28,20 @@ smrid_areas              # irrigation district allotment: switched off in the de
 water_allotments         # irrigation district allotment: switched off in the demo
 cameras                  # cameras: switched off in the demo farm
 time_off                 # time-off calendar: switched off in the demo farm
-plc_agent_health         # pump controller on site: switched off in the demo
-plc_commands             # pump controller on site: switched off in the demo
-plc_line_integrity       # pump controller on site: switched off in the demo
-plc_line_watch           # pump controller on site: switched off in the demo
-plc_live                 # pump controller on site: switched off in the demo
-plc_reading_history      # pump controller on site: switched off in the demo
-plc_turbine_fields       # pump controller on site: switched off in the demo
 solar_daily              # SolisCloud solar: switched off in the demo farm
 solar_latest             # SolisCloud solar: switched off in the demo farm
 solar_sites              # SolisCloud solar: switched off in the demo farm
 tv_commands              # the conference-room TV: there is no TV
 push_subscriptions       # phone notifications: per device, none in the demo
+contact_candidates       # contacts harvested from QuickBooks: not connected in the demo
+cattle_uploads           # the collar service's animal sheets, uploaded as files: none in the demo
+cattle_scans             # tag reads from a wand or a phone: nothing has been scanned in a sandbox
+
+# --- Features this demo farm does not use
+partner_access           # crop-share partner companies: the demo is one farm and shares nothing out
+partner_crops            # as above: which crops a partner company may see
+partner_fields           # as above: which fields a partner company may see
+partner_farm_setup       # as above: a partner company's own name and map centre
 
 # --- Empty means "nothing set", and the screen says so
 crop_bin_overrides       # per-crop bin limit overrides: none is the normal state
@@ -51,6 +53,9 @@ notification_prefs       # each person's notification choices: defaults apply
 pasture_biomass_calibration  # optional calibration of the forage estimate
 report_favourites        # each person's starred reports: theirs to pick
 year_unlocks             # crop years someone reopened: none
+chemical_recrop_overrides  # a label's re-crop interval corrected by hand: none is the normal state
+soil_reports_needing_assessment  # soil reports waiting on an assessment: empty means every report has an up-to-date one
+field_moa_unknown_v      # sprays whose resistance group the app cannot place: empty means every product in the demo has one
 
 # --- The app's own records
 app_build_info           # written by a production build; What's new works without it
@@ -65,6 +70,29 @@ task_files               # files attached to a task
 scale_ticket_photos      # photos of scale tickets
 product_documents        # label and safety-sheet PDFs
 
+app_questions            # questions asked of the app: the log fills itself as it is used
+rotation_feedback        # thumbs up or down on a rotation suggestion: fills itself as it is used
+task_feed_tokens         # each person's calendar-feed link: theirs to make
+user_signatures          # each person draws their own, once, on their own device
+
 # --- Satellite pictures: too large to ship with the demo
 sat_images               # the greenness numbers and charts are there; the pictures are not
 sat_latest_image         # as above
+
+# --- The research library, and the tables read out of its papers
+# The library is a folder of PDFs the farm collected; the published copy ships
+# neither the files nor their catalogue, and the three tables below hold
+# published figures transcribed from them, each row pointing at the paper it
+# came from. They reach the farm's own database in a migration, and the demo
+# loads the published structure rather than the migrations.
+research_papers          # the library's catalogue: no PDFs ship with the demo
+research_numbers         # figures read out of those papers
+research_folders_v       # the shelves, over research_folders and the papers on them
+research_gaps_v          # which shelves have nothing on them yet
+research_numbers_v       # the figures with their paper's details
+research_shelf_v         # a shelf's papers
+crop_irrigation_sheets   # the province's irrigation sheet per crop, transcribed from a paper in the library
+crop_irrigation_stages   # each sheet's growth stages and trigger points
+crop_irrigation_refill   # each sheet's refill table by soil texture
+river_wco_segments       # the river's water conservation objectives, read from a published order
+river_wco_bands          # each segment's flow bands

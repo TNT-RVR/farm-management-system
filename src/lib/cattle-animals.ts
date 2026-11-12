@@ -118,6 +118,21 @@ export function useSetBrandRanch() {
         .from('cattle_brand_ranch')
         .upsert({ brand: brand.trim().toUpperCase(), ranch_id: ranchId }, { onConflict: 'brand' })
       if (error) throw error
+      if (!ranchId) return
+      // The mapping on its own only sorts the NEXT upload. Saying where a
+      // brand belongs has to place the animals already carrying it, or the
+      // answer changes nothing on screen and the brand keeps asking.
+      //
+      // Only the ones with no ranch yet. A brand is a good guess and not
+      // much more: brand 77 is Home Ranch's, and three of its bulls run at
+      // East Ranch, placed by the mob they are in. Whatever put a ranch on
+      // an animal knew more than its brand does.
+      const { error: moved } = await supabase
+        .from('cattle')
+        .update({ ranch_id: ranchId })
+        .eq('brand', brand)
+        .is('ranch_id', null)
+      if (moved) throw moved
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['cattle-brand-ranch'] })
@@ -152,6 +167,8 @@ export type UploadResult = {
   created: number
   updated: number
   skipped: number
+  /** Of the skipped, the spare neckbands — the usual reason a count looks big. */
+  spareCollars: number
   problems: { row: ParsedAnimal; problems: string[] }[]
   unplacedBrands: { brand: string; count: number }[]
   unknownHeaders: string[]
@@ -277,6 +294,7 @@ export function useUploadAnimalSheet() {
         created: plan.creates.length,
         updated: plan.updates.length,
         skipped: plan.skips.length,
+        spareCollars: plan.skips.filter((s) => s.why.includes('no animal fitted')).length,
         problems: animals.filter((a) => a.problems.length).map((a) => ({ row: a, problems: a.problems })),
         unplacedBrands: [...unplaced.entries()].map(([brand, count]) => ({ brand, count })).sort((x, y) => y.count - x.count),
         unknownHeaders: parsed.unknownHeaders,

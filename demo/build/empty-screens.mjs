@@ -11,11 +11,53 @@
  * feature switched off in the demo), each with its reason. A warning, never a
  * failure: an empty screen is worth a note, not a broken build.
  *
+ * Code marked farm-only is skipped: the public copy does not carry it, so a
+ * table only it reads is not a screen a visitor can open. Without that the
+ * two copies disagree — the farm's own repository reports the turbine tables
+ * as empty screens, and the public copy reports them as stale excuses.
+ *
  * Printed in the build log, and in the GitHub job summary when there is one,
  * so each Monday's export says what came out empty that week.
  */
 import { appendFileSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
+
+/**
+ * Code the public copy leaves out, which the demo therefore never runs: a
+ * whole file carrying the file marker in its first five lines, and any block
+ * between the start and end markers. Kept in step with
+ * public-export/farm-only.mjs, and spelled out again here because the public
+ * copy ships this file without the export machinery.
+ *
+ * The mark is assembled below rather than written, and must stay that way —
+ * it may not appear in one piece anywhere in this file, comments included.
+ * The copy ships this file, so the fence reader in
+ * public-export/farm-only.mjs scans it like any other: written plainly, a
+ * mark here is a real fence to it, and it refuses the whole export over a
+ * mark that is not a start or an end. farm-only.mjs may write its own
+ * plainly because it is never exported.
+ */
+const MARK = '@farm' + '-only'
+const FILE = new RegExp(MARK + '\\s+file')
+const START = new RegExp(MARK + '\\s+start')
+const END = new RegExp(MARK + '\\s+end')
+
+const farmOnlyFile = (text) => FILE.test(text.split('\n', 5).join('\n'))
+const withoutFarmOnly = (text) => {
+  if (!text.includes(MARK)) return text
+  let keep = true
+  return text
+    .split('\n')
+    .filter((line) => {
+      if (START.test(line)) keep = false
+      else if (END.test(line)) {
+        keep = true
+        return false
+      }
+      return keep
+    })
+    .join('\n')
+}
 
 /** Tables the app reads, from `.from('table')` calls across src/ (tests left out). */
 export function tablesTheAppReads(root) {
@@ -28,7 +70,9 @@ export function tablesTheAppReads(root) {
         continue
       }
       if (!/\.(ts|tsx)$/.test(name) || /\.test\.tsx?$/.test(name)) continue
-      const text = readFileSync(full, 'utf8')
+      const raw = readFileSync(full, 'utf8')
+      if (farmOnlyFile(raw)) continue
+      const text = withoutFarmOnly(raw)
       for (const m of text.matchAll(/\.from\(\s*['"`]([a-z][a-z0-9_]*)['"`]\s*\)/g)) {
         const rel = path.relative(root, full).split(path.sep).join('/')
         if (!found.has(m[1])) found.set(m[1], rel)

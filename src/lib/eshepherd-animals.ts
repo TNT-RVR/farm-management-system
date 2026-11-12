@@ -320,6 +320,27 @@ export function ranchForBrand(brand: string | null | undefined, map: Map<string,
   return map.get(b) ?? null
 }
 
+/**
+ * A collar on the shelf, not an animal (12 Nov 2026).
+ *
+ * eShepherd's Bulk Create sheet lists every neckband it knows, fitted or not.
+ * An unfitted one comes through with the band's serial, "Unfitted" where the
+ * Animal ID goes, and nothing else — no EID, no visual tag, no breed, no
+ * class. The first import read the serial as an identity and made 100 animals
+ * out of 100 spare collars, which then sat in the register with no ranch and
+ * no mob because there was no animal there to have either.
+ *
+ * Strict on purpose: a row with any sign of an animal on it — an EID, a visual
+ * tag, a real Animal ID — is imported, whatever it is called. Only a bare band
+ * is dropped.
+ */
+export function isSpareCollar(a: Pick<ParsedAnimal, 'eid' | 'vid' | 'neckband' | 'eshepherd_animal_id'>): boolean {
+  if (a.eid || a.vid) return false
+  if (!a.neckband) return false
+  const id = (a.eshepherd_animal_id ?? '').trim().toLowerCase()
+  return id === '' || id === 'unfitted'
+}
+
 /** What an upload would do, worked out before anything is written. */
 export type ImportPlan = {
   creates: ParsedAnimal[]
@@ -365,6 +386,10 @@ export function planImport(rows: ParsedAnimal[], existing: ExistingAnimal[]): Im
     plan.problemCount += a.problems.length
     if (!a.key) {
       plan.skips.push({ animal: a, why: 'nothing to identify it by' })
+      continue
+    }
+    if (isSpareCollar(a)) {
+      plan.skips.push({ animal: a, why: 'a neckband with no animal fitted to it' })
       continue
     }
     if (seen.has(a.key)) {

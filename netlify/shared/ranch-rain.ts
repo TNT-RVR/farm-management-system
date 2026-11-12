@@ -1,4 +1,4 @@
-import { seasonEnd, seasonNormals, type DailyRain, type SeasonNormal } from '../../src/lib/rain-normals.ts'
+import { annualNormalMm, seasonNormals, type DailyRain, type SeasonNormal } from '../../src/lib/rain-normals.ts'
 
 // Growing-season rain at a ranch, from Open-Meteo: this season to date, and the
 // same season over the last N whole years. Shared by /api/ranch-precip (the
@@ -35,31 +35,51 @@ export async function seasonToDate(lat: string | number, lon: string | number, s
     .map(([t, mm]) => ({ t, mm: Math.round((mm ?? 0) * 10) / 10 }))
 }
 
+/** What is normal here: the growing season, and the year as a whole. */
+export type RanchNormals = {
+  /** The same season in each of the last `n` whole years. */
+  season: SeasonNormal | null
+  /**
+   * The long-term ANNUAL average, which is what picks the Forage Yield
+   * Estimator's row. See annualNormalMm for why the row is an annual figure.
+   */
+  annual_mm: number | null
+}
+
 /**
- * The same season in each of the last `n` whole years, in one archive request.
- * Null when the archive fails — callers fall back to the manual figure rather
+ * Both normals for a ranch, in one archive request.
+ *
+ * The request covers whole calendar years (Jan 1 to Dec 31) rather than just
+ * the season months, because the annual average needs the winter too — and
+ * one wider request costs the same as one narrower one. The season figures are
+ * then cut out of the same daily array.
+ *
+ * Nulls when the archive fails — callers fall back to the manual figure rather
  * than plan on a partial average.
  */
-export async function seasonNormal(
+export async function ranchNormals(
   lat: string | number,
   lon: string | number,
   opts: { thisYear: number; startMonth: number; endMonth: number; n: number; cutoffMd: string },
-): Promise<SeasonNormal | null> {
+): Promise<RanchNormals> {
   const { thisYear, startMonth, endMonth, n, cutoffMd } = opts
   const years = Array.from({ length: n }, (_, i) => thisYear - n + i)
-  const from = `${years[0]}-${String(startMonth).padStart(2, '0')}-01`
-  const to = seasonEnd(years[years.length - 1], endMonth)
+  const from = `${years[0]}-01-01`
+  const to = `${years[years.length - 1]}-12-31`
   try {
     const res = await fetch(
       `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}` +
         `&start_date=${from}&end_date=${to}&daily=precipitation_sum&timezone=auto`,
       { signal: AbortSignal.timeout(12_000) },
     )
-    if (!res.ok) return null
+    if (!res.ok) return { season: null, annual_mm: null }
     const d = (await res.json()).daily as { time?: string[]; precipitation_sum?: (number | null)[] } | undefined
     const daily: DailyRain[] = (d?.time ?? []).map((t, i) => ({ t, mm: d?.precipitation_sum?.[i] ?? 0 }))
-    return seasonNormals(daily, { startMonth, endMonth, years, cutoffMd })
+    return {
+      season: seasonNormals(daily, { startMonth, endMonth, years, cutoffMd }),
+      annual_mm: annualNormalMm(daily, years),
+    }
   } catch {
-    return null
+    return { season: null, annual_mm: null }
   }
 }

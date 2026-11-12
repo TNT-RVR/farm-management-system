@@ -106,15 +106,15 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
    * AUDs each pasture grows, crop fields counted for the plan year's season
    * (stubble once harvested).
    *
-   * Planning THIS year reads the season as the Grazing tab does: its projected
-   * rain, with a paddock's own measured growth in place of it where there is
-   * one. Planning another year has no measurement to read and no rain yet, so
-   * it goes back to the normal season — which is the right figure for a year
-   * that has not happened.
+   * Planning THIS year reads the season as the Grazing tab does: the ranch's
+   * zone scaled by how the year is going, with a paddock's own measured growth
+   * in place of the rain ratio where there is one. Planning another year has
+   * no measurement and no rain yet, so it is the same zone in an ordinary year
+   * — which is the right figure for a year that has not happened.
    */
   const { data: factors } = usePastureSeasonFactors(ranch.id)
   const planRain = useMemo(
-    () => (year === thisYear ? rain : { forecastMm: rain.forecastMm, projectedMm: null }),
+    () => (year === thisYear ? rain : { ...rain, rainFactor: 1 }),
     [year, thisYear, rain],
   )
   const thisYearFactors = useMemo(() => {
@@ -155,12 +155,14 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
     (pastureId: string, start: string) => {
       const g = (gps ?? []).find((x) => (x as unknown as { pasture_id: string | null }).pasture_id === pastureId)
       if (!g) return capacity.get(pastureId) ?? 0
+      // Same rule as computePastures: the zone picks the row, and either the
+      // satellite's factor or the rain ratio scales it — never both.
       return computePasture(
         g,
-        factorFor.has(g.id) ? planRain.forecastMm : (planRain.projectedMm ?? planRain.forecastMm),
+        planRain.zoneMm ?? planRain.projectedMm ?? planRain.forecastMm,
         utilization,
         fieldCtx.ctx({ from: start, to: start }),
-        factorFor.get(g.id) ?? null,
+        factorFor.get(g.id) ?? planRain.rainFactor ?? 1,
       ).auds
     },
     [gps, planRain, utilization, fieldCtx, capacity, factorFor],

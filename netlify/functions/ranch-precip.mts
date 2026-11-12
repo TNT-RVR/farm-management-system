@@ -5,8 +5,9 @@
 //   GET /api/ranch-precip?lat=52.4&lon=-113.5&start=2026-04-01[&end=2026-07-24]
 //       [&normals=5&end_month=10]
 // With `normals`, also the same season in each of the last N whole years, so
-// the forecast can plan on a normal season and this year can be read against it.
-import { seasonNormal, seasonToDate } from '../shared/ranch-rain.ts'
+// this year can be read against a normal one, and the long-term ANNUAL average
+// as `annual_normal_mm` — the figure that picks the forage estimator's row.
+import { ranchNormals, seasonToDate } from '../shared/ranch-rain.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { farmToday } from '../shared/dates.ts'
 
@@ -33,21 +34,23 @@ export default async (req: Request) => {
     const total = series.reduce((s, p) => s + p.mm, 0)
     const through = series.at(-1)?.t ?? end
     const n = Math.min(10, Math.max(0, Number(u.searchParams.get('normals') ?? 0)))
-    const normal = n
-      ? await seasonNormal(lat, lon, {
+    const normals = n
+      ? await ranchNormals(lat, lon, {
           thisYear: Number(start.slice(0, 4)),
           startMonth: Number(start.slice(5, 7)),
           endMonth: Number(u.searchParams.get('end_month') ?? 10),
           n,
           cutoffMd: through.slice(5),
         })
-      : null
+      : { season: null, annual_mm: null }
     return json({
       total_mm: Math.round(total * 10) / 10,
       days: series.length,
       through,
       series,
-      normal,
+      normal: normals.season,
+      // The long-term annual average: the figure that picks the forage row.
+      annual_normal_mm: normals.annual_mm,
     })
   } catch (e) {
     return json({ error: (e as Error).message }, 500)

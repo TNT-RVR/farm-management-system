@@ -18331,6 +18331,7 @@ CREATE TABLE IF NOT EXISTS "public"."ranches" (
     "steer_sale_weight_lb" integer,
     "heifer_sale_weight_lb" integer,
     "herd_colour" "text",
+    "forage_zone_mm" numeric,
     CONSTRAINT "ranches_calf_sale_month_check" CHECK ((("calf_sale_month" >= 1) AND ("calf_sale_month" <= 12))),
     CONSTRAINT "ranches_heifer_sale_weight_lb_check" CHECK ((("heifer_sale_weight_lb" >= 100) AND ("heifer_sale_weight_lb" <= 1500))),
     CONSTRAINT "ranches_steer_sale_weight_lb_check" CHECK ((("steer_sale_weight_lb" >= 100) AND ("steer_sale_weight_lb" <= 1500)))
@@ -18401,6 +18402,10 @@ COMMENT ON COLUMN "public"."ranches"."heifer_sale_weight_lb" IS 'Average weight 
 
 
 COMMENT ON COLUMN "public"."ranches"."herd_colour" IS 'The herd''s colour as it goes on a manifest (Red, Black). Fills the Colour column of a new manifest line.';
+
+
+
+COMMENT ON COLUMN "public"."ranches"."forage_zone_mm" IS 'Annual precipitation zone (mm) the forage estimator''s row is read at. From the soil climatic zone: 300 Brown, 400 Dark Brown, 475 Black. Null = fall back to measured annual rainfall.';
 
 
 

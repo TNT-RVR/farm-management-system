@@ -34,11 +34,11 @@ export type GrassQuality = (typeof GRASS_QUALITIES)[number]
  * manual's worked examples make it plain: it picks 300 mm for the Brown soil
  * climatic zone and 400 mm for the Black, straight off the soil map.
  *
- * The app feeds this measured April–October rainfall (grazingRain), which is a
- * different quantity. For Home Ranch the 10-year growing-season normal is
- * 270 mm and the 10-year annual normal is 382 mm — one row apart, and 414 vs
- * 690 lb/ac on Good grass. Which of the two belongs here is Sam's call and
- * is not settled; nothing was changed on the strength of it.
+ * The app fed this measured April–October rainfall until 12 Nov 2026, which is
+ * a different quantity: at Home Ranch the 10-year growing-season normal is
+ * 270 mm against a 382 mm annual normal — one row apart, 414 against 690 lb/ac
+ * on Good grass. It now gets the annual figure, and how this season is going
+ * scales the row rather than moving to another one. See computePastures.
  */
 export const FORAGE_YIELD_ESTIMATOR: {
   label: string
@@ -94,53 +94,6 @@ export function forageYieldPerAcre(precipMm: number, quality: string): number {
 
 /** lbs/acre on irrigated grass of this quality. */
 export const irrigatedYieldPerAcre = (quality: string) => FORAGE_YIELD_IRRIGATION[qualityOf(quality)]
-
-export type PrecipZone = {
-  /** Band floor, mm. */
-  lo: number
-  /** Band ceiling, mm; null for the open band above the table. */
-  hi: number | null
-  /** The estimator's own row label, or how the open bands read. */
-  label: string
-  /** True for a row the estimator actually has yields for. */
-  inTable: boolean
-}
-
-/**
- * The estimator's precipitation rows as bands to shade behind the rain graph,
- * driest first, plus the open bands below and above the table.
- *
- * Derived from FORAGE_YIELD_ESTIMATOR rather than written out again, so the
- * chart can never drift from the table the calculator reads.
- *
- * These are precipitation bands and nothing else — the table's own annual
- * precipitation zones. Poor/Fair/Good/Excellent are the estimator's COLUMNS —
- * each pasture's own grass quality, which changes over years of grazing
- * management, not with the weather. The graph used to label
- * 250 mm "Fair" and 350 mm "Good", which took the table's rows and dressed them
- * in its columns' names, and so told you rain promotes a pasture. It does not: a
- * dry year on good grass still grows more than a wet year on poor grass (370 vs
- * 230 lb/ac in the lowest row). Sam caught it on 11 Nov 2026.
- *
- * `under 250 mm` is not a row. The estimator has no band below its lowest, and
- * forageYieldPerAcre deliberately ramps straight down to nothing there, so it is
- * marked out as off the bottom of the table rather than drawn as a peer.
- */
-export function precipZones(maxMm: number): PrecipZone[] {
-  const rows = FORAGE_YIELD_ESTIMATOR
-  const floor = rows[0].lo
-  const top = rows[rows.length - 1].hi
-  const zones: PrecipZone[] = [{ lo: 0, hi: floor, label: `under ${floor} mm`, inTable: false }]
-  for (const r of rows) zones.push({ lo: r.lo, hi: r.hi, label: r.label, inTable: true })
-  zones.push({ lo: top, hi: null, label: `over ${top} mm`, inTable: false })
-  return zones.filter((z) => z.lo < maxMm)
-}
-
-/** The mm the estimator's rows change at: every row edge, driest first. */
-export const precipZoneEdges = (): number[] => [
-  ...FORAGE_YIELD_ESTIMATOR.map((r) => r.lo),
-  FORAGE_YIELD_ESTIMATOR[FORAGE_YIELD_ESTIMATOR.length - 1].hi,
-]
 
 export type PastureCalc = PastureRow & {
   hectares: number
@@ -201,26 +154,44 @@ export type PastureFieldContext = {
   spray?: (fieldId: string) => SprayHold | null
 }
 
-/** Just the two rainfall figures from grazingRain that costing a season needs. */
-export type SeasonRain = { forecastMm: number; projectedMm: number | null }
+/** The rainfall figures from grazingRain that costing a season needs. */
+export type SeasonRain = {
+  /** The 10-year average season total, or the typed figure. */
+  forecastMm: number
+  /** This year so far plus a normal rest of season. */
+  projectedMm: number | null
+  /**
+   * The precipitation zone: the long-term ANNUAL average here, which is what
+   * the estimator's rows measure. Falls back to the season figures when the
+   * archive gave none.
+   */
+  zoneMm?: number | null
+  /** This season against its own normal, scaling the zone's yield. */
+  rainFactor?: number | null
+}
 
 /**
  * Cost a season's grass the one way, so every screen says the same number.
  *
- * Two sources of "how did this year go", and the rule for choosing between
- * them lives here rather than in four screens:
+ * The ZONE picks the row and never moves: it is the long-term annual average
+ * here, which is what the estimator's rows measure (see FORAGE_YIELD_ESTIMATOR
+ * and annualNormalMm). Rain does not promote a pasture to a wetter zone — the
+ * zone is where you ranch. What this year's weather does is scale what that
+ * row yields, and there are two measurements of it, so the rule for choosing
+ * lives here rather than in four screens:
  *
  *   - A paddock the satellite has watched grow, with no cattle on it this
- *     year, is costed on the NORMAL season's rain times its own measured
- *     growth. The factor already is this year; multiplying it by a wet year's
- *     rainfall as well would count the same weather twice.
- *   - Everything else is costed on this year's projected rain — the rain so
- *     far plus a normal rest of season. That is what a grazed paddock has to
- *     use, because cattle eat the green and a used paddock looks like a poor
- *     one from orbit.
+ *     year, uses its own measured growth. That is this season, seen directly.
+ *   - Everything else uses the rainfall ratio: the projected season against a
+ *     normal one. A grazed paddock has to, because cattle eat the green and a
+ *     used paddock looks like a poor one from orbit.
+ *
+ * Never both: they measure the same weather, and multiplying them would count
+ * it twice. Sam settled the zone-plus-ratio rule on 12 Nov 2026, after the
+ * estimator's rows turned out to be annual.
  *
  * Pass `factors` as NULL to cost a past season, or any season this has no
- * measurement for: then it is rainfall throughout, as it always was.
+ * measurement for: then it is the rainfall ratio throughout.
  */
 export function computePastures(
   pastures: PastureRow[],
@@ -229,13 +200,10 @@ export function computePastures(
   ctx?: PastureFieldContext | null,
   factors?: Map<string, number> | null,
 ): PastureCalc[] {
-  const live = rain.projectedMm ?? rain.forecastMm
-  return pastures.map((p) => {
-    const f = factors?.get(p.id)
-    return f == null
-      ? computePasture(p, live, utilization, ctx)
-      : computePasture(p, rain.forecastMm, utilization, ctx, f)
-  })
+  // No archive, no zone: fall back to the season figures, as it read before.
+  const zone = rain.zoneMm ?? rain.projectedMm ?? rain.forecastMm
+  const fromRain = rain.rainFactor ?? 1
+  return pastures.map((p) => computePasture(p, zone, utilization, ctx, factors?.get(p.id) ?? fromRain))
 }
 
 /**
@@ -247,15 +215,15 @@ export function computePastures(
  * harvest, nothing once it is worked. Without any mapped field the old
  * hand-typed irrigated acres are used, labelled as such (fieldsLinked false).
  *
- * `seasonFactor` is how this season has actually gone on THIS paddock, from
- * the satellite: its peak canopy cover so far against its own cover over the
- * same calendar window in earlier years (pasture_season_factor). Pass it and
- * `precipMm` should be the NORMAL season's rain, because the factor is already
- * this year's deviation and multiplying a wet-year rainfall figure by a
- * wet-year growth measurement counts the same weather twice. Leave it out and
- * `precipMm` carries the year on its own, which is what a grazed paddock has
- * to do — cattle eat the green, so a grazed paddock looks thin from orbit
- * whether it grew badly or grew well and got used.
+ * `precipMm` is the ZONE — the long-term annual average here, which is what
+ * the estimator's rows measure. It does not move with the weather.
+ *
+ * `seasonFactor` is how this season has gone, and it is what the weather moves.
+ * computePastures picks it: the satellite's own measurement of THIS paddock
+ * where there is one (peak canopy cover so far against its own cover over the
+ * same calendar window in earlier years, pasture_season_factor), otherwise the
+ * projected season's rain over a normal one. Never both, because they measure
+ * the same weather and multiplying them counts it twice.
  *
  * It scales the dryland grass only. Irrigated grass does not grow on rain, and
  * the crop fields have their own residue model with its own loss factors.

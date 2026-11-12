@@ -6,6 +6,7 @@ import {
   matchHeader,
   parseSheet,
   parseSheetDate,
+  isSpareCollar,
   planImport,
   ranchForBrand,
   sexFromStockClass,
@@ -264,6 +265,31 @@ describe('planImport', () => {
   it('does not match on Animal ID alone', () => {
     const existing = [{ id: 'a1', eid: null, neckband: null, eshepherd_animal_id: '63380', vid: null }]
     expect(planImport([read()], existing).creates).toHaveLength(1)
+  })
+
+  // 100 of Sam's 679 "animals" were spare neckbands: the band's serial, the
+  // word Unfitted where the Animal ID goes, and nothing else on the row.
+  it('leaves a spare collar out, and says it is a collar', () => {
+    const collar = read({ 'Animal ID': 'Unfitted', Neckband: '0131184532', 'EID*': '', 'VID*': '', Breed: '', 'Stock Class': '' })
+    const plan = planImport([collar], [])
+    expect(plan.creates).toHaveLength(0)
+    expect(plan.skips[0].why).toContain('no animal fitted')
+  })
+
+  it('keeps a collar that has an animal on it', () => {
+    const fitted = read({ 'Animal ID': 'Unfitted', Neckband: '0131184532', 'EID*': '', 'VID*': '441' })
+    expect(planImport([fitted], []).creates).toHaveLength(1)
+  })
+
+  it('knows a bare band from an animal', () => {
+    const bare = { eid: null, vid: null, neckband: '0131184532', eshepherd_animal_id: 'Unfitted' }
+    expect(isSpareCollar(bare)).toBe(true)
+    expect(isSpareCollar({ ...bare, eshepherd_animal_id: '' })).toBe(true)
+    // Any sign of an animal keeps it.
+    expect(isSpareCollar({ ...bare, eid: '124000192476682' })).toBe(false)
+    expect(isSpareCollar({ ...bare, vid: '441' })).toBe(false)
+    expect(isSpareCollar({ ...bare, eshepherd_animal_id: '183227' })).toBe(false)
+    expect(isSpareCollar({ ...bare, neckband: null })).toBe(false)
   })
 
   it('takes the first of two rows for the same animal and says why', () => {
