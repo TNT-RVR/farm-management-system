@@ -53,6 +53,16 @@ export type ReportSection = {
    * so the column widths are the same as every other table's. PDF only.
    */
   compact?: boolean
+  /**
+   * A picture in place of the table: the field's map on the soil test request.
+   * It is drawn under the heading across the full width of the page, so give
+   * `head: []` and `rows: []` with it. Done as a one-cell table instead, the
+   * table's own header draws as a green bar with nothing written in it and the
+   * picture sits in a cell only as wide as the row height allows — half the
+   * page (Sam, 14 Nov 2026). The CSV skips these: a map is not a column of
+   * numbers. PDF only.
+   */
+  image?: { dataUrl: string; width: number; height: number }
 }
 
 export type TableReport = {
@@ -82,6 +92,8 @@ export function tableReportToCsv(r: TableReport): string {
   const line = (cells: Cell[]) => cells.map(csvCell).join(',')
   const out: string[] = [line([r.title]), ...(r.subtitle ? [line([r.subtitle])] : []), ...r.meta.map(([k, v]) => line([k, v]))]
   for (const s of r.sections) {
+    // A section that is only a picture (a field's map) has nothing a CSV holds.
+    if (s.image && !s.rows.length) continue
     out.push('', line([s.title]))
     if (s.note) out.push(line([s.note]))
     out.push(line(s.head))
@@ -498,8 +510,11 @@ export async function tableReportPdfDoc(r: TableReport, opts: PdfOptions = {}): 
   }
 
   for (const s of r.sections) {
-    // A heading never sits alone at the foot of a page.
-    if (y > bottom - 70 || (s.pageBreakBefore && y > TOP_AFTER_FIRST)) {
+    // A picture fills the width it is given; the page decides its height.
+    const pictureH = s.image ? (s.image.height / s.image.width) * inner : 0
+    // A heading never sits alone at the foot of a page, and a map is never
+    // squeezed into the inch that is left of one.
+    if (y > bottom - 70 || (s.pageBreakBefore && y > TOP_AFTER_FIRST) || (s.image && y + 20 + pictureH > bottom && y > TOP_AFTER_FIRST)) {
       doc.addPage()
       y = TOP_AFTER_FIRST
     }
@@ -520,6 +535,14 @@ export async function tableReportPdfDoc(r: TableReport, opts: PdfOptions = {}): 
       const note = doc.splitTextToSize(pdfSafe(s.note), inner) as string[]
       doc.text(note, MARGIN, startY + 6)
       startY += 6 + note.length * 9.5
+    }
+    if (s.image) {
+      // Whatever is left of the page if the picture is taller than that, so a
+      // map is never cut off at the foot; its proportions are kept either way.
+      const h = Math.min(pictureH, bottom - startY - 6)
+      doc.addImage(s.image.dataUrl, imageKind(s.image.dataUrl), MARGIN, startY + 6, (s.image.width / s.image.height) * h, h)
+      y = startY + 6 + h + 24
+      continue
     }
     const auto = autoAlign(s.head, s.rows.length ? s.rows : s.foot ? [s.foot] : [])
     const align = s.head.map((_, i) => s.align?.[i] ?? auto[i])

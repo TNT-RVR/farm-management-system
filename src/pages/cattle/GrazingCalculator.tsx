@@ -32,7 +32,7 @@ import {
   AU_TOTAL_LB_PER_DAY,
   AU_WASTE_LB_PER_DAY,
   forageYieldPerAcre,
-  ratedYieldPerAcre,
+  ratedAnchors,
 } from '@/lib/forage-yield'
 import { useActivations } from '@/lib/eshepherd'
 import { forageCalibration, grazedSeasons, mobUnits } from '@/lib/grazed-yield'
@@ -300,13 +300,32 @@ function useGrazingCalc(ranch: Ranch) {
     () => grazedSeasons((activations ?? []).filter((a) => a.pasture_id && mine.has(a.pasture_id)), units),
     [activations, mine, units],
   )
-  // The model's own answer for an ordinary year, with nothing but clip-and-weigh
-  // behind it: the thing the grazing record is measured against.
+  /*
+   * What a MEDIAN paddock here grows in an ordinary year, lb/acre, BEFORE the
+   * grazing record has its say: the ranch's own figure where somebody has set
+   * one, otherwise the estimator's Fair row at its zone.
+   */
+  const setBaseLbAc = ranch.forage_base_lb_ac ?? forageYieldPerAcre(rain.zoneMm, 'Fair')
+  const baseIsOwn = ranch.forage_base_lb_ac != null
+  /* Each paddock read at that level, for the comparison below only. */
+  const baseAnchors = useMemo(
+    () => ratedAnchors(pastures ?? [], setBaseLbAc, clipped, 'rated'),
+    [pastures, setBaseLbAc, clipped],
+  )
+  /*
+   * The model's own answer for an ordinary year, before any lift: the thing
+   * the grazing record is measured against.
+   *
+   * It has to be measured against the LEVEL, not against the table. Sam's
+   * 780 lb/ac for Home Ranch was itself read partly off these same collars;
+   * measuring the record against the table instead would find the same
+   * shortfall a second time and multiply his number by it.
+   */
   const baseNormalAuds = useMemo(
     () =>
-      computePastures(pastures ?? [], { ...rain, rainFactor: 1 }, setRate, seasonCtx, null, clipped, countWaste)
+      computePastures(pastures ?? [], { ...rain, rainFactor: 1 }, setRate, seasonCtx, null, baseAnchors, countWaste)
         .reduce((a, p) => a + p.auds, 0),
-    [pastures, rain, setRate, seasonCtx, clipped, countWaste],
+    [pastures, rain, setRate, seasonCtx, baseAnchors, countWaste],
   )
   const calibration = useMemo(
     // Only this season's rain factor is known; an older season is read as an
@@ -315,18 +334,13 @@ function useGrazingCalc(ranch: Ranch) {
     [seasons, baseNormalAuds, rain.rainFactor],
   )
   /*
-   * What a MEDIAN paddock here grows in an ordinary year, lb/acre.
-   *
-   * The ranch's own figure where somebody has set one; otherwise the
-   * estimator's Fair row at its zone, which is what the app read before the
-   * level and the rating were told apart. The grazing-record floor still
-   * lifts it where the cattle have proved more.
+   * The level the app actually reads with, once the grazing record has had
+   * its say. The record is a FLOOR and nothing more: forageCalibration never
+   * returns under 1, so a level that already covers what the cattle took is
+   * left exactly where it was set, and only a level the cattle have beaten
+   * gets lifted to meet them.
    */
-  const baseLbAc = useMemo(
-    () => (ranch.forage_base_lb_ac ?? forageYieldPerAcre(rain.zoneMm, 'Fair')) * calibration.factor,
-    [ranch.forage_base_lb_ac, rain.zoneMm, calibration.factor],
-  )
-  const baseIsOwn = ranch.forage_base_lb_ac != null
+  const baseLbAc = setBaseLbAc * calibration.factor
   /*
    * Each paddock, best evidence first: its own clip-and-weigh, then this
    * ranch's level times the paddock's own measured cover, then the table.
@@ -339,14 +353,17 @@ function useGrazingCalc(ranch: Ranch) {
    * not rounded down to "Poor" and 19% under its own measurement.
    */
   const anchors = useMemo(() => {
-    const m = new Map(clipped ?? [])
     const lifted = calibration.factor > 1.001
+    const m = ratedAnchors(pastures ?? [], baseLbAc, clipped, lifted ? 'grazed' : 'rated')
+    if (!lifted) return m
+    // A paddock with no satellite cover has no rel to scale, so where the
+    // record has lifted the ranch it gets the table lifted by the same hand.
     for (const p of pastures ?? []) {
       if (m.has(p.id)) continue
-      const rated = ratedYieldPerAcre(baseLbAc, p.grass_quality_rel)
-      if (rated != null) m.set(p.id, { lbPerAcre: rated, source: lifted ? 'grazed' : 'rated' })
-      else if (lifted)
-        m.set(p.id, { lbPerAcre: forageYieldPerAcre(rain.zoneMm, p.grass_quality) * calibration.factor, source: 'grazed' })
+      m.set(p.id, {
+        lbPerAcre: forageYieldPerAcre(rain.zoneMm, p.grass_quality) * calibration.factor,
+        source: 'grazed',
+      })
     }
     return m
   }, [clipped, pastures, rain.zoneMm, baseLbAc, calibration.factor])
@@ -459,6 +476,7 @@ function useGrazingCalc(ranch: Ranch) {
     rainAuds,
     calibration,
     baseLbAc,
+    setBaseLbAc,
     baseIsOwn,
     // Which paddocks are scaled by their own satellite growth rather than by
     // the ranch's rain: the grass-rating panel says which figure it is reading.
@@ -638,6 +656,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
     rainAuds,
     calibration,
     baseLbAc,
+    setBaseLbAc,
     baseIsOwn,
     factorFor,
     measuredCount,
@@ -838,17 +857,29 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                   `What a middling paddock here grows in an ordinary year. Each paddock is then read at this times its own measured cover against the ranch's median — Pasture K at 0.79 of the median is read at 0.79 of this, rather than rounded down to a word.` +
                   (baseIsOwn
                     ? ' Set for this ranch.'
-                    : ` Not set, so this is the estimator's Fair row at ${n0(rain.zoneMm)} mm — a provincial average, and the one figure in the model that nothing on this farm has measured.`)
+                    : ` Not set, so this is the estimator's Fair row at ${n0(rain.zoneMm)} mm — a provincial average, and the one figure in the model that nothing on this farm has measured.`) +
+                  (calibration.factor > 1.001
+                    ? ` Your cattle took more off these paddocks than that allows, so it is read at ${n0(baseLbAc)} — the grazing record is a floor and can only raise it.`
+                    : '')
                 }
               >
                 <span>median paddock</span>
+                {/* The figure SET, never the lifted one: typing in a box that
+                    showed the lift would save the lift and then lift it again. */}
                 <NumCell
-                  value={Math.round(baseLbAc)}
+                  value={Math.round(setBaseLbAc)}
                   disabled={!isManager}
                   onCommit={(v) => setRanchField({ forage_base_lb_ac: v > 0 ? v : null })}
                   className="w-14 text-[11px]"
                 />
-                <span>lb/ac{baseIsOwn ? '' : ' · from the table'}</span>
+                <span>
+                  lb/ac
+                  {calibration.factor > 1.001
+                    ? ` · ${n0(baseLbAc)} from the grazing record`
+                    : baseIsOwn
+                      ? ''
+                      : ' · from the table'}
+                </span>
               </p>
             </>
           ) : (

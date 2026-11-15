@@ -208,6 +208,28 @@ export function ratedYieldPerAcre(baseLbAc: number, rel: number | string | null 
   return baseLbAc * r
 }
 
+/**
+ * Every paddock read at the ranch's level times its own measured cover,
+ * starting from the clip-and-weigh anchors, which always win.
+ *
+ * A paddock with no cover measured yet is simply left out, so the caller
+ * decides what it falls back to rather than this inventing one.
+ */
+export function ratedAnchors(
+  pastures: readonly { id: string; grass_quality_rel?: number | string | null }[],
+  baseLbAc: number,
+  clipped: ReadonlyMap<string, PastureAnchor> | null | undefined,
+  source: Extract<YieldSource, 'rated' | 'grazed'>,
+): Map<string, PastureAnchor> {
+  const m = new Map(clipped ?? [])
+  for (const p of pastures) {
+    if (m.has(p.id)) continue
+    const rated = ratedYieldPerAcre(baseLbAc, p.grass_quality_rel)
+    if (rated != null) m.set(p.id, { lbPerAcre: rated, source })
+  }
+  return m
+}
+
 /** lbs/acre on irrigated grass of this quality. */
 export const irrigatedYieldPerAcre = (quality: string) => FORAGE_YIELD_IRRIGATION[qualityOf(quality)]
 

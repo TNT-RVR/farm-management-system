@@ -342,7 +342,10 @@ export async function gatherSoilTestRequest(p: ParamValues, ctx: GatherContext):
     return (mine.find((b) => b.valid_from <= eoy && (b.valid_to == null || b.valid_to > eoy)) ?? mine.find((b) => b.valid_to == null) ?? mine[0])?.geometry
   }
 
-  const factsHead = ['Legal land', 'Acres', 'Water', 'Last soil test', ...(withNext ? [`${year} crop`] : []), 'Note']
+  // Page one already carries every field's legal land, acres and water, so a
+  // field's own page does not set them out again: its heading names the field
+  // and its legal land, and the table holds only what page one has not said.
+  const factsHead = ['Last soil test', ...(withNext ? [`${year} crop`] : []), 'Note']
   const water = (id: string) => (latest.irrigated.has(id) ? 'Irrigated' : 'Dryland')
 
   // Page one: every field on one sheet, for the lab to plan the run from.
@@ -376,11 +379,11 @@ export async function gatherSoilTestRequest(p: ParamValues, ctx: GatherContext):
       const area = mainArea((basics.get(year)?.areas ?? []).filter((a) => a.fieldId === id))
       next = area ? [area.crop, area.variety, area.expectedYield != null ? `target ${yieldText(area.expectedYield, null)}` : null].filter(Boolean).join(', ') : 'Not planned yet'
     }
-    const title = fieldLabel(f.name)
+    const title = [fieldLabel(f.name), f.legal_land_description].filter(Boolean).join(' – ')
     sections.push({
       title,
       head: factsHead,
-      rows: [[f.legal_land_description, round(acres, 1), water(id), lastTest ? String(lastTest) : 'None on file', ...(withNext ? [next] : []), notes.get(id) ?? null]],
+      rows: [[lastTest ? String(lastTest) : 'None on file', ...(withNext ? [next] : []), notes.get(id) ?? null]],
       pageBreakBefore: true,
     })
 
@@ -391,10 +394,9 @@ export async function gatherSoilTestRequest(p: ParamValues, ctx: GatherContext):
         sections.push({
           title: 'Map',
           note: fieldSites.length ? 'Red points are where earlier cores were pulled.' : undefined,
-          head: [''],
-          rows: [['']],
-          minRowHeight: 230,
-          cellImages: [{ row: 0, col: 0, image }],
+          head: [],
+          rows: [],
+          image,
         })
       }
     }
