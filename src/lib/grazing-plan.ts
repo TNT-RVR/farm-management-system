@@ -11,7 +11,8 @@
  * day short.
  */
 
-import { AU_LBS_PER_DAY, AUM_LBS } from './forage-yield'
+/** Days in the Grazing tab's own animal-unit month. */
+const GRASS_AUM_DAYS = 30
 
 /** Days in the Crown's animal-unit month, which is how lease AUMs are counted. */
 export const AUM_DAYS = 30.4
@@ -51,14 +52,20 @@ export function aumsFromAuDays(aud: number): number {
 }
 
 /**
- * AUMs of grass from animal-unit days, the Grazing tab's way: 780 lb of
- * forage, 30 days at 26 lb (forage-yield AUM_LBS). A pasture's grass is read
- * in these so the Plan's "of N AUM" is the Grazing tab's land capacity; the
- * Crown's 30.4-day month stays for lease AUMs (3 Nov 2026: the Plan read
- * 2,994 AUM for 2026 where the Grazing tab read 3,034 from the same 91,030 AUDs).
+ * AUMs of grass from animal-unit days, the Grazing tab's way: a 30-day month.
+ * A pasture's grass is read in these so the Plan's "of N AUM" is the Grazing
+ * tab's land capacity; the Crown's 30.4-day month stays for lease AUMs
+ * (3 Nov 2026: the Plan read 2,994 AUM for 2026 where the Grazing tab read
+ * 3,034 from the same 91,030 AUDs).
+ *
+ * This is days per month and nothing else. It used to be written as
+ * (aud × 26) ÷ 780, which looked like it depended on how many pounds an
+ * animal unit eats — it cancels, and now that the app carries two such figures
+ * (intake alone, or intake plus the trampled share) a spurious dependency on
+ * either one is worth not having.
  */
 export function grassAumsFromAuDays(aud: number): number {
-  return (aud * AU_LBS_PER_DAY) / AUM_LBS
+  return aud / GRASS_AUM_DAYS
 }
 
 /**

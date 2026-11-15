@@ -311,11 +311,43 @@ export type Database = {
         Update: Partial<Database['public']['Tables']['chemical_recrop_overrides']['Insert']>
         Relationships: []
       }
-      /** Most acres of a crop in a year; crop_year null = every year. */
+      /**
+       * Most acres of a crop in a year; crop_year null = every year.
+       * `priority` is which crop the recommender fills first (1 is first).
+       * A row may carry either setting, so max_acres is nullable on write.
+       */
       crop_acre_limits: {
-        Row: { id: string; crop_id: string | null; crop_group: 'dry_bean' | 'canola' | 'forage_legume' | null; crop_year: number | null; max_acres: number; notes: string | null; updated_at: string }
-        Insert: { id?: string; crop_id?: string | null; crop_group?: 'dry_bean' | 'canola' | 'forage_legume' | null; crop_year?: number | null; max_acres: number; notes?: string | null }
+        Row: { id: string; crop_id: string | null; crop_group: 'dry_bean' | 'canola' | 'forage_legume' | 'potato' | 'corn' | null; crop_year: number | null; max_acres: number | null; priority: number | null; notes: string | null; updated_at: string }
+        Insert: { id?: string; crop_id?: string | null; crop_group?: 'dry_bean' | 'canola' | 'forage_legume' | 'potato' | 'corn' | null; crop_year?: number | null; max_acres?: number | null; priority?: number | null; notes?: string | null }
         Update: Partial<Database['public']['Tables']['crop_acre_limits']['Insert']>
+        Relationships: []
+      }
+      /** A seed canola company's prescout of a quarter for next year's crop. */
+      scout_reports: {
+        Row: {
+          id: string; company: string; crop_year: number; scouted_year: number | null; field_id: string | null
+          parcel: string; grower_name: string | null; acres: number | null; rating: string | null; passed: boolean | null
+          crop_this_year: string | null; crop_history: string[] | null; last_canola_year: number | null
+          last_canola_tech: string | null; scouting_method: string | null
+          ps1_on: string | null; ps1_stage: string | null; ps1_notes: string | null
+          ps2_required: boolean | null; ps2_on: string | null; ps2_by: string | null; ps2_notes: string | null
+          vc_per_m2: number | null; tissue_on: string | null; tissue_summary: string | null
+          agronomist_note: string | null; contact_name: string | null; contact_phone: string | null
+          counts: Json; raw: Json; source: string | null
+          created_by: string | null; created_at: string; updated_at: string
+        }
+        Insert: {
+          id?: string; company: string; crop_year: number; scouted_year?: number | null; field_id?: string | null
+          parcel: string; grower_name?: string | null; acres?: number | null; rating?: string | null; passed?: boolean | null
+          crop_this_year?: string | null; crop_history?: string[] | null; last_canola_year?: number | null
+          last_canola_tech?: string | null; scouting_method?: string | null
+          ps1_on?: string | null; ps1_stage?: string | null; ps1_notes?: string | null
+          ps2_required?: boolean | null; ps2_on?: string | null; ps2_by?: string | null; ps2_notes?: string | null
+          vc_per_m2?: number | null; tissue_on?: string | null; tissue_summary?: string | null
+          agronomist_note?: string | null; contact_name?: string | null; contact_phone?: string | null
+          counts?: Json; raw?: Json; source?: string | null
+        }
+        Update: Partial<Database['public']['Tables']['scout_reports']['Insert']>
         Relationships: []
       }
       /** Heat units, frost-free days and the seasonal outlook per 0.25° weather cell (season-outlook-background). */
@@ -2177,6 +2209,120 @@ export type Database = {
       }
       /** Virtual-paddock activation history from the eShepherd Status CSV. */
       /** Where the cattle drink: pins a person owns, dragged and renamed on the map. */
+      cattle_mineral: {
+        Row: {
+          id: string
+          name: string | null
+          kind: 'mineral' | 'salt' | 'protein' | 'other'
+          /** PostGIS point; written as EWKT, read through cattle_mineral_points. */
+          geom: string
+          placed_on: string | null
+          notes: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name?: string | null
+          kind?: 'mineral' | 'salt' | 'protein' | 'other'
+          geom: string
+          placed_on?: string | null
+          notes?: string | null
+          created_by?: string | null
+        }
+        Update: {
+          name?: string | null
+          kind?: 'mineral' | 'salt' | 'protein' | 'other'
+          geom?: string
+          placed_on?: string | null
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      /** One row per ranch per calf crop; every rate is derived in cow-calf-indicators.ts. */
+      cow_calf_indicators: {
+        Row: {
+          id: string
+          ranch_id: string
+          crop_year: number
+          females_exposed: number | null
+          bulls_used: number | null
+          females_bred: number | null
+          females_calved: number | null
+          sets_of_twins: number | null
+          calves_born_1_21: number | null
+          calves_born_22_42: number | null
+          calves_born_43_63: number | null
+          calves_born_64_plus: number | null
+          calves_dead_24h: number | null
+          calves_dead_to_wean: number | null
+          calves_weaned: number | null
+          avg_birth_weight_lb: number | null
+          avg_weaning_weight_lb: number | null
+          avg_cow_weight_lb: number | null
+          first_calving_on: string | null
+          last_calving_on: string | null
+          median_calving_on: string | null
+          weaning_on: string | null
+          notes: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          ranch_id: string
+          crop_year: number
+          females_exposed?: number | null
+          bulls_used?: number | null
+          females_bred?: number | null
+          females_calved?: number | null
+          sets_of_twins?: number | null
+          calves_born_1_21?: number | null
+          calves_born_22_42?: number | null
+          calves_born_43_63?: number | null
+          calves_born_64_plus?: number | null
+          calves_dead_24h?: number | null
+          calves_dead_to_wean?: number | null
+          calves_weaned?: number | null
+          avg_birth_weight_lb?: number | null
+          avg_weaning_weight_lb?: number | null
+          avg_cow_weight_lb?: number | null
+          first_calving_on?: string | null
+          last_calving_on?: string | null
+          median_calving_on?: string | null
+          weaning_on?: string | null
+          notes?: string | null
+          created_by?: string | null
+        }
+        Update: {
+          crop_year?: number
+          females_exposed?: number | null
+          bulls_used?: number | null
+          females_bred?: number | null
+          females_calved?: number | null
+          sets_of_twins?: number | null
+          calves_born_1_21?: number | null
+          calves_born_22_42?: number | null
+          calves_born_43_63?: number | null
+          calves_born_64_plus?: number | null
+          calves_dead_24h?: number | null
+          calves_dead_to_wean?: number | null
+          calves_weaned?: number | null
+          avg_birth_weight_lb?: number | null
+          avg_weaning_weight_lb?: number | null
+          avg_cow_weight_lb?: number | null
+          first_calving_on?: string | null
+          last_calving_on?: string | null
+          median_calving_on?: string | null
+          weaning_on?: string | null
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       cattle_water: {
         Row: {
           id: string
@@ -4988,6 +5134,9 @@ export type Database = {
           sort_order: number
           grazing_utilization_rate: number
           forage_zone_mm: number | null
+          /** What a median paddock here grows in an ordinary year, lb/ac. Null = the estimator Fair row at the zone. */
+          forage_base_lb_ac: number | null
+          grazing_count_waste: boolean
           grazing_precip_mm: number
           /** This ranch's own Google My Map; its "Pasture …" shapes become this ranch's pastures. */
           mymaps_url: string | null
@@ -5034,6 +5183,8 @@ export type Database = {
           sort_order?: number
           grazing_utilization_rate?: number
           forage_zone_mm?: number | null
+          forage_base_lb_ac?: number | null
+          grazing_count_waste?: boolean
           grazing_precip_mm?: number
           latitude?: number | null
           longitude?: number | null
@@ -5043,6 +5194,8 @@ export type Database = {
           sort_order?: number
           grazing_utilization_rate?: number
           forage_zone_mm?: number | null
+          forage_base_lb_ac?: number | null
+          grazing_count_waste?: boolean
           grazing_precip_mm?: number
           mymaps_url?: string | null
           latitude?: number | null
@@ -8920,6 +9073,30 @@ export type Database = {
         }
         Relationships: []
       }
+      soil_test_requests: {
+        Row: {
+          id: string
+          field_id: string
+          /** The crop year the test is for: a fall sample is next year's. */
+          crop_year: number
+          notes: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          field_id: string
+          crop_year: number
+          notes?: string | null
+          created_by?: string | null
+        }
+        Update: {
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       tissue_tests: {
         Row: {
           id: string
@@ -10640,6 +10817,38 @@ export type Database = {
         }
         Relationships: []
       }
+      /** Acres of each ecological range site inside a paddock, with that site's sustainable stocking rate. */
+      pasture_range_sites: {
+        Row: {
+          grazing_pasture_id: string
+          paddock: string
+          ranch_id: string | null
+          range_site: string | null
+          essr_aum_ac: number | string | null
+          essr_min: number | string | null
+          essr_max: number | string | null
+          communities: number | null
+          grazed: boolean | null
+          acres: number | string | null
+        }
+        Relationships: []
+      }
+      /** Per paddock: what its soils sustain (AUDs), the band, and the share of acres carrying a published rate. */
+      pasture_essr: {
+        Row: {
+          grazing_pasture_id: string
+          paddock: string
+          ranch_id: string | null
+          soil_acres: number | string | null
+          grazed_acres: number | string | null
+          essr_aums: number | string | null
+          essr_auds: number | string | null
+          essr_auds_low: number | string | null
+          essr_auds_high: number | string | null
+          pct_rated: number | string | null
+        }
+        Relationships: []
+      }
       pasture_rotation_order: {
         Row: {
           pasture_id: string
@@ -10661,6 +10870,16 @@ export type Database = {
         }
         Relationships: []
       }
+      /** Clip-and-weigh anchor per pasture: lb/ac in a normal year, replacing the estimator table for that pasture. */
+      pasture_measured_yield: {
+        Row: {
+          pasture_id: string
+          lb_per_acre: number | string
+          seasons: number
+          last_season: number | null
+        }
+        Relationships: []
+      }
       pasture_calibration_readiness: {
         Row: {
           samples: number
@@ -10670,6 +10889,23 @@ export type Database = {
           pastures_sampled: number
           seasons: number
           may_report_absolute: boolean
+        }
+        Relationships: []
+      }
+      /** Mineral and salt tubs as pins, with lon/lat and the paddock each sits in. */
+      cattle_mineral_points: {
+        Row: {
+          id: string
+          name: string | null
+          kind: 'mineral' | 'salt' | 'protein' | 'other'
+          placed_on: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+          lon: number | string
+          lat: number | string
+          pasture_id: string | null
+          pasture_name: string | null
         }
         Relationships: []
       }

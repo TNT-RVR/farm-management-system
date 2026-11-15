@@ -8259,19 +8259,17 @@ CREATE OR REPLACE FUNCTION "public"."research_text_coverage"() RETURNS TABLE("fu
     SET "search_path" TO 'public', 'extensions'
     SET "statement_timeout" TO '15s'
     AS $$
-  with per_paper as (
-    select p.id,
-           bool_or(c.kind = 'body') as has_body,
-           bool_or(c.kind = 'abstract') as has_abstract
-      from public.research_papers p
-      left join public.research_paper_chunks c on c.paper_id = p.id
-     group by p.id
+  with body as (
+    select distinct paper_id from public.research_paper_chunks where kind = 'body'
+  ), abstract as (
+    select distinct paper_id from public.research_paper_chunks where kind = 'abstract'
   )
-  select count(*) filter (where has_body)::integer,
-         count(*) filter (where has_abstract and not coalesce(has_body, false))::integer,
-         count(*) filter (where not coalesce(has_body, false)
-                            and not coalesce(has_abstract, false))::integer
-    from per_paper;
+  select count(*) filter (where b.paper_id is not null)::integer,
+         count(*) filter (where a.paper_id is not null and b.paper_id is null)::integer,
+         count(*) filter (where a.paper_id is null and b.paper_id is null)::integer
+    from public.research_papers p
+    left join body b on b.paper_id = p.id
+    left join abstract a on a.paper_id = p.id;
 $$;
 
 
@@ -10326,6 +10324,82 @@ COMMENT ON COLUMN "public"."cattle_manifests"."rest_stop_h" IS 'Hours rested in 
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."cattle_mineral" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text",
+    "kind" "text" DEFAULT 'mineral'::"text" NOT NULL,
+    "geom" "public"."geometry"(Point,4326) NOT NULL,
+    "placed_on" "date",
+    "notes" "text",
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "cattle_mineral_kind_check" CHECK (("kind" = ANY (ARRAY['mineral'::"text", 'salt'::"text", 'protein'::"text", 'other'::"text"])))
+);
+
+
+ALTER TABLE "public"."cattle_mineral" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."pastures" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "name" "text" NOT NULL,
+    "legal_description" "text",
+    "boundary" "public"."geometry"(MultiPolygon,4326) NOT NULL,
+    "boundary_analysis" "public"."geometry"(MultiPolygon,4326),
+    "area_acres" numeric,
+    "pasture_type" "text",
+    "water_source_geom" "public"."geometry"(MultiPoint,4326),
+    "satellite_enabled" boolean DEFAULT true NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "grazing_system" "text" DEFAULT 'rotational'::"text" NOT NULL,
+    "harvest_efficiency" numeric DEFAULT 0.50 NOT NULL,
+    "min_rest_days" integer DEFAULT 21 NOT NULL,
+    "residual_floor_kg_dm_ha" numeric,
+    "river_access" "text" DEFAULT 'none'::"text" NOT NULL,
+    "river_access_ref" "uuid",
+    CONSTRAINT "pastures_grazing_system_check" CHECK (("grazing_system" = ANY (ARRAY['rotational'::"text", 'continuous'::"text"]))),
+    CONSTRAINT "pastures_harvest_efficiency_check" CHECK ((("harvest_efficiency" > (0)::numeric) AND ("harvest_efficiency" <= (1)::numeric))),
+    CONSTRAINT "pastures_pasture_type_check" CHECK (("pasture_type" = ANY (ARRAY['native'::"text", 'tame'::"text", 'irrigated'::"text", 'regrowth'::"text", 'aftermath'::"text"]))),
+    CONSTRAINT "pastures_river_access_check" CHECK (("river_access" = ANY (ARRAY['none'::"text", 'all'::"text", 'north_of'::"text"])))
+);
+
+
+ALTER TABLE "public"."pastures" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."pastures"."harvest_efficiency" IS 'Share of standing forage cattle actually take. 0.50 rotational, 0.35 continuous (spec §9.3). Never assume cattle harvest what the satellite sees.';
+
+
+
+CREATE OR REPLACE VIEW "public"."cattle_mineral_points" WITH ("security_invoker"='true') AS
+ SELECT "t"."id",
+    "t"."name",
+    "t"."kind",
+    "t"."placed_on",
+    "t"."notes",
+    "t"."created_at",
+    "t"."updated_at",
+    "public"."st_x"("t"."geom") AS "lon",
+    "public"."st_y"("t"."geom") AS "lat",
+    "p"."id" AS "pasture_id",
+    "p"."name" AS "pasture_name"
+   FROM ("public"."cattle_mineral" "t"
+     LEFT JOIN LATERAL ( SELECT "p_1"."id",
+            "p_1"."name"
+           FROM "public"."pastures" "p_1"
+          WHERE "public"."st_dwithin"(("p_1"."boundary")::"public"."geography", ("t"."geom")::"public"."geography", (30)::double precision)
+          ORDER BY ("public"."st_contains"("p_1"."boundary", "t"."geom")) DESC, ("public"."st_distance"(("p_1"."boundary")::"public"."geography", ("t"."geom")::"public"."geography"))
+         LIMIT 1) "p" ON (true));
+
+
+ALTER VIEW "public"."cattle_mineral_points" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."cattle_mineral_points" IS 'Mineral and salt tubs as pins, with lon/lat and the paddock each sits in.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."cattle_sales" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "ranch" "text" NOT NULL,
@@ -10423,37 +10497,6 @@ COMMENT ON COLUMN "public"."cattle_water"."serves" IS 'Pasture ids this water co
 
 
 COMMENT ON COLUMN "public"."cattle_water"."fed_by" IS 'Where the water comes from: oldman (the river), smrid (the canal), or null for its own water. Set, the quality is read from that source''s monitoring rather than a lab sheet.';
-
-
-
-CREATE TABLE IF NOT EXISTS "public"."pastures" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "name" "text" NOT NULL,
-    "legal_description" "text",
-    "boundary" "public"."geometry"(MultiPolygon,4326) NOT NULL,
-    "boundary_analysis" "public"."geometry"(MultiPolygon,4326),
-    "area_acres" numeric,
-    "pasture_type" "text",
-    "water_source_geom" "public"."geometry"(MultiPoint,4326),
-    "satellite_enabled" boolean DEFAULT true NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "grazing_system" "text" DEFAULT 'rotational'::"text" NOT NULL,
-    "harvest_efficiency" numeric DEFAULT 0.50 NOT NULL,
-    "min_rest_days" integer DEFAULT 21 NOT NULL,
-    "residual_floor_kg_dm_ha" numeric,
-    "river_access" "text" DEFAULT 'none'::"text" NOT NULL,
-    "river_access_ref" "uuid",
-    CONSTRAINT "pastures_grazing_system_check" CHECK (("grazing_system" = ANY (ARRAY['rotational'::"text", 'continuous'::"text"]))),
-    CONSTRAINT "pastures_harvest_efficiency_check" CHECK ((("harvest_efficiency" > (0)::numeric) AND ("harvest_efficiency" <= (1)::numeric))),
-    CONSTRAINT "pastures_pasture_type_check" CHECK (("pasture_type" = ANY (ARRAY['native'::"text", 'tame'::"text", 'irrigated'::"text", 'regrowth'::"text", 'aftermath'::"text"]))),
-    CONSTRAINT "pastures_river_access_check" CHECK (("river_access" = ANY (ARRAY['none'::"text", 'all'::"text", 'north_of'::"text"])))
-);
-
-
-ALTER TABLE "public"."pastures" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."pastures"."harvest_efficiency" IS 'Share of standing forage cattle actually take. 0.50 rotational, 0.35 continuous (spec §9.3). Never assume cattle harvest what the satellite sees.';
 
 
 
@@ -11172,15 +11215,53 @@ CREATE TABLE IF NOT EXISTS "public"."cost_benchmarks" (
 ALTER TABLE "public"."cost_benchmarks" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."cow_calf_indicators" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "ranch_id" "uuid" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "females_exposed" integer,
+    "bulls_used" integer,
+    "females_bred" integer,
+    "females_calved" integer,
+    "sets_of_twins" integer,
+    "first_calving_on" "date",
+    "last_calving_on" "date",
+    "median_calving_on" "date",
+    "weaning_on" "date",
+    "calves_born_1_21" integer,
+    "calves_born_22_42" integer,
+    "calves_born_43_63" integer,
+    "calves_born_64_plus" integer,
+    "calves_dead_24h" integer,
+    "calves_dead_to_wean" integer,
+    "calves_weaned" integer,
+    "avg_birth_weight_lb" numeric,
+    "avg_weaning_weight_lb" numeric,
+    "avg_cow_weight_lb" numeric,
+    "notes" "text",
+    "created_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."cow_calf_indicators" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."cow_calf_indicators" IS 'One row per ranch per calf crop: the nineteen figures behind the cow-calf production indicators scorecard (/cow-calf-indicators). Raw counts and dates only -- every rate is derived in cow-calf-indicators.ts.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."crop_acre_limits" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "crop_id" "uuid",
     "crop_year" integer,
-    "max_acres" numeric NOT NULL,
+    "max_acres" numeric,
     "notes" "text",
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "crop_group" "text",
-    CONSTRAINT "crop_acre_limits_crop_group_check" CHECK (("crop_group" = ANY (ARRAY['dry_bean'::"text", 'canola'::"text", 'forage_legume'::"text"]))),
+    "priority" smallint,
+    CONSTRAINT "crop_acre_limits_crop_group_check" CHECK (("crop_group" = ANY (ARRAY['dry_bean'::"text", 'canola'::"text", 'forage_legume'::"text", 'potato'::"text", 'corn'::"text"]))),
     CONSTRAINT "crop_acre_limits_max_acres_check" CHECK (("max_acres" >= (0)::numeric)),
     CONSTRAINT "crop_acre_limits_one_target" CHECK ((("crop_id" IS NULL) <> ("crop_group" IS NULL)))
 );
@@ -11190,6 +11271,10 @@ ALTER TABLE "public"."crop_acre_limits" OWNER TO "postgres";
 
 
 COMMENT ON COLUMN "public"."crop_acre_limits"."crop_group" IS 'A limit on a whole group (all beans together), in place of crop_id.';
+
+
+
+COMMENT ON COLUMN "public"."crop_acre_limits"."priority" IS 'Which crop the recommender fills first; 1 is first, null waits for the rest.';
 
 
 
@@ -15084,7 +15169,7 @@ COMMENT ON COLUMN "public"."herd_counts"."background_head" IS 'Calves only: how 
 
 
 
-COMMENT ON COLUMN "public"."herd_counts"."au_override" IS 'True when au_equivalent was typed on purpose and should be used instead of avg_weight_lb / 1000.';
+COMMENT ON COLUMN "public"."herd_counts"."au_override" IS 'True when au_equivalent was typed on purpose and should be used instead of the class''s metabolic weight, (avg_weight_lb / 1000)^0.75.';
 
 
 
@@ -16523,6 +16608,90 @@ CREATE OR REPLACE VIEW "public"."pasture_calibration_readiness" WITH ("security_
 ALTER VIEW "public"."pasture_calibration_readiness" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."range_site_essr" (
+    "range_site" "text" NOT NULL,
+    "essr_min" numeric,
+    "essr_median" numeric,
+    "essr_max" numeric,
+    "communities" integer,
+    "cover_min" numeric,
+    "cover_max" numeric,
+    "grazed" boolean DEFAULT true NOT NULL,
+    "note" "text"
+);
+
+
+ALTER TABLE "public"."range_site_essr" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."range_site_essr" IS 'Ecologically Sustainable Stocking Rate (AUM/ac) by range site, rolled up from the plant communities the Dry Mixedgrass guide places on each site. Already includes utilization and ecological carry-over: never multiply by grazing_utilization_rate.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."range_site_soils" (
+    "soil_code" "text" NOT NULL,
+    "range_site" "text" NOT NULL,
+    "also_site" "text",
+    "note" "text"
+);
+
+
+ALTER TABLE "public"."range_site_soils" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."range_site_soils" IS 'AGRASID soil series code -> ecological range site, from the Dry Mixedgrass range plant community guide (Adams 2005), section 2.2 "Soil series of Soil Correlation Area 1 linked to Ecological Range Sites".';
+
+
+
+CREATE OR REPLACE VIEW "public"."pasture_range_sites" AS
+ SELECT "gp"."id" AS "grazing_pasture_id",
+    "gp"."name" AS "paddock",
+    "gp"."ranch_id",
+    "rss"."range_site",
+    "rse"."essr_median" AS "essr_aum_ac",
+    "rse"."essr_min",
+    "rse"."essr_max",
+    "rse"."communities",
+    "rse"."grazed",
+    "sum"(("public"."st_area"((("public"."st_intersection"("public"."st_makevalid"("p"."boundary"), "public"."st_makevalid"("s"."geom")))::"public"."geography")::"public"."geography") / (4046.86)::double precision)) AS "acres"
+   FROM (((("public"."grazing_pastures" "gp"
+     JOIN "public"."pastures" "p" ON (("p"."id" = "gp"."pasture_id")))
+     JOIN "public"."soil_landscape_polygons" "s" ON ("public"."st_intersects"("public"."st_makevalid"("p"."boundary"), "public"."st_makevalid"("s"."geom"))))
+     LEFT JOIN "public"."range_site_soils" "rss" ON (("rss"."soil_code" = "s"."soil_code")))
+     LEFT JOIN "public"."range_site_essr" "rse" ON (("rse"."range_site" = "rss"."range_site")))
+  WHERE ("gp"."active" AND ("p"."boundary" IS NOT NULL) AND ("s"."geom" IS NOT NULL))
+  GROUP BY "gp"."id", "gp"."name", "gp"."ranch_id", "rss"."range_site", "rse"."essr_median", "rse"."essr_min", "rse"."essr_max", "rse"."communities", "rse"."grazed";
+
+
+ALTER VIEW "public"."pasture_range_sites" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."pasture_range_sites" IS 'Acres of each ecological range site inside each paddock, with that site''s sustainable stocking rate and the band its plant communities span. Null range_site = a soil the guide does not list.';
+
+
+
+CREATE OR REPLACE VIEW "public"."pasture_essr" AS
+ SELECT "grazing_pasture_id",
+    "paddock",
+    "ranch_id",
+    "round"(("sum"("acres"))::numeric, 1) AS "soil_acres",
+    "round"(("sum"("acres") FILTER (WHERE ("grazed" IS NOT FALSE)))::numeric, 1) AS "grazed_acres",
+    "round"(("sum"(("acres" * ("essr_aum_ac")::double precision)))::numeric, 2) AS "essr_aums",
+    "round"((("sum"(("acres" * ("essr_aum_ac")::double precision)) * (30)::double precision))::numeric) AS "essr_auds",
+    "round"((("sum"(("acres" * ("essr_min")::double precision)) * (30)::double precision))::numeric) AS "essr_auds_low",
+    "round"((("sum"(("acres" * ("essr_max")::double precision)) * (30)::double precision))::numeric) AS "essr_auds_high",
+    "round"(((((100.0)::double precision * "sum"("acres") FILTER (WHERE ("essr_aum_ac" IS NOT NULL))) / NULLIF("sum"("acres") FILTER (WHERE ("grazed" IS NOT FALSE)), (0)::double precision)))::numeric) AS "pct_rated"
+   FROM "public"."pasture_range_sites"
+  GROUP BY "grazing_pasture_id", "paddock", "ranch_id";
+
+
+ALTER VIEW "public"."pasture_essr" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."pasture_essr" IS 'Per paddock: the sustainable stocking rate its soils imply, the band its range sites span, and what share of its grazed acres carries a published rate. pct_rated below 100 means the rest is unrated ground, not a zero.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."stubble_grazing" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "ranch_id" "uuid" NOT NULL,
@@ -16867,6 +17036,30 @@ CREATE OR REPLACE VIEW "public"."pasture_map" WITH ("security_invoker"='true') A
 
 
 ALTER VIEW "public"."pasture_map" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."pasture_measured_yield" AS
+ WITH "peak" AS (
+         SELECT "pasture_biomass_calibration"."pasture_id",
+            (EXTRACT("year" FROM "pasture_biomass_calibration"."sampled_on"))::integer AS "season",
+            "max"("pasture_biomass_calibration"."measured_kg_dm_ha") AS "kg_dm_ha"
+           FROM "public"."pasture_biomass_calibration"
+          WHERE (("pasture_biomass_calibration"."method" = ANY (ARRAY['clip_and_weigh'::"text", 'plate_meter'::"text"])) AND ("pasture_biomass_calibration"."measured_kg_dm_ha" > (0)::numeric))
+          GROUP BY "pasture_biomass_calibration"."pasture_id", ((EXTRACT("year" FROM "pasture_biomass_calibration"."sampled_on"))::integer)
+        )
+ SELECT "pasture_id",
+    "round"(("avg"("kg_dm_ha") * 0.892179)) AS "lb_per_acre",
+    ("count"(*))::integer AS "seasons",
+    "max"("season") AS "last_season"
+   FROM "peak"
+  GROUP BY "pasture_id";
+
+
+ALTER VIEW "public"."pasture_measured_yield" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."pasture_measured_yield" IS 'Clip-and-weigh anchor per pasture: the peak sample of each season, averaged over seasons, as lb/ac. Replaces the Forage Yield Estimator row for that pasture. Empty until samples are taken.';
+
 
 
 CREATE OR REPLACE VIEW "public"."pasture_rotation_order" WITH ("security_invoker"='true') AS
@@ -18332,6 +18525,8 @@ CREATE TABLE IF NOT EXISTS "public"."ranches" (
     "heifer_sale_weight_lb" integer,
     "herd_colour" "text",
     "forage_zone_mm" numeric,
+    "grazing_count_waste" boolean DEFAULT true NOT NULL,
+    "forage_base_lb_ac" numeric,
     CONSTRAINT "ranches_calf_sale_month_check" CHECK ((("calf_sale_month" >= 1) AND ("calf_sale_month" <= 12))),
     CONSTRAINT "ranches_heifer_sale_weight_lb_check" CHECK ((("heifer_sale_weight_lb" >= 100) AND ("heifer_sale_weight_lb" <= 1500))),
     CONSTRAINT "ranches_steer_sale_weight_lb_check" CHECK ((("steer_sale_weight_lb" >= 100) AND ("steer_sale_weight_lb" <= 1500)))
@@ -18339,6 +18534,10 @@ CREATE TABLE IF NOT EXISTS "public"."ranches" (
 
 
 ALTER TABLE "public"."ranches" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."ranches"."grazing_utilization_rate" IS 'Share of standing forage the herd may take before the plants suffer. 0.5 = take half, leave half, the native-range rule. Slid lower in a dry year by droughtUtilization(); the trampling and fouling allowance is separate (grazing_count_waste).';
+
 
 
 COMMENT ON COLUMN "public"."ranches"."river_alert_cms" IS 'High-water / pull-pumps threshold in m³/s on this ranch''s home reach (Oldman near mouth for Home Ranch, South Saskatchewan at Medicine Hat for East Ranch). Null = no alert.';
@@ -18405,7 +18604,15 @@ COMMENT ON COLUMN "public"."ranches"."herd_colour" IS 'The herd''s colour as it 
 
 
 
-COMMENT ON COLUMN "public"."ranches"."forage_zone_mm" IS 'Annual precipitation zone (mm) the forage estimator''s row is read at. From the soil climatic zone: 300 Brown, 400 Dark Brown, 475 Black. Null = fall back to measured annual rainfall.';
+COMMENT ON COLUMN "public"."ranches"."forage_zone_mm" IS 'Annual precipitation zone (mm) the forage estimator''s row is read at. Set from measured 30-year annual rainfall where the grazing record shows the soil-zone figure is too low for the land (13 Nov 2026). Null = work it out from measured annual rainfall.';
+
+
+
+COMMENT ON COLUMN "public"."ranches"."grazing_count_waste" IS 'true: an animal-unit day draws 33.3 lb DM (Alberta''s 455 kg/AUM, intake plus trampling and fouling). false: 26 lb DM, intake only (Alberta Forage Manual / BCRC). Does not affect the utilization rate.';
+
+
+
+COMMENT ON COLUMN "public"."ranches"."forage_base_lb_ac" IS 'What a MEDIAN paddock on this ranch grows in an ordinary year, lb/acre dry matter. Multiplied by each paddock''s grass_quality_rel to get its own yield. Null = fall back to the Forage Yield Estimator''s Fair row at the ranch''s precipitation zone.';
 
 
 
@@ -19574,6 +19781,47 @@ COMMENT ON COLUMN "public"."sclerotinia_checklists"."answers" IS 'Point values c
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."scout_reports" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "company" "text" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "scouted_year" integer,
+    "field_id" "uuid",
+    "parcel" "text" NOT NULL,
+    "grower_name" "text",
+    "acres" numeric,
+    "rating" "text",
+    "passed" boolean,
+    "crop_this_year" "text",
+    "crop_history" "text"[],
+    "last_canola_year" integer,
+    "last_canola_tech" "text",
+    "scouting_method" "text",
+    "ps1_on" "date",
+    "ps1_stage" "text",
+    "ps1_notes" "text",
+    "ps2_required" boolean,
+    "ps2_on" "date",
+    "ps2_by" "text",
+    "ps2_notes" "text",
+    "vc_per_m2" numeric,
+    "tissue_on" "date",
+    "tissue_summary" "text",
+    "agronomist_note" "text",
+    "contact_name" "text",
+    "contact_phone" "text",
+    "counts" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "raw" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "source" "text",
+    "created_by" "uuid" DEFAULT "auth"."uid"(),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."scout_reports" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."scouting_notes" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "field_id" "uuid",
@@ -19804,6 +20052,20 @@ CREATE TABLE IF NOT EXISTS "public"."soil_sample_sites" (
 
 
 ALTER TABLE "public"."soil_sample_sites" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."soil_test_requests" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "notes" "text",
+    "created_by" "uuid" DEFAULT "auth"."uid"(),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."soil_test_requests" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."solar_daily" (
@@ -20803,6 +21065,11 @@ ALTER TABLE ONLY "public"."cattle_manifests"
 
 
 
+ALTER TABLE ONLY "public"."cattle_mineral"
+    ADD CONSTRAINT "cattle_mineral_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."cattle"
     ADD CONSTRAINT "cattle_pkey" PRIMARY KEY ("id");
 
@@ -20975,6 +21242,16 @@ ALTER TABLE ONLY "public"."contracts"
 
 ALTER TABLE ONLY "public"."cost_benchmarks"
     ADD CONSTRAINT "cost_benchmarks_pkey" PRIMARY KEY ("key");
+
+
+
+ALTER TABLE ONLY "public"."cow_calf_indicators"
+    ADD CONSTRAINT "cow_calf_indicators_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."cow_calf_indicators"
+    ADD CONSTRAINT "cow_calf_indicators_ranch_id_crop_year_key" UNIQUE ("ranch_id", "crop_year");
 
 
 
@@ -22428,6 +22705,16 @@ ALTER TABLE ONLY "public"."ranches"
 
 
 
+ALTER TABLE ONLY "public"."range_site_essr"
+    ADD CONSTRAINT "range_site_essr_pkey" PRIMARY KEY ("range_site");
+
+
+
+ALTER TABLE ONLY "public"."range_site_soils"
+    ADD CONSTRAINT "range_site_soils_pkey" PRIMARY KEY ("soil_code");
+
+
+
 ALTER TABLE ONLY "public"."reminder_log"
     ADD CONSTRAINT "reminder_log_pkey" PRIMARY KEY ("key");
 
@@ -22628,6 +22915,16 @@ ALTER TABLE ONLY "public"."sclerotinia_checklists"
 
 
 
+ALTER TABLE ONLY "public"."scout_reports"
+    ADD CONSTRAINT "scout_reports_company_crop_year_parcel_key" UNIQUE ("company", "crop_year", "parcel");
+
+
+
+ALTER TABLE ONLY "public"."scout_reports"
+    ADD CONSTRAINT "scout_reports_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."scouting_notes"
     ADD CONSTRAINT "scouting_notes_pkey" PRIMARY KEY ("id");
 
@@ -22720,6 +23017,16 @@ ALTER TABLE ONLY "public"."soil_test_reports"
 
 ALTER TABLE ONLY "public"."soil_test_reports"
     ADD CONSTRAINT "soil_test_reports_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."soil_test_requests"
+    ADD CONSTRAINT "soil_test_requests_field_id_crop_year_key" UNIQUE ("field_id", "crop_year");
+
+
+
+ALTER TABLE ONLY "public"."soil_test_requests"
+    ADD CONSTRAINT "soil_test_requests_pkey" PRIMARY KEY ("id");
 
 
 
@@ -23158,6 +23465,10 @@ CREATE INDEX "cattle_manifests_year_idx" ON "public"."cattle_manifests" USING "b
 
 
 
+CREATE INDEX "cattle_mineral_geom_idx" ON "public"."cattle_mineral" USING "gist" ("geom");
+
+
+
 CREATE INDEX "cattle_mob_idx" ON "public"."cattle" USING "btree" ("mob");
 
 
@@ -23290,7 +23601,19 @@ CREATE INDEX "contracts_year_idx" ON "public"."contracts" USING "btree" ("crop_y
 
 
 
+CREATE INDEX "cow_calf_indicators_year_idx" ON "public"."cow_calf_indicators" USING "btree" ("crop_year" DESC);
+
+
+
+CREATE UNIQUE INDEX "crop_acre_limits_crop_every_year" ON "public"."crop_acre_limits" USING "btree" ("crop_id") WHERE (("crop_year" IS NULL) AND ("crop_id" IS NOT NULL));
+
+
+
 CREATE UNIQUE INDEX "crop_acre_limits_crop_year" ON "public"."crop_acre_limits" USING "btree" ("crop_id", COALESCE("crop_year", 0));
+
+
+
+CREATE UNIQUE INDEX "crop_acre_limits_group_every_year" ON "public"."crop_acre_limits" USING "btree" ("crop_group") WHERE (("crop_year" IS NULL) AND ("crop_group" IS NOT NULL));
 
 
 
@@ -23926,6 +24249,10 @@ CREATE INDEX "research_chunks_fts_idx" ON "public"."research_paper_chunks" USING
 
 
 
+CREATE INDEX "research_chunks_kind_paper_idx" ON "public"."research_paper_chunks" USING "btree" ("kind", "paper_id");
+
+
+
 CREATE INDEX "research_chunks_paper_idx" ON "public"."research_paper_chunks" USING "btree" ("paper_id", "idx");
 
 
@@ -24074,6 +24401,10 @@ CREATE INDEX "sclerotinia_checklists_year_idx" ON "public"."sclerotinia_checklis
 
 
 
+CREATE INDEX "scout_reports_field_idx" ON "public"."scout_reports" USING "btree" ("field_id", "crop_year" DESC);
+
+
+
 CREATE INDEX "scouting_notes_field_year" ON "public"."scouting_notes" USING "btree" ("field_id", "crop_year");
 
 
@@ -24091,6 +24422,10 @@ CREATE INDEX "soil_sample_sites_field_idx" ON "public"."soil_sample_sites" USING
 
 
 CREATE INDEX "soil_test_reports_field_idx" ON "public"."soil_test_reports" USING "btree" ("field_id", "crop_year" DESC);
+
+
+
+CREATE INDEX "soil_test_requests_year_idx" ON "public"."soil_test_requests" USING "btree" ("crop_year");
 
 
 
@@ -24294,6 +24629,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."cattle_mineral" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."cattle_water" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -24363,6 +24702,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."contracts" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."cow_calf_indicators" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -24826,6 +25169,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."scout_reports" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."scouting_notes" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -24859,6 +25206,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."soil_test_reports" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."soil_test_requests" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -25711,6 +26062,11 @@ ALTER TABLE ONLY "public"."cattle_manifests"
 
 
 
+ALTER TABLE ONLY "public"."cattle_mineral"
+    ADD CONSTRAINT "cattle_mineral_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."cattle"
     ADD CONSTRAINT "cattle_ranch_id_fkey" FOREIGN KEY ("ranch_id") REFERENCES "public"."ranches"("id") ON DELETE SET NULL;
 
@@ -25933,6 +26289,16 @@ ALTER TABLE ONLY "public"."contracts"
 
 ALTER TABLE ONLY "public"."contracts"
     ADD CONSTRAINT "contracts_crop_id_fkey" FOREIGN KEY ("crop_id") REFERENCES "public"."crops"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."cow_calf_indicators"
+    ADD CONSTRAINT "cow_calf_indicators_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."cow_calf_indicators"
+    ADD CONSTRAINT "cow_calf_indicators_ranch_id_fkey" FOREIGN KEY ("ranch_id") REFERENCES "public"."ranches"("id") ON DELETE CASCADE;
 
 
 
@@ -27556,6 +27922,16 @@ ALTER TABLE ONLY "public"."sclerotinia_checklists"
 
 
 
+ALTER TABLE ONLY "public"."scout_reports"
+    ADD CONSTRAINT "scout_reports_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."scout_reports"
+    ADD CONSTRAINT "scout_reports_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."scouting_notes"
     ADD CONSTRAINT "scouting_notes_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
 
@@ -27633,6 +28009,16 @@ ALTER TABLE ONLY "public"."soil_test_assessments"
 
 ALTER TABLE ONLY "public"."soil_test_reports"
     ADD CONSTRAINT "soil_test_reports_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."soil_test_requests"
+    ADD CONSTRAINT "soil_test_requests_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."soil_test_requests"
+    ADD CONSTRAINT "soil_test_requests_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
 
 
 
@@ -28050,6 +28436,17 @@ ALTER TABLE "public"."cattle_manifest_lines" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."cattle_manifests" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."cattle_mineral" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "cattle_mineral_read" ON "public"."cattle_mineral" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+
+
+
+CREATE POLICY "cattle_mineral_write" ON "public"."cattle_mineral" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+
+
+
 ALTER TABLE "public"."cattle_sales" ENABLE ROW LEVEL SECURITY;
 
 
@@ -28182,6 +28579,17 @@ CREATE POLICY "cost_benchmarks_read" ON "public"."cost_benchmarks" FOR SELECT US
 
 
 CREATE POLICY "cost_benchmarks_write" ON "public"."cost_benchmarks" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+
+
+
+ALTER TABLE "public"."cow_calf_indicators" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "cow_calf_indicators_read" ON "public"."cow_calf_indicators" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+
+
+
+CREATE POLICY "cow_calf_indicators_write" ON "public"."cow_calf_indicators" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
 
 
 
@@ -31307,6 +31715,10 @@ CREATE POLICY "partner_scope" ON "public"."soil_test_reports" AS RESTRICTIVE TO 
 
 
 
+CREATE POLICY "partner_scope" ON "public"."soil_test_requests" AS RESTRICTIVE TO "authenticated" USING ((NOT ( SELECT "public"."is_partner"() AS "is_partner"))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
 CREATE POLICY "partner_scope" ON "public"."tissue_tests" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
     "partner_field_years"."crop_year"
    FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
@@ -31772,6 +32184,20 @@ CREATE POLICY "rain_readings_write" ON "public"."rain_gauge_readings" TO "authen
 
 
 ALTER TABLE "public"."ranches" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."range_site_essr" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "range_site_essr_read" ON "public"."range_site_essr" FOR SELECT TO "authenticated" USING (true);
+
+
+
+ALTER TABLE "public"."range_site_soils" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "range_site_soils_read" ON "public"."range_site_soils" FOR SELECT TO "authenticated" USING (true);
+
 
 
 CREATE POLICY "read_active" ON "public"."field_climate" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
@@ -32606,6 +33032,10 @@ CREATE POLICY "read_all" ON "public"."soil_test_reports" FOR SELECT TO "authenti
 
 
 
+CREATE POLICY "read_all" ON "public"."soil_test_requests" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+
+
+
 CREATE POLICY "read_all" ON "public"."soil_test_samples" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -32877,6 +33307,17 @@ ALTER TABLE "public"."scale_tickets" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."sclerotinia_checklists" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."scout_reports" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "scout_reports_select" ON "public"."scout_reports" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+
+
+
+CREATE POLICY "scout_reports_write" ON "public"."scout_reports" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+
+
+
 ALTER TABLE "public"."scouting_notes" ENABLE ROW LEVEL SECURITY;
 
 
@@ -32916,6 +33357,9 @@ ALTER TABLE "public"."soil_test_assessments" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."soil_test_reports" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."soil_test_requests" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."soil_test_samples" ENABLE ROW LEVEL SECURITY;
@@ -33174,6 +33618,10 @@ CREATE POLICY "write_all" ON "public"."tissue_tests" TO "authenticated" USING ((
 
 
 CREATE POLICY "write_all" ON "public"."truck_inspections" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "write_manager" ON "public"."soil_test_requests" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
 
 
 
@@ -41140,6 +41588,21 @@ GRANT ALL ON TABLE "public"."cattle_manifests" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."cattle_mineral" TO "authenticated";
+GRANT ALL ON TABLE "public"."cattle_mineral" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pastures" TO "authenticated";
+GRANT ALL ON TABLE "public"."pastures" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."cattle_mineral_points" TO "authenticated";
+GRANT ALL ON TABLE "public"."cattle_mineral_points" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."cattle_sales" TO "authenticated";
 GRANT ALL ON TABLE "public"."cattle_sales" TO "service_role";
 
@@ -41157,11 +41620,6 @@ GRANT ALL ON TABLE "public"."cattle_uploads" TO "service_role";
 
 GRANT ALL ON TABLE "public"."cattle_water" TO "authenticated";
 GRANT ALL ON TABLE "public"."cattle_water" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."pastures" TO "authenticated";
-GRANT ALL ON TABLE "public"."pastures" TO "service_role";
 
 
 
@@ -41297,6 +41755,11 @@ GRANT ALL ON TABLE "public"."contracts" TO "service_role";
 
 GRANT ALL ON TABLE "public"."cost_benchmarks" TO "authenticated";
 GRANT ALL ON TABLE "public"."cost_benchmarks" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."cow_calf_indicators" TO "authenticated";
+GRANT ALL ON TABLE "public"."cow_calf_indicators" TO "service_role";
 
 
 
@@ -42316,6 +42779,26 @@ GRANT ALL ON TABLE "public"."pasture_calibration_readiness" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."range_site_essr" TO "authenticated";
+GRANT ALL ON TABLE "public"."range_site_essr" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."range_site_soils" TO "authenticated";
+GRANT ALL ON TABLE "public"."range_site_soils" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pasture_range_sites" TO "authenticated";
+GRANT ALL ON TABLE "public"."pasture_range_sites" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pasture_essr" TO "authenticated";
+GRANT ALL ON TABLE "public"."pasture_essr" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."stubble_grazing" TO "authenticated";
 GRANT ALL ON TABLE "public"."stubble_grazing" TO "service_role";
 
@@ -42348,6 +42831,11 @@ GRANT ALL ON TABLE "public"."pasture_grass_rating" TO "service_role";
 
 GRANT ALL ON TABLE "public"."pasture_map" TO "authenticated";
 GRANT ALL ON TABLE "public"."pasture_map" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."pasture_measured_yield" TO "authenticated";
+GRANT ALL ON TABLE "public"."pasture_measured_yield" TO "service_role";
 
 
 
@@ -42796,6 +43284,11 @@ GRANT ALL ON TABLE "public"."sclerotinia_checklists" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."scout_reports" TO "authenticated";
+GRANT ALL ON TABLE "public"."scout_reports" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."scouting_notes" TO "authenticated";
 GRANT ALL ON TABLE "public"."scouting_notes" TO "service_role";
 
@@ -42848,6 +43341,11 @@ GRANT ALL ON TABLE "public"."soil_reports_needing_assessment" TO "service_role";
 
 GRANT ALL ON TABLE "public"."soil_sample_sites" TO "authenticated";
 GRANT ALL ON TABLE "public"."soil_sample_sites" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."soil_test_requests" TO "authenticated";
+GRANT ALL ON TABLE "public"."soil_test_requests" TO "service_role";
 
 
 

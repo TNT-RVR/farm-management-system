@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { computePasture, computeHerds, datesInYear, grassBalance, type HerdRow, type PastureRow } from './grazing'
 import { grassAumsFromAuDays } from './grazing-plan'
+import { auFromWeight } from './animal-units'
 
 const row = (over: Partial<HerdRow>): HerdRow =>
   ({ id: 'x', ranch_id: 'R', class_name: 'Cows', head_count: 100, avg_weight_lb: 1300, au_equivalent: 1.3, au_override: false, graze_start: null, graze_end: null, feed_class: 'cow', background_head: null, ...over }) as HerdRow
@@ -30,14 +31,14 @@ describe('a class with no grazing dates', () => {
   it('is counted over the ranch season, flagged as assumed', () => {
     // The season is the dated classes' span: the bulls' 15 May – 15 Dec.
     expect(by('h')).toMatchObject({ start: '2026-05-15', end: '2026-12-15', days: 215, assumedSeason: true })
-    expect(by('y').audsRequired).toBeCloseTo(67 * 0.85 * 215, 6)
+    expect(by('y').audsRequired).toBeCloseTo(67 * auFromWeight(850) * 215, 6)
     expect(by('c').days).toBe(215)
     expect(by('c').calfAuds).toBeGreaterThan(0)
   })
 
   it('keeps a class with its own dates unflagged, moved into this year', () => {
     expect(by('b')).toMatchObject({ start: '2026-05-15', end: '2026-12-15', days: 215, assumedSeason: false })
-    expect(by('b').audsRequired).toBeCloseTo(23 * 1.8 * 215, 6)
+    expect(by('b').audsRequired).toBeCloseTo(23 * auFromWeight(1800) * 215, 6)
   })
 
   it('leaves the calves at side in the cows’ row, not counted twice', () => {
@@ -49,10 +50,13 @@ describe('a class with no grazing dates', () => {
     expect(cows).toMatchObject({ start: '2026-05-01', end: '2026-11-16', days: 200, assumedSeason: true })
   })
 
-  it('no longer reads 8,901 AUDs for the whole herd (the bulls alone)', () => {
+  it('no longer reads the bulls’ AUDs as the whole herd’s', () => {
+    // The bug this pins: every undated class fell out of the total, so the
+    // ranch read as its 23 bulls. Their own figure was 8,901 AUDs while AU was
+    // weight / 1,000; on the metabolic scale the same 23 bulls are 7,685.
     const need = calc.reduce((a, h) => a + h.audsRequired, 0)
-    expect(Math.round(by('b').audsRequired)).toBe(8901)
-    expect(need).toBeGreaterThan(8901 * 10)
+    expect(Math.round(by('b').audsRequired)).toBe(7685)
+    expect(need).toBeGreaterThan(7685 * 10)
   })
 })
 

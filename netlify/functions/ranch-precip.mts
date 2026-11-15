@@ -7,7 +7,7 @@
 // With `normals`, also the same season in each of the last N whole years, so
 // this year can be read against a normal one, and the long-term ANNUAL average
 // as `annual_normal_mm` — the figure that picks the forage estimator's row.
-import { ranchNormals, seasonToDate } from '../shared/ranch-rain.ts'
+import { carryoverMm, ranchNormals, seasonToDate } from '../shared/ranch-rain.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
 import { farmToday } from '../shared/dates.ts'
 
@@ -33,7 +33,7 @@ export default async (req: Request) => {
     const series = await seasonToDate(lat, lon, start, end)
     const total = series.reduce((s, p) => s + p.mm, 0)
     const through = series.at(-1)?.t ?? end
-    const n = Math.min(10, Math.max(0, Number(u.searchParams.get('normals') ?? 0)))
+    const n = Math.min(30, Math.max(0, Number(u.searchParams.get('normals') ?? 0)))
     const normals = n
       ? await ranchNormals(lat, lon, {
           thisYear: Number(start.slice(0, 4)),
@@ -42,7 +42,20 @@ export default async (req: Request) => {
           n,
           cutoffMd: through.slice(5),
         })
-      : { season: null, annual_mm: null }
+      : { season: null, annual_mm: null, carryover_mm: null }
+    // What was banked before the season: the previous Sept through March. It
+    // carries a third of the weight in the forage response, and none of it is
+    // in `series`, which starts at the season's first day.
+    const seasonYear = Number(start.slice(0, 4))
+    let carryover: number | null = null
+    if (n) {
+      try {
+        const before = await seasonToDate(lat, lon, `${seasonYear - 1}-09-01`, `${seasonYear}-03-31`)
+        carryover = carryoverMm(before, seasonYear)
+      } catch {
+        carryover = null
+      }
+    }
     return json({
       total_mm: Math.round(total * 10) / 10,
       days: series.length,
@@ -51,6 +64,8 @@ export default async (req: Request) => {
       normal: normals.season,
       // The long-term annual average: the figure that picks the forage row.
       annual_normal_mm: normals.annual_mm,
+      carryover_mm: carryover,
+      normal_carryover_mm: normals.carryover_mm,
     })
   } catch (e) {
     return json({ error: (e as Error).message }, 500)

@@ -1,4 +1,5 @@
 import { annualNormalMm, seasonNormals, type DailyRain, type SeasonNormal } from '../../src/lib/rain-normals.ts'
+import { CARRYOVER_MONTHS } from '../../src/lib/forage-response.ts'
 
 // Growing-season rain at a ranch, from Open-Meteo: this season to date, and the
 // same season over the last N whole years. Shared by /api/ranch-precip (the
@@ -35,6 +36,26 @@ export async function seasonToDate(lat: string | number, lon: string | number, s
     .map(([t, mm]) => ({ t, mm: Math.round((mm ?? 0) * 10) / 10 }))
 }
 
+/**
+ * Rain banked before a season: the previous September through March.
+ *
+ * Stored soil moisture is what the first flush of spring growth is drawn on,
+ * and it carries about a third of the weight in the forage response. `year` is
+ * the SEASON's year, so 2026 sums Sept-Dec 2025 plus Jan-Mar 2026.
+ */
+export function carryoverMm(daily: DailyRain[], year: number): number {
+  let n = 0
+  for (const d of daily) {
+    const y = Number(d.t.slice(0, 4))
+    const m = Number(d.t.slice(5, 7))
+    if (!CARRYOVER_MONTHS.includes(m)) continue
+    // Sept-Dec belong to the season of the FOLLOWING year.
+    if ((m >= 9 ? y + 1 : y) !== year) continue
+    n += d.mm ?? 0
+  }
+  return Math.round(n * 10) / 10
+}
+
 /** What is normal here: the growing season, and the year as a whole. */
 export type RanchNormals = {
   /** The same season in each of the last `n` whole years. */
@@ -44,6 +65,11 @@ export type RanchNormals = {
    * Estimator's row. See annualNormalMm for why the row is an annual figure.
    */
   annual_mm: number | null
+  /**
+   * The average Sept-March carryover before those same seasons. The earliest
+   * year is left out: its own autumn is before the archive window.
+   */
+  carryover_mm: number | null
 }
 
 /**
@@ -72,14 +98,16 @@ export async function ranchNormals(
         `&start_date=${from}&end_date=${to}&daily=precipitation_sum&timezone=auto`,
       { signal: AbortSignal.timeout(12_000) },
     )
-    if (!res.ok) return { season: null, annual_mm: null }
+    if (!res.ok) return { season: null, annual_mm: null, carryover_mm: null }
     const d = (await res.json()).daily as { time?: string[]; precipitation_sum?: (number | null)[] } | undefined
     const daily: DailyRain[] = (d?.time ?? []).map((t, i) => ({ t, mm: d?.precipitation_sum?.[i] ?? 0 }))
+    const carry = years.slice(1).map((y) => carryoverMm(daily, y))
     return {
       season: seasonNormals(daily, { startMonth, endMonth, years, cutoffMd }),
       annual_mm: annualNormalMm(daily, years),
+      carryover_mm: carry.length ? Math.round((carry.reduce((a, b) => a + b, 0) / carry.length) * 10) / 10 : null,
     }
   } catch {
-    return { season: null, annual_mm: null }
+    return { season: null, annual_mm: null, carryover_mm: null }
   }
 }

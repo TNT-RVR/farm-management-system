@@ -28,6 +28,7 @@ import type { CattleHelpKey } from '@/lib/cattle-help'
 import { CattleInfo } from './CattleInfo'
 import { money, n0 } from '@/lib/format'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { DEFAULT_UTILIZATION } from '@/lib/forage-response'
 
 type Quote = { lo: number; hi: number; perCwt: number }
 
@@ -224,10 +225,11 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
     // This season, the same way the Grazing tab reads it: its projected rain,
     // with a paddock's own measured growth in place of it where there is one.
     const rain = grazingRain(ranch, measured)
-    const util = ranch.grazing_utilization_rate ?? 0.8
+    const util = ranch.grazing_utilization_rate ?? DEFAULT_UTILIZATION
     const factorFor = new Map<string, number>()
     for (const f of factors ?? []) if (f.factor != null) factorFor.set(f.grazing_pasture_id, f.factor)
-    const supply = computePastures(pastures, rain, util, fieldCtx.ctx(), factorFor).reduce((a, p) => a + p.auds, 0)
+    const supply = computePastures(pastures, rain, util, fieldCtx.ctx(), factorFor, null, ranch.grazing_count_waste ?? true)
+      .reduce((a, p) => a + p.auds, 0)
     const calving = feedPlan ? { month: feedPlan.calving_month, day: feedPlan.calving_day } : null
     const b = grassBalance(supply, computeHerds(herd, calving, ranch.weaning_date))
     return b.perCow != null && b.capacityCows != null ? { capacity: b.capacityCows, supply, others: b.others, perCow: b.perCow, days: b.cowDays } : null

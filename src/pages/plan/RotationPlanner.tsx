@@ -70,7 +70,8 @@ import { cn } from '@/lib/utils'
 import { RotationAdvisor } from '@/pages/plan/RotationAdvisor'
 import { useRotationContext } from '@/lib/rotation-context'
 import { usePartnerAccess, useRotationFields } from '@/lib/partner-view'
-import { carryover, cropKey, groupOf, LIMIT_GROUPS, scoutHits } from '@/lib/rotation-engine'
+import { carryover, cropKey, groupOf, LIMIT_GROUPS, scoutHits, seedScoutGate } from '@/lib/rotation-engine'
+import { seedCompanyOf } from '@/lib/scout-reports'
 import { volunteerConflicts } from '@/lib/canola-trait'
 import {
   EMPTY_SOIL_READING,
@@ -691,6 +692,16 @@ export function RotationPlanner({
             : { kind: 'caution', message: `🧪 ${h.message}`, ...label },
         )
       }
+      // The seed company's own prescout: their grade decides whether they will
+      // put the crop here at all, so a cell says it the same way a
+      // recommendation does.
+      const seedGate = seedScoutGate(
+        { name, key: cropKey(name), seedCompany: seedCompanyOf(name) },
+        ctx.seedScoutsByField.get(fieldId) ?? [],
+        y,
+      )
+      for (const m of seedGate.blocked) v.push({ kind: 'succession', message: '🌱 ' + m })
+      for (const m of seedGate.cautions) v.push({ kind: 'caution', message: '🌱 ' + m })
       // Seed canola on a field whose recent canola had the same herbicide trait.
       const trait = ctx.traitOf(cid)
       if (trait) {

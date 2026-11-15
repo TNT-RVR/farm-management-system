@@ -10,19 +10,66 @@ export type PastureRow = Database['public']['Tables']['grazing_pastures']['Row']
 
 // ---- constants (from the spreadsheet) ----
 export const ACRES_PER_HECTARE = 2.47105
-export const AU_LBS_PER_DAY = 26 // 1 Animal Unit eats 26 lbs of feed/day
-export const AUM_LBS = AU_LBS_PER_DAY * 30 // 780 lbs = one Animal Unit Month
+
+/**
+ * What one animal unit takes out of a pasture in a day — in two parts, because
+ * two conventions are in circulation and they are 22% apart.
+ *
+ *   INTAKE, 26 lb DM a day (780 lb a month): 2.6% of a 1,000 lb cow's body
+ *   weight. What goes in her mouth. The figure behind the Alberta Forage
+ *   Manual's tables and the BCRC's carrying-capacity calculator.
+ *
+ *   TOTAL, 33.3 lb DM a day (1,000 lb a month = 455 kg): Alberta's
+ *   public-lands AUM. Intake plus the grass she tramples, beds on and fouls.
+ *   Every Ecologically Sustainable Stocking Rate in the range plant community
+ *   guides is denominated in this one.
+ *
+ * Which to count is the ranch's call (ranches.grazing_count_waste, toggled on
+ * the Grazing tab). It is a real 220 lb an animal-unit month: the difference
+ * between a paddock lasting 40 days and lasting 31.
+ *
+ * Not to be confused with the utilization rate, which answers a different
+ * question — how much of the standing grass the herd may take before the
+ * plants suffer. This is how much forage one grazing day draws out of what it
+ * was allowed to take. Multiplying the two is correct; swapping one for the
+ * other is not.
+ */
+export const AU_INTAKE_LB_PER_DAY = 26
+/** Alberta's AUM: 455 kg of dry matter, intake plus waste. */
+export const AUM_TOTAL_LB = 1000
+export const AU_TOTAL_LB_PER_DAY = AUM_TOTAL_LB / 30
+/** The trampled, bedded-on and fouled share: ~7.3 lb a day, 22% of the total. */
+export const AU_WASTE_LB_PER_DAY = AU_TOTAL_LB_PER_DAY - AU_INTAKE_LB_PER_DAY
+
+/** lb DM one animal-unit day draws out of a pasture, per the ranch's setting. */
+export const lbPerAuDay = (countWaste: boolean): number =>
+  countWaste ? AU_TOTAL_LB_PER_DAY : AU_INTAKE_LB_PER_DAY
+
 /**
  * Pounds of grazeable forage read as animal-unit days: the only figure that
  * says how long feed lasts. An acre count does not — 74 acres of corn stubble
  * and 74 acres of canola stubble are not the same feed.
+ *
+ * `perDay` is deliberately required. Both conventions are defensible and a
+ * silent default is how the app came to mix them in the first place.
  */
-export const audsFromLb = (lb: number) => lb / AU_LBS_PER_DAY
+export const audsFromLb = (lb: number, perDay: number) => lb / perDay
 export const GRASS_QUALITIES = ['Excellent', 'Good', 'Fair', 'Poor'] as const
 export type GrassQuality = (typeof GRASS_QUALITIES)[number]
 
 /**
  * Forage Yield Estimator — lbs/acre by precipitation zone × grass quality.
+ *
+ * THE FALLBACK, not the model. Sam, 12 Nov 2026: the carrying-capacity
+ * tables are "just trying to be a real rough guide for a regular producer...
+ * not taking into account the evaporation or the rain value in April versus
+ * September". Both halves of that are now handled elsewhere:
+ *
+ *   - How a YEAR moves is forage-response.ts — the evaporation threshold, the
+ *     April-June weighting, the nitrogen ceiling. The table never sees it.
+ *   - How much a pasture grows in a NORMAL year is this table only while
+ *     nothing has measured the pasture itself. A clip-and-weigh takes over the
+ *     moment there is one: see normalYearYield and pasture_measured_yield.
  *
  * Alberta Forage Manual (2nd ed.) p.205, Table 36, the lb/ac column, adapted
  * from Wroe et al., Guide to Range Condition and Stocking Rates for Alberta
@@ -35,7 +82,7 @@ export type GrassQuality = (typeof GRASS_QUALITIES)[number]
  * climatic zone and 400 mm for the Black, straight off the soil map.
  *
  * The app fed this measured April–October rainfall until 12 Nov 2026, which is
- * a different quantity: at Home Ranch the 10-year growing-season normal is
+ * a different quantity: at Home Ranch the growing-season normal is
  * 270 mm against a 382 mm annual normal — one row apart, 414 against 690 lb/ac
  * on Good grass. It now gets the annual figure, and how this season is going
  * scales the row rather than moving to another one. See computePastures.
@@ -92,6 +139,75 @@ export function forageYieldPerAcre(precipMm: number, quality: string): number {
   return pts[pts.length - 1].y
 }
 
+/** 1 kg/ha of dry matter in lb/ac. */
+export const KG_HA_TO_LB_AC = 0.892179
+
+/**
+ * Where a pasture's normal-year yield came from, best evidence first.
+ *
+ *   measured — somebody cut and weighed this pasture.
+ *   grazed   — the level, lifted to meet what the cattle actually took off
+ *              this ranch (grazed-yield.ts).
+ *   rated    — the ranch's own level times this paddock's measured cover
+ *              against its ranch's median paddock (ratedYieldPerAcre).
+ *   zone     — the estimator's table alone, a rough provincial guide.
+ */
+export type YieldSource = 'measured' | 'grazed' | 'rated' | 'zone'
+
+/** A pasture's normal-year yield and what it rests on. */
+export type PastureAnchor = { lbPerAcre: number; source: Exclude<YieldSource, 'zone'> }
+
+/**
+ * What this pasture grows in a NORMAL year, and on what evidence.
+ *
+ * A clip-and-weigh from this pasture beats a provincial table about this
+ * pasture, every time: the table is a rough guide for a regular producer and
+ * cannot know that this paddock is thin on a side hill or heavy in a draw.
+ * Where no one has cut and weighed anything, the table's row stands, which
+ * today is everywhere — pasture_measured_yield is empty until the first
+ * samples are taken.
+ *
+ * What this never does is mix the two. Half a measurement and half a table is
+ * neither, and nobody could say afterwards which number they were looking at.
+ */
+export function normalYearYield(
+  precipMm: number,
+  quality: string,
+  anchor?: PastureAnchor | null,
+): { lbPerAcre: number; source: YieldSource } {
+  if (anchor && Number.isFinite(anchor.lbPerAcre) && anchor.lbPerAcre > 0) return anchor
+  return { lbPerAcre: forageYieldPerAcre(precipMm, quality), source: 'zone' }
+}
+
+/**
+ * A paddock's normal-year yield from the ranch's own level and the paddock's
+ * own measured cover.
+ *
+ * `baseLbAc` is what a MEDIAN paddock on this ranch grows in an ordinary year
+ * (ranches.forage_base_lb_ac). `rel` is grass_quality_rel: that paddock's
+ * canopy cover over its ranch's median paddock, which is what the satellite
+ * rating actually measures.
+ *
+ * Keeping those apart is the whole point. The rating is relative and always
+ * was — its median paddock is 1.00 on any ranch, good or poor — so handing it
+ * to a table of absolute pounds threw the ranch's level away and replaced it
+ * with a provincial average. Here the rating decides only the spread between
+ * paddocks, and the level is a number somebody can see and argue with.
+ *
+ * It also ends the four-word bucketing: a paddock at 0.79 of its ranch's
+ * median is read at 0.79, not rounded down to "Poor" and a figure 19% under
+ * its own measurement.
+ *
+ * Null when the paddock has no measured cover yet, so the caller falls back to
+ * the table rather than inventing one.
+ */
+export function ratedYieldPerAcre(baseLbAc: number, rel: number | string | null | undefined): number | null {
+  const r = typeof rel === 'string' ? Number(rel) : rel
+  if (r == null || !Number.isFinite(r) || r <= 0) return null
+  if (!Number.isFinite(baseLbAc) || baseLbAc <= 0) return null
+  return baseLbAc * r
+}
+
 /** lbs/acre on irrigated grass of this quality. */
 export const irrigatedYieldPerAcre = (quality: string) => FORAGE_YIELD_IRRIGATION[qualityOf(quality)]
 
@@ -102,6 +218,8 @@ export type PastureCalc = PastureRow & {
   totalGrazeableAc: number
   /** Dryland (native) grass, lbs/acre at this rain. */
   foragePerAcre: number
+  /** Whether the normal-year figure came off this pasture's own samples or the table. */
+  yieldSource: YieldSource
   /** Irrigated grass, lbs/acre. */
   irrigatedForagePerAcre: number
   /** Average over all the grazeable acres, after utilisation. */
@@ -113,6 +231,14 @@ export type PastureCalc = PastureRow & {
    */
   seasonFactor: number
   totalLbs: number
+  /**
+   * lb DM one animal-unit day drew out of the paddock to give the AUD and AUM
+   * columns below: 33.3 counting trampling and fouling, 26 for intake alone.
+   * On the row so a screen can say which convention its figure is in.
+   */
+  lbPerAuDay: number
+  /** Whether lbPerAuDay includes the wasted grass (ranches.grazing_count_waste). */
+  countsWaste: boolean
   aums: number
   auds: number
   /**
@@ -156,7 +282,7 @@ export type PastureFieldContext = {
 
 /** The rainfall figures from grazingRain that costing a season needs. */
 export type SeasonRain = {
-  /** The 10-year average season total, or the typed figure. */
+  /** The long-term average season total, or the typed figure. */
   forecastMm: number
   /** This year so far plus a normal rest of season. */
   projectedMm: number | null
@@ -199,11 +325,15 @@ export function computePastures(
   utilization: number,
   ctx?: PastureFieldContext | null,
   factors?: Map<string, number> | null,
+  anchors?: Map<string, PastureAnchor> | null,
+  countWaste: boolean = true,
 ): PastureCalc[] {
   // No archive, no zone: fall back to the season figures, as it read before.
   const zone = rain.zoneMm ?? rain.projectedMm ?? rain.forecastMm
   const fromRain = rain.rainFactor ?? 1
-  return pastures.map((p) => computePasture(p, zone, utilization, ctx, factors?.get(p.id) ?? fromRain))
+  return pastures.map((p) =>
+    computePasture(p, zone, utilization, ctx, factors?.get(p.id) ?? fromRain, anchors?.get(p.id) ?? null, countWaste),
+  )
 }
 
 /**
@@ -234,11 +364,19 @@ export function computePasture(
   utilization: number,
   ctx?: PastureFieldContext | null,
   seasonFactor?: number | null,
+  anchor?: PastureAnchor | null,
+  /**
+   * Whether a grazing day draws the trampled and fouled grass as well as the
+   * eaten grass (ranches.grazing_count_waste). It changes the AUD and AUM
+   * columns only — the pounds standing in the paddock are the same either way.
+   */
+  countWaste: boolean = true,
 ): PastureCalc {
   const hectares = p.km2 * 100
   const acres = hectares * ACRES_PER_HECTARE
   const factor = seasonFactor != null && Number.isFinite(seasonFactor) && seasonFactor > 0 ? seasonFactor : 1
-  const foragePerAcre = forageYieldPerAcre(precipMm, p.grass_quality) * factor
+  const normal = normalYearYield(precipMm, p.grass_quality, anchor)
+  const foragePerAcre = normal.lbPerAcre * factor
   // Irrigated grass grows to the irrigated yield, not the dryland rain band.
   const irrigatedForagePerAcre = irrigatedYieldPerAcre(p.grass_quality)
   const year = ctx ? Number(ctx.window.from.slice(0, 4)) : null
@@ -279,6 +417,27 @@ export function computePasture(
   const totalLbs = nativeLbs + fieldLbs
   const totalGrazeableAc = fieldGrazeAc + nativeGrassAc
   const foragePerAcreUtil = totalGrazeableAc > 0 ? totalLbs / totalGrazeableAc : foragePerAcre * utilization
+  // The pounds standing in the paddock do not depend on this; only how many
+  // grazing days they come to does.
+  //
+  // The waste allowance is charged on grass the herd will tread through, and
+  // NOT on pounds that have already had trampling taken off upstream. Which of
+  // those the field pounds are depends on where they came from:
+  //
+  //   linked (field-residue.ts) — its figures are "grazeable dry matter: what
+  //     cattle actually take, trampling [counted]", so the loss is already
+  //     gone. Charging Alberta's AUM waste share as well would take it twice.
+  //   not linked — the hand-typed irrigated acres, grown at the estimator's
+  //     irrigated yield. That is standing GRASS with nothing taken off it, so
+  //     it is charged exactly like the native grass beside it.
+  //
+  // So on a paddock with mapped fields the toggle moves the grass AUDs and
+  // leaves the crop-field AUDs alone; on a hand-typed one it moves both.
+  const linked = Boolean(ctx && anyMapped)
+  const perDay = lbPerAuDay(countWaste)
+  const nativeAuds = audsFromLb(nativeLbs, perDay)
+  const fieldAuds = audsFromLb(fieldLbs, linked ? AU_INTAKE_LB_PER_DAY : perDay)
+  const auds = nativeAuds + fieldAuds
   return {
     ...p,
     hectares,
@@ -286,19 +445,22 @@ export function computePasture(
     nativeGrassAc,
     totalGrazeableAc,
     foragePerAcre,
+    yieldSource: normal.source,
     irrigatedForagePerAcre,
     foragePerAcreUtil,
     seasonFactor: factor,
     totalLbs,
-    aums: totalLbs / AUM_LBS,
-    auds: totalLbs / AU_LBS_PER_DAY,
-    fieldsLinked: Boolean(ctx && anyMapped),
+    lbPerAuDay: perDay,
+    countsWaste: countWaste,
+    aums: auds / 30,
+    auds,
+    fieldsLinked: linked,
     fields,
     fieldAc,
     nativeLbs,
     fieldLbs,
-    nativeAuds: audsFromLb(nativeLbs),
-    fieldAuds: audsFromLb(fieldLbs),
+    nativeAuds,
+    fieldAuds,
     window: ctx && anyMapped ? ctx.window : null,
   }
 }

@@ -32,6 +32,8 @@ export type AssumptionRanch = {
   longitude: number | string | null
   precip_auto: boolean | null
   grazing_utilization_rate: number | string | null
+  /** Whether a grazing day draws the trampled share too (33.3 lb vs 26 lb). */
+  grazing_count_waste?: boolean | null
   weaning_date: string | null
   calf_sale_month: number | null
   steer_sale_weight_lb: number | null
@@ -169,7 +171,12 @@ export async function loadAssumptionData(sb: SupabaseClient, year = new Date().g
   }
   const [ranches, herd, costRows, inventory, baleDefaults, tests, grazingPastures, mapPastures, rations, feedTypes] = await Promise.all([
     pick<AssumptionData['ranches']>(
-      sb.from('ranches').select('id, name, latitude, longitude, precip_auto, grazing_utilization_rate, weaning_date, calf_sale_month, steer_sale_weight_lb, heifer_sale_weight_lb').order('sort_order'),
+      sb
+        .from('ranches')
+        .select(
+          'id, name, latitude, longitude, precip_auto, grazing_utilization_rate, grazing_count_waste, weaning_date, calf_sale_month, steer_sale_weight_lb, heifer_sale_weight_lb',
+        )
+        .order('sort_order'),
     ),
     pick<AssumptionData['herd']>(sb.from('herd_counts').select('id, ranch_id, class_name, head_count, bcs, ration_note, notes, graze_start, graze_end, feed_class, background_head').order('sort_order')),
     pick<AssumptionData['costs']>(

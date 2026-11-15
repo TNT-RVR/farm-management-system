@@ -82,7 +82,7 @@ export function chuShift(monthly: { month: string; tempAnomC: number }[], planYe
 
 // ---------------------------------------------------------------- fetchers
 
-const UA = { 'user-agent': 'RVR-Management/1.0 (farm rotation planner)' }
+const UA = { 'user-agent': 'Farm-Management-System/1.0 (farm rotation planner)' }
 
 async function json<T>(url: string): Promise<T> {
   // Open-Meteo's archive answers 429 to twenty-year pulls made back to back;

@@ -19,6 +19,8 @@ export const FERTILIZER_VIEWS = {
       { key: 'map', label: 'Sampling map', old: 'Sampling Map' },
       { key: 'history', label: 'Nutrient history', old: 'Nutrient History' },
       { key: 'tissue', label: 'Tissue tests', old: 'Tissue Tests' },
+      // The fields ticked for the lab, by crop year (13 Nov 2026).
+      { key: 'request', label: 'To test', old: 'To Test' },
     ],
   },
   plan: {

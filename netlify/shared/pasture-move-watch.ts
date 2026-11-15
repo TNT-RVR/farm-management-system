@@ -6,6 +6,7 @@ import { calvesAtSideAU, median, mobClass, moveVerdict, type Look, type MoveVerd
 import { pastureLabel } from '../../src/lib/pastureLabel.ts'
 import { auFor as classAu } from '../../src/lib/animal-units.ts'
 import { RAIN_NORMAL_YEARS, rainFactor, rainOutlook } from '../../src/lib/rain-normals.ts'
+import { DEFAULT_UTILIZATION, droughtUtilization } from '../../src/lib/forage-response.ts'
 import { ranchNormals, seasonToDate } from './ranch-rain.ts'
 import { farmTz } from '../../src/lib/farm-context.ts'
 
@@ -33,6 +34,7 @@ type Ranch = {
   precip_start_month: number
   precip_end_month: number
   grazing_utilization_rate: number | null
+  grazing_count_waste: boolean | null
   grazing_precip_mm: number
   forage_zone_mm: number | null
   move_alerts_on: boolean
@@ -146,7 +148,8 @@ export async function runPastureMoveWatch(sb: SupabaseClient, today = new Date()
   }
   const rested: Look[] = [...restedByDate.entries()].map(([on, xs]) => ({ on, fi: median(xs)! }))
 
-  // Rain per ranch: this season to date against the last ten (the 10-year average, Sam 5 Oct 2026).
+  // Rain per ranch: this season to date against the last RAIN_NORMAL_YEARS
+  // whole seasons (thirty, Sam 12 Nov 2026).
   const rainBy = new Map<
     string,
     { toDate: number; pct: number | null; projected: number; normalSeason: number; normalToDate: number; annual: number | null } | null
@@ -232,8 +235,12 @@ export async function runPastureMoveWatch(sb: SupabaseClient, today = new Date()
     const mobs = evs.map((e) => mobOf(e.notes))
     const ranch = ranches.find((r) => mobs.some((m) => m.toLowerCase().startsWith(r.name.toLowerCase()))) ?? ranches[0]
     if (!ranch) continue
-    const util = n(ranch.grazing_utilization_rate) ?? 0.8
     const rain = rainBy.get(ranch.id) ?? null
+    // The same drought rule as the Grazing tab: in a dry year the rate slides
+    // toward two thirds of what the ranch set, because grazing a stressed
+    // plant to the usual mark costs next year too. See droughtUtilization.
+    const setRate = n(ranch.grazing_utilization_rate) ?? DEFAULT_UTILIZATION
+    const util = droughtUtilization(setRate, rain ? rainFactor(rain.projected, rain.normalSeason) : 1)
 
     // The Grazing tab's row for this paddock, matched by letter, for grass
     // quality and grazeable acres (river, yard and irrigated corners out).
@@ -287,6 +294,10 @@ export async function runPastureMoveWatch(sb: SupabaseClient, today = new Date()
       rainFactor: rain ? rainFactor(rain.projected, rain.normalSeason) : 1,
       pctOfNormal: rain?.pct ?? null,
       animalUnits,
+      // The ranch's pound figure for a grazing day, so the alert empties a
+      // paddock on the same pounds the Grazing tab filled it with. Counting
+      // intake alone here would hold the herd 22% longer than the screen says.
+      countWaste: ranch.grazing_count_waste ?? true,
       turnedInOn,
       today,
       looks: looksBy.get(pid) ?? [],

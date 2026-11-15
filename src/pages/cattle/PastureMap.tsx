@@ -3,6 +3,7 @@ import maplibregl, { type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl'
 import { addPinImages, PIN_ICON_EXPR, withPins } from '@/lib/map-pins'
 import type { Feature, FeatureCollection, Point } from 'geojson'
 import {
+  Box,
   ChevronLeft,
   ExternalLink,
   ChevronRight,
@@ -57,6 +58,8 @@ import {
 } from '@/lib/cattle-water'
 import { useGrazeableAcres, useUnderutilisation } from '@/lib/grazing-forage'
 import { WaterLayer } from '@/pages/cattle/WaterLayer'
+import { MineralLayer } from '@/pages/cattle/MineralLayer'
+import { useCattleMineral } from '@/lib/cattle-mineral'
 import { GatesPanel } from '@/pages/cattle/GatesPanel'
 import { TroughSuggest } from '@/pages/cattle/TroughSuggest'
 import { usePastureGates } from '@/lib/grazing-plan-data'
@@ -103,7 +106,7 @@ const HERD_LABEL = 'herd-label'
  * The layer rail, top to bottom: the shading first because it is the one most
  * visits change, then the overlays, then the My Map import last.
  */
-type RailKey = 'shading' | 'water' | 'gates' | 'grid' | 'weeds' | 'mymap'
+type RailKey = 'shading' | 'water' | 'mineral' | 'gates' | 'grid' | 'weeds' | 'mymap'
 type RailItem = {
   key: RailKey
   label: string
@@ -277,6 +280,11 @@ export function PastureMap({
   const [showWater, setShowWater] = useState(() => readStored('cattle_showWater') !== '0')
   const [showReach, setShowReach] = useState(() => readStored('cattle_showReach') === '1')
   const [addingTrough, setAddingTrough] = useState(false)
+  // Mineral tubs: shown by default, since a pin you placed yourself and
+  // cannot see is worse than one more thing on the map.
+  const [showMineral, setShowMineral] = useState(() => readStored('cattle_showMineral') !== '0')
+  const [addingTub, setAddingTub] = useState(false)
+  const { data: tubs } = useCattleMineral()
   const addingRef = useRef(false)
   useEffect(() => {
     addingRef.current = addingTrough
@@ -833,6 +841,13 @@ export function PastureMap({
       }`,
     },
     {
+      key: 'mineral',
+      label: 'Mineral',
+      Icon: Box,
+      on: showMineral && (tubs?.length ?? 0) > 0,
+      hint: `Mineral — ${tubs?.length ? (showMineral ? `${tubs.length} tub${tubs.length === 1 ? '' : 's'}` : 'hidden') : 'none placed'}`,
+    },
+    {
       key: 'grid',
       label: 'Survey grid',
       Icon: Grid3x3,
@@ -1189,6 +1204,46 @@ export function PastureMap({
 
               {openRail === 'gates' && <GatesPanel ranchId={ranchId} canEdit={isManager} />}
 
+              {openRail === 'mineral' && (
+                <>
+                  <label className="flex items-center gap-2 text-xs text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={showMineral}
+                      onChange={(e) => {
+                        setShowMineral(e.target.checked)
+                        writeStored('cattle_showMineral', e.target.checked ? '1' : '0')
+                      }}
+                      className="h-3.5 w-3.5"
+                    />
+                    Mineral and salt tubs
+                  </label>
+                  <p className="mt-1 text-[11px] text-gray-500">
+                    {tubs?.length
+                      ? `${tubs.length} placed. Drag a pin to move it; tap one to rename it or take it away.`
+                      : 'Where the tubs are, so the next one goes where the cattle are not.'}
+                  </p>
+                  {isManager && (
+                    <button
+                      onClick={() => {
+                        setAddingTub((v) => !v)
+                        if (!showMineral) {
+                          setShowMineral(true)
+                          writeStored('cattle_showMineral', '1')
+                        }
+                      }}
+                      className={cn(
+                        'mt-2 w-full rounded-md border px-2 py-1 text-[11px] font-medium',
+                        addingTub
+                          ? 'border-amber-500 bg-amber-50 text-amber-800'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50',
+                      )}
+                    >
+                      {addingTub ? 'Tap the map to place it…' : 'Drop a mineral tub'}
+                    </button>
+                  )}
+                </>
+              )}
               {openRail === 'grid' && (
                 <>
                   <label className="flex items-center gap-2 text-xs text-gray-700">
@@ -1559,6 +1614,18 @@ export function PastureMap({
           }}
           onPinSelected={() => setSelectedId(null)}
           beforeId={LINE}
+        />
+
+        {/* Inside the map box for the same reason as the water: the panel it
+            draws when a pin is tapped is positioned `absolute`. */}
+        <MineralLayer
+          map={mapInstance}
+          mapReady={ready}
+          isManager={isManager}
+          showPins={showMineral}
+          adding={addingTub}
+          onAddingChange={setAddingTub}
+          onPinSelected={() => setSelectedId(null)}
         />
       </div>
 

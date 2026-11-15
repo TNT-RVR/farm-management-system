@@ -28,6 +28,7 @@ import { useFarmSettings } from './farm-setup'
 import { bySeries, useMarketPrices, useMarketSeries } from './markets'
 import { headlinePrice, isAuctionSeries, parseSeriesCode, type AuctionQuote } from './auction-markets'
 import { calfCrop, costPerCowWintered, wholeWinter, winterFeedCost, LB_PER_TONNE, type FeedPrice } from './cow-herd-measures'
+import { DEFAULT_UTILIZATION } from './forage-response'
 
 /*
  * The ranch summary's figures, each worked out with the hooks and functions of
@@ -53,12 +54,12 @@ export function useGrassDays(ranch: Ranch | undefined) {
   const { data: factors } = usePastureSeasonFactors(ranch?.id)
   return useMemo(() => {
     if (!ranch) return null
-    const utilization = ranch.grazing_utilization_rate ?? 0.8
+    const utilization = ranch.grazing_utilization_rate ?? DEFAULT_UTILIZATION
     const rain = grazingRain(ranch, measured)
     const ctx = fieldCtx.ctx()
     const factorFor = new Map<string, number>()
     for (const f of factors ?? []) if (f.factor != null) factorFor.set(f.grazing_pasture_id, f.factor)
-    const auds = computePastures(pastures ?? [], rain, utilization, ctx, factorFor)
+    const auds = computePastures(pastures ?? [], rain, utilization, ctx, factorFor, null, ranch.grazing_count_waste ?? true)
       .reduce((s, p) => s + p.auds, 0)
     const herdAu = (herd ?? []).reduce((s, h) => s + h.au_equivalent * h.head_count, 0)
     return {

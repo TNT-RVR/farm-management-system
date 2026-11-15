@@ -56,7 +56,7 @@ const decode = (s: string) =>
     .trim()
 
 export async function fetchSmridPosts(): Promise<SmridPost[]> {
-  const r = await fetch('https://smrid.com/wp-json/wp/v2/posts?per_page=30&_fields=date,link,title,content', { headers: { 'user-agent': 'RVR-Management/1.0 (SMRID allotment)' } })
+  const r = await fetch('https://smrid.com/wp-json/wp/v2/posts?per_page=30&_fields=date,link,title,content', { headers: { 'user-agent': 'Farm-Management-System/1.0 (SMRID allotment)' } })
   if (!r.ok) throw new Error(`${r.status} from smrid.com`)
   const j = (await r.json()) as { date: string; link: string; title: { rendered: string }; content: { rendered: string } }[]
   return j.map((p) => ({ date: p.date.slice(0, 10), title: decode(p.title.rendered), link: p.link, text: decode(p.content.rendered) }))

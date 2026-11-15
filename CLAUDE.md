@@ -99,7 +99,19 @@ tables, and what to ask the farmer for.
 
 ## Staying up to date
 
-The original app changes every week, and each week's changes are published
-as a release with a `.patch` file. When the farmer gives you one, apply it,
-keep their own changes where the two conflict, and point out any new
-migration they need to run.
+The original app changes every week, and each week's changes are published as
+a release with a `.patch` file holding just that week's code.
+
+`.claude/commands/update.md` is the whole procedure: which week this copy is
+on, what has been published since, what changed in plain words, and how to
+bring it in without losing the farmer's own work. In Claude Code they run it
+as `/update`; with any other assistant, read that file and follow it.
+
+Two rules in it matter more than the rest. **Ask before applying anything** —
+never update because you noticed an update, and never set something up to do
+it automatically unless the farmer asks for that. And the database: the copy
+ships the whole schema as `supabase/migrations/00000000000000_schema.sql`, so
+an update that touches it needs the *difference* run against their own
+database, never the whole file.
+
+When the farmer hands you a `.patch` themselves, apply it the same way.

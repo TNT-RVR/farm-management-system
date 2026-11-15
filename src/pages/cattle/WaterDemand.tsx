@@ -8,7 +8,7 @@ import { mobsNow, useActivations } from '@/lib/eshepherd'
 import { useHerdCounts } from '@/lib/cattle'
 import { useRanches } from '@/lib/ranches'
 import { localDateKey, useRanchWeather } from '@/lib/ranchWeather'
-import { HOT_C, pastureWaterRows, type HerdClassRow } from '@/lib/cattle-water-demand'
+import { HOT_C, PEAK_LACTATING_C, pastureWaterRows, type HerdClassRow } from '@/lib/cattle-water-demand'
 import { HelpNote } from '@/components/HelpNote'
 import { n0 } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -156,8 +156,13 @@ export function WaterDemand({ ranchId = '' }: { ranchId?: string }) {
         )}
         <HelpNote title="How the water need is worked out">
           <p>
-            About 1 US gallon per 100 lb of body weight a day in cool weather, rising in a straight line to 2 gallons at 30 °C and above. A
-            cow nursing a calf drinks 30% more; calves at side drink by their own weight until the weaning date.
+            From the NRC’s own table of daily water intake, by class and air temperature: a nursing cow 43 L on a cool day and 68 L at
+            27 °C, a dry cow 23 to 54 L, a bull 33 to 78 L. Growing cattle and calves at side go by weight; mature cattle do not, because
+            what an animal is doing moves her drinking far more than what she weighs.
+          </p>
+          <p>
+            A nursing cow drinks most near {PEAK_LACTATING_C} °C and a little less above it — in extreme heat she eats less and milks
+            less. That is the table’s own shape, so the hottest forecast is not always the biggest number on this card.
           </p>
           <p>
             The temperature is today&apos;s forecast high where the cattle are, refreshed every quarter of an hour — the high rather than

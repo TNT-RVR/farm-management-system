@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  AU_INTAKE_LB_PER_DAY,
+  AU_TOTAL_LB_PER_DAY,
+  AU_WASTE_LB_PER_DAY,
   audsFromLb,
   computePasture,
   computePastures,
@@ -58,8 +61,10 @@ describe('computePasture', () => {
 describe('the AUD split', () => {
   it('splits a pasture into its native grass and its irrigated acres, and the two add up', () => {
     const p = computePasture(row({ irrigated_ac: 100, grazeable_irrigated_ac: 100 }), 300, 0.8)
-    expect(p.fieldAuds).toBeCloseTo((100 * FORAGE_YIELD_IRRIGATION.Fair * 0.8) / 26, 6)
-    expect(p.nativeAuds).toBeCloseTo((147.105 * 370 * 0.8) / 26, 1)
+    // No field is mapped here, so the irrigated acres are standing grass with
+    // nothing taken off them: charged at the same figure as the native grass.
+    expect(p.fieldAuds).toBeCloseTo((100 * FORAGE_YIELD_IRRIGATION.Fair * 0.8) / AU_TOTAL_LB_PER_DAY, 6)
+    expect(p.nativeAuds).toBeCloseTo((147.105 * 370 * 0.8) / AU_TOTAL_LB_PER_DAY, 1)
     expect(p.nativeAuds + p.fieldAuds).toBeCloseTo(p.auds, 6)
   })
 
@@ -69,9 +74,94 @@ describe('the AUD split', () => {
     expect(p.nativeAuds).toBeCloseTo(p.auds, 6)
   })
 
-  it('reads pounds as animal-unit days at 26 lb a day', () => {
-    expect(audsFromLb(2600)).toBe(100)
-    expect(audsFromLb(0)).toBe(0)
+  it('reads pounds as animal-unit days at whichever figure it is given', () => {
+    expect(audsFromLb(2600, AU_INTAKE_LB_PER_DAY)).toBe(100)
+    expect(audsFromLb(1000, AU_TOTAL_LB_PER_DAY)).toBeCloseTo(30, 6)
+    expect(audsFromLb(0, AU_INTAKE_LB_PER_DAY)).toBe(0)
+  })
+})
+
+describe('counting the wasted grass', () => {
+  const grassOnly = () => row({})
+
+  it('is 33.3 lb an animal-unit day with waste, 26 without', () => {
+    expect(AU_TOTAL_LB_PER_DAY).toBeCloseTo(33.333, 3)
+    expect(AU_INTAKE_LB_PER_DAY).toBe(26)
+    // Alberta's 455 kg AUM against the Forage Manual's 780 lb one. Close-to,
+    // not exact: 1000/30 does not round-trip in binary.
+    expect(AU_TOTAL_LB_PER_DAY * 30).toBeCloseTo(1000, 9)
+    expect(AU_WASTE_LB_PER_DAY).toBeCloseTo(7.333, 3)
+  })
+
+  it('leaves the pounds standing in the paddock alone either way', () => {
+    const withWaste = computePasture(grassOnly(), 300, 0.8, null, null, null, true)
+    const intake = computePasture(grassOnly(), 300, 0.8, null, null, null, false)
+    expect(intake.totalLbs).toBeCloseTo(withWaste.totalLbs, 6)
+    expect(intake.foragePerAcre).toBeCloseTo(withWaste.foragePerAcre, 6)
+  })
+
+  it('shortens the grazing days by the waste share', () => {
+    const withWaste = computePasture(grassOnly(), 300, 0.8, null, null, null, true)
+    const intake = computePasture(grassOnly(), 300, 0.8, null, null, null, false)
+    expect(withWaste.auds).toBeLessThan(intake.auds)
+    // 780/1000: counting the waste costs 22% of the grazing days.
+    expect(withWaste.auds / intake.auds).toBeCloseTo(0.78, 6)
+    expect(withWaste.lbPerAuDay).toBeCloseTo(AU_TOTAL_LB_PER_DAY, 6)
+    expect(intake.lbPerAuDay).toBe(AU_INTAKE_LB_PER_DAY)
+    expect(withWaste.countsWaste).toBe(true)
+    expect(intake.countsWaste).toBe(false)
+  })
+
+  it('charges hand-typed irrigated acres like the grass they are', () => {
+    const args = [row({ irrigated_ac: 100, grazeable_irrigated_ac: 100 }), 300, 0.8, null, null, null] as const
+    const withWaste = computePasture(...args, true)
+    const intake = computePasture(...args, false)
+    expect(withWaste.fieldsLinked).toBe(false)
+    expect(withWaste.fieldAuds).toBeLessThan(intake.fieldAuds)
+    expect(withWaste.nativeAuds).toBeLessThan(intake.nativeAuds)
+  })
+
+  it('does not charge MAPPED crop fields twice, their lb being already net of trampling', () => {
+    // A harvested cereal field inside the fence: its stubble pounds come out of
+    // field-residue.ts, which has already taken the trampling off.
+    const ctx = {
+      fields: [
+        {
+          grazing_pasture_id: 'p',
+          field_id: 'f1',
+          field_name: 'F1',
+          open_to_pasture: true,
+          grazed_after_harvest: true,
+          acres_in: 100,
+          crop_year: 2026,
+          crop_name: 'Wheat',
+          crop_share: 1,
+          yield_per_acre: 60,
+          yield_unit: 'bu',
+          harvest_on: '2026-08-20',
+          harvest_source: 'typed',
+          last_harvest_on: '2026-08-20',
+          tilled_on: null,
+          tilled_how: null,
+          stubble_grazing_id: null,
+        },
+      ],
+      window: { from: '2026-05-01', to: '2026-10-31' },
+    }
+    const withWaste = computePasture(row({}), 300, 0.8, ctx, null, null, true)
+    const intake = computePasture(row({}), 300, 0.8, ctx, null, null, false)
+    expect(withWaste.fieldsLinked).toBe(true)
+    // The fixture has to actually produce stubble or this proves nothing.
+    expect(withWaste.fieldAuds).toBeGreaterThan(0)
+    expect(withWaste.fieldAuds).toBeCloseTo(intake.fieldAuds, 6)
+    expect(withWaste.nativeAuds).toBeLessThan(intake.nativeAuds)
+  })
+
+  it('keeps AUMs at thirty of its own AUDs', () => {
+    for (const w of [true, false]) {
+      const p = computePasture(grassOnly(), 300, 0.8, null, null, null, w)
+      expect(p.aums).toBeCloseTo(p.auds / 30, 6)
+    }
   })
 })
 

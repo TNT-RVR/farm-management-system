@@ -79,28 +79,11 @@ from (values
 join public.crops c on c.name = v.crop_name;
 
 -- ── The resistance group behind each product (Spray check) ───────────────
--- Keyed on the active, not the product: a tank mix of three names can be one
--- group. The groups are the numbers a label prints — herbicides on the
--- Canadian HRAC/WSSA numbering, fungicides on FRAC. Like the kit library in
--- 094, these rows arrive with a migration in the farm's own database, and the
--- demo loads the published structure rather than the migrations.
-insert into public.chemical_moa (active, scheme, group_code, group_name, ph_sensitive, time_of_day, note) values
-  ('GLYPHOSATE',           'herbicide', '9',  'EPSPS inhibitor', false, null, null),
-  ('GLUFOSINATE-AMMONIUM', 'herbicide', '10', 'Glutamine synthetase inhibitor', false,
-   'Spray it in the middle of the day: glutamine synthetase is scarcer in the dark, and what survives the night rebuilds the enzyme.', null),
-  ('CLETHODIM',            'herbicide', '1',  'ACCase inhibitor', false, null, null),
-  ('PINOXADEN',            'herbicide', '1',  'ACCase inhibitor', false, null, null),
-  ('FLORASULAM',           'herbicide', '2',  'ALS inhibitor (triazolopyrimidine)', true, null, null),
-  ('IMAZAMOX',             'herbicide', '2',  'ALS inhibitor (imidazolinone)', true, null, null),
-  ('MCPA',                 'herbicide', '4',  'Synthetic auxin', false, null, null),
-  ('BENTAZON',             'herbicide', '6',  'Photosystem II inhibitor', false, null, null),
-  ('DIQUAT',               'herbicide', '22', 'Photosystem I electron diverter', false, null, null),
-  ('PROTHIOCONAZOLE',      'fungicide', '3',  'DMI (sterol biosynthesis inhibitor)', false, null, null),
-  ('TEBUCONAZOLE',         'fungicide', '3',  'DMI (sterol biosynthesis inhibitor)', false, null, null),
-  ('FLUOPYRAM',            'fungicide', '7',  'SDHI (succinate dehydrogenase inhibitor)', false, null, null);
-
--- The products' own actives, spelled the way the group table keys on them.
--- Without these the spray check knows the product and not the group.
+-- The group table ships with the starter reference data, keyed on the active
+-- rather than the product, because a tank mix of three names can be one
+-- group. What the demo still has to say is which actives are in its made-up
+-- products; without that the spray check knows the product and not the
+-- group.
 update public.jd_products p set actives_manual = v.actives
 from (values
   ('0de30000-0000-4000-8000-000000000901', 'GLYPHOSATE'),

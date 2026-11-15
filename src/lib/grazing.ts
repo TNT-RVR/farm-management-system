@@ -3,12 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { loadPastureFields } from './pasture-fields-data'
 import { grazingSeason, type FieldWindow, type SprayHold } from './field-residue'
-import type { PastureFieldContext } from './forage-yield'
+import type { PastureAnchor, PastureFieldContext } from './forage-yield'
 import { useGrazingPicture } from './grazing-restrictions-hooks'
 import { longest } from './grazing-restrictions'
 import type { Database } from './database.types'
 import type { Ranch } from './ranches'
-import { RAIN_NORMAL_YEARS, rainFactor, rainOutlook, type SeasonNormal } from './rain-normals'
+import { RAIN_NORMAL_YEARS, rainFactor, rainOutlook, rainSplits, type SeasonNormal } from './rain-normals'
+import { droughtUtilization } from './forage-response'
 import type { GrassQuality } from './forage-yield'
 import { auFor, monthDayOf, pairAUDays, weightFor, type MonthDay } from './animal-units'
 
@@ -16,8 +17,11 @@ import { auFor, monthDayOf, pairAUDays, weightFor, type MonthDay } from './anima
 // server's pasture move-out check uses exactly these numbers too.
 export {
   ACRES_PER_HECTARE,
-  AU_LBS_PER_DAY,
-  AUM_LBS,
+  AU_INTAKE_LB_PER_DAY,
+  AU_TOTAL_LB_PER_DAY,
+  AU_WASTE_LB_PER_DAY,
+  AUM_TOTAL_LB,
+  lbPerAuDay,
   audsFromLb,
   computePasture,
   computePastures,
@@ -314,6 +318,12 @@ export type GrazingSettings = {
   id: string
   grazing_utilization_rate: number | null
   grazing_precip_mm: number | null
+  /**
+   * Whether an animal-unit day draws the grass the herd tramples and fouls as
+   * well as the grass it eats: 33.3 lb DM a day against 26. See
+   * forage-yield.ts — it is not the utilization rate and does not replace it.
+   */
+  grazing_count_waste: boolean | null
 }
 
 /** Per-ranch grazing knobs (utilization + precip) — live on the ranch row. */
@@ -324,7 +334,7 @@ export function useGrazingSettings(ranchId: string | null | undefined) {
     queryFn: async (): Promise<GrazingSettings> => {
       const { data, error } = await supabase
         .from('ranches')
-        .select('id, grazing_utilization_rate, grazing_precip_mm')
+        .select('id, grazing_utilization_rate, grazing_precip_mm, grazing_count_waste')
         .eq('id', ranchId!)
         .single()
       if (error) throw error
@@ -338,13 +348,21 @@ export type RanchPrecip = {
   days: number
   through: string
   series: { t: string; mm: number }[]
-  /** The same season over the last ten whole years; null if the archive failed. */
+  /** The same season over the last RAIN_NORMAL_YEARS whole years; null if the archive failed. */
   normal?: SeasonNormal | null
   /**
    * The long-term ANNUAL average over the same years — the figure that picks
    * the forage estimator's row. Null if the archive failed.
    */
   annual_normal_mm?: number | null
+  /**
+   * Rain banked before the season (the previous Sept-March), and the average
+   * of the same over the normal years. Stored soil moisture is what the first
+   * flush of spring is drawn on; it is not in `series`, which starts on the
+   * season's first day.
+   */
+  carryover_mm?: number | null
+  normal_carryover_mm?: number | null
 }
 
 export type GrazingRain = {
@@ -353,13 +371,13 @@ export type GrazingRain = {
   forecastSource: 'normal' | 'manual'
   /** This season so far, when measured. */
   toDateMm: number | null
-  /** The 10-year average to the same day. */
+  /** The long-term average to the same day. */
   normalToDateMm: number | null
   pctOfNormal: number | null
   /** This year so far plus a normal rest of season. */
   projectedMm: number | null
   /**
-   * The precipitation zone the forage row is read from: the 10-year ANNUAL
+   * The precipitation zone the forage row is read from: the long-term ANNUAL
    * average, because that is what the estimator's rows measure. With Auto off
    * it is the typed figure, so typing one pins the zone by hand.
    */
@@ -368,14 +386,20 @@ export type GrazingRain = {
   /**
    * This season against its own normal — the multiplier on the zone's yield.
    * 1 when there is nothing to compare against, so the zone stands alone.
+   *
+   * Not a straight ratio: the first 100 mm of a season grows nothing and an
+   * unfertilized pasture has a ceiling, so a dry year is shorter of grass than
+   * it is of rain and a wet one is longer by less. See forage-response.ts.
    */
   rainFactor: number
+  /** True when the rain was weighted by the month it fell in, not just totalled. */
+  rainWeighted: boolean
 }
 
 /**
  * Which rain the grazing numbers use (Sam, 1 Oct 2026, and 12 Nov 2026).
  *
- * The forecast is the 10-year average SEASON total, not this year's total to
+ * The forecast is the long-term average SEASON total, not this year's total to
  * date — read in May, a to-date total said there was almost no grass, because
  * the season had barely begun. This year's rain is kept beside it (as a % of
  * normal and a projected season) for in-season decisions. Manual mode, or no
@@ -406,6 +430,17 @@ export function grazingRain(
   // Then: Auto with an annual average, Auto without one (the archive gave a
   // season but no year) keeping the season figure rather than guessing, and
   // typed mode, which is whatever Sam typed.
+  // How the rain fell, not just how much: April-June decides most of a year's
+  // forage and August rain nearly none. Needs the carryover, which only the
+  // API with normals attached has; without it the plain totals are used.
+  const split =
+    measured && normal && measured.carryover_mm != null && measured.normal_carryover_mm != null
+      ? rainSplits(measured.series, normal, {
+          cutoffMd: (measured.through ?? '').slice(5) || '12-31',
+          carryoverMm: measured.carryover_mm,
+          normalCarryoverMm: measured.normal_carryover_mm,
+        })
+      : null
   const classified = ranch.forage_zone_mm ?? null
   const zoneMm = classified ?? (auto ? (annual ?? forecastMm) : ranch.grazing_precip_mm)
   const zoneSource: GrazingRain['zoneSource'] =
@@ -419,15 +454,55 @@ export function grazingRain(
     projectedMm: outlook?.projectedSeasonMm ?? null,
     zoneMm,
     zoneSource,
-    rainFactor: auto && outlook ? rainFactor(outlook.projectedSeasonMm, normal!.avg_season_mm) : 1,
+    rainFactor: auto && outlook ? rainFactor(outlook.projectedSeasonMm, normal!.avg_season_mm, split) : 1,
+    rainWeighted: Boolean(auto && outlook && split),
   }
 }
 
-/** Measured growing-season rainfall (mm) to date for a ranch, with the 10-year normal. */
+/**
+ * The rate to graze at, after a dry year is taken into account.
+ *
+ * The ranch's own rate in a normal year. In a drought it slides toward the
+ * lighter rate the drought rules call for, because grazing a drought-stressed
+ * plant to the usual mark costs next year's growth as well as this year's.
+ * See droughtUtilization. It never raises the rate.
+ */
+export function grazingUtilization(rate: number, rain: Pick<GrazingRain, 'rainFactor'>): number {
+  return droughtUtilization(rate, rain.rainFactor)
+}
+
+/**
+ * Each pasture's own measured yield, lb/ac in a normal year, where samples
+ * exist — the anchor that replaces the Forage Yield Estimator's row for that
+ * pasture. Empty until the first clip-and-weigh is taken, which is how it
+ * reads today, so every pasture is still on the table.
+ */
+export function useMeasuredYields() {
+  return useQuery({
+    queryKey: ['pasture_measured_yield'],
+    staleTime: 60 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('pasture_measured_yield').select('pasture_id, lb_per_acre, seasons')
+      if (error) throw error
+      const m = new Map<string, PastureAnchor>()
+      for (const r of data ?? []) {
+        const lb = Number((r as { lb_per_acre: number | string }).lb_per_acre)
+        if (Number.isFinite(lb) && lb > 0)
+          m.set((r as { pasture_id: string }).pasture_id, { lbPerAcre: lb, source: 'measured' })
+      }
+      return m
+    },
+  })
+}
+
+/** Measured growing-season rainfall (mm) to date for a ranch, with the long-term normal. */
 export function useRanchPrecip(ranch: Ranch | null | undefined) {
   const hasCoords = ranch?.latitude != null && ranch?.longitude != null
   return useQuery({
-    queryKey: ['ranch_precip', ranch?.id, ranch?.precip_start_month, ranch?.precip_end_month, 'normals10'],
+    // The window length is part of the key: it was a literal 'normals10', so
+    // raising RAIN_NORMAL_YEARS to 30 left every warm cache serving ten-year
+    // normals until it went stale on its own.
+    queryKey: ['ranch_precip', ranch?.id, ranch?.precip_start_month, ranch?.precip_end_month, `normals${RAIN_NORMAL_YEARS}`],
     enabled: Boolean(hasCoords),
     staleTime: 60 * 60_000,
     refetchInterval: 6 * 60 * 60_000,
@@ -459,6 +534,7 @@ export function useSetGrazingSettings() {
       id: string
       grazing_utilization_rate?: number
       grazing_precip_mm?: number
+      grazing_count_waste?: boolean
     }) => {
       const { error } = await supabase.from('ranches').update(patch).eq('id', id)
       if (error) throw error

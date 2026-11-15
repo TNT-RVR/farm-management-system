@@ -68,6 +68,9 @@ export function useFarmMap(container: Container, options: FarmMapOptions = {}, d
   const mapRef = useRef<maplibregl.Map | null>(null)
   const [map, setMap] = useState<maplibregl.Map | null>(null)
   const [ready, setReady] = useState(false)
+  // Bumped to throw the map away and make a fresh one where it was looking.
+  const [rebuild, setRebuild] = useState(0)
+  const keepView = useRef<{ center: [number, number]; zoom: number; bearing: number; pitch: number } | null>(null)
   const opts = useRef(options)
   useEffect(() => {
     opts.current = options
@@ -78,15 +81,34 @@ export function useFarmMap(container: Container, options: FarmMapOptions = {}, d
     const el = isRef(container) ? container.current : container
     if (!el || mapRef.current) return
     const o = opts.current
+    const kept = keepView.current
+    keepView.current = null
     const m = new maplibregl.Map({
       container: el,
       style: o.style ?? SATELLITE_STYLE,
-      center: o.center ?? farmMapCenter(),
-      zoom: o.zoom ?? 12,
+      center: kept?.center ?? o.center ?? farmMapCenter(),
+      zoom: kept?.zoom ?? o.zoom ?? 12,
       attributionControl: o.attribution === 'compact' ? { compact: true } : false,
       ...(o.interactive === false ? { interactive: false } : {}),
       ...(o.preserveDrawingBuffer ? { canvasContextAttributes: { preserveDrawingBuffer: true } } : {}),
       ...o.mapOptions,
+      // A rebuilt map opens where the old one was looking, not where the page
+      // first framed it.
+      ...(kept ? { bounds: undefined, bearing: kept.bearing, pitch: kept.pitch } : {}),
+    })
+    // A phone left in a pocket takes the graphics context away, and MapLibre
+    // answers by dropping its style: every getSource / getLayer then throws
+    // until the context comes back, which crashed the cattle map when it
+    // refreshed its data on waking (12 Nov 2026). So the map is not `ready`
+    // while the context is gone, and when it returns the map is made again from
+    // nothing, the same road as a change in `deps`. MapLibre's own restore
+    // brings the old sources back, which the pages' add-once effects would
+    // then trip over.
+    m.on('webglcontextlost', () => setReady(false))
+    m.on('webglcontextrestored', () => {
+      const c = m.getCenter()
+      keepView.current = { center: [c.lng, c.lat], zoom: m.getZoom(), bearing: m.getBearing(), pitch: m.getPitch() }
+      setRebuild((n) => n + 1)
     })
     const nav = o.controls?.nav ?? { showCompass: false }
     if (nav) m.addControl(new maplibregl.NavigationControl(nav), o.controls?.navAt ?? 'top-right')
@@ -94,7 +116,7 @@ export function useFarmMap(container: Container, options: FarmMapOptions = {}, d
     if (o.controls?.scale) m.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
     o.onCreate?.(m)
     m.once(o.readyWhen === 'style' ? 'style.load' : 'load', () => {
-      if (o.bounds) m.fitBounds(o.bounds, { padding: o.fitPadding ?? 0, duration: 0 })
+      if (o.bounds && !kept) m.fitBounds(o.bounds, { padding: o.fitPadding ?? 0, duration: 0 })
       o.onReady?.(m)
       setReady(true)
     })
@@ -107,7 +129,7 @@ export function useFarmMap(container: Container, options: FarmMapOptions = {}, d
       setReady(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [element, ...deps])
+  }, [element, rebuild, ...deps])
 
   return { map, mapRef, ready }
 }

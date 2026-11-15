@@ -12,6 +12,7 @@ import {
   YAxis,
   type LegendPayload,
 } from 'recharts'
+import { RAIN_NORMAL_YEARS } from '@/lib/rain-normals'
 import { useWheelZoom } from '@/lib/useWheelZoom'
 
 /**
@@ -32,7 +33,7 @@ import { useWheelZoom } from '@/lib/useWheelZoom'
 const WET_FILL = ['#f3f9ff', '#ddeefd']
 
 /**
- * The two cumulative lines: solid for this year, dashed for the 10-year
+ * The two cumulative lines: solid for this year, dashed for the long-term
  * average. Defined once because the legend draws its own swatches, and a
  * swatch that disagrees with the line is worse than no legend at all.
  */
@@ -41,7 +42,7 @@ const AVERAGE = { color: '#64748b', width: 1.5, dash: '5 4' }
 
 /**
  * Recharts gives every <Line> the same straight icon and ignores
- * strokeDasharray, so this year's rain and the 10-year average arrived in the
+ * strokeDasharray, so this year's rain and the long-term average arrived in the
  * legend as two identical marks in two colours that read alike at 11 px. These
  * swatches carry the dash pattern instead -- solid is this year, dashed is the
  * average -- which is what tells the two lines apart on the chart itself.
@@ -79,7 +80,7 @@ function RainLegend({ payload }: { payload?: readonly LegendPayload[] }) {
 
 /**
  * Cumulative growing-season rainfall (running total mm) with daily bars, and
- * the 10-year average running total to the same day when it is known — so a
+ * the long-term average running total to the same day when it is known — so a
  * dry year reads as a gap between two lines, not a number to remember.
  *
  * What the chart is for: the grass forecast reads the forage row off the
@@ -222,7 +223,7 @@ export function RainGraph({
         <Bar yAxisId="daily" dataKey="daily" name="Daily" fill="#bae6fd" />
         <Line yAxisId="cum" type="monotone" dataKey="cum" name="This year" stroke={THIS_YEAR.color} strokeWidth={THIS_YEAR.width} dot={false} />
         {avgByMd.size > 0 && (
-          <Line yAxisId="cum" type="monotone" dataKey="avg" name="10-year average" stroke={AVERAGE.color} strokeDasharray={AVERAGE.dash} strokeWidth={AVERAGE.width} dot={false} connectNulls />
+          <Line yAxisId="cum" type="monotone" dataKey="avg" name={`${RAIN_NORMAL_YEARS}-year average`} stroke={AVERAGE.color} strokeDasharray={AVERAGE.dash} strokeWidth={AVERAGE.width} dot={false} connectNulls />
         )}
         {projectedMm != null && (
           <ReferenceLine

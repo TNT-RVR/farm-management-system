@@ -98,10 +98,25 @@ describe('annualNormalMm', () => {
 })
 
 describe('rainFactor', () => {
-  it('is the projected season over a normal one', () => {
-    expect(rainFactor(379, 270)).toBeCloseTo(1.4037, 4)
-    expect(rainFactor(270, 270)).toBe(1)
-    expect(rainFactor(135, 270)).toBe(0.5)
+  it('is 1 in a normal year, and not a straight ratio away from one', () => {
+    expect(rainFactor(270, 270)).toBeCloseTo(1, 10)
+    // 40 % more rain is not 40 % more grass: the pasture runs out of nitrogen
+    // before it runs out of water.
+    const wet = rainFactor(379, 270)
+    expect(wet).toBeGreaterThan(1)
+    expect(wet).toBeLessThan(1.4037)
+    // Half the rain is less than half the grass: the first 100 mm grew none
+    // of it to begin with.
+    expect(rainFactor(135, 270)).toBeLessThan(0.5)
+  })
+
+  it('weights the rain by the month it fell in when the split is known', () => {
+    const normal = { carryoverMm: 100, springMm: 150, summerMm: 80 }
+    const late = { carryoverMm: 100, springMm: 110, summerMm: 120 }
+    const same = rainFactor(270, 270, { year: normal, normal })
+    const shifted = rainFactor(270, 270, { year: late, normal })
+    expect(same).toBeCloseTo(1, 10)
+    expect(shifted).toBeLessThan(same)
   })
 
   it('falls back to 1 rather than to nothing', () => {

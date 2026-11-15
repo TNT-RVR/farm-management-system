@@ -2,7 +2,8 @@ import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { fieldSalinity, useFieldSalinity } from './salinity'
-import { cropKey, type CropInfo, type FieldApp, type FieldCtx, type FieldEconomics, type RecropRule, type ScoutFinding } from './rotation-engine'
+import { cropKey, type CropInfo, type FieldApp, type FieldCtx, type FieldEconomics, type RecropRule, type ScoutFinding, type SeedScout } from './rotation-engine'
+import { groupMaxFor as groupMaxForRows, maxAcresFor, priorityFor as priorityForRows, type LimitRow } from './crop-limits'
 import { contractMinimums, cropMargin, type MarginInputs } from './rotation-margins'
 import { resolveCosts } from './forecast'
 import { feedMinimums, type RanchFeed } from './feed-crops'
@@ -13,6 +14,7 @@ import { BID_CODES } from './breakeven'
 import { productResolver, sprayedProducts } from './spray-products'
 import { asTrait, grownTrait, type CanolaYear } from './canola-trait'
 import { companyLookup } from './crop-label'
+import { companyOf as scoutCompanyOf, scoutPassed, seedCompanyOf } from './scout-reports'
 
 const SANDY = /^(S|LS|SL|LFS|FS|FSL|LVFS|VFS|CS|LCS)$/i
 
@@ -29,11 +31,11 @@ export function useRotationContext(cropYear: number) {
   const q = useQuery({
     // Versioned: this query is persisted offline, and a restored copy of an
     // older shape (no history) crashed the Rotation view.
-    queryKey: ['rotation-context', 'v20', cropYear],
+    queryKey: ['rotation-context', 'v21', cropYear],
     staleTime: 10 * 60_000,
     queryFn: async () => {
       const since = `${cropYear - 4}-01-01`
-      const [pivots, soils, ops, products, aliases, rules, limits, crops, tenure, history, prices, contracts, inputs, series, licences, allotments, scouting, centroids, climate, leases, supply, feedPlans, herds, ration, harvests, bidSeries, varieties] = await Promise.all([
+      const [pivots, soils, ops, products, aliases, rules, limits, crops, tenure, history, prices, contracts, inputs, series, licences, allotments, scouting, centroids, climate, leases, supply, feedPlans, herds, ration, harvests, bidSeries, varieties, seedScouts] = await Promise.all([
         supabase.from('field_pivots').select('field_id, acres_irrigated, alloted_inches, acre_feet_allotment, on_river, smrid_area, water_licence_id, water_source, fields(name)').eq('not_used', false),
         supabase.from('field_soil_units').select('field_id, texture_top, pct_of_field'),
         // Every spray, the renter's included: carryover is about the soil, not whose job it was.
@@ -45,7 +47,7 @@ export function useRotationContext(cropYear: number) {
         supabase.from('jd_products').select('id, name, pmra_registration'),
         supabase.from('jd_product_aliases').select('deere_name, product_id, ignored'),
         supabase.from('chemical_recrop_rules_v').select('registration_number, crop_key, following_crop, months, status, condition, quote'),
-        supabase.from('crop_acre_limits').select('id, crop_id, crop_group, crop_year, max_acres'),
+        supabase.from('crop_acre_limits').select('id, crop_id, crop_group, crop_year, max_acres, priority'),
         supabase.from('crops').select('id, name, min_return_years, margin_per_acre, margin_source, active, renter_only, yield_unit, default_yield_per_acre, irrigation_need_in, max_in_a_row, stand_min_years, stand_max_years, own_use, feed_dm_pct, test_weight_lb_per_bu, sister_value_per_acre, sister_value_note, herbicide_trait'),
         supabase.from('field_year_tenure').select('field_id, crop_year'),
         // Ten years back: return intervals and "years since" need more than the planner's two.
@@ -77,8 +79,10 @@ export function useRotationContext(cropYear: number) {
         supabase.from('market_series').select('id, code').in('code', BID_CODES),
         // The company behind a variety: a past "Canola" grown for BASF carries BASF's herbicide trait.
         supabase.from('crop_varieties').select('crop_id, name, company'),
+        // The seed companies' prescout grades: the gate on seed canola.
+        supabase.from('scout_reports').select('field_id, company, crop_year, rating, passed').not('field_id', 'is', null).gte('crop_year', cropYear - 1),
       ])
-      for (const r of [pivots, soils, ops, products, aliases, rules, limits, crops, tenure, history, prices, contracts, inputs, series, licences, allotments, scouting, centroids, climate, supply, leases, feedPlans, herds, ration, harvests, bidSeries, varieties]) if (r.error) throw r.error
+      for (const r of [pivots, soils, ops, products, aliases, rules, limits, crops, tenure, history, prices, contracts, inputs, series, licences, allotments, scouting, centroids, climate, supply, leases, feedPlans, herds, ration, harvests, bidSeries, varieties, seedScouts]) if (r.error) throw r.error
       // The latest observation of each crop-linked series, from the last two years.
       const seriesIds = [...(series.data ?? []).filter((x) => !x.archived).map((x) => x.id as string), ...(bidSeries.data ?? []).map((x) => x.id as string)]
       const since2y = new Date(Date.now() - 730 * 86_400_000).toISOString().slice(0, 10)
@@ -124,6 +128,7 @@ export function useRotationContext(cropYear: number) {
         herds: herds.data ?? [],
         ration: ration.data ?? [],
         varieties: varieties.data ?? [],
+        seedScouts: seedScouts.data ?? [],
       }
     },
   })
@@ -160,7 +165,7 @@ export function useRotationContext(cropYear: number) {
       list.push(r)
       rulesByReg.set(r.registration_number, list)
     }
-    const toInfo = (c: (typeof d.crops)[number]): CropInfo => ({ id: c.id, name: c.name, key: cropKey(c.name), minReturn: c.min_return_years ?? 0, margin: c.margin_per_acre == null ? null : Number(c.margin_per_acre), renterOnly: Boolean(c.renter_only), waterNeedIn: c.irrigation_need_in == null ? null : Number(c.irrigation_need_in), maxInARow: c.max_in_a_row ?? 1, standMin: c.stand_min_years ?? null, standMax: c.stand_max_years ?? null, trait: asTrait(c.herbicide_trait) })
+    const toInfo = (c: (typeof d.crops)[number]): CropInfo => ({ id: c.id, name: c.name, key: cropKey(c.name), minReturn: c.min_return_years ?? 0, margin: c.margin_per_acre == null ? null : Number(c.margin_per_acre), renterOnly: Boolean(c.renter_only), waterNeedIn: c.irrigation_need_in == null ? null : Number(c.irrigation_need_in), maxInARow: c.max_in_a_row ?? 1, standMin: c.stand_min_years ?? null, standMax: c.stand_max_years ?? null, trait: asTrait(c.herbicide_trait), seedCompany: seedCompanyOf(c.name) })
     const cropInfo: CropInfo[] = d.crops.filter((c) => c.active).map(toInfo)
     /**
      * Every crop, retired ones too, for reading what a field grew: plain
@@ -170,19 +175,36 @@ export function useRotationContext(cropYear: number) {
      */
     const cropLookup = new Map(d.crops.map((c) => [c.id, toInfo(c)]))
     const rentedOut = new Set((d.tenure ?? []).map((t) => `${t.field_id}:${t.crop_year}`))
+    // The three readings of crop_acre_limits live in crop-limits.ts, pure and
+    // tested: a row may carry a cap, a rank, or both, and a row of one shape
+    // read as the other is silent (13 Nov 2026, when a rank-only corn row was
+    // read as a nil cap and took corn out of every plan).
+    const limitRows = (d.limits ?? []) as LimitRow[]
     /** Max acres for a crop in a year: the year's own limit, else the every-year one. */
-    const maxFor = (cropId: string, year: number): number | null => {
-      const y = (d.limits ?? []).find((l) => l.crop_id === cropId && l.crop_year === year)
-      const any = (d.limits ?? []).find((l) => l.crop_id === cropId && l.crop_year == null)
-      const v = y ?? any
-      return v ? Number(v.max_acres) : null
-    }
+    const maxFor = (cropId: string, year: number) => maxAcresFor(limitRows, cropId, year)
     /** Combined limits by group (all beans together) for a year. */
-    const groupMaxFor = (year: number): Map<string, number> => {
-      const m = new Map<string, number>()
-      for (const l of (d.limits ?? []).filter((x) => x.crop_group && x.crop_year == null)) m.set(l.crop_group!, Number(l.max_acres))
-      for (const l of (d.limits ?? []).filter((x) => x.crop_group && x.crop_year === year)) m.set(l.crop_group!, Number(l.max_acres))
-      return m
+    const groupMaxFor = (year: number) => groupMaxForRows(limitRows, year)
+    /**
+     * Which crop gets the fields first, best-ranked first (Sam, 12 Nov
+     * 2026). A crop's own rank wins over the rank on its group.
+     */
+    const priorityFor = (year: number) => priorityForRows(limitRows, cropInfo, year)
+    /**
+     * The seed companies' grades, by field. Kept whole rather than reduced to
+     * a pass: the planner names the grade in its reason, because "Corteva
+     * graded this D" is an answer and "blocked" is not.
+     */
+    const seedScoutsByField = new Map<string, SeedScout[]>()
+    for (const r of d.seedScouts ?? []) {
+      if (!r.field_id) continue
+      const entry: SeedScout = {
+        company: r.company,
+        companyLabel: scoutCompanyOf(r.company).label,
+        cropYear: r.crop_year,
+        rating: r.rating ?? null,
+        passed: scoutPassed({ company: r.company, rating: r.rating ?? null, passed: r.passed ?? null }),
+      }
+      seedScoutsByField.set(r.field_id, [...(seedScoutsByField.get(r.field_id) ?? []), entry])
     }
     const historyByField = new Map<string, Map<number, string[]>>()
     for (const h of d.history ?? []) {
@@ -387,6 +409,7 @@ export function useRotationContext(cropYear: number) {
         crops: merged,
         apps: appsByField.get(f.id) ?? [],
         canola: canolaYears(f.id, crops),
+        seedScouts: seedScoutsByField.get(f.id) ?? [],
       }
     }
     return {
@@ -399,6 +422,9 @@ export function useRotationContext(cropYear: number) {
       rentedOut,
       maxFor,
       groupMaxFor,
+      priorityFor,
+      /** field id -> the seed companies' grades for it, for the plan grid's own check. */
+      seedScoutsByField,
       limits: d.limits,
       marginSource: new Map((d.crops ?? []).map((c) => [c.id, c.margin_source as string | null])),
       fieldCtx,
@@ -449,17 +475,54 @@ export function useRotationContext(cropYear: number) {
   }, [q.data, q.isLoading, saltRows, needInputs])
 }
 
+/**
+ * Write one setting on an every-year crop_acre_limits row, leaving the other
+ * alone.
+ *
+ * The row carries two now — the cap and the order the crop is filled in — so
+ * the old delete-then-insert would have cleared a crop's rank every time
+ * somebody typed in its acres. Read, patch, and drop the row only once both
+ * are empty. A partial unique index on (crop_id) and (crop_group) where the
+ * year is null keeps there being one row to read.
+ */
+export type LimitGroup = 'dry_bean' | 'canola' | 'forage_legume' | 'potato' | 'corn'
+
+async function writeLimit(
+  match: { crop_id: string } | { crop_group: LimitGroup },
+  patch: { max_acres?: number | null; priority?: number | null },
+) {
+  const key = 'crop_id' in match ? 'crop_id' : 'crop_group'
+  const value = 'crop_id' in match ? match.crop_id : match.crop_group
+  const { data, error } = await supabase
+    .from('crop_acre_limits')
+    .select('id, max_acres, priority')
+    .eq(key, value)
+    .is('crop_year', null)
+    .maybeSingle()
+  if (error) throw error
+  const row = data as { id: string; max_acres: number | null; priority: number | null } | null
+  const next = {
+    max_acres: patch.max_acres !== undefined ? patch.max_acres : (row?.max_acres ?? null),
+    priority: patch.priority !== undefined ? patch.priority : (row?.priority ?? null),
+  }
+  const empty = next.max_acres == null && next.priority == null
+  if (!row) {
+    if (empty) return
+    const { error: e } = await supabase.from('crop_acre_limits').insert({ ...match, crop_year: null, ...next })
+    if (e) throw e
+    return
+  }
+  const { error: e } = empty
+    ? await supabase.from('crop_acre_limits').delete().eq('id', row.id)
+    : await supabase.from('crop_acre_limits').update(next).eq('id', row.id)
+  if (e) throw e
+}
+
 /** Set (or clear, with null) a crop's every-year acre limit. */
 export function useSetAcreLimit() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (v: { cropId: string; maxAcres: number | null }) => {
-      await supabase.from('crop_acre_limits').delete().eq('crop_id', v.cropId).is('crop_year', null)
-      if (v.maxAcres != null) {
-        const { error } = await supabase.from('crop_acre_limits').insert({ crop_id: v.cropId, crop_year: null, max_acres: v.maxAcres })
-        if (error) throw error
-      }
-    },
+    mutationFn: (v: { cropId: string; maxAcres: number | null }) => writeLimit({ crop_id: v.cropId }, { max_acres: v.maxAcres }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['rotation-context'] }),
   })
 }
@@ -468,11 +531,30 @@ export function useSetAcreLimit() {
 export function useSetGroupLimit() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (v: { group: 'dry_bean' | 'canola' | 'forage_legume'; maxAcres: number | null }) => {
-      await supabase.from('crop_acre_limits').delete().eq('crop_group', v.group).is('crop_year', null)
-      if (v.maxAcres != null) {
-        const { error } = await supabase.from('crop_acre_limits').insert({ crop_group: v.group, crop_year: null, max_acres: v.maxAcres })
-        if (error) throw error
+    mutationFn: (v: { group: LimitGroup; maxAcres: number | null }) =>
+      writeLimit({ crop_group: v.group }, { max_acres: v.maxAcres }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['rotation-context'] }),
+  })
+}
+
+/**
+ * Set the whole running order at once: the crops that have a rank, in it.
+ *
+ * The whole list rather than one crop's number, because a rank only means
+ * anything beside the others — moving potatoes above beans changes two rows,
+ * and writing them one at a time would leave the order briefly wrong on
+ * screen and permanently wrong if the second write failed. Crops left out of
+ * the list have their rank cleared.
+ */
+export function useSetCropPriority() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { order: { cropId?: string; group?: LimitGroup }[]; clear?: { cropId?: string; group?: LimitGroup }[] }) => {
+      for (const c of v.clear ?? []) {
+        await writeLimit(c.cropId ? { crop_id: c.cropId } : { crop_group: c.group! }, { priority: null })
+      }
+      for (const [at, c] of v.order.entries()) {
+        await writeLimit(c.cropId ? { crop_id: c.cropId } : { crop_group: c.group! }, { priority: at + 1 })
       }
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['rotation-context'] }),

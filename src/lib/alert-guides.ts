@@ -379,7 +379,7 @@ const G: Record<string, AlertGuide> = {
   pasture_move: {
     name: 'Move the herd out of a pasture',
     meaning:
-      'A pasture with a herd on it has reached the point where the app recommends moving them: the forage estimate says only a few days of grazing are left, the satellite shows it grazed down compared with pastures nobody grazed, or it has dropped faster than they did since the herd went in. A dry year (rain to date well under the 10-year average) makes it say so earlier, because what is grazed now will not grow back behind the herd.',
+      'A pasture with a herd on it has reached the point where the app recommends moving them: the forage estimate says only a few days of grazing are left, the satellite shows it grazed down compared with pastures nobody grazed, or it has dropped faster than they did since the herd went in. A dry year (rain to date well under the long-term average) makes it say so earlier, because what is grazed now will not grow back behind the herd.',
     steps: [
       'Read the reasons at the top — each line is one test that said move.',
       'Look at the pasture, or ask whoever checked the cattle last. The estimate does not see what is underfoot.',

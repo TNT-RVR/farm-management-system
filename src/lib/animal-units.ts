@@ -2,11 +2,11 @@
  * Animal units and typical weights, in one place.
  *
  * An animal unit (AU) is a 1,000 lb cow: it eats 26 lb of forage dry matter a
- * day (AU_LBS_PER_DAY in forage-yield.ts). So a class's AU per head is its
- * weight ÷ 1,000 — derived, never typed separately, because a typed AU and a
- * typed weight drift apart (Home Ranch's cows read 1,350 lb and 1.4 AU).
- * A stored AU is used only when the class says it was set on purpose
- * (herd_counts.au_override).
+ * day (AU_LBS_PER_DAY in forage-yield.ts). A class's AU per head is its weight
+ * on the METABOLIC scale — (weight ÷ 1,000)^0.75 — derived, never typed
+ * separately, because a typed AU and a typed weight drift apart (Home Ranch's
+ * cows read 1,350 lb and 1.4 AU). A stored AU is used only when the class says
+ * it was set on purpose (herd_counts.au_override).
  *
  * Calves at side are counted with their cows by `pairAU`, the calf's share
  * growing with its age, so every screen that puts pairs on grass — the
@@ -17,7 +17,13 @@
 import type { FeedClass } from './cattle-nutrition'
 
 export const AU_LB = 1000
-/** One AU's forage a day, lb DM (Alberta's AUM: 26 lb × 30 days). */
+/**
+ * One AU's INTAKE a day, lb DM — what goes in her mouth, not what the paddock
+ * loses. It is only ever a denominator here, turning a calf's pounds into a
+ * share of a cow, so it must stay intake: the waste allowance the Grazing tab
+ * can add (forage-yield.ts) applies to grass leaving a paddock, and putting it
+ * in this ratio would shrink every calf against its mother for no reason.
+ */
 const AU_FORAGE_LB = 26
 
 const n = (v: unknown): number | null => {
@@ -68,7 +74,21 @@ export function weightFor(row: WeightRow): { lb: number; missing: boolean } {
 
 // ── AU per head ─────────────────────────────────────────────────────────────
 
-export const auFromWeight = (lb: number) => Math.max(0, lb) / AU_LB
+/**
+ * Forage does not scale with body weight; it scales with metabolic weight,
+ * the 3/4 power — the same exponent the NASEM need tables are scaled by in
+ * cattle-nutrition.ts, so the grazing side and the feeding side now agree.
+ *
+ * It was weight ÷ 1,000 until 12 Nov 2026 (Sam: "let's use their animal unit
+ * equivalent"). The BCRC states the formula outright on its Cow-Calf Yardage
+ * Calculator — AUE = live weight^0.75 ÷ 1,000^0.75 — and its carrying-capacity
+ * calculator uses the same. The linear version read a 1,350 lb cow as 1.35 AU
+ * where this reads 1.26, and a 550 lb calf as 0.55 where this reads 0.64: a
+ * big animal eats less per pound than a small one, which linear weight cannot
+ * say.
+ */
+const METABOLIC_EXPONENT = 0.75
+export const auFromWeight = (lb: number) => (Math.max(0, lb) / AU_LB) ** METABOLIC_EXPONENT
 
 export type AuRow = WeightRow & { au_equivalent?: number | string | null; au_override?: boolean | null }
 
@@ -80,9 +100,9 @@ export function auSource(row: AuRow): 'weight' | 'override' | 'default' {
 }
 
 /**
- * AU per head for a class: weight ÷ 1,000, or the stored AU when it was typed
- * on purpose (au_override). With no weight entered, a stored AU is better than
- * a typical weight, so it is used then too.
+ * AU per head for a class: its metabolic weight (auFromWeight), or the stored
+ * AU when it was typed on purpose (au_override). With no weight entered, a
+ * stored AU is better than a typical weight, so it is used then too.
  */
 export function auFor(row: AuRow): number {
   const typed = n(row.au_equivalent)

@@ -89,7 +89,7 @@ export async function runSmridStaffCheck(sb: SupabaseClient): Promise<StaffCheck
   try {
     const res = await fetch(SMRID_DIRECTORY_URL, {
       // A polite scraper says who it is; the contact is the farm's own (Farm setup).
-      headers: { 'User-Agent': `RVR-Management/1.0 (farm management app${process.env.FARM_SUPPORT_EMAIL ? `; contact ${process.env.FARM_SUPPORT_EMAIL}` : ''})` },
+      headers: { 'User-Agent': `Farm-Management-System/1.0 (farm management app${process.env.FARM_SUPPORT_EMAIL ? `; contact ${process.env.FARM_SUPPORT_EMAIL}` : ''})` },
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     html = await res.text()

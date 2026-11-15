@@ -68,6 +68,7 @@ const Manure = lazy(() => import('@/pages/fertilizer/Manure').then((m) => ({ def
 const SpreadingCost = lazy(() => import('@/pages/fertilizer/SpreadingCost').then((m) => ({ default: m.SpreadingCost })))
 const SamplingMap = lazy(() => import('@/pages/fertilizer/SamplingMap').then((m) => ({ default: m.SamplingMap })))
 const TissueTests = lazy(() => import('@/pages/fertilizer/TissueTests').then((m) => ({ default: m.TissueTests })))
+const TestRequests = lazy(() => import('@/pages/fertilizer/TestRequests').then((m) => ({ default: m.TestRequests })))
 const ProductPrices = lazy(() => import('@/components/ProductPrices').then((m) => ({ default: m.ProductPrices })))
 const IciPrices = lazy(() => import('@/pages/fertilizer/IciPrices').then((m) => ({ default: m.IciPrices })))
 
@@ -170,14 +171,13 @@ function SampleTable({
   }
   return (
     <div>
-      {/* table-fixed with no horizontal scroll: the whole panel has to be
-          readable at a glance, and a table you scroll sideways hides half the
-          nutrients behind an interaction nobody performs while comparing. The
-          headings wrap and the type is small to pay for it. */}
-      {/* Scrolls sideways on a phone: the last column's help icon sat six
-          pixels past the edge and put a horizontal scroll on the whole page. */}
+      {/* Every column keeps room for its heading, its help icon and a
+          four-digit number. On a desktop the panel fits as it always has; on a
+          phone it scrolls sideways with the sample code pinned on the left,
+          rather than squeezing 15 columns into the screen until headings
+          overlap and numbers run together (Sam, 13 Nov 2026). */}
       <div className="overflow-x-auto">
-      <table className="w-full table-fixed text-[11px]">
+      <table className="w-full table-fixed text-[11px]" style={{ minWidth: shown.length * SOIL_COL_MIN_PX + 40 }}>
         <colgroup>
           {shown.map((c) => (
             <col
@@ -191,7 +191,7 @@ function SampleTable({
         <thead className={cn(TABLE_HEAD, 'align-bottom tracking-tight')}>
           <tr>
             {shown.map((c) => (
-              <th key={c.key} className="px-1 py-1.5 font-medium leading-tight">
+              <th key={c.key} className={cn('px-1 py-1.5 font-medium leading-tight', c.key === 'sample' && STICKY_HEAD)}>
                 <span className="inline-flex items-baseline">
                   <span className="break-words">{c.label}</span>
                   {SOIL_HELP[c.key] && (
@@ -232,7 +232,13 @@ function SampleTable({
               )}
             >
               {shown.map((c) => (
-                <td key={c.key} className="px-1 py-1.5">
+                <td
+                  key={c.key}
+                  className={cn(
+                    'whitespace-nowrap px-1 py-1.5 tabular-nums',
+                    c.key === 'sample' && cn('sticky left-0 z-10', s.depth_top_in !== 0 ? 'bg-gray-50' : 'bg-white'),
+                  )}
+                >
                   <Cell col={c.key} s={s} />
                 </td>
               ))}
@@ -247,6 +253,11 @@ function SampleTable({
     </div>
   )
 }
+
+/** The narrowest a soil table column gets before the table scrolls sideways. */
+const SOIL_COL_MIN_PX = 56
+/** The sample column's heading stays put while the rest scrolls under it. */
+const STICKY_HEAD = 'sticky left-0 z-20 bg-brand-700'
 
 const SAMPLE_VALUE_FIELDS: EditField[] = [...SOIL_COLUMNS.filter((c) => c.key !== 'sample' && c.key !== 'depth'), ...SOIL_MICRO_COLUMNS].map((c) => ({
   key: c.key,
@@ -923,6 +934,8 @@ function SoilView({ isManager }: { isManager: boolean }) {
         <NutrientHistory fieldId={fieldId} setFieldId={setFieldId} />
       ) : tab === 'tissue' ? (
         <TissueTests cropYear={cropYear} canEdit={isManager} />
+      ) : tab === 'request' ? (
+        <TestRequests canEdit={isManager} />
       ) : (
         <SoilSampling fieldId={fieldId} setFieldId={setFieldId} canEdit={isManager} />
       )}

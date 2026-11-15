@@ -49,10 +49,16 @@ describe('grazingRain', () => {
     // 150 mm to date, and a normal rest of season is 270 - 150 = 120, so the
     // projection is 270: an ordinary year, and no scaling.
     expect(grazingRain(ranch, measured()).rainFactor).toBeCloseTo(1, 6)
-    // 220 to date by the same day is well ahead: projected 340 of 270.
+    // 220 to date by the same day is well ahead: projected 340 of 270. More
+    // grass than the straight ratio, not less -- every one of those extra
+    // millimetres is above the 100 mm that grows nothing, and 340 mm is still
+    // a long way from the nitrogen ceiling on a Brown-zone pasture.
     const wet = grazingRain(ranch, measured({ total_mm: 220 }))
-    expect(wet.rainFactor).toBeCloseTo(340 / 270, 6)
+    expect(wet.rainFactor).toBeCloseTo(1.2673, 3)
     expect(wet.zoneMm).toBe(382)
+    // A dry year the other way: short of grass by more than it is of rain.
+    const dry = grazingRain(ranch, measured({ total_mm: 30 }))
+    expect(dry.rainFactor).toBeLessThan(150 / 270)
   })
 
   it('a wet year does not move the ranch to a wetter zone', () => {

@@ -50,7 +50,7 @@ export type RouteRow = {
 }
 
 export const OSRM_BASE = 'https://router.project-osrm.org'
-export const OSRM_AGENT = 'RVR-Management-App (farm records)'
+export const OSRM_AGENT = 'Farm-Management-System (farm records)'
 
 /** An end that has moved further than this is a different trip. */
 export const MOVED_M = 75

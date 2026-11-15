@@ -176,7 +176,7 @@ export async function runChemicalsSync(sb: SupabaseClient): Promise<ChemicalsSyn
   let csv: string
   try {
     const res = await fetch(PPID_PRODUCT_URL, {
-      headers: { 'User-Agent': 'RVR-Management/1.0 (farm management app)' },
+      headers: { 'User-Agent': 'Farm-Management-System/1.0 (farm management app)' },
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     csv = await res.text()

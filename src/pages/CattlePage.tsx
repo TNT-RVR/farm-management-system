@@ -34,6 +34,7 @@ const RotationList = lazy(() => import('@/pages/cattle/RotationList').then((m) =
 const GrazingCalculator = lazy(() => import('@/pages/cattle/GrazingCalculator').then((m) => ({ default: m.GrazingCalculator })))
 const GrazingPlanner = lazy(() => import('@/pages/cattle/GrazingPlanner').then((m) => ({ default: m.GrazingPlanner })))
 const GrazingSettings = lazy(() => import('@/pages/cattle/GrazingSettings').then((m) => ({ default: m.GrazingSettings })))
+const VirtualFenceRotation = lazy(() => import('@/pages/cattle/VirtualFenceRotation').then((m) => ({ default: m.VirtualFenceRotation })))
 const FirstRanchCard = lazy(() => import('@/pages/cattle/AddRanch').then((m) => ({ default: m.FirstRanchCard })))
 const BaleChecksPage = lazy(() => import('@/pages/BaleChecksPage').then((m) => ({ default: m.BaleChecksPage })))
 const GrazingRestrictionsPage = lazy(() => import('@/pages/GrazingRestrictionsPage').then((m) => ({ default: m.GrazingRestrictionsPage })))
@@ -693,6 +694,10 @@ function CattleBody({
                   under the map until 10 Nov 2026, a tab away from the plan it
                   belongs to. */}
               <RotationList ranchId={ranchId} growingMonths={growingMonths} />
+              {/* And this says how to cut a paddock up once the mob is in it
+                  (Sam, 12 Nov 2026): the acres one virtual fence has to hold
+                  for the days he means to leave it there. */}
+              {ranch && !allRanches && <VirtualFenceRotation ranch={ranch} />}
             </div>
           ) : tab === 'plan' ? (
             ranch ? (

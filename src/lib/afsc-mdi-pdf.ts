@@ -125,8 +125,16 @@ function choose(form: Form, name: string, value: string | null | undefined, log?
 async function open(file: string) {
   const res = await fetch(file)
   if (!res.ok) throw new Error(`Could not read ${file} (${res.status}).`)
+  const bytes = await res.arrayBuffer()
+  // A single-page app answers a missing file with its own index.html and a 200,
+  // so res.ok is no proof there is a PDF here. Without this check pdf-lib is
+  // handed a web page and raises "No PDF header found", which tells nobody
+  // anything. Every PDF starts with %PDF-.
+  const head = new TextDecoder().decode(bytes.slice(0, 5))
+  if (head !== '%PDF-')
+    throw new Error(`${file} is not on this copy of the app. Put AFSC’s blank form there and try again.`)
   const { PDFDocument } = await pdfLib()
-  const doc = await PDFDocument.load(await res.arrayBuffer())
+  const doc = await PDFDocument.load(bytes)
   return { doc, form: doc.getForm() as Form }
 }
 

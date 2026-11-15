@@ -159,7 +159,8 @@ export const TAB_ENTRIES: TabEntry[] = [
     page: 'Pastures',
     to: '/cattle?tab=grazing-plan',
     exact: true,
-    keywords: 'cattle grazing planner rotation schedule season lease days gates rest',
+    keywords:
+      'cattle grazing planner rotation schedule season lease days gates rest virtual fence strip grazing collars mob acres per fence',
   },
   {
     label: 'Spray restrictions',
@@ -577,6 +578,43 @@ export const TAB_ENTRIES: TabEntry[] = [
     to: '/canola-reports?tab=history',
     exact: true,
     keywords: 'crop history canola company fields report',
+  },
+
+  // Seed canola scout reports — a tab a company, plus the overview.
+  {
+    label: 'Which fields passed',
+    page: 'Seed canola scout reports',
+    to: '/scout-reports?tab=overview',
+    exact: true,
+    keywords: 'prescout scout grade pass fail seed canola company field rating A B C D',
+  },
+  {
+    label: 'Corteva scouts',
+    page: 'Seed canola scout reports',
+    to: '/scout-reports?tab=corteva',
+    exact: true,
+    keywords: 'corteva prescout grade volunteer canola weeds agronomist',
+  },
+  {
+    label: 'BASF scouts',
+    page: 'Seed canola scout reports',
+    to: '/scout-reports?tab=basf',
+    exact: true,
+    keywords: 'basf prescout grade volunteer canola weeds agronomist',
+  },
+  {
+    label: 'Bayer scouts',
+    page: 'Seed canola scout reports',
+    to: '/scout-reports?tab=bayer',
+    exact: true,
+    keywords: 'bayer prescout grade volunteer canola weeds agronomist',
+  },
+  {
+    label: 'Nutrien scouts',
+    page: 'Seed canola scout reports',
+    to: '/scout-reports?tab=nutrien',
+    exact: true,
+    keywords: 'nutrien prescout grade volunteer canola weeds agronomist',
   },
 
   // Fertilizer — five views, each its own route (src/lib/fertilizer-views.ts)

@@ -37,6 +37,7 @@ import { reverseLld, sameParcel } from '@/lib/geo/ats'
 import { useTownshipTable } from '@/lib/geo/atsTownships'
 import { parseLld } from '@/lib/geo/lld'
 import { FarmWideLinks, FieldTabBar, fieldSectionPath, type FieldSection } from './field/FieldTabs'
+import { FieldScoutReports } from './field/FieldScoutReports'
 import { grownTrait, isCanola } from '@/lib/canola-trait'
 import { companyLookup } from '@/lib/crop-label'
 import { useFarmSettings } from '@/lib/farm-setup'
@@ -924,6 +925,12 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
       {section === 'scouting' && (
         <TabSuspense>
           <FieldScouting fieldId={field.id} />
+        </TabSuspense>
+      )}
+
+      {section === 'scout-reports' && (
+        <TabSuspense>
+          <FieldScoutReports fieldId={field.id} />
         </TabSuspense>
       )}
 

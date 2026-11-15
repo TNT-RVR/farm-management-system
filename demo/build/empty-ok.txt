@@ -79,20 +79,11 @@ user_signatures          # each person draws their own, once, on their own devic
 sat_images               # the greenness numbers and charts are there; the pictures are not
 sat_latest_image         # as above
 
-# --- The research library, and the tables read out of its papers
-# The library is a folder of PDFs the farm collected; the published copy ships
-# neither the files nor their catalogue, and the three tables below hold
-# published figures transcribed from them, each row pointing at the paper it
-# came from. They reach the farm's own database in a migration, and the demo
-# loads the published structure rather than the migrations.
-research_papers          # the library's catalogue: no PDFs ship with the demo
-research_numbers         # figures read out of those papers
-research_folders_v       # the shelves, over research_folders and the papers on them
-research_gaps_v          # which shelves have nothing on them yet
+# --- The research library
+# The library is a shelf of PDFs the farm collected, and no PDF ships. What
+# does ship is the entry for each paper the irrigation sheets and the river's
+# water conservation objectives cite, so those screens can say where their
+# numbers came from, so the catalogue itself is no longer empty. The figures
+# read out of the papers stay behind with the files.
+research_numbers         # figures read out of the papers: the papers themselves do not ship
 research_numbers_v       # the figures with their paper's details
-research_shelf_v         # a shelf's papers
-crop_irrigation_sheets   # the province's irrigation sheet per crop, transcribed from a paper in the library
-crop_irrigation_stages   # each sheet's growth stages and trigger points
-crop_irrigation_refill   # each sheet's refill table by soil texture
-river_wco_segments       # the river's water conservation objectives, read from a published order
-river_wco_bands          # each segment's flow bands

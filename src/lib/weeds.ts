@@ -29,7 +29,8 @@ export type Weed = {
   id: string
   /** Why it matters here. */
   why: string
-  photo: string
+  /** The file under public/weeds/, or null where there is none to show. */
+  photo: string | null
   credit: string
   license: string
 }
@@ -115,7 +116,11 @@ export const WEEDS: Weed[] = [
     color: '#64748b',
     id: 'Waist-high woody shrub with silver-grey, three-toothed leaves and a strong sage smell when you crush one. Woody stems tell it from pasture sage, which is low, soft and feathery.',
     why: 'Native, so not a weed in law — but a thick stand shades out grass and takes grazing out of production, and it thickens on heavier grazing and after wet years. Worth mapping to see whether a stand is spreading rather than arguing about it from memory.',
-    photo: '/weeds/silver-sagebrush.jpg',
+    // No photo: the file was never added, and an empty credit and licence is
+    // nobody's permission. Named, it was a request for a file that is not
+    // there — the tile fell back to "No photo yet" only after the image had
+    // failed to load. Left null, it shows the colour straight away.
+    photo: null,
     credit: '',
     license: '',
   },

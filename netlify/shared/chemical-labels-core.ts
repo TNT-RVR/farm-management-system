@@ -15,7 +15,7 @@ import { CHUNK_THRESHOLD, chunkLabelText, mergeExtractions } from './label-chunk
 import { callClaude, SONNET_5_5 } from './anthropic.ts'
 
 const API = 'https://pest-control.canada.ca/pesticide-registry-api/api'
-const UA = 'RVR-Management/1.0 (farm management app)'
+const UA = 'Farm-Management-System/1.0 (farm management app)'
 
 export type LabelDoc = { docId: string; docCount: number }
 

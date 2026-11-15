@@ -302,10 +302,11 @@ export const FEED_HELP = {
     title: 'AUD and AUM — animal-unit days and months',
     body: [
       'One animal unit (AU) is a 1,000 lb cow, with or without a calf at side, eating 26 lb of forage a day. Heavier or lighter classes count as more or less than one (the AU/head column).',
-      'An AUD is one animal unit grazing for one day — 26 lb of forage. An AUM is a month of it: 30 AUDs, 780 lb.',
+      'A class’s AU per head is its METABOLIC weight, (weight ÷ 1,000) to the power 0.75 — not weight ÷ 1,000. A big animal eats less per pound than a small one, so a 1,350 lb cow is 1.26 AU, not 1.35, and a 550 lb calf is 0.64, not 0.55. It is the formula the BCRC states on its yardage calculator and the same 3/4 power the winter feed need tables are scaled by.',
+      'An AUD is one animal unit grazing for one day. What that takes out of a paddock depends on which pounds are counted, set by “Counting” beside the land capacity: 26 lb where only what she eats is counted, or 33.3 lb where the grass she tramples, beds on and fouls is counted too. An AUM is thirty of those days — 780 lb or 1,000 lb (455 kg).',
       'Land capacity is the grazeable forage turned into AUDs; the herd’s need is its total animal units × days grazing. The difference is the surplus or deficit.',
     ],
-    source: 'BCRC Carrying Capacity Calculator, Method 1.',
+    source: 'BCRC Carrying Capacity Calculator, Method 1 (26 lb); Alberta range plant community guides (455 kg AUM).',
   },
   ndvi: {
     title: 'NDVI — satellite greenness',

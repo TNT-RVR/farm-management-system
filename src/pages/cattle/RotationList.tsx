@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { paddocksOnly, usePastureRanchLinks, usePastures, useRanchScopedPastures } from '@/lib/pastures'
 import { isDormant } from '@/lib/pasture-light'
 import { CalibrationForm } from './CalibrationForm'
+import { useMeasuredYields } from '@/lib/grazing'
 import { blocking, untilWord } from '@/lib/grazing-restrictions'
 import { useGrazingPicture } from '@/lib/grazing-restrictions-hooks'
 import { HelpNote } from '@/components/HelpNote'
@@ -197,6 +198,9 @@ const METHOD_LABEL: Record<CalibrationSample['method'], string> = {
  */
 function ForageSamples({ pastures }: { pastures: { id: string; name: string }[] }) {
   const { data: samples } = useCalibrationSamples()
+  // A sampled pasture stops being read off the provincial table and is read
+  // off its own grass instead, which is the whole point of taking one.
+  const { data: anchors } = useMeasuredYields()
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
   const upd = useUpdateCalibration()
@@ -215,7 +219,12 @@ function ForageSamples({ pastures }: { pastures: { id: string; name: string }[] 
   if (!samples?.length) return null
 
   return (
-    <Fold storageKey="cattle-forage-samples" title="Forage samples" summary={`${samples.length} on file`} bodyClassName="p-0">
+    <Fold
+      storageKey="cattle-forage-samples"
+      title="Forage samples"
+      summary={`${samples.length} on file${anchors?.size ? ` · ${anchors.size} pasture${anchors.size === 1 ? '' : 's'} now read off its own grass` : ''}`}
+      bodyClassName="p-0"
+    >
       <ul className="divide-y divide-gray-100 text-xs">
         {samples.map((s) => (
           <li key={s.id}>

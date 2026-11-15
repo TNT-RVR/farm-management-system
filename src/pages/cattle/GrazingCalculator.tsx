@@ -1,36 +1,56 @@
 import { Fragment, Suspense, useEffect, useMemo, useState } from 'react'
 import { lazyWithRetry } from '@/lib/lazyWithRetry'
-import { CloudRain, Plus, Trash2 } from 'lucide-react'
+import { ChevronRight, CloudRain, Plus } from 'lucide-react'
 import { Select } from '@/components/Select'
 import {
   computeHerds,
   computePastures,
   grassBalance,
   grazingRain,
+  grazingUtilization,
+  GRASS_QUALITIES,
+  type PastureCalc,
   type HerdCalc,
   useGrazingHerd,
   useGrazingPastures,
   useHerdMutations,
   usePastureFieldContext,
   usePastureMutations,
+  useMeasuredYields,
   usePastureSeasonFactors,
   useRanchPrecip,
 } from '@/lib/grazing'
-import { PastureFieldsLine } from './PastureFields'
+import { PastureFeedBreakdown } from './PastureFields'
+import { DeleteButton, EditButton, RecordEditModal, rowClick } from '@/components/RecordEditor'
 import { GrassQuality } from './GrassQuality'
 import { useSetRanch, type Ranch } from '@/lib/ranches'
 import { useFeedPlan } from '@/lib/feed'
-import { auFromWeight } from '@/lib/animal-units'
-import { ACRES_PER_HECTARE } from '@/lib/forage-yield'
+import { auFor, auFromWeight } from '@/lib/animal-units'
+import {
+  ACRES_PER_HECTARE,
+  AU_INTAKE_LB_PER_DAY,
+  AU_TOTAL_LB_PER_DAY,
+  AU_WASTE_LB_PER_DAY,
+  forageYieldPerAcre,
+  ratedYieldPerAcre,
+} from '@/lib/forage-yield'
+import { useActivations } from '@/lib/eshepherd'
+import { forageCalibration, grazedSeasons, mobUnits } from '@/lib/grazed-yield'
+import { LB_PER_KG } from '@/lib/bushels'
+import { RAIN_NORMAL_YEARS } from '@/lib/rain-normals'
+import { GAUGE_GAP_FLAG, gaugeGap, useRanchGauge } from '@/lib/ranch-gauge'
 import { shortDay } from '@/lib/field-residue'
 import type { Database } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
+import { InfoPopover } from '@/components/InfoPopover'
+import { essrTotals, usePastureEssr } from '@/lib/range-sites'
 import { FeedInfo } from './feed/FeedInfo'
 import { FromHerdChip } from './feed/bits'
 import { n0, n1 } from '@/lib/format'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
+import { DEFAULT_UTILIZATION } from '@/lib/forage-response'
 
 type PasturePatch = Database['public']['Tables']['grazing_pastures']['Update']
 type HerdPatch = Database['public']['Tables']['herd_counts']['Update']
@@ -39,6 +59,23 @@ type HerdPatch = Database['public']['Tables']['herd_counts']['Update']
 const RainGraph = lazyWithRetry(() => import('./RainGraph').then((m) => ({ default: m.RainGraph })))
 
 const DETAIL_KEY = 'grazing_pasture_detail'
+
+/**
+ * Pounds over kilograms, in one cell.
+ *
+ * The forage tables, the AUM and everything else on this page are in pounds,
+ * so pounds stay the figure you read; the kilograms under them are for the
+ * feed tests and ration sheets that come back in metric. Two columns of the
+ * same number in different units would have been four columns of feed.
+ */
+function Lb({ lb, bold = false }: { lb: number; bold?: boolean }) {
+  return (
+    <>
+      <span className={cn('tabular-nums', bold && 'font-medium')}>{n0(lb)}</span>
+      <span className="block text-[11px] tabular-nums text-gray-400">{n0(lb / LB_PER_KG)} kg</span>
+    </>
+  )
+}
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 
@@ -190,11 +227,11 @@ function useGrazingCalc(ranch: Ranch) {
   const { data: herd } = useGrazingHerd(ranchId)
   const { data: measured, isLoading: precipLoading, isError: precipError } = useRanchPrecip(ranch)
 
-  const utilization = ranch.grazing_utilization_rate ?? 0.8
+  const setRate = ranch.grazing_utilization_rate ?? DEFAULT_UTILIZATION
   /*
    * The plan is THIS season, not an average one.
    *
-   * It used to be the 10-year normal, with this year's rain shown beside it as
+   * It used to be the long-term normal, with this year's rain shown beside it as
    * a number that changed nothing. In 2026 that gap was the whole story: 379 mm
    * fell against a 270 mm normal and the plan went on reporting the grass an
    * ordinary year would have grown, which is most of why the Grazing tab read a
@@ -208,6 +245,24 @@ function useGrazingCalc(ranch: Ranch) {
   // one every call, and the costing memos below take it whole.
   const rain = useMemo(() => grazingRain(ranch, measured), [ranch, measured])
   const precip = rain.projectedMm ?? rain.forecastMm
+  /*
+   * Take less in a dry year. Grazing a drought-stressed plant to the usual
+   * mark leaves it without the leaf to rebuild its roots and the pasture comes
+   * back worse NEXT year however that year rains, so the rate slides down as
+   * the season factor falls below 0.8. It never slides up: taking more in a
+   * good year is a decision for a person. See droughtUtilization.
+   */
+  const utilization = grazingUtilization(setRate, rain)
+  const droughtCut = utilization < setRate - 0.001
+  /*
+   * Whether a grazing day draws the grass the herd tramples, beds on and fouls
+   * as well as the grass it eats: Alberta's 455 kg animal-unit month (33.3 lb a
+   * day) against the Forage Manual's 780 lb one (26 lb). A fifth of the
+   * grazing days hang on it. Nothing to do with the utilization rate above —
+   * that is how much of the stand the herd may take, this is how much of what
+   * it took actually leaves the paddock.
+   */
+  const countWaste = ranch.grazing_count_waste ?? true
 
   // Crop fields inside the fences, from the farming side: grass all season,
   // stubble only once harvested and not worked (field-residue.ts).
@@ -227,18 +282,119 @@ function useGrazingCalc(ranch: Ranch) {
     for (const f of factors ?? []) if (f.factor != null) m.set(f.grazing_pasture_id, f.factor)
     return m
   }, [factors])
+  // A pasture someone has cut and weighed is read off its own grass.
+  const { data: clipped } = useMeasuredYields()
+  /*
+   * And where nobody has, the table is checked against what the cattle
+   * actually took off this ranch, and lifted to meet it if it falls short.
+   *
+   * The grass rating keeps the job it is good at -- which paddock is better
+   * than which -- and the grazing record supplies the part a relative rating
+   * never could, which is the absolute level. See grazed-yield.ts for why the
+   * table reads low here and why this can only ever raise it.
+   */
+  const { data: activations } = useActivations()
+  const mine = useMemo(() => new Set((pastures ?? []).map((p) => p.pasture_id).filter(Boolean) as string[]), [pastures])
+  const units = useMemo(() => mobUnits(herd ?? [], auFor), [herd])
+  const seasons = useMemo(
+    () => grazedSeasons((activations ?? []).filter((a) => a.pasture_id && mine.has(a.pasture_id)), units),
+    [activations, mine, units],
+  )
+  // The model's own answer for an ordinary year, with nothing but clip-and-weigh
+  // behind it: the thing the grazing record is measured against.
+  const baseNormalAuds = useMemo(
+    () =>
+      computePastures(pastures ?? [], { ...rain, rainFactor: 1 }, setRate, seasonCtx, null, clipped, countWaste)
+        .reduce((a, p) => a + p.auds, 0),
+    [pastures, rain, setRate, seasonCtx, clipped, countWaste],
+  )
+  const calibration = useMemo(
+    // Only this season's rain factor is known; an older season is read as an
+    // ordinary one, which errs toward leaving the table alone.
+    () => forageCalibration(seasons, baseNormalAuds, (s) => (s === new Date().getFullYear() ? rain.rainFactor : 1)),
+    [seasons, baseNormalAuds, rain.rainFactor],
+  )
+  /*
+   * What a MEDIAN paddock here grows in an ordinary year, lb/acre.
+   *
+   * The ranch's own figure where somebody has set one; otherwise the
+   * estimator's Fair row at its zone, which is what the app read before the
+   * level and the rating were told apart. The grazing-record floor still
+   * lifts it where the cattle have proved more.
+   */
+  const baseLbAc = useMemo(
+    () => (ranch.forage_base_lb_ac ?? forageYieldPerAcre(rain.zoneMm, 'Fair')) * calibration.factor,
+    [ranch.forage_base_lb_ac, rain.zoneMm, calibration.factor],
+  )
+  const baseIsOwn = ranch.forage_base_lb_ac != null
+  /*
+   * Each paddock, best evidence first: its own clip-and-weigh, then this
+   * ranch's level times the paddock's own measured cover, then the table.
+   *
+   * The middle rung is the fix for a rating that was being read as something
+   * it never was. grass_quality_rel is a paddock against its own ranch's
+   * MEDIAN paddock, so handing it to a table of absolute pounds threw the
+   * ranch's level away; here it only decides the spread. It also ends the
+   * four-word bucketing: Pasture K at 0.79 of the median is read at 0.79,
+   * not rounded down to "Poor" and 19% under its own measurement.
+   */
+  const anchors = useMemo(() => {
+    const m = new Map(clipped ?? [])
+    const lifted = calibration.factor > 1.001
+    for (const p of pastures ?? []) {
+      if (m.has(p.id)) continue
+      const rated = ratedYieldPerAcre(baseLbAc, p.grass_quality_rel)
+      if (rated != null) m.set(p.id, { lbPerAcre: rated, source: lifted ? 'grazed' : 'rated' })
+      else if (lifted)
+        m.set(p.id, { lbPerAcre: forageYieldPerAcre(rain.zoneMm, p.grass_quality) * calibration.factor, source: 'grazed' })
+    }
+    return m
+  }, [clipped, pastures, rain.zoneMm, baseLbAc, calibration.factor])
+  /*
+   * And what the SOIL sustains, which is a third opinion on the same ground
+   * (range-sites.ts).
+   *
+   * The two above are both measurements of this ranch: a clip-and-weigh, or
+   * what the cattle actually took. This one is not a measurement at all -- it
+   * is Alberta's published rate for the kind of ground each paddock sits on,
+   * and it is a long-run SUSTAINABLE rate rather than a capacity. So it never
+   * feeds the calculation; it sits beside it. Where the grazing record lifts
+   * the table above this line, that is worth seeing rather than reconciling:
+   * a wet year can carry more than the ground sustains every year.
+   *
+   * A paddock with no boundary drawn has no soil to read and simply has none.
+   */
+  const { data: essrByPaddock } = usePastureEssr(ranchId)
+  const essr = useMemo(() => essrTotals(essrByPaddock), [essrByPaddock])
   const calc = useMemo(
-    () => computePastures(pastures ?? [], rain, utilization, seasonCtx, factorFor),
-    [pastures, rain, utilization, seasonCtx, factorFor],
+    () => computePastures(pastures ?? [], rain, utilization, seasonCtx, factorFor, anchors, countWaste),
+    [pastures, rain, utilization, seasonCtx, factorFor, anchors, countWaste],
+  )
+  const measuredYieldCount = useMemo(
+    () => (pastures ?? []).filter((p) => clipped?.has(p.id)).length,
+    [pastures, clipped],
   )
   // The same pastures in an ordinary year: the same zone, with the season's
   // multiplier set to 1. So the difference this year made is a number beside
   // the plan rather than something only the plan knows.
   const normalAuds = useMemo(
     () =>
-      computePastures(pastures ?? [], { ...rain, rainFactor: 1 }, utilization, seasonCtx)
+      computePastures(pastures ?? [], { ...rain, rainFactor: 1 }, setRate, seasonCtx, null, anchors, countWaste)
         .reduce((a, p) => a + p.auds, 0),
-    [pastures, rain, utilization, seasonCtx],
+    [pastures, rain, setRate, seasonCtx, anchors, countWaste],
+  )
+  /*
+   * The same pastures, this year's weather, but the rate Sam set rather
+   * than the dry-year one. It exists so the two things that moved the number
+   * can be shown apart: the weather is not a decision and the grazing rate
+   * is, and a single combined figure labelled "from this year's rain" was
+   * telling the truth about neither.
+   */
+  const rainAuds = useMemo(
+    () =>
+      computePastures(pastures ?? [], rain, setRate, seasonCtx, factorFor, anchors, countWaste)
+        .reduce((a, p) => a + p.auds, 0),
+    [pastures, rain, setRate, seasonCtx, factorFor, anchors, countWaste],
   )
   const measuredCount = useMemo(
     () => (pastures ?? []).filter((p) => factorFor.has(p.id)).length,
@@ -291,11 +447,24 @@ function useGrazingCalc(ranch: Ranch) {
     precipLoading,
     precipError,
     utilization,
+    setRate,
+    droughtCut,
+    countWaste,
+    essr,
+    essrByPaddock,
     rain,
     precip,
     calc,
     normalAuds,
+    rainAuds,
+    calibration,
+    baseLbAc,
+    baseIsOwn,
+    // Which paddocks are scaled by their own satellite growth rather than by
+    // the ranch's rain: the grass-rating panel says which figure it is reading.
+    factorFor,
     measuredCount,
+    measuredYieldCount,
     herdCalc,
     totals,
     audsRequired,
@@ -327,6 +496,128 @@ export function GrazingRanchTotals({
   return null
 }
 
+const WASTE_PILL = 'rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors disabled:cursor-default'
+
+/**
+ * Which pound figure the AUDs are counted in: what the herd eats, or that plus
+ * what it tramples and fouls.
+ *
+ * Both are standard and they are 22% apart, so the figure above means nothing
+ * without saying which one it is — hence a control beside the number rather
+ * than a setting on another page. Sam asked for the split on 12 Nov 2026
+ * after the two conventions turned up side by side in the app: 26 lb a day out
+ * of the Alberta Forage Manual, 33.3 out of the public-lands range guides.
+ *
+ * The utilization card next door answers a different question and is left
+ * alone — Sam sets that himself.
+ */
+function AuWasteToggle({
+  countWaste,
+  disabled,
+  onChange,
+}: {
+  countWaste: boolean
+  disabled?: boolean
+  onChange: (v: boolean) => void
+}) {
+  return (
+    <div className="mt-1.5 flex items-center gap-1">
+      <span className="text-[11px] text-gray-400">Counting</span>
+      <div className="inline-flex overflow-hidden rounded border border-gray-200">
+        {([true, false] as const).map((v) => (
+          <button
+            key={String(v)}
+            type="button"
+            disabled={disabled}
+            aria-pressed={countWaste === v}
+            onClick={() => !disabled && countWaste !== v && onChange(v)}
+            className={cn(
+              WASTE_PILL,
+              countWaste === v ? 'bg-brand-700 text-white' : 'text-gray-500 hover:bg-gray-100',
+            )}
+          >
+            {v ? 'eaten + wasted' : 'eaten only'}
+          </button>
+        ))}
+      </div>
+      <InfoPopover title="What one grazing day costs a paddock" width={430}>
+        <p>
+          A cow eats about <b>{AU_INTAKE_LB_PER_DAY} lb</b> of dry matter a day — 2.6 % of a
+          1,000 lb body weight. She also treads on, beds down on and fouls roughly{' '}
+          <b>{AU_WASTE_LB_PER_DAY.toFixed(1)} lb</b> more. That grass leaves the paddock just as
+          surely as the grass she swallows.
+        </p>
+        <p>
+          <b>Eaten + wasted</b> charges a grazing day the full{' '}
+          <b>{AU_TOTAL_LB_PER_DAY.toFixed(1)} lb</b>, which is Alberta&apos;s animal-unit month of
+          455 kg (1,000 lb). Every stocking rate in the province&apos;s range plant community
+          guides is written in it. <b>Eaten only</b> charges {AU_INTAKE_LB_PER_DAY} lb, the figure
+          behind the Alberta Forage Manual&apos;s yield tables and the BCRC&apos;s carrying-capacity
+          calculator.
+        </p>
+        <p>
+          The switch moves no grass: the pounds standing out there are the same either way. It
+          changes how many grazing days those pounds come to — a fifth of them, which is a paddock
+          lasting 31 days against 40.
+        </p>
+        <p className="text-gray-500">
+          The crop-field acres inside the fences are not affected. Their pounds already have
+          trampling taken off upstream, so charging them again would take it twice. This is also
+          not the utilization rate beside it — that is how much of the stand the herd may take
+          before the plants suffer.
+        </p>
+      </InfoPopover>
+    </div>
+  )
+}
+
+/**
+ * Where the sustainable rate comes from, and why it is not a verdict on this
+ * year. Beside the figure it sits next to, because the two are easy to read as
+ * one number disagreeing with itself.
+ */
+function EssrInfo({
+  essr,
+  thisYear,
+}: {
+  essr: NonNullable<ReturnType<typeof essrTotals>>
+  thisYear: number
+}) {
+  const over = thisYear > essr.high
+  return (
+    <InfoPopover title="What the ground sustains" width={460}>
+      <p>
+        The soil map says what kind of ground each paddock is — loamy, sandy, gravel — and Alberta&apos;s
+        Dry Mixedgrass range plant community guide says what that kind of ground carries: <b>{n0(essr.auds)} AUDs</b>{' '}
+        across {essr.paddocks} mapped paddock{essr.paddocks === 1 ? '' : 's'}, somewhere between{' '}
+        {n0(essr.low)} and {n0(essr.high)} depending which plant community each site actually carries.
+      </p>
+      <p>
+        It is a <b>sustainable</b> rate, not this year&apos;s capacity: a quarter to half the herbage
+        taken and the rest left as litter and root reserve, year after year, without the stand going
+        backwards. A wet season grows more and carries more, so the figure above being higher is not
+        a contradiction{over ? ' — and this year it is higher' : ''}.
+      </p>
+      <p>
+        Utilization is already inside it, so it is not reduced again by the rate beside it. Its animal
+        unit is Alberta&apos;s 455 kg month, which is the &ldquo;eaten + wasted&rdquo; setting — on
+        &ldquo;eaten only&rdquo; the two are a fifth apart and not like for like.
+      </p>
+      {essr.ratedShare < 0.995 && (
+        <p className="text-gray-500">
+          {Math.round(essr.ratedShare * 100)} % of the mapped acres carry a published rate. The rest sit
+          on range sites the guide lists no plant community for, so they are left unrated rather than
+          counted as nothing. A paddock with no boundary drawn has no soil to read at all.
+        </p>
+      )}
+      <p className="text-gray-500">
+        Adams 2005, from 1,716 vegetation plots. The chain is soil series → ecological range site →
+        the communities on it → their stocking rate.
+      </p>
+    </InfoPopover>
+  )
+}
+
 export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ranch: Ranch }) {
   const ranchId = ranch.id
   const {
@@ -335,17 +626,36 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
     precipLoading,
     precipError,
     utilization,
+    setRate,
+    droughtCut,
+    countWaste,
+    essr,
+    essrByPaddock,
     rain,
     precip,
     calc,
     normalAuds,
+    rainAuds,
+    calibration,
+    baseLbAc,
+    baseIsOwn,
+    factorFor,
     measuredCount,
+    measuredYieldCount,
     herdCalc,
     totals,
     audsRequired,
     surplus,
     cowsOver,
   } = useGrazingCalc(ranch)
+  /*
+   * The nearest real gauge's total for the same window, shown beside the
+   * gridded one the model plans on. Called here rather than in useGrazingCalc
+   * so the All-ranches totals component does not fetch it for a figure it
+   * never draws. See ranch-gauge.ts for why the model still runs on the grid.
+   */
+  const { data: gauge } = useRanchGauge(ranch, measured?.through)
+  const gaugeOff = gauge ? gaugeGap(gauge.mm, rain.toDateMm) : null
   const setRanch = useSetRanch()
   const pastureM = usePastureMutations()
   const herdM = useHerdMutations()
@@ -356,14 +666,22 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
       sort_order: (pastures?.at(-1)?.sort_order ?? 0) + 1,
       ranch_id: ranchId,
     })
-  const patchP = (id: string, patch: PasturePatch) => pastureM.update.mutate({ id, patch })
   /**
-   * Acres is what everybody here says a pasture is; km² is only how the column
-   * happens to be stored. Typing acres writes the km² behind it (Sam, 10 Nov
-   * 2026: East Ranch's Main Pasture is 2,923 acres and there was nowhere to put
-   * the number — the only size box was km², hidden behind the detail switch).
+   * Which pastures are open to their feed breakdown, and which one is being
+   * edited. Several can be open at once — comparing where two paddocks' feed
+   * comes from is the reason to open either. Not remembered between visits:
+   * an expanded row is a question you asked today.
    */
-  const setAcres = (id: string, acres: number) => patchP(id, { km2: Math.max(0, acres) / (100 * ACRES_PER_HECTARE) })
+  const [opened, setOpened] = useState<Set<string>>(() => new Set())
+  const toggleOpen = (id: string) =>
+    setOpened((o) => {
+      const next = new Set(o)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
+  const [editing, setEditing] = useState<PastureCalc | null>(null)
+  // Only a pasture with cropland inside the fence has anything to break out.
+  const breakdownOf = (x: PastureCalc) => x.fieldsLinked || x.irrigated_ac > 0
   const patchH = (id: string, patch: HerdPatch) => herdM.update.mutate({ id, patch })
   const setRanchField = (patch: Database['public']['Tables']['ranches']['Update']) =>
     setRanch.mutate({ id: ranchId, patch })
@@ -433,12 +751,12 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                       )
                     : rain.forecastSource === 'normal'
                       ? (
-                          <span title={`10-year average of ${measured!.normal!.years.map((y) => y.year).join(', ')}`}>
+                          <span title={`${RAIN_NORMAL_YEARS}-year average of ${measured!.normal!.years.map((y) => y.year).join(', ')}`}>
                             {measured!.normal!.years.length}-yr avg
                           </span>
                         )
                       : measured
-                        ? 'no 10-year average — using manual'
+                        ? `no ${RAIN_NORMAL_YEARS}-year average — using manual`
                         : ranch.latitude == null || ranch.longitude == null
                           ? 'add the ranch’s location to measure rain — using manual'
                           : 'loading rainfall…'}
@@ -451,10 +769,43 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                       ? 'font-medium text-amber-700'
                       : 'text-gray-500',
                   )}
-                  title="This year's rain since the season started, against the 10-year average to the same day."
+                  title={`This year's rain since the season started, against the ${RAIN_NORMAL_YEARS}-year average to the same day.`}
                 >
                   {n0(rain.toDateMm)} mm to {throughLabel}
                   {rain.pctOfNormal != null && ` · ${rain.pctOfNormal}% of normal`}
+                </p>
+              )}
+              {/*
+               * The nearest real gauge, beside the gridded figure above it.
+               *
+               * It drives nothing — the model needs one instrument on both
+               * halves of its ratio, and only the grid has thirty years
+               * (ranch-gauge.ts). What the gauge adds is where the rain
+               * actually fell, which a grid cell averages away: in 2026 the
+               * three gauges here spread 93 mm while the grid put the same
+               * points within 12 mm. So it goes amber when the two part
+               * company, because that is the case worth a second look.
+               */}
+              {gauge && (
+                <p
+                  className={cn(
+                    'mt-0.5 text-[11px]',
+                    gaugeOff != null && Math.abs(gaugeOff) >= GAUGE_GAP_FLAG
+                      ? 'font-medium text-amber-700'
+                      : 'text-gray-500',
+                  )}
+                  title={
+                    `${gauge.station}, the nearest gauge, ${gauge.km} km from the ranch: ${n0(gauge.mm)} mm over the same ${gauge.days} days.` +
+                    (gaugeOff != null && Math.abs(gaugeOff) >= GAUGE_GAP_FLAG
+                      ? ` That is ${Math.abs(Math.round(gaugeOff * 100))}% ${gaugeOff < 0 ? 'less' : 'more'} than the ${n0(rain.toDateMm ?? 0)} mm the forage figures use, which is enough to matter. The model plans on the gridded figure because its ${RAIN_NORMAL_YEARS}-year normal comes from the same source and a ratio needs both halves off one instrument — but a gauge this far out is worth a look before you stock on it.`
+                      : ' It agrees with the gridded figure the forage numbers use, so there is nothing to reconcile.')
+                  }
+                >
+                  gauge {n0(gauge.mm)} mm
+                  {gaugeOff != null && Math.abs(gaugeOff) >= GAUGE_GAP_FLAG &&
+                    ` · ${Math.abs(Math.round(gaugeOff * 100))}% ${gaugeOff < 0 ? 'under' : 'over'}`}
+                  {' · '}
+                  {gauge.station}, {gauge.km} km
                 </p>
               )}
               {/* What the forage table is actually read at: the zone picks the
@@ -465,7 +816,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                 className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-500"
                 title={
                   rain.zoneSource === 'soil'
-                    ? `The forage row is read at ${n0(rain.zoneMm)} mm, the ranch's annual precipitation zone. The estimator's rows are soil climatic zones — 300 mm Brown, 400 mm Dark Brown — and both ranches sit on Brown Chernozem. This season is running at ${Math.round(rain.rainFactor * 100)}% of a normal one, which scales what that row yields.`
+                    ? `The forage row is read at ${n0(rain.zoneMm)} mm, the ranch's annual precipitation zone. The manual reads that row off the soil climatic zone — 300 mm Brown, 400 mm Dark Brown — but the soil here remembers a drier climate than the ground produces in, so both ranches are classified on measured rainfall instead. This season is worth ${Math.round(rain.rainFactor * 100)}% of a normal one's grass${rain.rainWeighted ? ', weighted by the month the rain fell in' : ''} — not the same thing as its rain, because the first 100 mm grows nothing and a wet year runs into a nitrogen ceiling.`
                     : `No zone set for this ranch, so the forage row is read at ${n0(rain.zoneMm)} mm from measured rainfall. Set the zone from the soil climatic zone instead.`
                 }
               >
@@ -477,6 +828,27 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                   className="w-12 text-[11px]"
                 />
                 <span>mm · season ×{rain.rainFactor.toFixed(2)}</span>
+              </p>
+              {/* The ranch's own yield level, which the grass rating cannot
+                  set: the rating is a paddock against this ranch's median
+                  paddock, so its median is 1.00 whatever the ranch grows. */}
+              <p
+                className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-500"
+                title={
+                  `What a middling paddock here grows in an ordinary year. Each paddock is then read at this times its own measured cover against the ranch's median — Pasture K at 0.79 of the median is read at 0.79 of this, rather than rounded down to a word.` +
+                  (baseIsOwn
+                    ? ' Set for this ranch.'
+                    : ` Not set, so this is the estimator's Fair row at ${n0(rain.zoneMm)} mm — a provincial average, and the one figure in the model that nothing on this farm has measured.`)
+                }
+              >
+                <span>median paddock</span>
+                <NumCell
+                  value={Math.round(baseLbAc)}
+                  disabled={!isManager}
+                  onCommit={(v) => setRanchField({ forage_base_lb_ac: v > 0 ? v : null })}
+                  className="w-14 text-[11px]"
+                />
+                <span>lb/ac{baseIsOwn ? '' : ' · from the table'}</span>
               </p>
             </>
           ) : (
@@ -503,8 +875,10 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
           <p className="text-xs text-gray-500">Grazing utilization</p>
           <div className="mt-1 flex items-baseline gap-1">
             {/* Shown and typed as a percent; stored as a fraction (0.8). */}
+            {/* The rate Sam set, not the one in use: typing into a box that
+                shows a drought-reduced figure would save the reduction. */}
             <NumCell
-              value={Math.round(utilization * 100)}
+              value={Math.round(setRate * 100)}
               step="5"
               disabled={!isManager}
               onCommit={(v) => v > 0 && v <= 100 && setRanchField({ grazing_utilization_rate: v / 100 })}
@@ -512,7 +886,28 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
             />
             <span className="text-sm text-gray-400">% of forage</span>
           </div>
-          <p className="mt-0.5 text-[11px] text-gray-400">Grazed; the rest stays as residue. Default 80%.</p>
+          {/* What you set, and what the season has made of it. Both are
+              shown in either kind of year: a rate that silently differs from
+              the box above it is worse than one that explains itself. */}
+          {droughtCut ? (
+            <p
+              className="mt-0.5 text-[11px] font-medium text-amber-700"
+              title={`This season is worth ${Math.round(rain.rainFactor * 100)}% of a normal one's grass. Grazing drought-stressed plants to the usual mark costs next year's growth as well as this year's, so the rate slides toward two thirds of what you set.`}
+            >
+              Dry year — grazing at {Math.round(utilization * 100)}% of {Math.round(setRate * 100)}%
+            </p>
+          ) : (
+            <p
+              className="mt-0.5 text-[11px] text-gray-400"
+              title={
+                rain.rainFactor > 1.02
+                  ? `This season is worth ${Math.round(rain.rainFactor * 100)}% of a normal one's grass, and the extra is already in the forage figures. The rate stays where you set it: a good year grows more grass to take half of, and taking a bigger share of it is a decision for a person, not something the arithmetic should do on its own.`
+                  : 'The rest stays as residue — the leaf a plant rebuilds its roots from. The rate only ever slides down, in a dry year.'
+              }
+            >
+              {rain.rainFactor > 1.02 ? 'Good year — still grazing at' : 'Grazing at'} {Math.round(setRate * 100)}%, as set
+            </p>
+          )}
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <p className="flex items-center gap-1 text-xs text-gray-500">
@@ -525,6 +920,17 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
             {n0(totals.aums)} animal-unit months (AUMs) · {n0(totals.grazeable)} grazeable ac
             {totals.fieldAuds > 0 && ` · ${n0(totals.fieldAuds)} AUDs off the crop fields`}
           </p>
+          {/*
+            * Which pound figure the AUDs above are counted in. It belongs
+            * beside the number it moves, not in a settings page: the two
+            * conventions are 22% apart and the figure means nothing without
+            * knowing which one it is.
+            */}
+          <AuWasteToggle
+            countWaste={countWaste}
+            disabled={!isManager}
+            onChange={(v) => setRanchField({ grazing_count_waste: v })}
+          />
           {/*
             * What the weather is worth, in the unit the ranch thinks in.
             *
@@ -545,10 +951,29 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                     'rounded px-1 py-0.5 font-medium',
                     totals.auds >= normalAuds ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800',
                   )}
-                  title={`This season is running at ${Math.round(rain.rainFactor * 100)}% of a normal one${measuredCount > 0 ? `, and ${measuredCount} paddock${measuredCount === 1 ? ' is' : 's are'} measured from orbit instead` : ''}. The zone it is read against has not changed.`}
+                  title={`This season is worth ${Math.round(rain.rainFactor * 100)}% of a normal one's grass${measuredCount > 0 ? `, and ${measuredCount} paddock${measuredCount === 1 ? ' is' : 's are'} measured from orbit instead` : ''}. Both figures are at the ${Math.round(setRate * 100)}% rate you set, so this is the weather on its own. The zone it is read against has not changed.`}
                 >
-                  {totals.auds >= normalAuds ? '+' : ''}{n0(totals.auds - normalAuds)} AUDs from this year’s rain
+                  {rainAuds >= normalAuds ? '+' : ''}{n0(rainAuds - normalAuds)} AUDs from this year’s rain
                   {' '}({Math.round(rain.rainFactor * 100)}%)
+                </span>
+              )}
+              {/* The rate cut is its own line. Folded into the one above it,
+                  a dry year's rain and its lighter grazing arrived as one
+                  number that was neither. */}
+              {Math.round(totals.auds) !== Math.round(rainAuds) && (
+                <span
+                  className="rounded bg-amber-50 px-1 py-0.5 font-medium text-amber-800"
+                  title={`Grazing at ${Math.round(utilization * 100)}% instead of the ${Math.round(setRate * 100)}% you set, because the plants are under stress. Taking the usual share now costs next year's growth too.`}
+                >
+                  {n0(totals.auds - rainAuds)} AUDs from grazing lighter
+                </span>
+              )}
+              {calibration.factor > 1.001 && (
+                <span
+                  className="rounded bg-sky-50 px-1 py-0.5 font-medium text-sky-800"
+                  title={`The forage table put this ranch at ${n0(calibration.modelledAuds)} AUDs in an ordinary year. Your own collars say the cattle took ${n0(calibration.grazedAuds)} AUDs off these paddocks in ${calibration.season} — ${n0(calibration.normalisedAuds)} read as an ordinary year — and left grass standing. So every paddock without a clip-and-weigh is read at ${calibration.factor.toFixed(2)} times the table. Calves at side are left out of the grazed figure, so this is a floor, not a ceiling.`}
+                >
+                  ×{calibration.factor.toFixed(2)} from your {calibration.season} grazing record
                 </span>
               )}
               {measuredCount > 0 && (
@@ -556,6 +981,36 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                   · {measuredCount} paddock{measuredCount === 1 ? '' : 's'} measured from orbit
                 </span>
               )}
+            </p>
+          )}
+          {/*
+            * What the ground sustains, beside what this season grew.
+            *
+            * Both are right and they answer different questions: the figure
+            * above is this year, read off the estimator and scaled by the
+            * weather; this one is the rate the soil carries year after year
+            * without the stand declining. Sam, 13 Nov 2026 — beside it, not
+            * replacing it, because the collars grazed well above the
+            * sustainable rate in a 131% season and still left grass.
+            */}
+          {essr && (
+            <p className="mt-1 flex flex-wrap items-baseline gap-x-1.5 border-t border-gray-100 pt-1 text-[11px]">
+              <span className="text-gray-500">{n0(essr.auds)} AUDs the ground sustains</span>
+              <span
+                className={cn(
+                  'rounded px-1 py-0.5 font-medium',
+                  totals.auds > essr.high ? 'bg-amber-50 text-amber-800' : 'bg-gray-100 text-gray-600',
+                )}
+                title={`Alberta's Dry Mixedgrass guide, by the range sites under this ranch: ${n0(essr.low)}–${n0(essr.high)} AUDs depending which plant community each site carries. A sustainable long-run rate, already net of utilization — not a cap on a wet year.`}
+              >
+                {n0(essr.low)}–{n0(essr.high)} range
+              </span>
+              {essr.ratedShare < 0.995 && (
+                <span className="text-gray-400" title="The rest sits on range sites the guide lists no plant community for, so it carries no published rate. Unrated, not zero.">
+                  · {Math.round(essr.ratedShare * 100)}% of the mapped acres rated
+                </span>
+              )}
+              <EssrInfo essr={essr} thisYear={totals.auds} />
             </p>
           )}
         </div>
@@ -610,7 +1065,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                 rain card above; here they stay in the tooltip. */}
             <span
               className="text-xs text-gray-500"
-              title={`${n0(measured.total_mm)} mm through ${throughLabel}${measured.normal ? ` · 10-year average to date ${n0(measured.normal.avg_to_date_mm)} mm` : ''}`}
+              title={`${n0(measured.total_mm)} mm through ${throughLabel}${measured.normal ? ` · ${RAIN_NORMAL_YEARS}-year average to date ${n0(measured.normal.avg_to_date_mm)} mm` : ''}`}
             >
               {!ranch.precip_auto && `${n0(measured.total_mm)} mm through ${throughLabel} · `}
               scales the forage · the {n0(rain.zoneMm)} mm zone sets the baseline
@@ -643,21 +1098,20 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
           </div>
         </div>
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-          {/* Phones: one card per pasture, the same inputs as the row. */}
+          {/* Phones: one card per pasture. Tap it for the feed breakdown, the
+              pencil to change it. */}
           <CardList>
             {calc.map((p) => (
               <RowCard
                 key={p.id}
+                onClick={breakdownOf(p) ? rowClick(() => toggleOpen(p.id)) : undefined}
                 heading={
-                  <input
-                    defaultValue={p.name}
-                    disabled={!isManager}
-                    onBlur={(e) => e.target.value !== p.name && patchP(p.id, { name: e.target.value })}
-                    // Reads as the heading it is until it is tapped. An always-
-                    // bordered 160 px box made every card look like a form.
-                    className="w-full max-w-[11rem] rounded-md border border-transparent bg-transparent px-1 py-0.5 text-sm font-semibold hover:border-gray-200 focus:border-gray-300 focus:bg-white"
-                    aria-label="Pasture name"
-                  />
+                  <span className="flex items-center gap-1">
+                    {breakdownOf(p) && (
+                      <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform', opened.has(p.id) && 'rotate-90')} />
+                    )}
+                    {p.name}
+                  </span>
                 }
                 actions={
                   <>
@@ -665,11 +1119,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                     <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-gray-900">
                       {n0(p.auds)} <span className="text-[11px] font-normal text-gray-400">AUDs</span>
                     </span>
-                    {isManager && (
-                      <button onClick={() => pastureM.remove.mutate(p.id)} className="p-1 text-gray-300 hover:text-red-600" aria-label={`Delete ${p.name}`}>
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
+                    {isManager && <EditButton onClick={() => setEditing(p)} />}
                   </>
                 }
                 /*
@@ -680,35 +1130,26 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                 summary={
                   detail ? undefined : (
                     <SummaryLine>
-                      {/* A card with a summary shows the summary INSTEAD of its
-                          facts, so the acres box has to live here too or the
-                          phone is back to a read-only number. */}
-                      <span className="flex items-center gap-1">
-                        <NumCell value={Math.round(p.acres)} disabled={!isManager} onCommit={(v) => setAcres(p.id, v)} className="w-20" />
-                        ac
-                      </span>
+                      <span className="tabular-nums">{n0(p.acres)} ac</span>
                       <Dot />
                       <span className="tabular-nums">{n0(p.totalGrazeableAc)} grazeable</span>
                       <Dot />
-                      <GrassQuality
-                        p={p}
-                        disabled={!isManager}
-                        className="w-24"
-                        onChange={(patch) => patchP(p.id, patch)}
-                      />
+                      <GrassQuality p={p} rain={rain} utilization={utilization} measuredFromOrbit={factorFor.has(p.id)} essr={essrByPaddock?.get(p.id)} readOnly />
+                      <Dot />
+                      <span className="tabular-nums">{n0(p.totalLbs)} lb feed</span>
                     </SummaryLine>
                   )
                 }
                 facts={[
-                  { label: 'Acres', node: <NumCell value={Math.round(p.acres)} disabled={!isManager} onCommit={(v) => setAcres(p.id, v)} className="w-20" /> },
+                  { label: 'Acres', node: n0(p.acres) },
                   ...(detail
                     ? [
-                        { label: 'Non-grazeable ac', node: <NumCell value={p.non_grazeable_ac} step="0.1" disabled={!isManager} onCommit={(v) => patchP(p.id, { non_grazeable_ac: v })} /> },
+                        { label: 'Non-grazeable ac', node: n1(p.non_grazeable_ac) },
                         ...(p.fieldsLinked
                           ? [{ label: 'Crop field ac', node: n0(p.fieldAc) }]
                           : [
-                              { label: 'Irrigated ac', node: <NumCell value={p.irrigated_ac} step="1" disabled={!isManager} onCommit={(v) => patchP(p.id, { irrigated_ac: v })} /> },
-                              { label: 'Grazeable irrigated', node: <NumCell value={p.grazeable_irrigated_ac} step="1" disabled={!isManager} onCommit={(v) => patchP(p.id, { grazeable_irrigated_ac: v })} /> },
+                              { label: 'Irrigated ac', node: n0(p.irrigated_ac) },
+                              { label: 'Grazeable irrigated', node: n0(p.grazeable_irrigated_ac) },
                             ]),
                         { label: 'Native', node: n0(p.nativeGrassAc) },
                       ]
@@ -716,18 +1157,12 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                   { label: 'Grazeable', node: n0(p.totalGrazeableAc) },
                   {
                     label: 'Quality',
-                    node: (
-                      <GrassQuality
-                        p={p}
-                        disabled={!isManager}
-                        className="w-28"
-                        onChange={(patch) => patchP(p.id, patch)}
-                      />
-                    ),
+                    node: <GrassQuality p={p} rain={rain} utilization={utilization} measuredFromOrbit={factorFor.has(p.id)} essr={essrByPaddock?.get(p.id)} readOnly />,
                   },
+                  { label: 'Feed lb/ac', node: <Lb lb={p.foragePerAcreUtil} /> },
+                  { label: 'Total feed lb', node: <Lb lb={p.totalLbs} /> },
                   ...(detail
                     ? [
-                        { label: 'lb/ac', node: n0(p.foragePerAcreUtil) },
                         { label: 'AUMs', node: n1(p.aums) },
                         { label: 'Native AUDs', node: n0(p.nativeAuds) },
                         { label: 'Field AUDs', node: n0(p.fieldAuds) },
@@ -736,19 +1171,19 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                   { label: 'AUDs', node: <span className="font-semibold">{n0(p.auds)}</span> },
                 ]}
               >
-                {(p.fieldsLinked || p.irrigated_ac > 0) && <PastureFieldsLine p={p} />}
+                {breakdownOf(p) && opened.has(p.id) && <PastureFeedBreakdown p={p} />}
               </RowCard>
             ))}
             <li className="bg-gray-50 px-3 py-2 text-sm font-semibold">
-              Total · {n0(totals.grazeable)} grazeable ac · {n0(totals.auds)} AUDs
+              Total · {n0(totals.grazeable)} grazeable ac · {n0(totals.lbs)} lb feed · {n0(totals.auds)} AUDs
               {totals.fieldAuds > 0 && <span className="font-normal text-gray-500"> · {n0(totals.fieldAuds)} off the crop fields</span>}
             </li>
           </CardList>
-          <table className={cn('hidden w-full text-sm sm:table', detail ? 'min-w-[960px]' : 'min-w-[480px]')}>
+          <table className={cn('hidden w-full text-sm sm:table', detail ? 'min-w-[1040px]' : 'min-w-[620px]')}>
             <thead className={TABLE_HEAD}>
               <tr>
                 <th className="px-2 py-2 font-medium">Pasture</th>
-                <th className="px-2 py-2 text-right font-medium" title="The whole pasture inside the fence. Type it here.">Acres</th>
+                <th className="px-2 py-2 text-right font-medium" title="The whole pasture inside the fence">Acres</th>
                 {detail && (
                   <>
                     <th className="px-2 py-2 text-right font-medium" title="Non-grazeable acres (island, riverbed, yard…)">Non-graz</th>
@@ -759,10 +1194,26 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                 )}
                 <th className="px-2 py-2 text-right font-medium" title="Native grass + field acres that give grazing">Grazeable</th>
                 <th className="px-2 py-2 font-medium">Quality</th>
+                <th
+                  className="px-2 py-2 text-right font-medium"
+                  title="Estimated feed this pasture grows this season, per grazeable acre, after the utilization rate is taken off"
+                >
+                  Feed lb/ac
+                </th>
+                <th
+                  className="px-2 py-2 text-right font-medium"
+                  title="Feed per acre across the pasture's grazeable acres — what the whole paddock is estimated to grow"
+                >
+                  Total feed lb
+                </th>
                 {detail && (
                   <>
-                    <th className="px-2 py-2 text-right font-medium" title="Forage supply after utilization (lbs/acre)">lb/ac</th>
-                    <th className="px-2 py-2 text-right font-medium" title="Animal-unit months: 780 lb of forage each">AUMs</th>
+                    <th
+                      className="px-2 py-2 text-right font-medium"
+                      title={`Animal-unit months: thirty grazing days each, ${n0(countWaste ? AU_TOTAL_LB_PER_DAY * 30 : AU_INTAKE_LB_PER_DAY * 30)} lb of forage at the figure this ranch counts`}
+                    >
+                      AUMs
+                    </th>
                     <th className="px-2 py-2 text-right font-medium" title="Of the pasture's AUDs, the ones off the crop fields inside the fence — the rest is native grass">Field AUDs</th>
                   </>
                 )}
@@ -777,21 +1228,29 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
             <tbody>
               {calc.map((p) => (
                 <Fragment key={p.id}>
-                <tr className={cn('border-gray-100', p.fieldsLinked || p.irrigated_ac > 0 ? '' : 'border-b')}>
-                  <td className="px-2 py-1.5">
-                    <input
-                      defaultValue={p.name}
-                      disabled={!isManager}
-                      onBlur={(e) => e.target.value !== p.name && patchP(p.id, { name: e.target.value })}
-                      className="w-24 rounded-md border border-gray-200 px-1.5 py-1 text-sm font-medium disabled:border-transparent disabled:bg-transparent"
-                    />
+                <tr
+                  onClick={breakdownOf(p) ? rowClick(() => toggleOpen(p.id)) : undefined}
+                  className={cn(
+                    'border-gray-100',
+                    breakdownOf(p) && opened.has(p.id) ? '' : 'border-b',
+                    breakdownOf(p) && 'cursor-pointer hover:bg-gray-50',
+                  )}
+                >
+                  <td className="px-2 py-1.5 font-medium">
+                    <span className="flex items-center gap-1">
+                      {/* Only a pasture with a pivot or hand-typed irrigated
+                          acres has anything to break out; the rest is all
+                          native grass and the row already says so. */}
+                      {breakdownOf(p) && (
+                        <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform', opened.has(p.id) && 'rotate-90')} />
+                      )}
+                      {p.name}
+                    </span>
                   </td>
-                  <td className="px-2 py-1.5 text-right">
-                    <NumCell value={Math.round(p.acres)} disabled={!isManager} onCommit={(v) => setAcres(p.id, v)} className="w-20" />
-                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{n0(p.acres)}</td>
                   {detail && (
                     <>
-                      <td className="px-2 py-1.5 text-right"><NumCell value={p.non_grazeable_ac} step="0.1" disabled={!isManager} onCommit={(v) => patchP(p.id, { non_grazeable_ac: v })} /></td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{n1(p.non_grazeable_ac)}</td>
                       {p.fieldsLinked ? (
                         <>
                           <td className="px-2 py-1.5 text-right tabular-nums text-gray-500" title="From the field boundaries inside this pasture">{n0(p.fieldAc)}</td>
@@ -799,8 +1258,8 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                         </>
                       ) : (
                         <>
-                          <td className="px-2 py-1.5 text-right"><NumCell value={p.irrigated_ac} step="1" disabled={!isManager} onCommit={(v) => patchP(p.id, { irrigated_ac: v })} /></td>
-                          <td className="px-2 py-1.5 text-right"><NumCell value={p.grazeable_irrigated_ac} step="1" disabled={!isManager} onCommit={(v) => patchP(p.id, { grazeable_irrigated_ac: v })} /></td>
+                          <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{n0(p.irrigated_ac)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{n0(p.grazeable_irrigated_ac)}</td>
                         </>
                       )}
                       <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{n0(p.nativeGrassAc)}</td>
@@ -808,33 +1267,34 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                   )}
                   <td className="px-2 py-1.5 text-right font-medium tabular-nums">{n0(p.totalGrazeableAc)}</td>
                   <td className="px-2 py-1.5">
-                    <GrassQuality
-                      p={p}
-                      disabled={!isManager}
-                      className="w-28"
-                      onChange={(patch) => patchP(p.id, patch)}
-                    />
+                    <GrassQuality p={p} rain={rain} utilization={utilization} measuredFromOrbit={factorFor.has(p.id)} essr={essrByPaddock?.get(p.id)} readOnly />
                   </td>
+                  <td className="px-2 py-1.5 text-right"><Lb lb={p.foragePerAcreUtil} /></td>
+                  <td className="px-2 py-1.5 text-right"><Lb lb={p.totalLbs} bold /></td>
                   {detail && (
                     <>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{n0(p.foragePerAcreUtil)}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{n1(p.aums)}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{n0(p.fieldAuds)}</td>
                     </>
                   )}
                   <td className="px-2 py-1.5 text-right font-medium tabular-nums">{n0(p.auds)}</td>
                   {isManager && (
-                    <td className="px-2 py-1.5 text-right">
-                      <button onClick={() => pastureM.remove.mutate(p.id)} className="text-gray-300 hover:text-red-600" aria-label={`Delete ${p.name}`}>
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                    <td className="px-2 py-1.5">
+                      <div className="flex items-center justify-end gap-1">
+                        <EditButton onClick={() => setEditing(p)} />
+                        <DeleteButton
+                          onDelete={() => pastureM.remove.mutate(p.id)}
+                          confirm={`Delete ${p.name}? Its acres, grass quality and everything the plan works out from them go with it.`}
+                          label=""
+                        />
+                      </div>
                     </td>
                   )}
                 </tr>
-                {(p.fieldsLinked || p.irrigated_ac > 0) && (
-                  <tr className="border-b border-gray-100">
-                    <td colSpan={99} className="px-2 pb-1.5 pl-4">
-                      <PastureFieldsLine p={p} />
+                {breakdownOf(p) && opened.has(p.id) && (
+                  <tr className="border-b border-gray-100 bg-gray-50/60">
+                    <td colSpan={99} className="px-2 pb-2 pl-6 pt-1">
+                      <PastureFeedBreakdown p={p} />
                     </td>
                   </tr>
                 )}
@@ -846,9 +1306,15 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                 {detail && <td colSpan={4} />}
                 <td className="px-2 py-2 text-right tabular-nums">{n0(totals.grazeable)}</td>
                 <td />
+                {/* An average over the ranch's grazeable acres, not the mean of
+                    the rows: a 900 acre paddock and a 35 acre one do not weigh
+                    the same. */}
+                <td className="px-2 py-2 text-right">
+                  <Lb lb={totals.grazeable > 0 ? totals.lbs / totals.grazeable : 0} />
+                </td>
+                <td className="px-2 py-2 text-right"><Lb lb={totals.lbs} bold /></td>
                 {detail && (
                   <>
-                    <td />
                     <td className="px-2 py-2 text-right tabular-nums">{n0(totals.aums)}</td>
                     <td className="px-2 py-2 text-right tabular-nums">{n0(totals.fieldAuds)}</td>
                   </>
@@ -864,26 +1330,140 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
             title="How pasture capacity is worked out"
           >
             <p>
-              1 Animal Unit eats 26 lbs/day (AUM = 780 lbs). Forage supply is looked up from the Alberta Forage
-              Manual&apos;s table (p.205) at the ranch&apos;s precipitation zone and each pasture&apos;s grass quality,
-              then scaled by how this season is going and reduced by the utilization rate.
+              1 Animal Unit is a 1,000 lb cow. She eats {AU_INTAKE_LB_PER_DAY} lb a day and{' '}
+              {countWaste ? (
+                <>
+                  tramples or fouls {AU_WASTE_LB_PER_DAY.toFixed(1)} lb more, so a grazing day is costing this paddock{' '}
+                  {AU_TOTAL_LB_PER_DAY.toFixed(1)} lb (AUM = {n0(AU_TOTAL_LB_PER_DAY * 30)} lb, Alberta&apos;s 455 kg)
+                </>
+              ) : (
+                <>
+                  only what she eats is being counted, so a grazing day costs {AU_INTAKE_LB_PER_DAY} lb (AUM ={' '}
+                  {n0(AU_INTAKE_LB_PER_DAY * 30)} lb) — see &ldquo;Counting&rdquo; above
+                </>
+              )}
+              . A normal year&apos;s forage comes from the Alberta Forage
+              Manual&apos;s table (p.205) at the ranch&apos;s precipitation zone and each pasture&apos;s grass quality
+              {measuredYieldCount > 0
+                ? ` — except for ${measuredYieldCount} pasture${measuredYieldCount === 1 ? '' : 's'} read off its own clip-and-weigh instead`
+                : ''}
+              . That figure is then scaled by how this season is going, and reduced by the utilization rate.
             </p>
             <p>
-              The zone is <em>annual</em> precipitation, and it is a classification rather than a measurement — the
-              manual reads it off the soil climatic zone, 300 mm for Brown and 400 mm for Dark Brown. Both ranches
-              sit on Brown Chernozem, so both are set to 300 mm, and no amount of rain moves a ranch to a wetter
-              zone. Edit it on the rain card if that is ever wrong.
+              The season does <em>not</em> scale it 1:1 with the rain. The first 100 mm of a season goes to
+              evaporation and runoff before a plant makes a leaf, so a dry year is shorter of grass than it is of
+              rain — 10% less rain is about 12% less grass here, 40% less rain about 53% less. Rain is weighted by
+              when it fell: April to June decides most of a year&apos;s forage, July and August under a fifth, and
+              what fell last autumn and winter counts as stored moisture. A wet year is capped at 130% of normal,
+              because without nitrogen the pasture cannot use more than that.
+            </p>
+            <p>
+              The table itself is a rough provincial guide and knows nothing of either. It sets the level a pasture
+              starts from and nothing else; once a pasture has been cut and weighed, that pasture is read off its
+              own grass and the table stops applying to it.
+            </p>
+            <p>
+              The grass rating says which paddock is better than which, and nothing about pounds. It is measured
+              as a paddock&apos;s canopy cover against <em>this ranch&apos;s median paddock</em>, so the median
+              scores 1.00 on any ranch, good or poor. Handing that to a table of absolute pounds threw the
+              ranch&apos;s own level away and replaced it with a provincial average — which is why every paddock
+              read low together and no amount of re-rating could say so. The level is now the{' '}
+              <span className="font-medium">median paddock</span> figure on the rain card, and each paddock is
+              read at that times its own cover.
+            </p>
+            {calibration.factor > 1.001 && (
+              <p>
+                It was also reading low here, and your cattle are what showed it: the collars say they took{' '}
+                {n0(calibration.grazedAuds)} AUDs off these paddocks in {calibration.season} — {n0(calibration.normalisedAuds)}{' '}
+                read as an ordinary year — where the table allowed {n0(calibration.modelledAuds)}. Every paddock
+                without its own clip-and-weigh is now read at {calibration.factor.toFixed(2)} times the table.
+                The grass rating still decides which paddock is better than which; this only sets the level they
+                are all read at. A grazing record is a floor — it says what the grass carried, not what it could
+                have — so this can raise the estimate and never lower it.
+              </p>
+            )}
+            <p>
+              The zone is <em>annual</em> precipitation, and it is a classification of the ranch rather than a
+              reading of this year — no amount of rain in one season moves a ranch to a wetter zone. The manual
+              takes it off the soil climatic zone, 300 mm for Brown and 400 mm for Dark Brown, and every polygon
+              under both ranches is Brown Chernozem.
+            </p>
+            <p>
+              They are classified on measured rainfall anyway — 379 mm at Home Ranch, 392 mm at East Ranch, both
+              in the 350–450 band — because the grazing record says the Brown row is too low for this land. A
+              Chernozem records the climate that <em>built</em> it over thousands of years; it does not know this
+              ranch has river bottom and irrigated corners in it. Edit the figure on the rain card if that is ever
+              wrong.
             </p>
             <p>
               What this year&apos;s weather does is scale what that row yields: the satellite&apos;s own measurement
               of a paddock where there is one, otherwise the projected season against a normal one — never both,
-              because they measure the same weather. Crop fields inside a fence are counted from the farming side — stubble only after
-              harvest, nothing once worked (the ⓘ under each pasture). The pasture is owned, so it carries no rent. Grey
-              columns are calculated.
+              because they measure the same weather.
+            </p>
+            <p>
+              The rain figure is Open-Meteo&apos;s, because the {RAIN_NORMAL_YEARS}-year normal it is divided by comes
+              from the same place, and a ratio between two instruments measures the instruments. The nearest real gauge
+              is shown under it, and turns amber when the two are more than {Math.round(GAUGE_GAP_FLAG * 100)}% apart —
+              a grid cell averages away where a storm actually fell, so a gauge that far out is worth a look before
+              stocking on the number above it.
+            </p>
+            <p>
+              Crop fields inside a fence are counted from the farming side — stubble only after
+              harvest, nothing once worked. The pasture is owned, so it carries no rent. Grey
+              columns are calculated. Feed lb/ac is that supply after utilization and total feed is it across the
+              pasture’s grazeable acres — the pounds the AUDs beside them are counted from; a pasture with a pivot
+              inside the fence opens to show which of those pounds are grass and which are stubble.
             </p>
           </HelpNote>
         </div>
       </section>
+
+      {editing && (
+        <RecordEditModal
+          title={`Edit ${editing.name}`}
+          /*
+           * Acres, not km², is what a pasture is here — the column behind it is
+           * km² and the form converts. The crop-field acres are not on the form
+           * at all when the fields are mapped: they come from the boundaries on
+           * the farming side, and a box that silently loses its value on the
+           * next save is worse than no box.
+           */
+          fields={[
+            { key: 'name', label: 'Name', kind: 'text', required: true },
+            { key: 'acres', label: 'Acres', kind: 'number', step: '1', hint: 'The whole pasture inside the fence' },
+            { key: 'non_grazeable_ac', label: 'Non-grazeable ac', kind: 'number', step: '0.1', hint: 'Island, riverbed, yard — acres that grow nothing a cow can reach' },
+            ...(editing.fieldsLinked
+              ? []
+              : [
+                  { key: 'irrigated_ac', label: 'Irrigated ac', kind: 'number' as const, step: '1', hint: 'Only for a pasture with no crop field mapped inside it' },
+                  { key: 'grazeable_irrigated_ac', label: 'Grazeable irrigated ac', kind: 'number' as const, step: '1' },
+                ]),
+            {
+              key: 'grass_quality',
+              label: 'Grass quality',
+              kind: 'select',
+              options: GRASS_QUALITIES.map((q) => ({ value: q, label: q })),
+              hint: 'Picking one by hand keeps the satellite pass off this paddock',
+            },
+          ]}
+          row={{ ...editing, acres: Math.round(editing.acres) }}
+          onClose={() => setEditing(null)}
+          onSave={(patch) => {
+            const { acres, grass_quality, ...rest } = patch as Record<string, unknown>
+            const next: PasturePatch = { ...(rest as PasturePatch) }
+            if (acres != null) next.km2 = Math.max(0, Number(acres)) / (100 * ACRES_PER_HECTARE)
+            if (typeof grass_quality === 'string') {
+              next.grass_quality = grass_quality
+              // Only a change counts as somebody picking it: re-saving the name
+              // should not quietly take the paddock off the satellite.
+              if (grass_quality !== editing.grass_quality) next.grass_quality_source = 'manual'
+            }
+            return pastureM.update.mutateAsync({ id: editing.id, patch: next })
+          }}
+          onDelete={() => pastureM.remove.mutateAsync(editing.id)}
+          deleteConfirm={`Delete ${editing.name}? Its acres, grass quality and everything the plan works out from them go with it.`}
+        />
+      )}
 
       {/* Herd */}
       <section>

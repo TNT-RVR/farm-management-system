@@ -1,5 +1,6 @@
-import { AU_LBS_PER_DAY, forageYieldPerAcre } from './forage-yield'
+import { forageYieldPerAcre, lbPerAuDay } from './forage-yield'
 import { calfAU, monthDayOf, type MonthDay } from './animal-units'
+import { RAIN_NORMAL_YEARS } from './rain-normals'
 
 // When to move the herd out of a paddock (Sam, 1 Oct 2026: "create an alert
 // when its recommended to move the animals out of a pasture based on the NDVI
@@ -11,7 +12,8 @@ import { calfAU, monthDayOf, type MonthDay } from './animal-units'
 //   1. Days of grazing left. What the paddock had when the herd went in, less
 //      what the herd has eaten since, over what it eats a day:
 //        had  = grazeable acres × expected lb/ac × utilisation × share standing
-//        eats = animal units × 26 lb a day
+//        eats = animal units × 26 lb a day, or 33.3 where the ranch counts the
+//               trampled and fouled share too (countWaste)
 //      "Expected lb/ac" is the Grazing tab's own Forage Yield Estimator read at
 //      THIS year's projected rain (to date + a normal rest of season), so a dry
 //      year expects less. "Share standing" is the satellite's forage index at
@@ -25,7 +27,7 @@ import { calfAU, monthDayOf, type MonthDay } from './animal-units'
 //      more than the rested paddocks dropped over the same days.
 //
 // Rain decides how early: in a dry year (to date under move_dry_pct of the
-// 10-year average) the days-left threshold doubles, because what is grazed now
+// long-term average) the days-left threshold doubles, because what is grazed now
 // will not grow back behind the herd.
 //
 // Every satellite number here is RELATIVE (forage index, % of best). The lb
@@ -66,9 +68,16 @@ export type MoveInput = {
   zoneMm: number
   /** This season against its own normal, scaling the zone's yield. 1 if unknown. */
   rainFactor?: number
-  /** This year's rain to date as % of the 10-year average to the same day. */
+  /** This year's rain to date as % of the long-term average to the same day. */
   pctOfNormal: number | null
   animalUnits: number
+  /**
+   * Whether a grazing day draws the trampled and fouled grass as well as the
+   * eaten grass (ranches.grazing_count_waste). Defaults to true, matching the
+   * ranch default, so the move-out check empties a paddock on the same pounds
+   * the Grazing tab filled it with.
+   */
+  countWaste?: boolean
   turnedInOn: string
   today: string
   /** This paddock's satellite looks this season, any order. */
@@ -119,7 +128,7 @@ export function moveVerdict(inp: MoveInput): MoveVerdict {
   const t = inp.thresholds
   const looks = [...inp.looks].sort((a, b) => a.on.localeCompare(b.on))
   const daysOn = Math.max(0, days(inp.turnedInOn, inp.today))
-  const dailyLb = inp.animalUnits * AU_LBS_PER_DAY
+  const dailyLb = inp.animalUnits * lbPerAuDay(inp.countWaste ?? true)
   // The zone picks the row; the season scales what that row yields.
   const expectedLbAc = forageYieldPerAcre(inp.zoneMm, inp.quality) * (inp.rainFactor ?? 1)
 
@@ -185,7 +194,7 @@ export function moveVerdict(inp: MoveInput): MoveVerdict {
   }
   const move = reasons.length > 0
   if (move && dry) {
-    reasons.push(`Rain to date is ${inp.pctOfNormal}% of the 10-year average, so regrowth behind the herd will be slow.`)
+    reasons.push(`Rain to date is ${inp.pctOfNormal}% of the ${RAIN_NORMAL_YEARS}-year average, so regrowth behind the herd will be slow.`)
   }
 
   return {

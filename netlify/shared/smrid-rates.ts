@@ -37,7 +37,7 @@ type Media = { date: string; source_url: string; mime_type: string; title?: { re
 /** The newest Policy Book PDF in SMRID's media library. */
 export async function latestPolicyBook(): Promise<{ url: string; date: string } | null> {
   const r = await fetch('https://smrid.com/wp-json/wp/v2/media?search=policy&per_page=50&orderby=date&order=desc&_fields=date,source_url,mime_type,title', {
-    headers: { 'user-agent': 'RVR-Management/1.0 (SMRID rates)' },
+    headers: { 'user-agent': 'Farm-Management-System/1.0 (SMRID rates)' },
   })
   if (!r.ok) throw new Error(`${r.status} from smrid.com`)
   const media = (await r.json()) as Media[]
@@ -51,7 +51,7 @@ export async function latestPolicyBook(): Promise<{ url: string; date: string } 
 export async function syncSmridRates(sb: SupabaseClient, managerIds: () => Promise<string[]>): Promise<{ changed: string | null; seen: string }> {
   const book = await latestPolicyBook()
   if (!book) throw new Error('No Policy Book PDF found in SMRID’s media library')
-  const res = await fetch(book.url, { headers: { 'user-agent': 'RVR-Management/1.0 (SMRID rates)' } })
+  const res = await fetch(book.url, { headers: { 'user-agent': 'Farm-Management-System/1.0 (SMRID rates)' } })
   if (!res.ok) throw new Error(`${res.status} fetching the Policy Book`)
   const pdf = await getDocumentProxy(new Uint8Array(await res.arrayBuffer()))
   const text = String((await extractText(pdf, { mergePages: true })).text)

@@ -58,6 +58,7 @@ export const NAV_ITEMS: NavItem[] = [
       { to: '/markets', label: 'Markets', icon: LineChart },
       { to: '/contracts', label: 'Contracts', icon: FileSignature },
       { to: '/scouting', label: 'Scouting', icon: Bug },
+      { to: '/scout-reports', label: 'Seed canola scouts', icon: ClipboardCheck },
       { to: '/leases', label: 'Leases', icon: KeyRound },
     ],
   },

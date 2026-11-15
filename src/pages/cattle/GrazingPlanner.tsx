@@ -9,7 +9,7 @@ import { Fold } from '@/components/Fold'
 import { InfoPopover } from '@/components/InfoPopover'
 import { CardList, RowCard } from '@/components/RowCards'
 import { askConfirm } from '@/components/askConfirm'
-import { computePasture, computePastures, grazingRain, useGrazingHerd, useGrazingPastures, usePastureFieldContext, usePastureSeasonFactors, useRanchPrecip } from '@/lib/grazing'
+import { computePasture, computePastures, grazingRain, grazingUtilization, useGrazingHerd, useGrazingPastures, usePastureFieldContext, usePastureSeasonFactors, useRanchPrecip } from '@/lib/grazing'
 import { usePastures } from '@/lib/pastures'
 import { mobClass } from '@/lib/pasture-move'
 import type { Ranch } from '@/lib/ranches'
@@ -46,6 +46,7 @@ import {
 import { PlanMap, type PlanGate, type PlanMove, type PlanStop } from './plan/PlanMap'
 import { shortName, stayMonths, type PlanMapPasture } from './plan/plan-geo'
 import { PlanTimeline, type TimelineBar } from './plan/PlanTimeline'
+import { DEFAULT_UTILIZATION } from '@/lib/forage-response'
 
 const ALL = 'all'
 const PALETTE = ['#16a34a', '#2563eb', '#d97706', '#9333ea', '#db2777', '#0891b2', '#65a30d']
@@ -101,7 +102,9 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
   /* ---------------------------------------------------------- pastures */
 
   const rain = grazingRain(ranch, measured)
-  const utilization = ranch.grazing_utilization_rate ?? 0.8
+  const setRate = ranch.grazing_utilization_rate ?? DEFAULT_UTILIZATION
+  /** The ranch's pound figure for a grazing day, so the Plan matches the Grazing tab. */
+  const countWaste = ranch.grazing_count_waste ?? true
   /*
    * AUDs each pasture grows, crop fields counted for the plan year's season
    * (stubble once harvested).
@@ -117,6 +120,13 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
     () => (year === thisYear ? rain : { ...rain, rainFactor: 1 }),
     [year, thisYear, rain],
   )
+  /*
+   * This year grazes at the dry-year rate when the year is dry, exactly as
+   * the Grazing tab does, so the two tabs cannot disagree about how much
+   * grass there is. A year that has not happened has no weather to react to,
+   * so it plans at the rate as set.
+   */
+  const utilization = year === thisYear ? grazingUtilization(setRate, rain) : setRate
   const thisYearFactors = useMemo(() => {
     const m = new Map<string, number>()
     for (const f of factors ?? []) if (f.factor != null) m.set(f.grazing_pasture_id, f.factor)
@@ -131,12 +141,12 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
     const m = new Map<string, number>()
     const season = fieldCtx.season
     const ctx = fieldCtx.ctx({ from: `${year}${season.from.slice(4)}`, to: `${year}${season.to.slice(4)}` })
-    for (const c of computePastures(gps ?? [], planRain, utilization, ctx, factorFor)) {
+    for (const c of computePastures(gps ?? [], planRain, utilization, ctx, factorFor, null, countWaste)) {
       const pid = (c as unknown as { pasture_id: string | null }).pasture_id
       if (pid) m.set(pid, c.auds)
     }
     return m
-  }, [gps, planRain, utilization, fieldCtx, year, factorFor])
+  }, [gps, planRain, utilization, fieldCtx, year, factorFor, countWaste])
   // The Grazing tab's land capacity exactly (this year's season and crops),
   // shown beside a plan for another year: its fields grow other crops (2027's
   // sainfoin grazes all season), so its total differs for a known reason.
@@ -144,9 +154,9 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
     () =>
       year === thisYear
         ? null
-        : computePastures(gps ?? [], rain, utilization, fieldCtx.ctx(), thisYearFactors)
+        : computePastures(gps ?? [], rain, utilization, fieldCtx.ctx(), thisYearFactors, null, countWaste)
             .reduce((a, c) => a + c.auds, 0),
-    [gps, rain, utilization, fieldCtx, year, thisYear, thisYearFactors],
+    [gps, rain, utilization, fieldCtx, year, thisYear, thisYearFactors, countWaste],
   )
   // The same, for a stay that starts on `start`: a crop field gives only what
   // is there on the day the cattle go in — nothing from a growing corn field

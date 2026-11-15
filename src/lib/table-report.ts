@@ -46,6 +46,13 @@ export type ReportSection = {
   answerColumns?: number[]
   /** Pictures drawn in body cells, above the cell's text: a signature on its line. PDF only. */
   cellImages?: { row: number; col: number; image: { dataUrl: string; width: number; height: number } }[]
+  /**
+   * Squeeze the rows vertically: a list that has to fit one page (the soil
+   * test request's field list, which the lab plans its run from). The type
+   * stays the size it was — only the air above and below each line goes —
+   * so the column widths are the same as every other table's. PDF only.
+   */
+  compact?: boolean
 }
 
 export type TableReport = {
@@ -544,7 +551,7 @@ export async function tableReportPdfDoc(r: TableReport, opts: PdfOptions = {}): 
       styles: {
         font: 'helvetica',
         fontSize: bodySize(s.head.length),
-        cellPadding: { top: 3.6, bottom: 3.6, left: 4, right: 4 },
+        cellPadding: s.compact ? { top: 2, bottom: 2, left: 4, right: 4 } : { top: 3.6, bottom: 3.6, left: 4, right: 4 },
         textColor: C.gray900,
         lineColor: C.gray200,
         lineWidth: { bottom: 0.4 },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildPlan, carryover, cropKey, evaluate, type CropInfo, type FieldCtx, type RecropRule } from './rotation-engine'
+import { buildPlan, carryover, cropKey, evaluate, type CropInfo, type FieldCtx, type RecropRule, type SeedScout } from './rotation-engine'
 
 const crops: CropInfo[] = [
   { id: 'can', name: 'Canola', key: 'canola', minReturn: 3, margin: 288 },
@@ -251,5 +251,121 @@ describe('herbicide trait of seed canola', () => {
     expect(buildPlan('profit', 2027, [f], only, pref, new Map(), new Map()).assignments[0].cropId).toBe('can')
     const lookup = new Map([[retired.id, retired]])
     expect(buildPlan('profit', 2027, [f], only, pref, new Map(), new Map(), new Map(), new Map(), { lookup }).assignments[0].cropId).toBeNull()
+  })
+})
+
+describe('the seed company’s prescout', () => {
+  const seed: CropInfo[] = [
+    { id: 'cor', name: 'Corteva Canola', key: 'seed_canola', minReturn: 3, margin: 400, seedCompany: 'corteva' },
+    { id: 'bas', name: 'BASF Canola', key: 'seed_canola', minReturn: 3, margin: 400, seedCompany: 'basf' },
+    { id: 'any', name: 'Seed Canola (company not chosen)', key: 'seed_canola', minReturn: 3, margin: 400 },
+  ]
+  const ids = new Map([...crops, ...seed].map((c) => [c.id, c]))
+  const scout = (o: Partial<SeedScout>): SeedScout => ({ company: 'corteva', companyLabel: 'Corteva', cropYear: 2027, rating: 'B', passed: true, ...o })
+
+  it('fires for a company canola, whose name has no "seed" in it to key on', () => {
+    // cropKey('Corteva Canola') is 'canola', not 'seed_canola' — the company
+    // on the crop is what makes it a seed crop.
+    const corteva: CropInfo = { id: 'c2', name: 'Corteva Canola', key: 'canola', minReturn: 3, margin: 400, seedCompany: 'corteva' }
+    const f = field({ seedScouts: [scout({ rating: 'D', passed: false })] })
+    const e = evaluate(f, corteva, 2027, new Map([...ids, ['c2', corteva]]), pref, new Map())
+    expect(e.blocked.join(' ')).toMatch(/Corteva graded this field D/)
+  })
+
+  it('leaves a plain canola alone — it is nobody’s seed crop', () => {
+    const plain: CropInfo = { id: 'p1', name: 'Canola', key: 'canola', minReturn: 3, margin: 300 }
+    const f = field({ seedScouts: [scout({ rating: 'D', passed: false })] })
+    const e = evaluate(f, plain, 2027, new Map([...ids, ['p1', plain]]), pref, new Map())
+    expect(e.blocked).toEqual([])
+  })
+
+  it('blocks a company’s seed canola on a field it failed, and names the grade', () => {
+    const f = field({ seedScouts: [scout({ rating: 'D', passed: false })] })
+    const e = evaluate(f, ids.get('cor')!, 2027, ids, pref, new Map())
+    expect(e.blocked.join(' ')).toMatch(/Corteva graded this field D for 2027/)
+  })
+
+  it('prefers a field the company passed', () => {
+    const f = field({ seedScouts: [scout({})] })
+    const e = evaluate(f, ids.get('cor')!, 2027, ids, pref, new Map())
+    expect(e.blocked).toEqual([])
+    expect(e.plus.join(' ')).toMatch(/Corteva graded it B/)
+  })
+
+  it('says nothing about a year nobody has scouted', () => {
+    const f = field({ seedScouts: [scout({ rating: 'D', passed: false })] })
+    const e = evaluate(f, ids.get('cor')!, 2029, ids, pref, new Map())
+    expect(e.blocked).toEqual([])
+    expect(e.plus).toEqual([])
+  })
+
+  it('does not hold one company’s grade against another', () => {
+    const f = field({ seedScouts: [scout({ rating: 'D', passed: false })] })
+    const e = evaluate(f, ids.get('bas')!, 2027, ids, pref, new Map())
+    expect(e.blocked).toEqual([])
+    expect(e.cautions.join(' ')).toMatch(/scouted for 2027 \(Corteva\) but not by them/)
+  })
+
+  it('with no company chosen, one company willing is enough and none willing blocks', () => {
+    const ok = field({ seedScouts: [scout({ rating: 'D', passed: false }), scout({ company: 'basf', companyLabel: 'BASF', rating: 'A' })] })
+    expect(evaluate(ok, ids.get('any')!, 2027, ids, pref, new Map()).blocked).toEqual([])
+    const no = field({ seedScouts: [scout({ rating: 'D', passed: false })] })
+    expect(evaluate(no, ids.get('any')!, 2027, ids, pref, new Map()).blocked.join(' ')).toMatch(/will not grow seed canola/)
+  })
+
+  it('keeps a failed field out of the plan it would otherwise have won', () => {
+    const fs = [field({ id: 'a', name: 'A', crops: new Map([[2026, ['wht']]]), seedScouts: [scout({ rating: 'D', passed: false })] })]
+    const p = buildPlan('profit', 2027, fs, [...crops, seed[0]], pref, new Map(), new Map())
+    expect(p.assignments[0].cropId).not.toBe('cor')
+  })
+})
+
+describe('which crop gets the fields first', () => {
+  // Three fields coming out of wheat; beans carry the best margin, so the
+  // plain plan hands them every field it can.
+  const fs = () => [
+    field({ id: 'a', name: 'A', acres: 100, crops: new Map([[2026, ['wht']]]) }),
+    field({ id: 'b', name: 'B', acres: 100, crops: new Map([[2026, ['wht']]]) }),
+    field({ id: 'c', name: 'C', acres: 100, crops: new Map([[2026, ['wht']]]) }),
+  ]
+
+  it('fills a ranked crop that would not have been placed at all, up to its limit', () => {
+    // Corn has no margin, so the profit plan never reaches it on its own.
+    const limits = new Map([['crn', 100]])
+    const plain = buildPlan('profit', 2027, fs(), crops, pref, new Map(), limits)
+    expect(plain.acres.get('crn') ?? 0).toBe(0)
+    const ranked = buildPlan('profit', 2027, fs(), crops, pref, new Map(), limits, new Map(), new Map(), { priority: ['crn'] })
+    expect(ranked.acres.get('crn')).toBe(100)
+    expect(ranked.assignments.find((a) => a.cropId === 'crn')!.note).toMatch(/gets the fields before the rest/)
+  })
+
+  it('deals the ranked crops in their order when they want the same field', () => {
+    const one = () => [field({ id: 'a', name: 'A', acres: 100, crops: new Map([[2026, ['wht']]]) })]
+    const canolaFirst = buildPlan('profit', 2027, one(), crops, pref, new Map(), new Map(), new Map(), new Map(), { priority: ['can', 'pot'] })
+    expect(canolaFirst.assignments[0].cropId).toBe('can')
+    // Potatoes have no margin and would never win on score; ranked first they do.
+    const potatoFirst = buildPlan('profit', 2027, one(), crops, pref, new Map(), new Map(), new Map(), new Map(), { priority: ['pot', 'can'] })
+    expect(potatoFirst.assignments[0].cropId).toBe('pot')
+  })
+
+  it('places a renter’s crop when it is ranked, and never otherwise', () => {
+    // Potatoes are the grower's to plant on our ground, so they carry
+    // renterOnly and the recommender leaves them alone — unless the farm has
+    // ranked them, which is an instruction rather than a score.
+    const renter: CropInfo[] = crops.map((c) => (c.id === 'pot' ? { ...c, renterOnly: true, margin: 900 } : c))
+    const plain = buildPlan('profit', 2027, fs(), renter, pref, new Map(), new Map())
+    expect(plain.acres.get('pot') ?? 0).toBe(0)
+    const ranked = buildPlan('profit', 2027, fs(), renter, pref, new Map(), new Map([['pot', 100]]), new Map(), new Map(), { priority: ['pot'] })
+    expect(ranked.acres.get('pot')).toBe(100)
+    // Only the rank places it: its 100-acre cap is not exceeded even though
+    // its margin would win every field left.
+    expect(ranked.assignments.filter((a) => a.cropId === 'pot')).toHaveLength(1)
+  })
+
+  it('never puts a ranked crop where a rule blocks it', () => {
+    // Beans cannot follow canola, whatever rank they are given.
+    const fs2 = [field({ id: 'a', name: 'A', crops: new Map([[2026, ['can']]]) })]
+    const p = buildPlan('profit', 2027, fs2, crops, pref, new Map(), new Map(), new Map(), new Map(), { priority: ['bean'] })
+    expect(p.assignments[0].cropId).not.toBe('bean')
   })
 })

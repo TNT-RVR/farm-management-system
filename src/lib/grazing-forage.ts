@@ -163,6 +163,10 @@ function useInvalidateCalibration() {
     void qc.invalidateQueries({ queryKey: ['pasture-calibration-readiness'] })
     void qc.invalidateQueries({ queryKey: ['pasture-rotation'] })
     void qc.invalidateQueries({ queryKey: ['pasture-calibration-samples'] })
+    // A sample is what lets a pasture be read off its own grass instead of
+    // the estimator's provincial table, so the Grazing tab's anchors have to
+    // go stale with it (pasture_measured_yield, forage-yield.ts).
+    void qc.invalidateQueries({ queryKey: ['pasture_measured_yield'] })
   }
 }
 

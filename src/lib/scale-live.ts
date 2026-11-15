@@ -114,6 +114,11 @@ export type ScaleLive = {
  * are never cached for offline use: an old weight shown as current is worse
  * than none.
  */
+// Each caller gets its own channel. Asking Realtime for a topic that is
+// already open hands back the SAME channel, already subscribed, and adding a
+// listener to it throws; the weigh screen shows the scale in two places.
+let channelSeq = 0
+
 export function useScaleLive(config: ScaleConfig | undefined): ScaleLive {
   const [live, setLive] = useState<{ reading: ScaleReading | null; receivedAt: number | null }>({
     reading: null,
@@ -149,7 +154,7 @@ export function useScaleLive(config: ScaleConfig | undefined): ScaleLive {
         })
     void fetchNow()
     const channel = client
-      .channel(`scale_live:${device}`)
+      .channel(`scale_live:${device}:${++channelSeq}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'scale_live', filter: `device_id=eq.${device}` },

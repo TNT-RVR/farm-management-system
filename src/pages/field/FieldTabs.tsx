@@ -26,6 +26,7 @@ export type FieldSection =
   | 'history'
   | 'notes'
   | 'scouting'
+  | 'scout-reports'
   | 'settings'
 
 /**
@@ -98,6 +99,18 @@ export const FIELD_TABS: { key: FieldSection; label: string; path: string; links
     // /notes address still works — it opens Overview at the notes — and
     // 'notes' stays a FieldSection so the route and old links keep their type.
     { key: 'scouting', label: 'Scouting', path: '/scouting', links: [{ to: '/scouting', label: 'Scouting map' }] },
+    // The seed companies' own prescouts, which are a different thing from our
+    // scouting: their grade decides what may be planted here next year, and it
+    // is read as a run of years rather than a note on a day.
+    {
+      key: 'scout-reports',
+      label: 'Scout reports',
+      path: '/scout-reports',
+      links: [
+        { to: '/scout-reports', label: 'All scout reports' },
+        { to: '/rotation', label: 'Rotation' },
+      ],
+    },
     {
       key: 'settings',
       label: 'Settings',

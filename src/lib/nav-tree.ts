@@ -144,6 +144,10 @@ const VIEW_LIST: MenuView[] = [
   { key: 'fertilizer-savings', label: 'Fertilizer savings', icon: PiggyBank, to: '/fertilizer/savings', description: 'Ways to spend less on fertilizer.' },
   // "Isolation", not "Canola isolation": not every farm grows canola (Sam, 26 Oct 2026). The key stays: it is saved in menu prefs.
   { key: 'canola-isolation', label: 'Isolation', icon: Flower2, to: '/canola-reports', description: 'The mile around each seed field, and its field history.' },
+  // The seed companies' own prescouts (Sam, 12 Nov 2026). Planting season,
+  // beside Isolation: both are what a seed company wants settled before the
+  // drill goes in, and the grade here decides which fields may carry the crop.
+  { key: 'scout-reports', label: 'Seed canola scout reports', icon: ClipboardCheck, to: '/scout-reports', description: 'Which fields each seed company will grow canola on, and why.' },
   { key: 'next-year-plan', label: "Next year's plan", icon: Repeat, to: '/plan?tab=plan', home: 'winter', description: 'Which crop goes on which field next year.' },
 
   // Growing: crop care
@@ -269,6 +273,7 @@ const SECTION_DEFS: SectionDef[] = [
       // tests moved to Growing; Manure's home is Winter, listed here too.
       { heading: 'Fertility', icon: LandPlot, views: ['soil-tests', 'fertility-plan', 'fertilizer-prices', 'fertilizer-savings', 'manure'] },
       'canola-isolation',
+      'scout-reports',
       'next-year-plan',
       'rotation',
       'field-progress',
@@ -603,6 +608,7 @@ export const OLD_NAV_VIEWS: Readonly<Record<string, readonly string[]>> = {
   '/markets': ['markets'],
   '/contracts': ['contracts'],
   '/scouting': ['scouting'],
+  '/scout-reports': ['scout-reports'],
   '/leases': ['leases'],
   '/work': [],
   '/tasks': ['tasks'],

@@ -50,6 +50,7 @@ const ResearchPage = lazy(() =>
   import('@/pages/ResearchPage').then((m) => ({ default: m.ResearchPage })),
 )
 const ScoutingPage = lazy(() => import('@/pages/ScoutingPage').then((m) => ({ default: m.ScoutingPage })))
+const ScoutReportsPage = lazy(() => import('@/pages/ScoutReportsPage').then((m) => ({ default: m.ScoutReportsPage })))
 const LeasesPage = lazy(() => import('@/pages/LeasesPage').then((m) => ({ default: m.LeasesPage })))
 const EventsPage = lazy(() => import('@/pages/EventsPage').then((m) => ({ default: m.EventsPage })))
 const ContractsPage = lazy(() => import('@/pages/ContractsPage').then((m) => ({ default: m.ContractsPage })))
@@ -77,6 +78,11 @@ const MeetingPage = lazy(() => import('@/pages/MeetingPage').then((m) => ({ defa
 const SearchPage = lazy(() => import('@/pages/SearchPage').then((m) => ({ default: m.SearchPage })))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
 const UtilitiesPage = lazy(() => import('@/pages/UtilitiesPage').then((m) => ({ default: m.UtilitiesPage })))
+const CropForFeedPage = lazy(() => import('@/pages/CropForFeedPage').then((m) => ({ default: m.CropForFeedPage })))
+const GrossMarginPage = lazy(() => import('@/pages/GrossMarginPage').then((m) => ({ default: m.GrossMarginPage })))
+const WaterPaybackPage = lazy(() => import('@/pages/WaterPaybackPage').then((m) => ({ default: m.WaterPaybackPage })))
+const CowCalfIndicatorsPage = lazy(() => import('@/pages/CowCalfIndicatorsPage').then((m) => ({ default: m.CowCalfIndicatorsPage })))
+const CalvingDistributionPage = lazy(() => import('@/pages/CalvingDistributionPage').then((m) => ({ default: m.CalvingDistributionPage })))
 const FuelPage = lazy(() => import('@/pages/FuelPage').then((m) => ({ default: m.FuelPage })))
 const PrivacyPage = lazy(() => import('@/pages/LegalPage').then((m) => ({ default: m.PrivacyPage })))
 const TermsPage = lazy(() => import('@/pages/LegalPage').then((m) => ({ default: m.TermsPage })))
@@ -137,6 +143,7 @@ export default function App() {
         <Route path="/fields/:id/history" element={<FieldDetailPage section="history" />} />
         <Route path="/fields/:id/notes" element={<FieldDetailPage section="notes" />} />
         <Route path="/fields/:id/scouting" element={<FieldDetailPage section="scouting" />} />
+        <Route path="/fields/:id/scout-reports" element={<FieldDetailPage section="scout-reports" />} />
         <Route path="/fields/:id/settings" element={<FieldDetailPage section="settings" />} />
         <Route path="/fields/:id/work" element={<FieldWorkPage />} />
         <Route path="/fields/:id/activity" element={<FieldActivityPage />} />
@@ -176,6 +183,7 @@ export default function App() {
         <Route path="/canola-bloom" element={<CanolaBloomPage />} />
         <Route path="/fusarium" element={<FusariumPage />} />
         <Route path="/scouting" element={<ScoutingPage />} />
+        <Route path="/scout-reports" element={<ScoutReportsPage />} />
         <Route path="/leases" element={<LeasesPage />} />
         {/* No SubTabLayout here. "Inventory" and "Bins" were a tab bar across
             the top repeating the two sidebar entries directly beside them —
@@ -211,6 +219,11 @@ export default function App() {
             links land on the trucks, an old ?inspection= link on that inspection. */}
         <Route path="/truck-inspections" element={<TruckInspectionsRedirect />} />
         <Route path="/utilities" element={<UtilitiesPage />} />
+        <Route path="/crop-for-feed" element={<CropForFeedPage />} />
+        <Route path="/gross-margin" element={<GrossMarginPage />} />
+        <Route path="/water-payback" element={<WaterPaybackPage />} />
+        <Route path="/cow-calf-indicators" element={<CowCalfIndicatorsPage />} />
+        <Route path="/calving-distribution" element={<CalvingDistributionPage />} />
         {/* The Solar page moved to Utilities (6 Oct 2026); old links land on its tab. */}
         <Route path="/solar" element={<Navigate to="/utilities?tab=solar" replace />} />
         <Route path="/field-progress" element={<FieldProgressPage />} />

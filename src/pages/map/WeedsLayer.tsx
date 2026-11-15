@@ -44,9 +44,12 @@ function WeedPhoto({ weed, className }: { weed: Weed; className: string }) {
       </div>
     )
   }
+  // `failed` starts true when a weed has no photo, so this is only reached with
+  // one. The ?? keeps the type honest rather than handing src a null, which the
+  // browser reads as the page's own address and fetches all over again.
   return (
     <img
-      src={weed.photo}
+      src={weed.photo ?? undefined}
       alt={weed.name}
       loading="lazy"
       onError={() => setFailed(true)}

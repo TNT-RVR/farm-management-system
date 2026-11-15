@@ -1,5 +1,6 @@
 import { BellRing } from 'lucide-react'
 import { MOVE_DEFAULTS } from '@/lib/pasture-move'
+import { RAIN_NORMAL_YEARS } from '@/lib/rain-normals'
 import { useSetRanch, type Ranch } from '@/lib/ranches'
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
@@ -37,7 +38,7 @@ const FIELDS: { key: Key; label: string; unit: string; step: string; dflt: numbe
     unit: '% of normal',
     step: '5',
     dflt: MOVE_DEFAULTS.dryPct,
-    hint: 'Rain to date under this share of the 10-year average to date makes it a dry year.',
+    hint: `Rain to date under this share of the ${RAIN_NORMAL_YEARS}-year average to date makes it a dry year.`,
   },
 ]
 

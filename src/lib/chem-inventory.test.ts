@@ -15,7 +15,7 @@ describe('chemical inventory', () => {
       started_at: '2026-06-04T22:00:00Z',
       applied_area_ha: 29.8,
       products: [{ name: 'Mix', components: [{ name: 'Roundup', guid: 'g', rate: { value: 0.67, unitId: 'l1ac-1' } }] }],
-      as_applied: [{ name: 'Roundup', productId: 'g', totalValue: 52.2, totalUnit: 'l' }],
+      as_applied: [{ name: 'Roundup', productId: 'g', totalValue: 49.7, totalUnit: 'l' }],
     }
     const rateOp: InvOp = {
       id: 'b',
@@ -26,7 +26,7 @@ describe('chemical inventory', () => {
     }
     const { uses, unmatched } = usesFromOps([measuredOp, rateOp, { ...rateOp, id: 'c', products: [{ name: 'Mystery', rate: { value: 1, unitId: 'l1ac-1' } }] }], (nm) => (/roundup/i.test(nm) ? 'ru' : null), () => 'L', () => 140)
     expect(uses.map((u) => [u.source, Math.round(u.qty * 10) / 10])).toEqual([
-      ['measured', 52.2],
+      ['measured', 49.7],
       ['rate', 90],
     ])
     expect(unmatched.get('Mystery')).toBeCloseTo(100, 6)

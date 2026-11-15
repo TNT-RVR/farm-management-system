@@ -1,15 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { calvesAtSideAU, median, mobClass, MOVE_DEFAULTS, moveVerdict, seasonGrowthShare, type MoveInput } from './pasture-move'
+import { RAIN_NORMAL_YEARS } from './rain-normals'
 
 // A 500-acre Fair paddock in the 300 mm zone (370 lb/ac) in a normal season,
 // 80% utilisation:
 // 148,000 lb a full season; in early July 95% of the season has grown, so
 // 140,600 lb to graze. 400 AU eat 10,400 lb a day, so it lasts about 13 days.
+//
+// countWaste false pins that 10,400 to INTAKE (26 lb an animal-unit day), so
+// the worked figures above are the ones these tests check. The ranch default
+// also charges the grass the herd tramples and fouls, which empties a paddock
+// sooner — its own test covers that.
 const base: MoveInput = {
   pasture: 'Pasture N',
   acres: 500,
   quality: 'Fair',
   utilisation: 0.8,
+  countWaste: false,
   zoneMm: 300,
   rainFactor: 1,
   pctOfNormal: 100,
@@ -39,6 +46,16 @@ describe('moveVerdict', () => {
     expect(v.move).toBe(false)
   })
 
+  it('empties the paddock sooner when the trampled grass is counted', () => {
+    const intake = moveVerdict(base)
+    const withWaste = moveVerdict({ ...base, countWaste: true })
+    // Same grass standing either way; it just does not go as far.
+    expect(withWaste.availableLb).toBe(intake.availableLb)
+    expect(withWaste.daysLeft!).toBeLessThan(intake.daysLeft!)
+    // 400 AU at 33.3 lb instead of 26: 78% of the grazing days.
+    expect(withWaste.daysLeft! + 3).toBeCloseTo((intake.daysLeft! + 3) * 0.78, 1)
+  })
+
   it('says move when the estimate runs down to the threshold', () => {
     const v = moveVerdict({ ...base, today: '2026-07-11' })
     expect(v.daysLeft!).toBeLessThanOrEqual(5)
@@ -53,7 +70,7 @@ describe('moveVerdict', () => {
     const dry = moveVerdict({ ...day, pctOfNormal: 60 })
     expect(dry.daysLeftMin).toBe(10)
     expect(dry.move).toBe(true)
-    expect(dry.reasons.at(-1)).toMatch(/60% of the 10-year average/)
+    expect(dry.reasons.at(-1)).toMatch(new RegExp(`60% of the ${RAIN_NORMAL_YEARS}-year average`))
   })
 
   it('starts a second turn with what the first one left', () => {

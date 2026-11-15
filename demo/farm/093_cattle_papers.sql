@@ -72,15 +72,21 @@ join public.cattle_water w on w.name = v.water;
 -- The yearly moisture-deficiency election for the ranch, and the pasture
 -- quarters it covers. The identification number and the weather stations are
 -- made up, as is the farm.
+-- This year's and next year's, because the screen reads the crop year the app
+-- is sitting on. Next year's alone left the demo showing "Answer this year's
+-- questions" with six answers missing, every one of which was in the row
+-- (13 Nov 2026).
 insert into public.afsc_mdi_year (crop_year, ranch_id, identification_number, business_name, business_address, gst_bn,
   contact_person, contact_phone, contact_email, home_part, home_section, home_township, home_range, home_meridian,
   station_1, station_2, station_3, coverage_option, price_per_lb, insure_native, insure_improved, insure_bush, insure_community, notes)
-values
-  (extract(year from current_date)::int + 1, '0de30000-0000-4000-8000-000000000401', '00-123456', 'Prairie Creek Farm Ltd.',
+select extract(year from current_date)::int + y.ahead, '0de30000-0000-4000-8000-000000000401', '00-123456', 'Prairie Creek Farm Ltd.',
    'Box 41, Prairie Creek, AB  T0A 1A0', '00-123456 RT0001', 'Sam Demo', '403-555-0100', 'user-2a97@prairiecreek.example',
    'SE', '14', '42', '25', 'W4', 'Prairie Creek East (example)', 'Willow Ridge (example)', 'Correction Line (example)',
-   'B', 0.095, true, true, false, false,
-   'Example election for the demo farm. Option B on both native and improved grass; the deadline for a change is the end of February.');
+   'B', case when y.ahead = 0 then 0.092 else 0.095 end, true, true, false, false,
+   case when y.ahead = 0
+        then 'Example election for the demo farm. Option B on both native and improved grass, as sent in February.'
+        else 'Example election for the demo farm. Option B again; the deadline for a change is the end of February.' end
+from (values (0), (1)) as y(ahead);
 
 insert into public.afsc_mdi_land (ranch_id, pasture_id, part, section, township, range, meridian, acres, pasture_type, tenure, title_name, sort)
 select case when p.legal_description like 'Willow Ridge%' then '0de30000-0000-4000-8000-000000000402'::uuid

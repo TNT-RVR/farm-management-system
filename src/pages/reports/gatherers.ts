@@ -43,6 +43,7 @@ export const GATHERERS: Record<BuiltId, () => Promise<Gatherer>> = {
   'chem-storage': () => import('@/lib/reports/whmis').then((m) => ({ run: m.gatherChemicalStorage })),
   nerp: () => hooks().then((m) => ({ useRun: m.useNerpRun })),
   'nutrient-balance': () => import('@/lib/reports/nutrient-balance').then((m) => ({ run: m.gatherNutrientBalance })),
+  'soil-test-request': () => import('@/lib/reports/soil-test-request').then((m) => ({ run: m.gatherSoilTestRequest, xlsx: m.soilTestRequestXlsx })),
   manure: () => hooks().then((m) => ({ useRun: m.useManureRun })),
   'bin-records': () => local().then((m) => ({ run: m.binRecords, xlsx: m.binRecordsXlsx })),
   'driver-log': () => import('@/lib/reports/driver-log-data').then((m) => ({ run: m.gatherDriverLog })),

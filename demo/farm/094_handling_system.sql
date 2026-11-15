@@ -1,33 +1,22 @@
 -- The corral designer (/handling-system), which was empty in the demo: the
--- kit library, the home yard's pens as they stand, one alternative layout,
--- what is on hand, and the buried power line to keep clear of. All made up.
+-- home yard's pens as they stand, one alternative layout, what is on hand,
+-- and the buried power line to keep clear of. All made up.
 --
--- The kit library normally arrives with the migration that built the feature;
--- the demo loads the published structure, not the migrations, so the rows are
--- here. Ids: catalog 0c10-, sites 0c20-, versions 0c30-.
+-- The kit library itself is not here. Panels, gates, feeders and the stock
+-- drawn to scale come with the starter reference data the public copy ships,
+-- which is the same rows the farm's own migration writes, so the demo picks
+-- them up by key. Ids: catalog 0c10-, sites 0c20-, versions 0c30-.
 
--- ── The kit library (Library tab) ─────────────────────────────────────────
--- site_id null means "every yard can use it". `counted` false is the stock and
--- machinery drawn to scale for clearance, which is not kit to buy.
+-- ── The one piece of kit the library does not carry ──────────────────────
+-- Machinery is each farm's own, so the shipped library has none. This one is
+-- drawn to scale to show the turning room a tractor needs in the yard;
+-- `counted` false keeps it out of the kit to buy.
 insert into public.handling_catalog
   (id, key, name, category, width_ft, depth_ft, height_ft, color, panel_type, gate_type, animal_type, counted, sort_order, description)
 values
-  ('0de30000-0000-4000-8000-00000000c101', 'bar-panel-10',       '10 ft bar panel',       'Panel',          10,   5.5, 5.5, '#64748b', 'bars',       null,         null,   true,  10, null),
-  ('0de30000-0000-4000-8000-00000000c102', 'bar-panel-12',       '12 ft bar panel',       'Panel',          12,   5.5, 5.5, '#64748b', 'bars',       null,         null,   true,  11, null),
-  ('0de30000-0000-4000-8000-00000000c103', 'bar-panel-16',       '16 ft bar panel',       'Panel',          16,   5.5, 5.5, '#64748b', 'bars',       null,         null,   true,  12, null),
-  ('0de30000-0000-4000-8000-00000000c104', 'wind-panel-12',      '12 ft wind fence',      'Panel',          12,   5.5, 7.0, '#475569', 'wind-fence', null,         null,   true,  20, 'Solid: draws as a double line marked WF'),
-  ('0de30000-0000-4000-8000-00000000c105', 'gate-swing-12',      '12 ft gate',            'Gate',           12,   5.5, 5.5, '#16a34a', null,         'swinging',   null,   true,  30, 'Hinged one end; the arc is its swing'),
-  ('0de30000-0000-4000-8000-00000000c106', 'gate-two-panel-24',  '24 ft two-panel gate',  'Gate',           24,   5.5, 5.5, '#15803d', null,         'two-panel',  null,   true,  31, 'Two leaves meeting mid-span'),
-  ('0de30000-0000-4000-8000-00000000c107', 'gate-drive-over',    '14 ft drive-over',      'Gate',           14,   4,   1.0, '#4d7c0f', null,         'drive-over', null,   true,  32, 'Drive across it; drawn dashed and marked DO'),
-  ('0de30000-0000-4000-8000-00000000c108', 'sort-gate-5way',     '5-way sorting gate',    'Sorting gate',   12,  12,   5.5, '#0891b2', null,         null,         null,   true,  40, 'Five arms at 72 degrees'),
-  ('0de30000-0000-4000-8000-00000000c109', 'trough-10',          '10 ft water trough',    'Water',          10,   2,   2.0, '#2563eb', null,         null,         null,   true,  50, null),
-  ('0de30000-0000-4000-8000-00000000c110', 'bale-feeder-round',  'Round bale feeder',     'Hay feeder',      6,   6,   4.0, '#ca8a04', null,         null,         null,   true,  60, null),
-  ('0de30000-0000-4000-8000-00000000c111', 'feed-bunk-20',       '20 ft feed bunk',       'Feed bunk',      20,   3,   2.5, '#78716c', null,         null,         null,   true,  70, null),
-  ('0de30000-0000-4000-8000-00000000c112', 'mineral-tub',        'Mineral tub',           'Salt / mineral',  3,   3,   2.5, '#db2777', null,         null,         null,   true,  80, null),
-  ('0de30000-0000-4000-8000-00000000c113', 'animal-cow',         'Cow',                   'Animal',          7,   2.5, 4.6, '#f97316', null,         null,         'cow',  false, 100, 'To scale, for clearance. Not counted as kit'),
-  ('0de30000-0000-4000-8000-00000000c114', 'animal-bull',        'Bull',                  'Animal',          7.25, 3,  4.75, '#ea580c', null,        null,         'bull', false, 101, 'To scale, for clearance. Not counted as kit'),
-  ('0de30000-0000-4000-8000-00000000c115', 'animal-calf',        'Calf',                  'Animal',          4,    1.8, 3.2, '#fb923c', null,        null,         'calf', false, 102, 'To scale, for clearance. Not counted as kit'),
-  ('0de30000-0000-4000-8000-00000000c116', 'tractor-processor',  'Tractor + bale processor', 'Equipment',    29,    9.3, 9.5, '#dc2626', null,        null,         null,   false, 110, 'Tractor and the bale processor behind it, for turning room. Not counted as kit');
+  ('0de30000-0000-4000-8000-00000000c116', 'tractor-processor', 'Tractor + bale processor', 'Equipment',
+   29, 9.3, 9.5, '#dc2626', null, null, null, false, 110,
+   'Tractor and the bale processor behind it, for turning room. Not counted as kit');
 
 -- ── The yards ─────────────────────────────────────────────────────────────
 insert into public.handling_sites (id, ranch_id, name, center_lng, center_lat, zoom, notes, sort_order) values

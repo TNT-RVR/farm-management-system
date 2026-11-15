@@ -4,6 +4,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { InfoPopover } from '@/components/InfoPopover'
 import { AfscMdiDialog } from '@/components/AfscMdiDialog'
 import { askConfirm } from '@/components/askConfirm'
+import { PUBLIC_COPY } from '@/config/edition'
 import { useCropYear } from '@/lib/crop-year'
 import { cn } from '@/lib/utils'
 import { n0 } from '@/lib/format'
@@ -150,6 +151,14 @@ export function PastureInsurance({ isManager, ranch }: { isManager: boolean; ran
           <HelpNote className="mt-1 text-xs" summary="AFSC’s own PDFs, filled in with what the app knows." title="What you get">
             The app sets the fields on the file AFSC sent, so what downloads is the form itself. Sign it, and fill in anything
             left blank — a SIN or a date of birth is never filled from here.
+            {PUBLIC_COPY && (
+              <>
+                {' '}
+                This copy does not carry AFSC’s blank forms: they are theirs to hand out, not ours. Download them from AFSC
+                and save them in <code>public/afsc/</code> under the names <code>afsc-mdi.ts</code> lists, and these buttons
+                work.
+              </>
+            )}
           </HelpNote>
         </div>
         <ul className="divide-y divide-gray-100">

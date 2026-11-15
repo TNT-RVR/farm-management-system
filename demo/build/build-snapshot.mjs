@@ -127,6 +127,20 @@ step('starter data loaded')
 await pg.exec(`
   create schema if not exists demo;
   create table if not exists demo.meta (base_date date not null, built_at timestamptz not null default now());
+  -- One date out of jsonb, moved the way the date columns are. Text in and
+  -- text out, and anything that is not a date comes back untouched: a value
+  -- read out of jsonb is only a string, and the demo's files are free to put
+  -- something else in a field that held a date yesterday.
+  -- Days only, the way the date columns move: p_years is for the crop_year
+  -- labels, and a date that also jumped a year would land a year off the row
+  -- it belongs to.
+  create or replace function demo.shifted(d text, p_days integer) returns text
+  language plpgsql immutable as $$
+  begin
+    return ((d::date + make_interval(days => p_days))::date)::text;
+  exception when others then
+    return d;
+  end $$;
   create or replace function demo.shift_dates(p_days integer, p_years integer default 0) returns integer
   language plpgsql as $$
   declare
@@ -169,6 +183,35 @@ await pg.exec(`
       execute format('update public.%I set %s', t.tbl, back);
       n := n + 1;
     end loop;
+    -- Dates kept INSIDE jsonb, which pg_attribute cannot show: the loop above
+    -- moves the row's own date columns and leaves these where they were, so a
+    -- bloom's satellite looks drifted a week from the bloom they describe, and
+    -- a year once the calendar turned (13 Nov 2026). There is no general way
+    -- to find a date in jsonb — '2026-05-01' and '1.25' are both just text —
+    -- so each one is named here. A new one in demo/farm/ belongs on this list.
+    -- Each satellite look at a canola field carries the day it was taken.
+    update public.canola_bloom set
+      looks = coalesce((
+        select jsonb_agg(jsonb_set(l, '{d}', to_jsonb(demo.shifted(l->>'d', p_days))) order by ord)
+          from jsonb_array_elements(looks) with ordinality as e(l, ord)
+      ), looks)
+     where jsonb_typeof(looks) = 'array';
+    -- canola_bloom.notified holds the window the start and end alerts covered.
+    update public.canola_bloom set
+      notified = jsonb_set(
+                   jsonb_set(notified, '{start}', to_jsonb(demo.shifted(notified->>'start', p_days))),
+                   '{end}', to_jsonb(demo.shifted(notified->>'end', p_days)))
+     where notified ? 'start' and notified ? 'end';
+    -- field_climate.outlook -> cansips -> <month> -> issued: when the seasonal
+    -- forecast behind the climate outlook was published.
+    update public.field_climate c set
+      outlook = jsonb_set(c.outlook, '{cansips}', coalesce((
+        select jsonb_object_agg(k, case when v ? 'issued'
+                                        then jsonb_set(v, '{issued}', to_jsonb(demo.shifted(v->>'issued', p_days)))
+                                        else v end)
+          from jsonb_each(c.outlook->'cansips') as m(k, v)
+      ), c.outlook->'cansips'))
+     where jsonb_typeof(c.outlook->'cansips') = 'object';
     return n;
   end $$;
 `)

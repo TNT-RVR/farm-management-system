@@ -80,6 +80,7 @@ export type BuiltId =
   | 'chem-storage'
   | 'nerp'
   | 'nutrient-balance'
+  | 'soil-test-request'
   | 'manure'
   | 'bin-records'
   | 'driver-log'
@@ -380,6 +381,28 @@ export const REPORTS: ReportEntry[] = [
     from: { label: 'Fertility plan', to: '/fertilizer/plan' },
     formats: PDF_CSV,
     params: [year],
+  },
+  {
+    mode: 'build',
+    id: 'soil-test-request',
+    section: 'fertility',
+    name: 'Soil test request',
+    what: 'For the lab: the fields ticked to test, each with a map and four years of crops, fertilizer, manure and soil tests.',
+    from: { label: 'Soil tests', to: '/fertilizer/soil' },
+    formats: ['PDF', 'XLSX', 'CSV'],
+    params: [
+      { key: 'year', kind: 'year', label: 'For the crop', ahead: 1 },
+      {
+        key: 'next',
+        kind: 'choice',
+        label: "Next year's crop",
+        options: [
+          { value: 'no', label: 'Leave off' },
+          { value: 'yes', label: 'Include' },
+        ],
+        default: 'no',
+      },
+    ],
   },
   {
     mode: 'build',

@@ -1,3 +1,5 @@
+import { SPRING_MONTHS, SUMMER_MONTHS, effectiveSeasonMm, seasonYieldFactor, sumMonths, type RainSplit } from './forage-response'
+
 // Growing-season rain: what is normal here, and how this year compares.
 //
 // Sam (1 Oct 2026): "Use the average rainfall for the last 5 years for
@@ -16,12 +18,19 @@
 // Pure, so the Netlify endpoint and the move-out check share one calculation.
 //
 // Sam (5 Oct 2026), asked whether grazing should plan on the normal season:
-// "Lets keep basing it off of the 10 year average." So the normal is now the
-// last ten whole seasons (it was five); RAIN_NORMAL_YEARS is the one place
-// that says so. The comments above still say 5 where they quote 1 Oct.
+// "Lets keep basing it off of the 10 year average." Then (12 Nov 2026), after
+// the forage estimator turned out to be built on long-term zones: "Use
+// 30-year". So the normal is the last thirty whole seasons; it was ten, and
+// five before that. RAIN_NORMAL_YEARS is the one place that says so, and every
+// screen that prints the number reads it from here rather than spelling it
+// out. The comments above still say 5 and 10 where they quote those dates.
+//
+// It moves the figures: at Home Ranch the Apr-Oct normal is 289 mm over
+// thirty years against 270 mm over ten, so a 353 mm season reads as 122% of
+// normal rather than 131%, and the forage it scales drops about 7%.
 
 /** How many whole past seasons make the normal. */
-export const RAIN_NORMAL_YEARS = 10
+export const RAIN_NORMAL_YEARS = 30
 
 export type DailyRain = { t: string; mm: number }
 
@@ -124,16 +133,84 @@ export function annualNormalMm(daily: DailyRain[], years: number[]): number | nu
  * How this season is going against its own normal, as a multiplier on the
  * zone's yield.
  *
- * Projected season (the rain so far plus a normal rest of season) over the
- * normal season total. In April that is close to 1 because almost all of the
+ * The input is the projected season — the rain so far plus a normal rest of
+ * season. In April that is close to a normal year because almost all of the
  * projection is still "a normal rest of season", and it converges on the real
- * ratio as the year fills in — which is what stops the forage forecast reading
- * as a disaster every spring. Floored at zero; not capped, because the
- * satellite season factor it stands in for is not capped either.
+ * figure as the year fills in, which is what stops the forage forecast reading
+ * as a disaster every spring.
+ *
+ * What it is NOT, since 12 Nov 2026, is the plain ratio of the two. Grass does
+ * not scale 1:1 with rain in either direction: the first 100 mm grows nothing,
+ * so a dry year is shorter of grass than it is of rain, and an unfertilized
+ * pasture runs into a nitrogen ceiling, so a wet one is not longer of grass by
+ * as much as it is of rain. seasonYieldFactor in forage-response.ts has the
+ * curve and the reasoning. Floored at nothing, capped at WET_YEAR_CAP, and 1
+ * when there is nothing to compare against.
+ *
+ * Pass `split` to weight the rain by WHEN it fell — April-June decides most of
+ * a year's forage and August rain nearly none. Without it the plain totals are
+ * used, which is the old behaviour minus the straight line.
  */
-export function rainFactor(projectedSeasonMm: number, normalSeasonMm: number): number {
+export function rainFactor(
+  projectedSeasonMm: number,
+  normalSeasonMm: number,
+  split?: { year: RainSplit; normal: RainSplit } | null,
+): number {
   if (!(normalSeasonMm > 0) || !Number.isFinite(projectedSeasonMm)) return 1
-  return Math.max(0, projectedSeasonMm / normalSeasonMm)
+  const weighted = split ? effectiveSeasonMm(split.year, split.normal, normalSeasonMm) : Number.NaN
+  return seasonYieldFactor(Number.isFinite(weighted) ? weighted : projectedSeasonMm, normalSeasonMm)
+}
+
+/** The normal running total at a month-day: the last entry at or before it. */
+function normalAt(cum: SeasonNormal['cumulative'], md: string): number {
+  let v = 0
+  for (const p of cum) {
+    if (p.md > md) break
+    v = p.mm
+  }
+  return v
+}
+
+const SPRING_FROM = '04-01'
+const SPRING_TO = '06-30'
+const SUMMER_FROM = '07-01'
+const SUMMER_TO = '08-31'
+
+/**
+ * This year's rain and a normal year's, each split into the three parts that
+ * carry different weight (forage-response.ts): stored moisture from the
+ * previous autumn and winter, April-June, and July-August.
+ *
+ * A part still in the future is filled in at its normal rate, the same way the
+ * projected season fills in the rest of the year. Without that, a June reading
+ * would score the year with an empty July-August bucket and call a normal
+ * summer a drought.
+ *
+ * `cutoffMd` is this year's last measured day. Carryover is always in the past
+ * by the time a season starts, so it is passed in measured, not projected.
+ */
+export function rainSplits(
+  series: DailyRain[],
+  normal: SeasonNormal,
+  opts: { cutoffMd: string; carryoverMm: number; normalCarryoverMm: number },
+): { year: RainSplit; normal: RainSplit } {
+  const cum = normal.cumulative
+  const normalSpring = normalAt(cum, SPRING_TO) - normalAt(cum, SPRING_FROM)
+  const normalSummer = normalAt(cum, SUMMER_TO) - normalAt(cum, SUMMER_FROM)
+  const year = series.length ? Number(series[0].t.slice(0, 4)) : new Date().getFullYear()
+  const cut = opts.cutoffMd
+  // What a normal year has delivered of each part by the cutoff, so the rest
+  // of the part can be filled in at the normal rate.
+  const springSoFar = normalAt(cum, cut < SPRING_TO ? cut : SPRING_TO) - normalAt(cum, SPRING_FROM)
+  const summerSoFar = cut < SUMMER_FROM ? 0 : normalAt(cum, cut < SUMMER_TO ? cut : SUMMER_TO) - normalAt(cum, SUMMER_FROM)
+  return {
+    year: {
+      carryoverMm: opts.carryoverMm,
+      springMm: sumMonths(series, year, SPRING_MONTHS) + Math.max(0, normalSpring - springSoFar),
+      summerMm: sumMonths(series, year, SUMMER_MONTHS) + Math.max(0, normalSummer - summerSoFar),
+    },
+    normal: { carryoverMm: opts.normalCarryoverMm, springMm: normalSpring, summerMm: normalSummer },
+  }
 }
 
 /** The last day of the season month, as 'YYYY-MM-DD'. */
@@ -142,7 +219,7 @@ export function seasonEnd(year: number, endMonth: number): string {
 }
 
 export type RainOutlook = {
-  /** This year to date as a % of the 10-year average to the same day; null before the season starts. */
+  /** This year to date as a % of the long-term average to the same day; null before the season starts. */
   pctOfNormal: number | null
   /**
    * This year so far plus a normal rest of season. What the grass is likely to

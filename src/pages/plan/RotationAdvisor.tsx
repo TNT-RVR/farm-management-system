@@ -14,6 +14,7 @@ import { AdminOnly } from '@/components/TechnicalDetails'
 import { money, n0 } from '@/lib/format'
 import { askConfirm } from '@/components/askConfirm'
 import { HelpNote } from '@/components/HelpNote'
+import { CropPriority } from './CropPriority'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 /** Hex SHA-256 of the request text, matching the one the function stores. */
@@ -135,6 +136,7 @@ export function RotationAdvisor({
     const opts = {
       minAcres,
       minNote,
+      priority: ctx.priorityFor(y),
       waterAvailable: new Map(water.sources.filter((w) => w.acreInches > 0).map((w) => [w.key, w.acreInches])),
       lookup: ctx.cropLookup,
     }
@@ -621,6 +623,8 @@ export function RotationAdvisor({
           <Advice text={lastDone.advice!} />
         </div>
       )}
+
+      <CropPriority crops={ctx.cropInfo} limits={ctx.limits} isManager={isManager} />
 
       <details className="rounded-md border border-gray-200 bg-white p-2">
         <summary className="cursor-pointer text-xs font-semibold text-gray-800">Acre limits and margins per crop</summary>

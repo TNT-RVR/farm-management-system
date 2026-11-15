@@ -55,6 +55,12 @@ export const LIMIT_GROUPS = [
   { group: 'dry_bean', label: 'All dry beans (combined)' },
   { group: 'canola', label: 'All canola (combined)' },
   { group: 'forage_legume', label: 'Alfalfa + sainfoin (combined)' },
+  // Six potato crops and three corn, and they are one crop to the rotation —
+  // same return interval, same disease, and the share-of-the-farm cap below
+  // already treats the three corns as one. Ranking "Potato-Chipper" above
+  // "Potato-Red" says nothing anybody means (Sam, 13 Nov 2026).
+  { group: 'potato', label: 'All potatoes (combined)' },
+  { group: 'corn', label: 'All corn (combined)' },
 ] as const
 
 /** Grown only under a pivot in southern Alberta. */
@@ -202,6 +208,12 @@ export type CropInfo = {
   standMax?: number | null
   /** Herbicide trait, for a canola whose company's trait is set. */
   trait?: HerbicideTrait | null
+  /**
+   * Which seed company a seed canola crop is grown for ('corteva', 'basf',
+   * 'nutrien'). Null on everything else, and on the seed canola crop that has
+   * no company chosen yet.
+   */
+  seedCompany?: string | null
 }
 
 /** Years the same crop has run on the field up to (not including) `year`. */
@@ -283,6 +295,22 @@ export type FieldCtx = {
    * Without it, the trait comes from the crops in `crops`.
    */
   canola?: CanolaYear[]
+  /**
+   * What the seed canola companies made of this field: one entry per company
+   * per crop year they graded it for. Their grade is the gate on seed canola
+   * — see the check in `evaluate`.
+   */
+  seedScouts?: SeedScout[]
+}
+
+/** One company's verdict on one field for one crop year. */
+export type SeedScout = {
+  company: string
+  companyLabel: string
+  cropYear: number
+  rating: string | null
+  /** Null when the company graded it on a scale we have no rule for. */
+  passed: boolean | null
 }
 
 export type Evaluation = {
@@ -296,6 +324,49 @@ export type Evaluation = {
   /** $/ac, or null when the crop has no margin set. */
   profit: number | null
   soil: number
+}
+
+/**
+ * What the seed companies' prescouts say about planting this crop here.
+ *
+ * They walk the quarters they might contract the summer before and grade them
+ * A to D, and that grade is the gate: a field Corteva failed cannot carry
+ * Corteva's seed canola, however well the rotation likes it.
+ *
+ * Nothing is said about a year nobody has scouted — the planner runs four
+ * years out and most of those have no sheet yet. Shared by the recommender
+ * and the plan grid, so a cell and a recommendation give the same reason.
+ */
+export function seedScoutGate(
+  crop: Pick<CropInfo, 'name' | 'key' | 'seedCompany'>,
+  scouts: SeedScout[],
+  year: number,
+): { blocked: string[]; cautions: string[]; plus: string[]; agronomy: number } {
+  const out = { blocked: [] as string[], cautions: [] as string[], plus: [] as string[], agronomy: 0 }
+  // A seed canola crop is one with a company on it OR the one with no company
+  // chosen. NOT `key === 'seed_canola'` alone: cropKey reads the name, and
+  // "Corteva Canola" has no "seed" in it, so the three crops this gate exists
+  // for all key as plain canola. That mistake let a field Corteva had graded
+  // D be recommended their seed canola.
+  if (crop.key !== 'seed_canola' && !crop.seedCompany) return out
+  const thisYear = scouts.filter((s) => s.cropYear === year)
+  if (!thisYear.length) return out
+  const mine = crop.seedCompany ? thisYear.find((s) => s.company === crop.seedCompany) : null
+  if (crop.seedCompany && !mine) {
+    out.cautions.push(`${crop.name}: this field was scouted for ${year} (${thisYear[0].companyLabel}) but not by them`)
+    return out
+  }
+  // With no company on the crop, any company that will take the field is enough.
+  const relevant = mine ? [mine] : thisYear
+  const yes = relevant.filter((s) => s.passed === true)
+  const no = relevant.filter((s) => s.passed === false)
+  if (yes.length) {
+    out.agronomy += 2
+    out.plus.push(`${yes.map((s) => `${s.companyLabel} graded it ${s.rating}`).join(', ')} — they will grow seed canola here in ${year}`)
+  } else if (no.length) {
+    out.blocked.push(`${no.map((s) => `${s.companyLabel} graded this field ${s.rating}`).join(', ')} for ${year}; they will not grow seed canola on it`)
+  }
+  return out
 }
 
 export function evaluate(
@@ -408,6 +479,12 @@ export function evaluate(
       agronomy -= 1
     }
   }
+  // The seed company's own prescout (Sam, 12 Nov 2026).
+  const gate = seedScoutGate(crop, field.seedScouts ?? [], year)
+  blocked.push(...gate.blocked)
+  cautions.push(...gate.cautions)
+  plus.push(...gate.plus)
+  agronomy += gate.agronomy
   // What the scouts found here.
   for (const h of scoutHits(k, field.scouting ?? [], year)) {
     if (h.block) blocked.push(h.message)
@@ -490,6 +567,13 @@ export function buildPlan(
     minAcres?: Map<string, number>
     /** Why a crop has its minimum — the note on the fields placed to fill it. */
     minNote?: Map<string, string>
+    /**
+     * Crop ids in the order they get the fields, first-ranked first (Sam,
+     * 12 Nov 2026: "seed canola fills fields first up to its max, then
+     * potatoes, then beans, then corn"). Each takes its best fields until its
+     * acre limit is reached; what is left is dealt out by score as before.
+     */
+    priority?: string[]
     /** Acre-inches of irrigation water available per source ('smrid', a licence id). */
     waterAvailable?: Map<string, number>
     /** Every crop by id, retired ones too, for reading a field's history. */
@@ -506,6 +590,10 @@ export function buildPlan(
   shortOfContract: Map<string, number>
 } {
   const byId = new Map([...(opts.lookup ?? new Map<string, CropInfo>()), ...crops.map((c) => [c.id, c] as const)])
+  /** Crops the farm ranked: the only renter's crops the plan may place. */
+  const ranked = new Set(opts.priority ?? [])
+  /** A renter's crop is placed by its rank and by nothing else. */
+  const byScore = (cropId: string) => !byId.get(cropId)?.renterOnly
   const acres = new Map<string, number>()
   const groupAcres = new Map<string, number>()
   const water = new Map<string, number>()
@@ -559,8 +647,14 @@ export function buildPlan(
       }
     }
     for (const c of crops) {
-      // A renter's crop stays in `crops` so the rules still know what it leaves behind.
-      if (c.renterOnly) continue
+      // A renter's crop stays in `crops` so the rules still know what it
+      // leaves behind, and is never recommended on score. A RANKED one is
+      // placed, because a rank is not a score — it is the farm saying "this
+      // crop gets these acres first", which is the statement renterOnly exists
+      // to stop the recommender making by accident. The potatoes are the case
+      // (Sam, 13 Nov 2026): the grower plants them, on ground we commit
+      // before anything else is planned around it.
+      if (c.renterOnly && !ranked.has(c.id)) continue
       const e = evaluate(f, c, year, byId, pref, rulesByReg)
       if (e.blocked.length) {
         blockedWhy.set(f.id, [...(blockedWhy.get(f.id) ?? []), e.blocked[0]])
@@ -601,8 +695,22 @@ export function buildPlan(
     const got = acres.get(cropId) ?? 0
     if (got < need - 0.5) shortOfContract.set(cropId, need - got)
   }
+  // Then the ranked crops, in their order. The greedy pass below hands each
+  // field to whichever crop scores highest on it, which left a crop the farm
+  // wants filled to take only the fields it happened to win. A ranked crop
+  // takes its best-scoring fields first, up to its own limit.
+  //
+  // Not locked, unlike a contract: a rank says which crop is preferred, not
+  // which is promised, so the water repair below may still step one down and
+  // say so on the field rather than leave a field with nothing on it.
+  for (const cropId of opts.priority ?? []) {
+    for (const { f, e } of cands) {
+      if (e.cropId !== cropId || out.has(f.id) || !fits(f, cropId)) continue
+      place(f, e, `${byId.get(cropId)?.name ?? 'This crop'} gets the fields before the rest`)
+    }
+  }
   for (const { f, e } of cands) {
-    if (out.has(f.id) || !fits(f, e.cropId)) continue
+    if (out.has(f.id) || !byScore(e.cropId) || !fits(f, e.cropId)) continue
     place(f, e, null)
   }
   const unplace = (f: FieldCtx) => {
@@ -633,7 +741,7 @@ export function buildPlan(
    */
   const makeRoom = (f: FieldCtx, soft: boolean): boolean => {
     if (!f.waterSource || opts.waterAvailable?.get(f.waterSource) == null) return false
-    const mine = candsOf.get(f.id) ?? []
+    const mine = (candsOf.get(f.id) ?? []).filter((c) => byScore(c.e.cropId))
     const relaxed = soft ? { soft: true } : {}
     if (!mine.some((c) => fits(f, c.e.cropId, { ...relaxed, water: true }))) return false
     for (let guard = 0; guard < 40 && !mine.some((c) => fits(f, c.e.cropId, relaxed)); guard++) {
@@ -647,7 +755,7 @@ export function buildPlan(
         unplace(g)
         for (const alt of candsOf.get(g.id) ?? []) {
           const saved = curW - waterFor(g, alt.e.cropId)
-          if (saved <= 0.5 || !fits(g, alt.e.cropId)) continue
+          if (saved <= 0.5 || !byScore(alt.e.cropId) || !fits(g, alt.e.cropId)) continue
           const loss = (curS - alt.s) / saved
           if (!best || loss < best.loss) best = { g, alt, loss }
         }
@@ -666,7 +774,7 @@ export function buildPlan(
   for (const f of fields) if (!out.has(f.id)) makeRoom(f, false)
   // 2. Past the one-crop share, but inside the water.
   for (const { f, e } of cands) {
-    if (out.has(f.id) || !fits(f, e.cropId, { soft: true })) continue
+    if (out.has(f.id) || !byScore(e.cropId) || !fits(f, e.cropId, { soft: true })) continue
     place(f, e, 'Past the usual one-crop share of the farm — nothing else fits here')
   }
   // 3. Room on the licence for a field that can only go past the share.
@@ -676,7 +784,7 @@ export function buildPlan(
   // least thirsty crop that passes the rules, and the plan says it is over.
   const byThirst = [...cands].sort((a, b) => waterFor(a.f, a.e.cropId) - waterFor(b.f, b.e.cropId) || b.s - a.s)
   for (const { f, e } of byThirst) {
-    if (out.has(f.id) || !fits(f, e.cropId, { water: true, soft: true })) continue
+    if (out.has(f.id) || !byScore(e.cropId) || !fits(f, e.cropId, { water: true, soft: true })) continue
     place(f, e, `Over its ${sourceName(f.waterSource)} even with the others stepped down — needs a transfer, or run it short`)
   }
   let margin = 0

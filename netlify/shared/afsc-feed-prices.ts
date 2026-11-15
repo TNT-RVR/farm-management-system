@@ -92,7 +92,7 @@ export function parseFeedGrain(text: string, station = 'Lethbridge'): ListPrice[
 }
 
 async function pdfText(url: string): Promise<string> {
-  const r = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 (RVR-Management feed prices)' } })
+  const r = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0 (Farm-Management-System feed prices)' } })
   if (!r.ok) throw new Error(`${r.status} from ${url}`)
   const pdf = await getDocumentProxy(new Uint8Array(await r.arrayBuffer()))
   return String((await extractText(pdf, { mergePages: true })).text)
@@ -100,7 +100,7 @@ async function pdfText(url: string): Promise<string> {
 
 /** Read both lists and price every feed that follows them. */
 export async function syncAfscFeedPrices(sb: SupabaseClient): Promise<{ updated: string[]; seen: string }> {
-  const page = await fetch(AFSC_LISTS_PAGE, { headers: { 'user-agent': 'Mozilla/5.0 (RVR-Management feed prices)' } })
+  const page = await fetch(AFSC_LISTS_PAGE, { headers: { 'user-agent': 'Mozilla/5.0 (Farm-Management-System feed prices)' } })
   if (!page.ok) throw new Error(`${page.status} from AFSC's price-lists page`)
   const html = await page.text()
   const forage = latestListUrl(html, 'Forage')

@@ -35,7 +35,9 @@ template button isn't there, use GitHub's **Import repository** instead.
 
    Then run `supabase/seed/reference_data.sql` the same way (paste it into the
    SQL Editor). It is starter data the app needs before you have entered any:
-   a crop list, crop water-use curves, rotation rules and the like. Edit or
+   a crop list, crop water-use curves, rotation rules, the resistance group
+   behind each chemical, the corral designer's kit, Alberta's irrigation
+   sheets and the river's flow objectives. Edit or
    delete anything that doesn't fit your farm afterwards.
 3. **Make your own account — after the schema, not before.** Go to
    **Authentication → Users → Add user → Create new user**, enter your email

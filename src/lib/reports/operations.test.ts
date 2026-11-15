@@ -4,6 +4,7 @@ import type { Equipment, ServicePlanRow } from '@/lib/equipment'
 import type { FuelOpRow } from '@/lib/hauling-data'
 import type { FuelModel } from '@/lib/operating-costs'
 import type { SeasonResult } from '@/lib/winter-feeding'
+import { auFromWeight } from '@/lib/animal-units'
 import { alertStatus, dedupeAlerts, localStamp, pivotLogGroups, type PassRow } from './pivot-log'
 import { pumpingGroups } from './pumping'
 import { creditMedians, summariseSamples, waterQualityGroups, type WqSampleRow } from './water-quality'
@@ -162,8 +163,10 @@ describe('herd inventory', () => {
     expect(calves[7]).toBe(1950)
     expect(calves[8]).toBe(19500)
     expect(r.unplacedMobs).toEqual(['Whitfields (15)'])
-    // AU from weight: 1,400 lb cows and bulls 1.4 each, 650 lb calves 0.65 (their typed 0.7 isn't flagged as an override).
-    expect(r.au).toBeCloseTo(140 + 140 + 6.5)
+    // AU from METABOLIC weight: 1,400 lb cows and bulls 1.287 each, 650 lb
+    // calves 0.724 (their typed 0.7 isn't flagged as an override). Under the
+    // old linear rule this read 140 + 140 + 6.5.
+    expect(r.au).toBeCloseTo(100 * auFromWeight(1400) + 100 * auFromWeight(1400) + 10 * auFromWeight(650))
   })
 })
 
@@ -189,8 +192,10 @@ describe('grazing record', () => {
     })
     expect(r.groups[0].title).toBe('Home Ranch · Pasture N')
     const row = r.groups[0].rows[0]
-    expect(row.slice(4, 8)).toEqual([5, 290, 1.4, 406])
-    expect(Number(row[8])).toBeCloseTo((406 * 5) / 30)
+    // 1,400 lb cows are 1.287 AU on the metabolic scale, not 1.4, so 290 head
+    // are 373 animal units rather than 406.
+    expect(row.slice(4, 8)).toEqual([5, 290, auFromWeight(1400), 290 * auFromWeight(1400)])
+    expect(Number(row[8])).toBeCloseTo((290 * auFromWeight(1400) * 5) / 30)
     expect(row[9]).toBe(20)
     expect(r.groups[1].title).toBe('eShepherd paddocks not on the pasture map')
     // No bull class on the herd: counted at 1 AU a head.
