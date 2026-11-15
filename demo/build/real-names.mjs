@@ -12,7 +12,7 @@ const NAMES = [
   'Viterra', 'Bunge', 'SeCan', 'FP Genetics', 'Canterra', 'BrettYoung', 'Brett-Young', 'Limagrain', 'Nuseed',
   'Proven Seed', 'Yara', 'Koch Agronomic', 'Mosaic', 'AgraCity', 'Farmers Edge', 'UFA',
   // varieties and seed brands
-  'InVigor', 'Hyola', 'HYOLA', 'Linola', 'LINOLA', 'DKTF', 'AAC ', 'CDC ', 'CS Camden', 'Algonquin',
+  'InVigor', 'Hyola', 'HYOLA', 'Linola', 'LINOLA', 'DKTF', 'DKC', 'AAC ', 'CDC ', 'CS Camden', 'Algonquin',
   // chemical and fertilizer brands
   'Reglone', 'Liberty', 'Roundup', 'Prosaro', 'Proline', 'Cotegra', 'Headline', 'Lumiderm', 'ESN ',
   // machinery and parts

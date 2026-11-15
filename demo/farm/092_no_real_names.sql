@@ -33,6 +33,14 @@ update public.combine_loss_checks set machine = 'C780' where machine = 'CR9090';
 update public.research_folders set name = 'Great Northern (Snowpeak)'
  where slug = 'crop-beans-great-northern';
 
+-- Two corn shelves are named for real hybrids. The demo's own varieties are
+-- Ridgeline and Northfield codes, so these follow them. The slug goes too:
+-- the papers are already filed by folder id, so nothing loses its shelf.
+update public.research_folders set name = 'Ridgeline RC69-10', slug = 'crop-corn-rc69-10'
+ where slug = 'crop-corn-dkc69-10rib';
+update public.research_folders set name = 'Northfield NC30-63', slug = 'crop-corn-nc30-63'
+ where slug = 'crop-corn-dkc30-63rib';
+
 -- One shelf's note names the trait by its trade name.
 update public.research_folders set note = 'In-crop on glufosinate-tolerant canola.'
  where slug = 'chem-glufosinate';
@@ -40,7 +48,7 @@ update public.research_folders set note = 'In-crop on glufosinate-tolerant canol
 with brand(term) as (values
   ('Roundup'), ('Liberty'), ('Reglone'), ('Prosaro'), ('Proline'), ('Cotegra'),
   ('Clearfield'), ('Headline'), ('Lumiderm'), ('Algonquin'), ('AAC '), ('CDC '),
-  ('InVigor'), ('Hyola'), ('Linola'), ('DEKALB'),
+  ('InVigor'), ('Hyola'), ('Linola'), ('DEKALB'), ('DKC'), ('DKTF'),
   ('BASF'), ('Corteva'), ('Nutrien'), ('Bayer'), ('Syngenta'), ('Pioneer')
 )
 update public.research_folders f set
