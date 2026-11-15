@@ -7,9 +7,11 @@ import { autoAlign, type Cell, type TableReport } from './table-report'
  * headings). Same report object as the PDF and CSV, so the three never
  * disagree about what is in it; only the look is Excel's.
  *
- * One sheet: the title, the meta block, then each section as its own table
- * with a green heading row, striped rows and its totals in bold. Every column
- * is sized to its longest text.
+ * The title, the meta block, then each section as its own table with a green
+ * heading row, striped rows and its totals in bold. Every column is sized to
+ * its longest text. A section can name a `sheet` to start a new worksheet, so
+ * tables of different shapes are sized apart instead of sharing one set of
+ * column widths.
  */
 
 const GREEN = 'FF15803D' // brand-700, the PDF's heading band
@@ -35,20 +37,46 @@ const textWidth = (v: Cell, bold = false) => {
   return longestLine * (bold ? 1.1 : 1)
 }
 
-/** The widest a column gets before its text wraps instead. */
-const MAX_WIDTH = 60
+/**
+ * The widest a column gets before its text wraps instead. Kept near the width
+ * of a written sentence: past that a single long cell — a field's note, a list
+ * of fertilizer products — widened its column so far that the numbers beside
+ * it were pushed off the screen (Sam, 14 Nov 2026).
+ */
+const MAX_WIDTH = 36
 
 export async function tableReportToXlsx(r: TableReport, opts: { sheetName?: string } = {}): Promise<Blob> {
   const ExcelJS = (await import('exceljs')).default
   const wb = new ExcelJS.Workbook()
   wb.creator = 'RVR Management'
   wb.created = new Date()
-  const ws = wb.addWorksheet((opts.sheetName ?? r.title).replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Report', {
-    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
-  })
-
-  // Widest text seen in each column, for sizing at the end.
-  const widths: number[] = []
+  // Each sheet sizes its own columns, so the widths start again with it.
+  let ws!: Worksheet
+  let widths: number[] = []
+  const taken = new Set<string>()
+  const sizeColumns = () =>
+    widths.forEach((w, i) => {
+      ws.getColumn(i + 1).width = w
+    })
+  // The first table on a sheet of its own is that sheet's table: its heading
+  // row stays put as the rows scroll under it, and carries filter arrows.
+  let fresh = false
+  const startSheet = (name: string) => {
+    if (ws) sizeColumns()
+    widths = []
+    fresh = true
+    let safe = name.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Report'
+    for (let n = 2; taken.has(safe); n++) safe = `${safe.slice(0, 28)} ${n}`
+    taken.add(safe)
+    ws = wb.addWorksheet(safe, {
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
+    })
+    ws.headerFooter.oddFooter = `&L${r.title}&RPage &P of &N`
+  }
+  // The first sheet is named by the first table that asks for one, so a report
+  // split across sheets does not open on a sheet holding only its title.
+  let sheet = r.sections[0]?.sheet
+  startSheet(sheet ?? opts.sheetName ?? r.title)
   const seen = (col: number, w: number) => {
     widths[col] = Math.max(widths[col] ?? 8, Math.min(MAX_WIDTH, w + 2))
   }
@@ -74,7 +102,14 @@ export async function tableReportToXlsx(r: TableReport, opts: { sheetName?: stri
   }
 
   for (const s of r.sections) {
-    ws.addRow([])
+    if (s.sheet && s.sheet !== sheet) {
+      sheet = s.sheet
+      startSheet(sheet)
+    }
+    // A sheet starts with its heading, not with a blank line.
+    const own = fresh && !!s.sheet
+    fresh = false
+    if (!own || ws.rowCount > 0) ws.addRow([])
     const head = ws.addRow([s.title])
     style(head.getCell(1), { font: { size: 12, bold: true, color: { argb: GREEN_DARK } } })
     head.height = 18
@@ -101,6 +136,12 @@ export async function tableReportToXlsx(r: TableReport, opts: { sheetName?: stri
         else if (typeof cells[i] === 'number' && Math.abs(cells[i] as number) >= 1000) row.getCell(i + 1).numFmt = '#,##0'
       }
     })
+    // Filter arrows over the body rows only, so sorting never drags the
+    // totals row up into the middle of them.
+    if (own && s.rows.length) {
+      ws.views = [{ state: 'frozen', ySplit: h.number }]
+      ws.autoFilter = { from: { row: h.number, column: 1 }, to: { row: h.number + s.rows.length, column: s.head.length } }
+    }
     if (s.foot) {
       const f = ws.addRow(s.foot)
       for (let i = 0; i < s.head.length; i++) {
@@ -110,10 +151,7 @@ export async function tableReportToXlsx(r: TableReport, opts: { sheetName?: stri
     }
   }
 
-  widths.forEach((w, i) => {
-    ws.getColumn(i + 1).width = w
-  })
-  ws.headerFooter.oddFooter = `&L${r.title}&RPage &P of &N`
+  sizeColumns()
 
   const buf = await wb.xlsx.writeBuffer()
   return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })

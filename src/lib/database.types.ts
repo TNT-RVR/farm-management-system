@@ -5136,6 +5136,7 @@ export type Database = {
           forage_zone_mm: number | null
           /** What a median paddock here grows in an ordinary year, lb/ac. Null = the estimator Fair row at the zone. */
           forage_base_lb_ac: number | null
+          forage_base_source: string
           grazing_count_waste: boolean
           grazing_precip_mm: number
           /** This ranch's own Google My Map; its "Pasture …" shapes become this ranch's pastures. */
@@ -5184,6 +5185,7 @@ export type Database = {
           grazing_utilization_rate?: number
           forage_zone_mm?: number | null
           forage_base_lb_ac?: number | null
+          forage_base_source?: string
           grazing_count_waste?: boolean
           grazing_precip_mm?: number
           latitude?: number | null
@@ -5195,6 +5197,7 @@ export type Database = {
           grazing_utilization_rate?: number
           forage_zone_mm?: number | null
           forage_base_lb_ac?: number | null
+          forage_base_source?: string
           grazing_count_waste?: boolean
           grazing_precip_mm?: number
           mymaps_url?: string | null

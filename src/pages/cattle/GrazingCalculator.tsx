@@ -179,12 +179,25 @@ function NumCell({
   onCommit: (v: number) => void
   className?: string
 }) {
+  /*
+   * Typed text while the box has focus, the prop's value otherwise.
+   *
+   * It was defaultValue, which reads the prop once and never again -- so
+   * switching ranch left the other ranch's figure sitting in the box while
+   * everything round it updated, and a blur would then have written that
+   * figure onto the ranch you had just switched to. The sync has to happen in
+   * render rather than an effect, or the box shows the wrong number for a
+   * frame and a fast blur still commits it.
+   */
+  const [typed, setTyped] = useState({ text: String(value ?? 0), from: value })
+  if (typed.from !== value) setTyped({ text: String(value ?? 0), from: value })
   return (
     <input
       type="number"
       step={step}
       disabled={disabled}
-      defaultValue={value ?? 0}
+      value={typed.text}
+      onChange={(e) => setTyped({ text: e.target.value, from: value })}
       onBlur={(e) => {
         const v = e.target.value === '' ? 0 : Number(e.target.value)
         if (v !== value) onCommit(v)
@@ -307,6 +320,13 @@ function useGrazingCalc(ranch: Ranch) {
    */
   const setBaseLbAc = ranch.forage_base_lb_ac ?? forageYieldPerAcre(rain.zoneMm, 'Fair')
   const baseIsOwn = ranch.forage_base_lb_ac != null
+  /*
+   * A level read from orbit and a level somebody typed should not look the
+   * same on the card. East Ranch's came from its canopy cover against Grassy
+   * Lake's median paddock, because a one-paddock ranch's own rel is 1.000 by
+   * construction and the satellite can only reach it through the level.
+   */
+  const baseFromOrbit = baseIsOwn && ranch.forage_base_source === 'satellite'
   /* Each paddock read at that level, for the comparison below only. */
   const baseAnchors = useMemo(
     () => ratedAnchors(pastures ?? [], setBaseLbAc, clipped, 'rated'),
@@ -478,6 +498,7 @@ function useGrazingCalc(ranch: Ranch) {
     baseLbAc,
     setBaseLbAc,
     baseIsOwn,
+    baseFromOrbit,
     // Which paddocks are scaled by their own satellite growth rather than by
     // the ranch's rain: the grass-rating panel says which figure it is reading.
     factorFor,
@@ -658,6 +679,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
     baseLbAc,
     setBaseLbAc,
     baseIsOwn,
+    baseFromOrbit,
     factorFor,
     measuredCount,
     measuredYieldCount,
@@ -855,9 +877,11 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                 className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-500"
                 title={
                   `What a middling paddock here grows in an ordinary year. Each paddock is then read at this times its own measured cover against the ranch's median — Pasture K at 0.79 of the median is read at 0.79 of this, rather than rounded down to a word.` +
-                  (baseIsOwn
-                    ? ' Set for this ranch.'
-                    : ` Not set, so this is the estimator's Fair row at ${n0(rain.zoneMm)} mm — a provincial average, and the one figure in the model that nothing on this farm has measured.`) +
+                  (baseFromOrbit
+                    ? ' Measured from orbit: this ranch’s canopy cover against a ranch whose level was set by hand. Type over it and it becomes yours.'
+                    : baseIsOwn
+                      ? ' Set by hand for this ranch.'
+                      : ` Not set, so this is the estimator's Fair row at ${n0(rain.zoneMm)} mm — a provincial average, and the one figure in the model that nothing on this farm has measured.`) +
                   (calibration.factor > 1.001
                     ? ` Your cattle took more off these paddocks than that allows, so it is read at ${n0(baseLbAc)} — the grazing record is a floor and can only raise it.`
                     : '')
@@ -869,16 +893,18 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                 <NumCell
                   value={Math.round(setBaseLbAc)}
                   disabled={!isManager}
-                  onCommit={(v) => setRanchField({ forage_base_lb_ac: v > 0 ? v : null })}
+                  onCommit={(v) => setRanchField({ forage_base_lb_ac: v > 0 ? v : null, forage_base_source: 'manual' })}
                   className="w-14 text-[11px]"
                 />
                 <span>
                   lb/ac
                   {calibration.factor > 1.001
                     ? ` · ${n0(baseLbAc)} from the grazing record`
-                    : baseIsOwn
-                      ? ''
-                      : ' · from the table'}
+                    : baseFromOrbit
+                      ? ' · from orbit'
+                      : baseIsOwn
+                        ? ''
+                        : ' · from the table'}
                 </span>
               </p>
             </>
@@ -1187,7 +1213,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                     : []),
                   { label: 'Grazeable', node: n0(p.totalGrazeableAc) },
                   {
-                    label: 'Quality',
+                    label: 'Cover',
                     node: <GrassQuality p={p} rain={rain} utilization={utilization} measuredFromOrbit={factorFor.has(p.id)} essr={essrByPaddock?.get(p.id)} readOnly />,
                   },
                   { label: 'Feed lb/ac', node: <Lb lb={p.foragePerAcreUtil} /> },
@@ -1224,7 +1250,12 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                   </>
                 )}
                 <th className="px-2 py-2 text-right font-medium" title="Native grass + field acres that give grazing">Grazeable</th>
-                <th className="px-2 py-2 font-medium">Quality</th>
+                <th
+                  className="px-2 py-2 font-medium"
+                  title="Canopy cover against this ranch's median paddock, measured from orbit. 1.00 is the middling paddock here; a paddock nobody has measured shows the old word instead."
+                >
+                  Cover
+                </th>
                 <th
                   className="px-2 py-2 text-right font-medium"
                   title="Estimated feed this pasture grows this season, per grazeable acre, after the utilization rate is taken off"

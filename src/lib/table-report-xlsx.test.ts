@@ -43,4 +43,28 @@ describe('table report as Excel', () => {
     expect(ws.getRow(headRow + 1).getCell(3).value).toBe(37040)
     expect(empty).toBe(true)
   })
+
+  it('puts a table that names a sheet on its own, and sizes that sheet’s columns alone', async () => {
+    const split: TableReport = {
+      ...report,
+      sections: [
+        { title: 'Fields', sheet: 'Fields', head: ['Field', 'Acres'], rows: [['Home Quarter', 160]] },
+        {
+          title: 'Notes',
+          sheet: 'Notes',
+          head: ['Field', 'Note'],
+          rows: [['Home Quarter', 'Sample the south half separately, the saline corner came back high last time.']],
+        },
+      ],
+    }
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(await (await tableReportToXlsx(split)).arrayBuffer())
+    expect(wb.worksheets.map((w) => w.name)).toEqual(['Fields', 'Notes'])
+    // The note is on the other sheet, so Acres stays a narrow column of numbers.
+    expect(wb.getWorksheet('Fields')!.getColumn(2).width).toBeLessThan(12)
+    // Longer than a sentence: the column stops growing and the text wraps.
+    expect(wb.getWorksheet('Notes')!.getColumn(2).width).toBeLessThanOrEqual(38)
+    // The heading row stays put, with filter arrows over the rows under it.
+    expect(wb.getWorksheet('Notes')!.autoFilter).toBeTruthy()
+  })
 })

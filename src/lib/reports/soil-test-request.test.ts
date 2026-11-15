@@ -73,6 +73,25 @@ describe('soil test request', () => {
     expect(cropAndYield('c', basics).crop).toBeNull()
   })
 
+  it('names the crop of a year that has no yield, the way the rotation sheet left 2023', () => {
+    const basics = {
+      year: 2023,
+      areas: [],
+      history: [
+        { field_id: 'a', crop_id: 'c2', yield_per_acre: null, yield_unit: null },
+        { field_id: 'b', crop_id: 'c1', yield_per_acre: null, yield_unit: null },
+        { field_id: 'b', crop_id: 'c2', yield_per_acre: 55, yield_unit: 'bu' },
+      ],
+      crops: [
+        { id: 'c1', name: 'Durum', yield_unit: 'bu' },
+        { id: 'c2', name: 'Canola', yield_unit: 'bu' },
+      ],
+    } as unknown as Parameters<typeof cropAndYield>[1]
+    expect(cropAndYield('a', basics)).toEqual({ crop: 'Canola', yield: null })
+    // A record that has a yield is still the one to read.
+    expect(cropAndYield('b', basics)).toEqual({ crop: 'Canola', yield: '55 bu/ac' })
+  })
+
   it('puts the GPS point at the centre of the field’s largest piece', () => {
     const square = (x: number, y: number, d: number) => [[[x, y], [x + d, y], [x + d, y + d], [x, y + d], [x, y]]]
     expect(fieldGps({ type: 'Polygon', coordinates: square(-113.21, 52.46, 0.01) })).toBe('52.46500, -113.20500')

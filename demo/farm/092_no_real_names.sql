@@ -19,4 +19,36 @@ update public.aimm_crops set name = 'SOLIN FLAX' where name = 'LINOLA';
 update public.combine_settings set machine = 'C780' where machine = 'CR9090';
 update public.combine_loss_checks set machine = 'C780' where machine = 'CR9090';
 
+-- ── The research library's shelves ────────────────────
+-- One shelf per crop, per chemical, per variety. A chemical shelf lists the
+-- trade names it collects papers under ("Roundup Transorb HC" under
+-- glyphosate) and the canola shelf lists the crop rows it covers; both are
+-- real, and both are only matching hints for the harvester, which the demo
+-- does not run. So the branded entries go and the generic ones -- group
+-- numbers, chemical families, "desiccant" -- stay.
+--
+-- The papers on the shelves are left exactly as published: other people's
+-- titles, authors and journals, which a rename would falsify under a real
+-- DOI. demo/build/real-names.mjs skips that table and says why.
+update public.research_folders set name = 'Great Northern (Snowpeak)'
+ where slug = 'crop-beans-great-northern';
+
+-- One shelf's note names the trait by its trade name.
+update public.research_folders set note = 'In-crop on glufosinate-tolerant canola.'
+ where slug = 'chem-glufosinate';
+
+with brand(term) as (values
+  ('Roundup'), ('Liberty'), ('Reglone'), ('Prosaro'), ('Proline'), ('Cotegra'),
+  ('Clearfield'), ('Headline'), ('Lumiderm'), ('Algonquin'), ('AAC '), ('CDC '),
+  ('InVigor'), ('Hyola'), ('Linola'), ('DEKALB'),
+  ('BASF'), ('Corteva'), ('Nutrien'), ('Bayer'), ('Syngenta'), ('Pioneer')
+)
+update public.research_folders f set
+  aliases = coalesce((
+    select array_agg(a order by ord) from unnest(f.aliases) with ordinality t(a, ord)
+     where not exists (select 1 from brand b where a ilike '%' || b.term || '%')), '{}'),
+  crop_names = coalesce((
+    select array_agg(a order by ord) from unnest(f.crop_names) with ordinality t(a, ord)
+     where not exists (select 1 from brand b where a ilike '%' || b.term || '%')), '{}');
+
 set session_replication_role = default;

@@ -616,7 +616,7 @@ export function ResearchPage() {
         </h1>
         <p className="text-xs text-gray-500">
           {totals
-            ? `${totals.stored.toLocaleString('en-CA')} papers on our crops, chemicals, water and cattle. ${totals.alberta} from Alberta.`
+            ? `${totals.papers.toLocaleString('en-CA')} papers on our crops, chemicals, water and cattle. ${totals.alberta} from Alberta.`
             : 'Papers on our crops, chemicals, water and cattle.'}
         </p>
       </div>

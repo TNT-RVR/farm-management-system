@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { Session } from '@supabase/supabase-js'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { isSupabaseConfigured, supabase } from './supabase'
+import { dropRefusedSession } from './session-check'
 import { clearOfflineCache } from './offline'
 import type { MenuPrefs } from './nav-tree'
 // The partner
@@ -95,7 +96,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
       setLoading(false)
+      // A token the login server has stopped knowing (lib/session-check.ts).
+      if (data.session) void dropRefusedSession()
     })
+    const onShown = () => {
+      if (document.visibilityState === 'visible') void dropRefusedSession()
+    }
+    document.addEventListener('visibilitychange', onShown)
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       // Offline, an access token that has aged out cannot be refreshed, and
       // supabase-js reports that as signed out. Taken at face value it throws
@@ -108,7 +115,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (s === null && !navigator.onLine) return
       setSession(s)
     })
-    return () => sub.subscription.unsubscribe()
+    return () => {
+      document.removeEventListener('visibilitychange', onShown)
+      sub.subscription.unsubscribe()
+    }
   }, [])
 
   const qc = useQueryClient()
@@ -137,7 +147,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    // This device only. See lib/session-check.ts for what the global default did.
+    await supabase.auth.signOut({ scope: 'local' })
     // The saved cache is farm data sitting in the browser profile of whatever
     // phone or truck laptop this is. Signing out has to take it with it.
     await clearOfflineCache()

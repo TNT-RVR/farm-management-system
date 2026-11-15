@@ -71,7 +71,8 @@ export function MfaChallenge() {
           >
             {busy ? 'Checking…' : 'Continue'}
           </button>
-          <button type="button" onClick={() => void supabase.auth.signOut()} className="text-sm text-gray-500 underline">
+          {/* This device only, like the one in the menu (lib/auth.tsx). */}
+          <button type="button" onClick={() => void supabase.auth.signOut({ scope: 'local' })} className="text-sm text-gray-500 underline">
             Sign out
           </button>
         </div>

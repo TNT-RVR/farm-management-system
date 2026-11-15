@@ -18527,7 +18527,9 @@ CREATE TABLE IF NOT EXISTS "public"."ranches" (
     "forage_zone_mm" numeric,
     "grazing_count_waste" boolean DEFAULT true NOT NULL,
     "forage_base_lb_ac" numeric,
+    "forage_base_source" "text" DEFAULT 'manual'::"text" NOT NULL,
     CONSTRAINT "ranches_calf_sale_month_check" CHECK ((("calf_sale_month" >= 1) AND ("calf_sale_month" <= 12))),
+    CONSTRAINT "ranches_forage_base_source_check" CHECK (("forage_base_source" = ANY (ARRAY['manual'::"text", 'satellite'::"text"]))),
     CONSTRAINT "ranches_heifer_sale_weight_lb_check" CHECK ((("heifer_sale_weight_lb" >= 100) AND ("heifer_sale_weight_lb" <= 1500))),
     CONSTRAINT "ranches_steer_sale_weight_lb_check" CHECK ((("steer_sale_weight_lb" >= 100) AND ("steer_sale_weight_lb" <= 1500)))
 );
@@ -18613,6 +18615,29 @@ COMMENT ON COLUMN "public"."ranches"."grazing_count_waste" IS 'true: an animal-u
 
 
 COMMENT ON COLUMN "public"."ranches"."forage_base_lb_ac" IS 'What a MEDIAN paddock on this ranch grows in an ordinary year, lb/acre dry matter. Multiplied by each paddock''s grass_quality_rel to get its own yield. Null = fall back to the Forage Yield Estimator''s Fair row at the ranch''s precipitation zone.';
+
+
+
+COMMENT ON COLUMN "public"."ranches"."forage_base_source" IS 'manual = somebody set forage_base_lb_ac by hand; satellite = derived from this ranch''s canopy cover against a ranch whose level was set by hand (ranch_grass_cover).';
+
+
+
+CREATE OR REPLACE VIEW "public"."ranch_grass_cover" WITH ("security_invoker"='true') AS
+ SELECT "y"."ranch_id",
+    "r"."name" AS "ranch",
+    "y"."yr",
+    "max"("y"."paddocks") AS "paddocks",
+    "sum"("y"."looks") AS "looks",
+    "max"("y"."ranch_p50") AS "median_cover"
+   FROM ("public"."pasture_grass_cover_years" "y"
+     JOIN "public"."ranches" "r" ON (("r"."id" = "y"."ranch_id")))
+  GROUP BY "y"."ranch_id", "r"."name", "y"."yr";
+
+
+ALTER VIEW "public"."ranch_grass_cover" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."ranch_grass_cover" IS 'Peak-season canopy cover of each ranch''s median paddock, by year. Two ranches are comparable here where their soils and rainfall are not, because the same satellite reads both the same way -- which is how a one-paddock ranch, whose own rel is 1.000 by construction, gets a forage level at all.';
 
 
 
@@ -43066,6 +43091,11 @@ GRANT ALL ON TABLE "public"."rain_gauges" TO "service_role";
 
 GRANT ALL ON TABLE "public"."ranches" TO "authenticated";
 GRANT ALL ON TABLE "public"."ranches" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."ranch_grass_cover" TO "authenticated";
+GRANT ALL ON TABLE "public"."ranch_grass_cover" TO "service_role";
 
 
 

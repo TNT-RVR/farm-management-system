@@ -388,7 +388,8 @@ export const REPORTS: ReportEntry[] = [
     section: 'fertility',
     name: 'Soil test request',
     what: 'For the lab: the fields ticked to test, each with a map and four years of crops, fertilizer, manure and soil tests.',
-    from: { label: 'Soil tests', to: '/fertilizer/soil' },
+    // The tab the fields are ticked on, not the view's first tab (Sam, 14 Nov 2026).
+    from: { label: 'To test', to: '/fertilizer/soil?tab=request' },
     formats: ['PDF', 'XLSX', 'CSV'],
     params: [
       { key: 'year', kind: 'year', label: 'For the crop', ahead: 1 },

@@ -84,11 +84,23 @@ export function soilTestRow(year: number, reports: ReportLite[], samples: Sample
   ]
 }
 
-/** A season's crop and yield on a field: the plan's main crop, else whatever the yield record says. */
+/**
+ * A season's crop and yield on a field: the plan's main crop, else whatever the
+ * yield record says. A record with a yield is preferred, but one without still
+ * names the crop — the older years came off the rotation sheet, which carries
+ * what grew and never a yield, and a blank line read as if nothing was grown
+ * (Sam, 14 Nov 2026: 2023 came out empty).
+ */
 export function cropAndYield(fieldId: string, b: SeasonBasics): { crop: string | null; yield: string | null } {
   const area = mainArea(b.areas.filter((a) => a.fieldId === fieldId))
   const mine = b.history.filter((h) => h.field_id === fieldId)
-  const rec = (area && mine.find((h) => h.crop_id === area.cropId && num(h.yield_per_acre) != null)) ?? mine.find((h) => num(h.yield_per_acre) != null) ?? null
+  const yielded = mine.filter((h) => num(h.yield_per_acre) != null)
+  const rec =
+    (area && yielded.find((h) => h.crop_id === area.cropId)) ??
+    yielded[0] ??
+    (area && mine.find((h) => h.crop_id === area.cropId)) ??
+    mine[0] ??
+    null
   const crop = area?.crop ?? (rec?.crop_id ? (b.crops.find((c) => c.id === rec.crop_id)?.name ?? null) : null)
   const unit = rec?.yield_unit ?? b.crops.find((c) => c.id === (area?.cropId ?? rec?.crop_id))?.yield_unit ?? null
   return { crop, yield: rec ? yieldText(num(rec.yield_per_acre), unit) : null }
@@ -347,60 +359,51 @@ export async function gatherSoilTestRequest(p: ParamValues, ctx: GatherContext):
   // and its legal land, and the table holds only what page one has not said.
   const factsHead = ['Last soil test', ...(withNext ? [`${year} crop`] : []), 'Note']
   const water = (id: string) => (latest.irrigated.has(id) ? 'Irrigated' : 'Dryland')
+  const plannedCrop = (id: string) => {
+    const area = mainArea((basics.get(year)?.areas ?? []).filter((a) => a.fieldId === id))
+    return area ? [area.crop, area.variety, area.expectedYield != null ? `target ${yieldText(area.expectedYield, null)}` : null].filter(Boolean).join(', ') : 'Not planned yet'
+  }
+  const factsOf = (id: string): Cell[] => {
+    const lastTest = reports.filter((r) => r.field_id === id).reduce((m, r) => Math.max(m, r.crop_year), 0)
+    return [lastTest ? String(lastTest) : 'None on file', ...(withNext ? [plannedCrop(id)] : []), notes.get(id) ?? null]
+  }
 
   // Page one: every field on one sheet, for the lab to plan the run from.
   const lastSeason = basics.get(year - 1) ?? null
   const summaryRows: Cell[][] = ids.map((id) => {
     const f = fieldById.get(id)!
     const lastCrop = lastSeason ? cropAndYield(id, lastSeason).crop : null
-    return [fieldLabel(f.name), f.legal_land_description, round(latest.acresOf.get(id) ?? null, 1), water(id), fieldGps(boundaryOf(id)), lastCrop]
+    const row: Cell[] = [fieldLabel(f.name), f.legal_land_description, round(latest.acresOf.get(id) ?? null, 1), water(id), fieldGps(boundaryOf(id)), lastCrop]
+    // The PDF carries the last test, the coming crop and the note on the
+    // field's own page, under its map. A spreadsheet has no pages, so they go
+    // on the one line the field gets here.
+    return pdf ? row : [...row, ...factsOf(id)]
   })
   const acresTotal = ids.reduce((t, id) => t + (latest.acresOf.get(id) ?? 0), 0)
   const sections: ReportSection[] = [
     {
       title: 'Fields to test',
       note: 'GPS is the centre of the field, latitude then longitude, in decimal degrees.',
-      head: summaryColumns(year),
+      sheet: 'Fields to test',
+      head: pdf ? summaryColumns(year) : [...summaryColumns(year), ...factsHead],
       rows: summaryRows,
       foot: ['Total', null, round(acresTotal, 1), null, null, null],
-      align: ['left', 'left', 'right', 'left', 'left', 'left'],
-      // A dozen fields fit page one at the usual row height; past that the
-      // rows are squeezed rather than letting the list run onto a second page.
-      compact: ids.length > 12,
+      align: ['left', 'left', 'right', 'left', 'left', 'left', ...factsHead.map(() => 'left' as const)],
+      // Twenty fields fit page one of a portrait page at the usual row height;
+      // past that the rows are squeezed, which holds about thirty-seven, rather
+      // than letting the list run onto a second page. Past that it does run on,
+      // which is better than a list the lab cannot trust to be the whole run.
+      compact: ids.length > 20,
     },
   ]
+  // For a spreadsheet, every field's rows gather into one table a topic.
+  const historyRows: Cell[][] = []
+  const soilRows: Cell[][] = []
   for (const id of ids) {
     const f = fieldById.get(id)!
     const acres = latest.acresOf.get(id) ?? null
     const mineReports = reports.filter((r) => r.field_id === id)
-    const lastTest = mineReports.reduce((m, r) => Math.max(m, r.crop_year), 0)
-    let next: string | null = null
-    if (withNext) {
-      const area = mainArea((basics.get(year)?.areas ?? []).filter((a) => a.fieldId === id))
-      next = area ? [area.crop, area.variety, area.expectedYield != null ? `target ${yieldText(area.expectedYield, null)}` : null].filter(Boolean).join(', ') : 'Not planned yet'
-    }
     const title = [fieldLabel(f.name), f.legal_land_description].filter(Boolean).join(' – ')
-    sections.push({
-      title,
-      head: factsHead,
-      rows: [[lastTest ? String(lastTest) : 'None on file', ...(withNext ? [next] : []), notes.get(id) ?? null]],
-      pageBreakBefore: true,
-    })
-
-    if (pdf) {
-      const fieldSites = sites.filter((s) => s.field_id === id && (s.crop_year == null || s.crop_year >= years[0]))
-      const image = await fieldMapImage(boundaryOf(id), fieldSites)
-      if (image) {
-        sections.push({
-          title: 'Map',
-          note: fieldSites.length ? 'Red points are where earlier cores were pulled.' : undefined,
-          head: [],
-          rows: [],
-          image,
-        })
-      }
-    }
-
     const spreads = manure.filter((m) => m.field_id === id)
     const rows: Cell[][] = years.map((y, yi) =>
       historyRow(y, String(y), id, basics.get(y) ?? null, fertByYear[yi], acres, spreads.filter((m) => manureYear(m) === y)),
@@ -408,13 +411,56 @@ export async function gatherSoilTestRequest(p: ParamValues, ctx: GatherContext):
     // Anything already on for the year being tested for: a fall spread, fall fertilizer.
     const now = historyRow(year, `${year} so far`, id, null, fertByYear[years.length], acres, spreads.filter((m) => manureYear(m) === year))
     if (now.slice(3).some((c) => c != null)) rows.push(now)
-    sections.push({ title: `Crops, fertilizer and manure, ${years[0]}–${year - 1}`, head: HISTORY_COLUMNS, rows, align: ['left', 'left', 'left', 'right', 'right', 'right', 'right', 'left', 'left'] })
-
-    const soilRows = years.flatMap((y) => {
+    const tests = years.flatMap((y) => {
       const rs = mineReports.filter((r) => r.crop_year === y)
       return rs.length ? [soilTestRow(y, rs, samples)] : []
     })
-    sections.push({ title: `Soil tests on file, ${years[0]}–${year - 1}`, head: SOIL_COLUMNS, rows: soilRows, empty: 'No soil test on file in these years.' })
+
+    if (!pdf) {
+      for (const row of rows) historyRows.push([fieldLabel(f.name), ...row])
+      for (const row of tests) soilRows.push([fieldLabel(f.name), ...row])
+      continue
+    }
+
+    // The map heads the field's page and everything about the field reads down
+    // the page under it (Sam, 14 Nov 2026), so the picture carries the
+    // field's name. Without a map — a field with no boundary drawn — the facts
+    // table heads the page instead.
+    const fieldSites = sites.filter((s) => s.field_id === id && (s.crop_year == null || s.crop_year >= years[0]))
+    const image = await fieldMapImage(boundaryOf(id), fieldSites)
+    if (image) {
+      sections.push({
+        title,
+        note: fieldSites.length ? 'Red points are where earlier cores were pulled.' : undefined,
+        head: [],
+        rows: [],
+        image,
+        pageBreakBefore: true,
+      })
+    }
+    sections.push({ title: image ? '' : title, head: factsHead, rows: [factsOf(id)], pageBreakBefore: !image })
+    sections.push({ title: `Crops, fertilizer and manure, ${years[0]}–${year - 1}`, head: HISTORY_COLUMNS, rows, align: ['left', 'left', 'left', 'right', 'right', 'right', 'right', 'left', 'left'] })
+    sections.push({ title: `Soil tests on file, ${years[0]}–${year - 1}`, head: SOIL_COLUMNS, rows: tests, empty: 'No soil test on file in these years.' })
+  }
+
+  // One table a topic, every field in it, each on its own sheet: a lab reads a
+  // spreadsheet by sorting and filtering a column, not by scrolling past a
+  // separate little table for each of twenty-one fields (Sam, 14 Nov 2026).
+  if (!pdf) {
+    sections.push({
+      title: `Crops, fertilizer and manure, ${years[0]}–${year - 1}`,
+      sheet: 'Crops and fertilizer',
+      head: ['Field', ...HISTORY_COLUMNS],
+      rows: historyRows,
+      align: ['left', 'left', 'left', 'left', 'right', 'right', 'right', 'right', 'left', 'left'],
+    })
+    sections.push({
+      title: `Soil tests on file, ${years[0]}–${year - 1}`,
+      sheet: 'Soil tests',
+      head: ['Field', ...SOIL_COLUMNS],
+      rows: soilRows,
+      empty: 'No soil tests on file in these years.',
+    })
   }
   if (!ids.length) throw new Error('The ticked fields could not be found. They may have been archived.')
 
@@ -428,10 +474,10 @@ export async function gatherSoilTestRequest(p: ParamValues, ctx: GatherContext):
       ['History', `${years[0]}–${year - 1}`],
     ],
     lead: [
-      'Page one lists every field with its legal land, acres, GPS point and last year’s crop. Then a page a field: a satellite map, its last four seasons and the soil tests on file. Fertilizer is actual nutrient in lb/ac over the whole field, from the application records and the retailer’s floated blends; manure is listed as spread.',
+      'Page one lists every field with its legal land, acres, GPS point and last year’s crop. Then a page a field: its satellite map at the top, and under it the last four seasons and the soil tests on file. Fertilizer is actual nutrient in lb/ac over the whole field, from the application records and the retailer’s floated blends; manure is listed as spread.',
       'Soil test figures are field averages: nitrate-N over 0–24 in, the rest from the topsoil cores.',
     ],
-    orientation: 'landscape',
+    orientation: 'portrait',
     sections,
     filename: `Soil test request ${year}`,
   }

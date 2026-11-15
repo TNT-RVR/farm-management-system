@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, ArrowUpRight, Download, Loader2, Star } from 'lucide-react'
 import { Modal } from '@/components/Modal'
@@ -207,8 +207,17 @@ function DownloadButton({ onClick, busy }: { onClick: () => void; busy?: boolean
   )
 }
 
+/**
+ * What a file is called on the buttons. XLSX is the only one whose extension
+ * is not the word people use for it, and calling it that hid the one file
+ * with column widths and coloured headings behind a name nobody picks
+ * (Sam, 14 Nov 2026, of the CSV: "the columns arnt wide enough and there is
+ * no nice colouring"). The value stored and remembered is still 'XLSX'.
+ */
+const formatLabel = (f: ReportFormat) => (f === 'XLSX' ? 'Excel' : f)
+
 function FormatToggle({ formats, value, onChange }: { formats: ReportFormat[]; value: ReportFormat; onChange: (f: ReportFormat) => void }) {
-  if (formats.length < 2) return <span className="inline-block rounded border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-600">{formats[0]}</span>
+  if (formats.length < 2) return <span className="inline-block rounded border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-600">{formatLabel(formats[0])}</span>
   return (
     <span role="radiogroup" aria-label="File type" className="inline-flex rounded-md border border-gray-200 bg-white p-0.5 text-sm">
       {formats.map((f) => (
@@ -220,7 +229,7 @@ function FormatToggle({ formats, value, onChange }: { formats: ReportFormat[]; v
           onClick={() => onChange(f)}
           className={cn('rounded px-3 py-1 font-semibold', value === f ? 'bg-brand-700 text-white' : 'text-gray-500 hover:bg-gray-50')}
         >
-          {f}
+          {formatLabel(f)}
         </button>
       ))}
     </span>
@@ -294,6 +303,30 @@ export function HookRunner({ useRun, params, ctx, onReady }: { useRun: HookRun; 
   return null
 }
 
+/**
+ * Where to go when a dialog a link opened is finished with.
+ *
+ * A page's own "Report for the lab" button brings the person here only to
+ * fill the dialog in; the Reports list behind it is a step on the way, not
+ * where they were headed. So once the file is made — or they press Cancel —
+ * they go back to the page and tab they pressed it on, rather than being left
+ * on a list they never asked for (Sam, 14 Nov 2026: "when I hit generate
+ * report it takes me back to the reports page instead of the to test tab").
+ * A pasted link or a new tab has nothing behind it, so that lands on the page
+ * the report's own data comes from. Opened from the Reports list itself,
+ * nothing moves.
+ */
+function useCloseTo(autoOpen: boolean, from: SourceLink) {
+  const navigate = useNavigate()
+  const { key } = useLocation()
+  return useCallback(() => {
+    if (!autoOpen) return
+    // 'default' is the first entry of the tab: nothing of ours to go back to.
+    if (key === 'default') navigate(from.to)
+    else navigate(-1)
+  }, [autoOpen, from.to, key, navigate])
+}
+
 export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport; ctx: GatherContext; autoOpen?: boolean; preset?: ParamValues }) {
   const { cropYear } = useCropYear()
   // A link from another page (?open=…&field=…&year=…) fills in its pickers; unknown keys are ignored.
@@ -310,6 +343,11 @@ export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport;
   // A hook-gathered report's hook, once its code has loaded.
   const [hook, setHook] = useState<HookRun | null>(null)
   const setParam = useCallback((key: string, v: string) => setParams((p) => ({ ...p, [key]: v })), [])
+  const closeTo = useCloseTo(autoOpen, r.from)
+  const close = useCallback(() => {
+    setOpen(false)
+    closeTo()
+  }, [closeTo])
 
   // The gather is told which file is wanted: most ignore it, a few make a
   // different cut (or a ZIP) for it.
@@ -321,7 +359,7 @@ export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport;
       .then(
         () => {
           setError(null)
-          setOpen(false)
+          close()
         },
         (e: unknown) => setError(messageOf(e)),
       )
@@ -361,7 +399,7 @@ export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport;
         }}
       />
       {open && (
-        <Modal title={r.name} onClose={() => !busy && setOpen(false)}>
+        <Modal title={r.name} onClose={() => !busy && close()}>
           <div className="flex flex-col gap-3">
             <p className="text-xs text-gray-500">{r.what}</p>
             <Line label="File type">
@@ -376,7 +414,7 @@ export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport;
             ))}
             {error && <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
             <div className="flex justify-end gap-2 pt-1">
-              <button type="button" onClick={() => setOpen(false)} disabled={busy} className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+              <button type="button" onClick={close} disabled={busy} className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                 Cancel
               </button>
               <button
@@ -386,7 +424,7 @@ export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport;
                 className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                {busy ? 'Making…' : `Download ${format}`}
+                {busy ? 'Making…' : `Download ${formatLabel(format)}`}
               </button>
             </div>
           </div>
@@ -405,6 +443,11 @@ export function OpenRow({ r, autoOpen = false }: { r: OpenReport; autoOpen?: boo
   const navigate = useNavigate()
   const { data: fields } = useFields()
   const [open, setOpen] = useState(autoOpen)
+  const closeTo = useCloseTo(autoOpen, r.from)
+  const close = () => {
+    setOpen(false)
+    closeTo()
+  }
   const [fieldId, setFieldId] = useState('')
   const field = fieldId || fields?.[0]?.id || ''
   const to = r.pickField && field ? `${r.to}${r.to.includes('?') ? '&' : '?'}field=${field}` : r.to
@@ -413,7 +456,7 @@ export function OpenRow({ r, autoOpen = false }: { r: OpenReport; autoOpen?: boo
       <SourceButton from={r.from} />
       <DownloadButton onClick={() => setOpen(true)} />
       {open && (
-        <Modal title={r.name} onClose={() => setOpen(false)}>
+        <Modal title={r.name} onClose={close}>
           <div className="flex flex-col gap-3">
             <p className="text-xs text-gray-500">
               {r.what} {r.why}
@@ -436,7 +479,7 @@ export function OpenRow({ r, autoOpen = false }: { r: OpenReport; autoOpen?: boo
               </Line>
             )}
             <div className="flex justify-end gap-2 pt-1">
-              <button type="button" onClick={() => setOpen(false)} className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+              <button type="button" onClick={close} className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
                 Cancel
               </button>
               <button

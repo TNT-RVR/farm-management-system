@@ -27,7 +27,19 @@ const NAMES = [
 // Made-up names that contain a real one.
 const ALLOWED = ['Aspen Valley', 'Valley Equipment', 'Valley Fertilizer']
 
-const SKIP = new Set(['spatial_ref_sys'])
+/**
+ * research_papers is other people's published work — 3,360 titles, authors,
+ * journals and abstracts. A journal really is called "International journal of
+ * molecular sciences"; a trial really did use Syngenta's product; a wheat
+ * cultivar really is named "AAC Goldman". Renaming those falsifies a citation
+ * under its real DOI, which is worse than a brand the demo farm does not buy
+ * from: a bibliography is not a list of suppliers. 15 Nov 2026, when the whole
+ * library started shipping.
+ *
+ * The shelves the papers sit on ARE the app's own, and they are renamed like
+ * everything else, in demo/farm/092_no_real_names.sql.
+ */
+const SKIP = new Set(['spatial_ref_sys', 'research_papers'])
 
 export async function realNames(pg) {
   const { rows: tables } = await pg.query(

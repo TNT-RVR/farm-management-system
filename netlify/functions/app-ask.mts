@@ -40,7 +40,13 @@ export default async (req: Request) => {
   const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
   const { data: au } = token ? await getUserMfa(sb, token) : { data: { user: null } }
   const { data: prof } = au.user ? await sb.from('users').select('active, role').eq('id', au.user.id).single() : { data: null }
-  if (!au.user || !isStaff(prof)) return json({ error: 'Not authorised' }, 401)
+  // Two different refusals wearing one word is what made this hard to read
+  // (Sam, 14 Nov 2026): a token the login server will not take says nothing
+  // about whether the person is allowed to ask. The app signs a refused token
+  // out by itself now (lib/auth.tsx), so this is the message for the moment
+  // before it notices.
+  if (!au.user) return json({ error: 'Your sign-in has run out on this device. Reload the page and ask again.' }, 401)
+  if (!isStaff(prof)) return json({ error: 'Not authorised' }, 401)
 
   const body = ((await req.json().catch(() => null)) ?? {}) as { question?: string; page?: string; cropYear?: number; places?: Place[] }
   const question = (body.question ?? '').trim()

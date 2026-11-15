@@ -351,20 +351,26 @@ export function paperSize(paper: ResearchPaper) {
 /** How much of the library is actually here, for the page's one line of subtitle. */
 export function useResearchTotals() {
   return useQuery({
-    // Version 3 because the shape grew again. The app keeps its query cache
+    // Version 4 because the shape grew again. The app keeps its query cache
     // across loads, so an older answer comes back from storage and a field it
     // never had reads undefined — which the Gaps tab once added into a NaN. A
     // new key is the whole fix: changing a cached query's shape means changing
     // its key.
-    queryKey: ['research-totals', 3],
+    queryKey: ['research-totals', 4],
     staleTime: 5 * 60_000,
     queryFn: async () => {
+      // Every paper on the shelves, whether or not the library holds its file.
+      // The shelves list all of them and a search answers out of all of them,
+      // so counting only `stored` understated the library by the 674 it has as
+      // a citation — and read as a flat 0 in the public copy, where no PDF
+      // travels and every paper is link_only. How many have no file is the
+      // Gaps tab's business, not this line's.
+      const papers = await papersCount()
+      if (papers.error) throw papers.error
+      const near = await papersCount().in('region', ['southern_alberta', 'alberta'])
+      if (near.error) throw near.error
       const stored = await papersCount().eq('status', 'stored')
       if (stored.error) throw stored.error
-      const near = await papersCount()
-        .eq('status', 'stored')
-        .in('region', ['southern_alberta', 'alberta'])
-      if (near.error) throw near.error
       // Papers we hold only as a citation, and PDFs that turned out to be
       // scans with no text layer: what the library does not have a file for,
       // which the Gaps tab says out loud.
@@ -378,6 +384,7 @@ export function useResearchTotals() {
       const coverage = await supabase.rpc('research_text_coverage').single()
       if (coverage.error) throw coverage.error
       return {
+        papers: papers.count ?? 0,
         stored: stored.count ?? 0,
         alberta: near.count ?? 0,
         linkOnly: linkOnly.count ?? 0,

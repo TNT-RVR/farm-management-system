@@ -90,13 +90,37 @@ export function GrassQuality({
   // row yields. p.foragePerAcre is the two multiplied (computePasture).
   const zoneLb = forageYieldPerAcre(rain.zoneMm, q)
   const scaled = p.seasonFactor !== 1
+  /*
+   * What this paddock is read at in an ordinary year, and where that came
+   * from, so the popover explains the arithmetic the app actually did.
+   *
+   * It used to explain the table whatever the paddock was read at, which
+   * since the rating and the level were told apart is wrong for every paddock
+   * with a measured cover: Pasture K's "Poor grass grows 435 lb/acre" while
+   * the plan reads it at 618.
+   */
+  const normalLb = p.seasonFactor > 0 ? p.foragePerAcre / p.seasonFactor : p.foragePerAcre
+  const relNum = p.grass_quality_rel == null ? null : Number(p.grass_quality_rel)
+  const baseLb = relNum && relNum > 0 ? normalLb / relNum : null
   const grazeLb = p.foragePerAcre * utilization
   const belowTable = rain.zoneMm < FORAGE_YIELD_ESTIMATOR[0].lo
 
   return (
     <span className="inline-flex items-center gap-1">
       {readOnly ? (
-        <span className="text-sm text-gray-700">{p.grass_quality}</span>
+        /* The measurement, not the word it used to be rounded to (Sam,
+           14 Nov 2026). A paddock nobody has measured still gets the word,
+           because for that one the word is all there is. */
+        <span
+          className="text-sm tabular-nums text-gray-700"
+          title={
+            relNum != null
+              ? `${relNum.toFixed(2)} times this ranch's median paddock, measured from orbit. The level it is read against is the median paddock figure on the rain card.`
+              : 'Nobody has measured this paddock, so it falls back to the estimator at the ranch’s zone.'
+          }
+        >
+          {relNum != null ? `${relNum.toFixed(2)}×` : p.grass_quality}
+        </span>
       ) : (
         <Select
           value={p.grass_quality}
@@ -109,12 +133,33 @@ export function GrassQuality({
           options={GRASS_QUALITIES.map((qq) => ({ value: qq, label: qq }))}
         />
       )}
-      <InfoPopover title={`${p.name}: ${q} grass`} width={460}>
-        <p>
-          The estimator is read at this ranch&apos;s <b>{n0(rain.zoneMm)} mm zone</b> — the
-          long-term annual average, which classifies where the ranch is and does not move with the
-          weather. {q} grass in that zone grows about <b>{n0(zoneLb)} lb/acre</b>.
-        </p>
+      <InfoPopover
+        title={relNum != null ? `${p.name}: ${relNum.toFixed(2)}× the median paddock` : `${p.name}: ${q} grass`}
+        width={460}
+      >
+        {p.yieldSource === 'measured' ? (
+          <p>
+            This paddock has been cut and weighed, so it is read off its own grass:{' '}
+            <b>{n0(normalLb)} lb/acre</b> in an ordinary year. Nothing below applies to it — the
+            table is for a paddock nobody has sampled.
+          </p>
+        ) : baseLb != null && relNum != null ? (
+          <p>
+            Its canopy cover measures <b>{relNum.toFixed(2)}×</b> this ranch&apos;s median paddock,
+            and a median paddock here grows <b>{n0(baseLb)} lb/acre</b> in an ordinary year, so
+            this one is read at <b>{n0(normalLb)} lb/acre</b>. The rating says which paddock is
+            better than which and nothing about pounds; the level it is measured against is the{' '}
+            <i>median paddock</i> figure on the rain card.
+            {p.yieldSource === 'grazed' && ' That level has been lifted to meet what the cattle took off these paddocks.'}
+          </p>
+        ) : (
+          <p>
+            Nothing has measured this paddock, so it falls back to the estimator at this
+            ranch&apos;s <b>{n0(rain.zoneMm)} mm zone</b> — the long-term annual average, which
+            classifies where the ranch is and does not move with the weather. {q} grass in that
+            zone grows about <b>{n0(zoneLb)} lb/acre</b>.
+          </p>
+        )}
         <p>
           {scaled ? (
             <>
@@ -140,7 +185,9 @@ export function GrassQuality({
         </p>
 
         <div>
-          <p className="font-medium text-gray-700">What the zone does to it</p>
+          <p className="font-medium text-gray-700">
+            {baseLb != null ? 'Where the level came from' : 'What the zone does to it'}
+          </p>
           <table className="mt-1 w-full tabular-nums">
             <tbody>
               {FORAGE_YIELD_ESTIMATOR.map((b) => {
@@ -158,6 +205,13 @@ export function GrassQuality({
             </tbody>
           </table>
           <p className="mt-1">
+            {baseLb != null && (
+              <>
+                This is the table the ranch&apos;s level started from, and the row it sits on. It
+                no longer sets this paddock — the level does — but it is why the level is the size
+                it is.{' '}
+              </>
+            )}
             {belowTable
               ? `The table has no row under ${FORAGE_YIELD_ESTIMATOR[0].lo} mm, so below that the yield falls in proportion, to nothing at no rain.`
               : 'Read between the rows, not row by row, so a zone a few millimetres either side of an edge is a pound or two rather than half the grass.'}{' '}

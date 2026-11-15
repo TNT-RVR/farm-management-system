@@ -63,6 +63,17 @@ export type ReportSection = {
    * numbers. PDF only.
    */
   image?: { dataUrl: string; width: number; height: number }
+  /**
+   * Which sheet of the Excel file this table belongs on. A sheet holds one
+   * column width per column, so unrelated tables stacked on one sheet have to
+   * share them: a field's written note once stretched the summary's Acres
+   * column to sixty characters (Sam, 14 Nov 2026: "the columns arnt wide
+   * enough"). Naming a sheet puts a table with its own kind and sizes the
+   * columns to those alone. Sections run in order and a new name starts a new
+   * sheet; unnamed sections stay on the one before. Excel only — the PDF and
+   * the CSV read straight down.
+   */
+  sheet?: string
 }
 
 export type TableReport = {
@@ -92,10 +103,12 @@ export function tableReportToCsv(r: TableReport): string {
   const line = (cells: Cell[]) => cells.map(csvCell).join(',')
   const out: string[] = [line([r.title]), ...(r.subtitle ? [line([r.subtitle])] : []), ...r.meta.map(([k, v]) => line([k, v]))]
   for (const s of r.sections) {
-    // A section that is only a picture (a field's map) has nothing a CSV holds.
-    if (s.image && !s.rows.length) continue
-    out.push('', line([s.title]))
+    out.push('')
+    // A picture-only section (a field's map) is a heading here and nothing
+    // else: the picture itself is not something a CSV can hold.
+    if (s.title) out.push(line([s.title]))
     if (s.note) out.push(line([s.note]))
+    if (!s.head.length) continue
     out.push(line(s.head))
     if (!s.rows.length) out.push(line([s.empty ?? '(none in this range)']))
     for (const row of s.rows) out.push(line(row))

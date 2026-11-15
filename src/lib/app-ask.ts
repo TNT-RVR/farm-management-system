@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './supabase'
+import { dropRefusedSession } from './session-check'
 import { useAuth } from './auth'
 
 /**
@@ -49,6 +50,11 @@ export function useAskApp() {
         body: JSON.stringify(v),
       })
       const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string }
+      // A refused token is the one answer worth acting on rather than only
+      // reporting: it means this device is signed in to a session the login
+      // server has forgotten, and nothing through /api will work until it is
+      // cleared (lib/session-check.ts).
+      if (res.status === 401) void dropRefusedSession(true)
       if (!res.ok || !body.id) throw new Error(body.error ?? `No answer (${res.status})`)
       return body.id
     },
