@@ -73,6 +73,18 @@ describe('filterTickets', () => {
     expect(filterTickets(outs, {}, 'out', true).map((r) => r.id)).toEqual(['b', 'a', 'c'])
     expect(filterTickets(outs, {}, 'out', false).map((r) => r.id)).toEqual(['a', 'b', 'c'])
   })
+  it('orders the time columns by the clock, not by the text', async () => {
+    const { filterTickets } = await import('./weigh-scale')
+    // A load typed in afterwards has no weigh time and stands at noon on its
+    // own day; one off the scale carries a UTC moment. 13:00 UTC is early
+    // morning on the farm, so it comes first however the two strings read.
+    const mixed = [
+      row({ id: 'typed', when: '2026-10-23T12:00:00', day: '2026-10-23' }),
+      row({ id: 'scale', when: '2026-10-23T13:00:00Z', day: '2026-10-23' }),
+    ]
+    expect(filterTickets(mixed, {}, 'when', false).map((r) => r.id)).toEqual(['scale', 'typed'])
+    expect(filterTickets(mixed, {}, 'when', true).map((r) => r.id)).toEqual(['typed', 'scale'])
+  })
   it('sorts either way; a ticket with no net yet is last', async () => {
     const { filterTickets } = await import('./weigh-scale')
     expect(filterTickets(rows, {}, 'netKg', true).map((r) => r.id)).toEqual(['b', 'a', 'c'])

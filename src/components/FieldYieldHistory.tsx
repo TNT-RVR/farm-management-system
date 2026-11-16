@@ -19,6 +19,7 @@ import { TRAIT_LABEL, TRAIT_SHORT, type HerbicideTrait } from '@/lib/canola-trai
 import { fetchAreaYields, type CropAreaYield } from '@/lib/cropAreaYields'
 import { AreaYieldEditor } from '@/components/AreaYieldEditor'
 import { AbnormalYearMark } from '@/components/AbnormalYearMark'
+import { CleanSplit } from '@/components/CleanSplit'
 import { abnormalIndex, abnormalKey, useAbnormalYears } from '@/lib/abnormal-yields'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { KgAside } from '@/components/KgAside'
@@ -304,6 +305,12 @@ export function FieldYieldHistory({
               {showLoads ? 'Hide the loads' : 'Show the loads'}
             </button>
           </p>
+          <CleanSplit
+            loads={season.list}
+            cropId={thisYear?.crop_id ?? season.list[0]?.crop_id ?? null}
+            cropYear={cropYear}
+            tone={season.last ? 'green' : 'amber'}
+          />
           {editingLoad && <EditLoadDialog load={editingLoad} onClose={() => setEditingLoad(null)} />}
           {showLoads && (
             <table className="mt-2 w-full rounded-md bg-white text-xs">
@@ -322,7 +329,11 @@ export function FieldYieldHistory({
                         : ((bins ?? []).find((b) => b.id === l.bin_id)?.name ?? 'a bin')}
                       {l.last_from_field && <Flag className="ml-1 inline h-3 w-3 text-green-700" fill="currentColor" aria-label="Last load" />}
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums text-gray-500">{num(l.net_kg)} kg</td>
+                    <td className="px-2 py-1 text-right tabular-nums text-gray-500">
+                      {num(l.net_kg)} kg
+                      {/* A clean weight is not a field-run one; unmarked it reads as if it were. */}
+                      {l.weight_cleaned && <span className="ml-1 text-amber-700" title="After the plant's clean-out">clean</span>}
+                    </td>
                     <td className="px-2 py-1 text-right font-semibold tabular-nums text-gray-900">{num(l.bushels)} bu</td>
                     <td className="px-2 py-1 text-gray-500">{l.driver ?? ''}</td>
                     {canEdit && (

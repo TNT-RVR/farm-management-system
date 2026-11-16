@@ -49,8 +49,18 @@ export type TicketFacts = {
   outBy: string | null
   net: number | null
   bushels: number | null
+  /**
+   * What this load came off the field as: its own weight, except on a load
+   * whose weight is already clean, where it is worked back from the dockage.
+   * Equal to `net` on a cleaned load when no clean-out is known — meaning not
+   * known, rather than nothing having come out.
+   */
+  fieldRun: number | null
+  fieldRunBu: number | null
+  /** Its weight is already after the plant's clean-out. */
+  weightCleaned: boolean
   clean: CleanOut | null
-  /** Share left after clean-out; null when no clean-out is known. */
+  /** Share of this load's own weight left after clean-out; 1 when it is already clean. */
   keep: number | null
   cleanLabel: string
   value: number | null
@@ -70,7 +80,13 @@ export function ticketFacts(l: BinLoad, lk: TicketLookups): TicketFacts {
   const net = l.net_kg == null ? null : Number(l.net_kg)
   const bushels = net == null ? null : l.bushels != null ? Number(l.bushels) : bushelsFromKg(net, Number(l.lb_per_bu))
   const clean = cleanOutFor(lk.cleanYield(l), cropRow?.est_cleanout_pct)
-  const keep = clean ? 1 - clean.pct / 100 : null
+  // A load whose weight is already after the plant's clean-out has nothing
+  // more to come off it: docking it again would undervalue it by its own
+  // dockage, and would print the clean weight under "Pre-cleaned". Its
+  // field-run figure is worked back from the clean-out instead.
+  const cleaned = !!l.weight_cleaned
+  const keep = cleaned ? 1 : clean ? 1 - clean.pct / 100 : null
+  const grossUp = cleaned && clean && clean.pct < 100 ? 1 / (1 - clean.pct / 100) : 1
   // The same price the weigh-in form values a load at: the crop page's, else the market, else the last year's.
   const priced = resolvePrice(l.crop_id, l.crop_year, lk.prices, { currentYear: new Date().getFullYear() })
   const lbPerBu = Number(l.lb_per_bu) || cropRow?.test_weight_lb_per_bu || null
@@ -93,9 +109,16 @@ export function ticketFacts(l: BinLoad, lk: TicketLookups): TicketFacts {
     outBy: person(l.weighed_out_by),
     net,
     bushels,
+    fieldRun: net == null ? null : net * grossUp,
+    fieldRunBu: bushels == null ? null : bushels * grossUp,
+    weightCleaned: cleaned,
     clean,
     keep,
-    cleanLabel: clean ? `After clean-out (${clean.actual ? 'actual' : 'estimated'} ${num(clean.pct, clean.pct % 1 ? 1 : 0)}%)` : 'After clean-out',
+    cleanLabel: cleaned
+      ? "After clean-out (the plant's own weight)"
+      : clean
+        ? `After clean-out (${clean.actual ? 'actual' : 'estimated'} ${num(clean.pct, clean.pct % 1 ? 1 : 0)}%)`
+        : 'After clean-out',
     value,
     valueText: value != null ? money(value) : priced.value == null ? `No ${crop} price yet` : keep == null ? 'Needs a clean-out %' : '—',
     priceText: priced.value != null ? `${crop} at ${money(priced.value, true)}/${worth?.unit ?? cropRow?.yield_unit ?? 'bu'} · ${priced.label}` : null,
@@ -111,8 +134,15 @@ const weightCells = (kg: number, bu: number | null) => [`${num(kg)} kg`, `${num(
 /** Pre-cleaned, then after clean-out; a one-cell row when the clean-out is not known. */
 export function netRows(t: TicketFacts): string[][] {
   if (t.net == null) return []
+  // On a load weighed after the plant's clean-out, the pre-cleaned figure is
+  // worked back from the clean-out. Without one there is nothing to work it
+  // back from, and printing the clean weight here would be a lie — the
+  // field's yield tab, which has the plant's receipts, says it instead.
+  const noPreClean = t.weightCleaned && !(t.fieldRun != null && t.fieldRun > t.net)
   return [
-    ['Pre-cleaned', ...weightCells(t.net, t.bushels)],
+    noPreClean
+      ? ['Pre-cleaned', 'Not known: this is the weight after the plant cleaned it']
+      : ['Pre-cleaned', ...weightCells(t.fieldRun ?? t.net, t.fieldRunBu ?? t.bushels)],
     t.keep == null ? [t.cleanLabel, NO_CLEAN] : [t.cleanLabel, ...weightCells(t.net * t.keep, t.bushels == null ? null : t.bushels * t.keep)],
   ]
 }
@@ -196,7 +226,7 @@ export function ticketsReport(
   ]
   const totals: Cell[][] = weighed.length
     ? [
-        totalsRow('Pre-cleaned', weighed, () => 1),
+        ['Pre-cleaned', ...weightCells(sum(weighed.map((t) => t.fieldRun)), sum(weighed.map((t) => t.fieldRunBu)))],
         cleanKnown.length
           ? totalsRow(cleanKnown.length < weighed.length ? `After clean-out (${cleanKnown.length} of ${weighed.length} loads)` : 'After clean-out', cleanKnown, (t) => t.keep!)
           : ['After clean-out', NO_CLEAN, '', '', ''],
@@ -217,8 +247,8 @@ export function ticketsReport(
         ts[0].field,
         ts[0].crop,
         ts.length,
-        `${num(sum(ts.map((t) => t.net)))} kg`,
-        `${num(sum(ts.map((t) => t.bushels)), 1)} bu`,
+        `${num(sum(ts.map((t) => t.fieldRun)))} kg`,
+        `${num(sum(ts.map((t) => t.fieldRunBu)), 1)} bu`,
         c ? `${c.actual ? 'actual' : 'est.'} ${num(c.pct, c.pct % 1 ? 1 : 0)}%` : '—',
         ts.some((t) => t.keep != null) ? `${num(sum(ts.map((t) => (t.bushels == null || t.keep == null ? null : t.bushels * t.keep))), 1)} bu` : '—',
         ts.some((t) => t.value != null) ? money(sum(ts.map((t) => t.value))) : '—',

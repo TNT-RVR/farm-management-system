@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BinLoad } from '@/lib/bin-loads'
-import { singleTicketReport, ticketFacts, ticketsReport, type TicketLookups } from './scale-ticket-report'
+import { netRows, singleTicketReport, ticketFacts, ticketsReport, type TicketLookups } from './scale-ticket-report'
 import { tableReportPdfDoc } from './table-report'
 
 const load = (id: string, net: number, over: Partial<BinLoad> = {}) =>
@@ -54,6 +54,43 @@ describe('ticketFacts', () => {
     const act = ticketFacts(l, lookups({ clean_total: 900, scale_total: 1000 }))
     expect(act.clean).toEqual({ pct: 10, actual: true })
     expect(act.value).toBeCloseTo(900 * 5, 0)
+  })
+
+  /**
+   * A load whose weight is already clean has nothing more to take off it.
+   * Docking it again would undervalue it by its own dockage and print the
+   * clean weight under "Pre-cleaned" (Sam, 16 Nov 2026).
+   */
+  it('does not dock a load whose weight is already clean a second time', () => {
+    const l = load('a', 25_401, { weight_cleaned: true, delivery_site_id: 's1', bin_id: null })
+    const t = ticketFacts(l, lookups(null))
+    expect(t.keep).toBe(1)
+    expect(t.net).toBe(25_401)
+    // 1,000 bu of clean grain is worth 1,000 bu, not 950.
+    expect(t.value).toBeCloseTo(1000 * 5, 0)
+    // And what came off the field was more than the weight on the ticket.
+    expect(t.fieldRun).toBeCloseTo(25_401 / 0.95, 2)
+    expect(t.cleanLabel).toContain("plant's own weight")
+  })
+
+  it('says it does not know the pre-cleaned weight rather than printing the clean one', () => {
+    // No field clean-out and no crop estimate: nothing to work the field-run
+    // figure back from, so the row must not pass the clean weight off as it.
+    const lk = lookups(null)
+    lk.crops = [{ ...lk.crops[0], est_cleanout_pct: null }]
+    const t = ticketFacts(load('a', 25_401, { weight_cleaned: true, delivery_site_id: 's1', bin_id: null }), lk)
+    expect(t.fieldRun).toBe(25_401)
+    expect(netRows(t)[0]).toEqual(['Pre-cleaned', 'Not known: this is the weight after the plant cleaned it'])
+    // With a clean-out known it reads as a weight again.
+    expect(netRows(ticketFacts(load('a', 25_401, { weight_cleaned: true, delivery_site_id: 's1', bin_id: null }), lookups(null)))[0][1]).toMatch(/kg$/)
+  })
+
+  it('still docks an ordinary load delivered to the same plant', () => {
+    const l = load('a', 25_401, { delivery_site_id: 's1', bin_id: null })
+    const t = ticketFacts(l, lookups(null))
+    expect(t.keep).toBeCloseTo(0.95, 9)
+    expect(t.fieldRun).toBe(25_401)
+    expect(t.value).toBeCloseTo(950 * 5, 0)
   })
 })
 

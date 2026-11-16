@@ -143,6 +143,13 @@ export type LoadInput = {
   entry_kind?: 'weighed' | 'net' | 'bin_total'
   /** A guessed weight, nobody weighed it (Sam, 9 Oct 2026). Counts like any load, labelled as an estimate. */
   estimated?: boolean
+  /**
+   * The weight is already after the plant's clean-out, not field-run like
+   * every other load (Sam, 16 Nov 2026). The field's yield works back what
+   * came off the field from the dockage; left unsaid, such a load understates
+   * the field by its own dockage.
+   */
+  weight_cleaned?: boolean
   load_count?: number | null
   /** Weights taken off the yard scale (scale_captures). The database holds each weight to its capture. */
   full_capture_id?: string | null

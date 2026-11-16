@@ -142,6 +142,16 @@ made-up string won't work. Make one with:
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
+## The research library (optional, and not quick)
+
+**Research** under Tools comes with 3,360 papers' citations — title, authors,
+journal, DOI, abstract — and none of the PDFs, because those are the
+publishers' to hand out and not ours. Searching the abstracts works straight
+away. To hold the papers themselves, your copy downloads its own from the same
+free sources, which takes a couple of hours and about 7 GB:
+[docs/RESEARCH-LIBRARY.md](docs/RESEARCH-LIBRARY.md) is the whole procedure,
+including how to search for papers about your own crops instead.
+
 ## Scheduled jobs and your Netlify plan
 
 About forty jobs run on a schedule — weather, prices, river levels, Deere

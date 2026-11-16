@@ -8306,6 +8306,8 @@ export type Database = {
           empty_capture_id: string | null
           /** The truck was not weighed out; the empty weight is a best guess. */
           empty_guessed: boolean
+          /** This load's weight is already after the plant's clean-out, not field-run. */
+          weight_cleaned: boolean
           direction: 'in' | 'out'
           driver_id: string | null
           driver: string | null
@@ -8347,6 +8349,8 @@ export type Database = {
           full_capture_id?: string | null
           empty_capture_id?: string | null
           empty_guessed?: boolean
+          /** This load's weight is already after the plant's clean-out, not field-run. */
+          weight_cleaned?: boolean
           direction?: 'in' | 'out'
           driver_id?: string | null
           driver?: string | null
@@ -8388,6 +8392,8 @@ export type Database = {
           full_capture_id?: string | null
           empty_capture_id?: string | null
           empty_guessed?: boolean
+          /** This load's weight is already after the plant's clean-out, not field-run. */
+          weight_cleaned?: boolean
           direction?: 'in' | 'out'
           driver_id?: string | null
           driver?: string | null

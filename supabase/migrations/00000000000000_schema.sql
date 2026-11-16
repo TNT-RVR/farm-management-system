@@ -623,10 +623,10 @@ begin
    where c.id = p_crop;
 
   select count(distinct coalesce(l.id::text, m.id::text)),
-         coalesce(sum(m.bushels * dry_shrink(load_moisture(l.id), v_dry)), 0),
-         coalesce(sum(m.bushels * coalesce(l.lb_per_bu, v_tw) * dry_shrink(load_moisture(l.id), v_dry)), 0),
-         coalesce(sum(m.bushels), 0),
-         coalesce(sum(m.bushels * coalesce(l.lb_per_bu, v_tw)), 0)
+         coalesce(sum(m.bushels * coalesce(load_field_run_factor(l.id), 1) * dry_shrink(load_moisture(l.id), v_dry)), 0),
+         coalesce(sum(m.bushels * coalesce(l.lb_per_bu, v_tw) * coalesce(load_field_run_factor(l.id), 1) * dry_shrink(load_moisture(l.id), v_dry)), 0),
+         coalesce(sum(m.bushels * coalesce(load_field_run_factor(l.id), 1)), 0),
+         coalesce(sum(m.bushels * coalesce(l.lb_per_bu, v_tw) * coalesce(load_field_run_factor(l.id), 1)), 0)
     into v_loads, v_bu, v_lb, v_wbu, v_wlb
     from grain_movements m
     left join bin_loads l on m.ticket_number = 'load:' || l.id::text
@@ -634,10 +634,10 @@ begin
      and m.field_id = p_field and m.crop_id = p_crop and m.crop_year = p_year;
 
   select count(*),
-         coalesce(sum(bushels * dry_shrink(load_moisture(id), v_dry)), 0),
-         coalesce(sum(net_kg * 2.20462262 * dry_shrink(load_moisture(id), v_dry)), 0),
-         coalesce(sum(bushels), 0),
-         coalesce(sum(net_kg * 2.20462262), 0)
+         coalesce(sum(bushels * load_field_run_factor(id) * dry_shrink(load_moisture(id), v_dry)), 0),
+         coalesce(sum(net_kg * 2.20462262 * load_field_run_factor(id) * dry_shrink(load_moisture(id), v_dry)), 0),
+         coalesce(sum(bushels * load_field_run_factor(id)), 0),
+         coalesce(sum(net_kg * 2.20462262 * load_field_run_factor(id)), 0)
     into s_loads, s_bu, s_lb, s_wbu, s_wlb
     from bin_loads
    where delivery_site_id is not null and gross_kg is not null and tare_kg is not null
@@ -1324,6 +1324,29 @@ end $$;
 ALTER FUNCTION "public"."create_n_rich_strip"("p_field" "uuid", "p_year" integer, "p_width_m" numeric, "p_offset_m" numeric, "p_extra_lb" numeric, "p_heading_deg" numeric) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."crop_dockage_pct"("p_crop" "uuid", "p_year" integer) RETURNS numeric
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select coalesce(
+    (select round(avg(dockage_pct), 2) from scale_tickets
+      where crop_id = p_crop and crop_year = p_year
+        and dockage_pct > 0 and dockage_pct < 50),
+    (select round(avg(dockage_pct), 2) from scale_tickets
+      where crop_id = p_crop
+        and dockage_pct > 0 and dockage_pct < 50),
+    (select nullif(est_cleanout_pct, 0) from crops where id = p_crop)
+  )
+$$;
+
+
+ALTER FUNCTION "public"."crop_dockage_pct"("p_crop" "uuid", "p_year" integer) OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."crop_dockage_pct"("p_crop" "uuid", "p_year" integer) IS 'The clean-out to expect on a crop, in percent: the average the plant has actually taken off its loads (this crop year first), else the crop''s own estimate. Null when neither is known.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."crop_year_locked"("p_year" integer) RETURNS boolean
     LANGUAGE "sql" STABLE
     SET "search_path" TO 'public', 'extensions'
@@ -1859,10 +1882,10 @@ begin
    where c.id = p_crop;
 
   select count(distinct coalesce(l.id::text, m.id::text)),
-         coalesce(sum(m.bushels * dry_shrink(load_moisture(l.id), v_dry)), 0),
-         coalesce(sum(m.bushels * coalesce(l.lb_per_bu, v_tw) * dry_shrink(load_moisture(l.id), v_dry)), 0),
-         coalesce(sum(m.bushels), 0),
-         coalesce(sum(m.bushels * coalesce(l.lb_per_bu, v_tw)), 0),
+         coalesce(sum(m.bushels * coalesce(load_field_run_factor(l.id), 1) * dry_shrink(load_moisture(l.id), v_dry)), 0),
+         coalesce(sum(m.bushels * coalesce(l.lb_per_bu, v_tw) * coalesce(load_field_run_factor(l.id), 1) * dry_shrink(load_moisture(l.id), v_dry)), 0),
+         coalesce(sum(m.bushels * coalesce(load_field_run_factor(l.id), 1)), 0),
+         coalesce(sum(m.bushels * coalesce(l.lb_per_bu, v_tw) * coalesce(load_field_run_factor(l.id), 1)), 0),
          coalesce(sum(m.bushels) filter (where l.estimated), 0)
     into v_loads, v_bu, v_lb, v_wbu, v_wlb, v_est
     from grain_movements m
@@ -1871,10 +1894,10 @@ begin
      and m.field_id = p_field and m.crop_id = p_crop and m.crop_year = p_year;
 
   select count(*),
-         coalesce(sum(bushels * dry_shrink(load_moisture(id), v_dry)), 0),
-         coalesce(sum(net_kg * 2.20462262 * dry_shrink(load_moisture(id), v_dry)), 0),
-         coalesce(sum(bushels), 0),
-         coalesce(sum(net_kg * 2.20462262), 0),
+         coalesce(sum(bushels * load_field_run_factor(id) * dry_shrink(load_moisture(id), v_dry)), 0),
+         coalesce(sum(net_kg * 2.20462262 * load_field_run_factor(id) * dry_shrink(load_moisture(id), v_dry)), 0),
+         coalesce(sum(bushels * load_field_run_factor(id)), 0),
+         coalesce(sum(net_kg * 2.20462262 * load_field_run_factor(id)), 0),
          coalesce(sum(bushels) filter (where estimated), 0)
     into s_loads, s_bu, s_lb, s_wbu, s_wlb, s_est
     from bin_loads
@@ -2518,12 +2541,15 @@ CREATE OR REPLACE FUNCTION "public"."fn_bin_load_weigh_times"() RETURNS "trigger
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public', 'extensions'
     AS $$
+declare
+  v_today date := (now() at time zone farm_tz())::date;
+  v_live boolean := new.loaded_on >= v_today - 1 and new.loaded_on <= v_today;
 begin
   if new.gross_kg is null then
     new.full_at := null;
     new.weighed_in_by := null;
   else
-    if new.full_at is null and (tg_op = 'INSERT' or old.gross_kg is null) then
+    if new.full_at is null and v_live and (tg_op = 'INSERT' or old.gross_kg is null) then
       new.full_at := now();
     end if;
     -- Only as the weight first lands: a load corrected months later keeps
@@ -2536,7 +2562,7 @@ begin
     new.empty_at := null;
     new.weighed_out_by := null;
   else
-    if new.empty_at is null and (tg_op = 'INSERT' or old.tare_kg is null or old.entry_kind <> 'weighed') then
+    if new.empty_at is null and new.full_at is not null and (tg_op = 'INSERT' or old.tare_kg is null or old.entry_kind <> 'weighed') then
       new.empty_at := now();
     end if;
     if new.weighed_out_by is null and (tg_op = 'INSERT' or old.tare_kg is null or old.entry_kind <> 'weighed') then
@@ -6104,6 +6130,47 @@ $$;
 ALTER FUNCTION "public"."jd_unconfirmed_operations"("p_field" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."load_dockage_pct"("p_load" "uuid") RETURNS numeric
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select coalesce(
+    (select t.dockage_pct from scale_tickets t
+      where t.bin_load_id = l.id and t.dockage_pct > 0 and t.dockage_pct < 50
+      order by t.created_at limit 1),
+    crop_dockage_pct(l.crop_id, l.crop_year)
+  )
+  from bin_loads l where l.id = p_load
+$$;
+
+
+ALTER FUNCTION "public"."load_dockage_pct"("p_load" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."load_dockage_pct"("p_load" "uuid") IS 'The clean-out on one load, in percent: its own plant receipt''s dockage where there is one, else the crop''s average. Null when neither is known.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."load_field_run_factor"("p_load" "uuid") RETURNS numeric
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select case
+           when not l.weight_cleaned then 1
+           when load_dockage_pct(l.id) is null then 1
+           else 1 / (1 - load_dockage_pct(l.id) / 100)
+         end
+  from bin_loads l where l.id = p_load
+$$;
+
+
+ALTER FUNCTION "public"."load_field_run_factor"("p_load" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."load_field_run_factor"("p_load" "uuid") IS 'What to multiply a load''s weight by for the field-run figure it stands for: 1 for an ordinary load, 1 / (1 - dockage) for one whose weight is already clean.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."load_moisture"("p_load" "uuid") RETURNS numeric
     LANGUAGE "sql" STABLE
     SET "search_path" TO 'public', 'extensions'
@@ -6531,6 +6598,7 @@ CREATE TABLE IF NOT EXISTS "public"."bin_loads" (
     "empty_capture_id" "uuid",
     "empty_guessed" boolean DEFAULT false NOT NULL,
     "direction" "text" DEFAULT 'in'::"text" NOT NULL,
+    "weight_cleaned" boolean DEFAULT false NOT NULL,
     CONSTRAINT "bin_loads_bin_or_site" CHECK ((("bin_id" IS NULL) OR ("delivery_site_id" IS NULL))),
     CONSTRAINT "bin_loads_bin_when_weighed" CHECK ((("bin_id" IS NOT NULL) OR ("delivery_site_id" IS NOT NULL) OR ("gross_kg" IS NULL) OR ("tare_kg" IS NULL))),
     CONSTRAINT "bin_loads_check" CHECK (("gross_kg" > "tare_kg")),
@@ -6597,6 +6665,10 @@ COMMENT ON COLUMN "public"."bin_loads"."empty_guessed" IS 'The truck was not wei
 
 
 COMMENT ON COLUMN "public"."bin_loads"."direction" IS 'in: grain arriving in the bin (harvest, a move). out: grain shipped out of it.';
+
+
+
+COMMENT ON COLUMN "public"."bin_loads"."weight_cleaned" IS 'This load''s weight is already after the plant''s clean-out, not field-run. False on an ordinary load, which is weighed with its dockage still in it; true only where the clean weight off the plant''s statement is the only one anybody has. The field-run figure such a load stands for is its weight divided by (1 - load_dockage_pct), and is an estimate, not a measurement.';
 
 
 
@@ -35451,6 +35523,11 @@ GRANT ALL ON FUNCTION "public"."create_n_rich_strip"("p_field" "uuid", "p_year" 
 
 
 
+GRANT ALL ON FUNCTION "public"."crop_dockage_pct"("p_crop" "uuid", "p_year" integer) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."crop_dockage_pct"("p_crop" "uuid", "p_year" integer) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."crop_year_locked"("p_year" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."crop_year_locked"("p_year" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."crop_year_locked"("p_year" integer) TO "service_role";
@@ -37217,6 +37294,16 @@ GRANT ALL ON FUNCTION "public"."jd_set_not_ours"("p_id" "uuid", "p_kind" "text",
 REVOKE ALL ON FUNCTION "public"."jd_unconfirmed_operations"("p_field" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."jd_unconfirmed_operations"("p_field" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."jd_unconfirmed_operations"("p_field" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."load_dockage_pct"("p_load" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."load_dockage_pct"("p_load" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."load_field_run_factor"("p_load" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."load_field_run_factor"("p_load" "uuid") TO "service_role";
 
 
 

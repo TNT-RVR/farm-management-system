@@ -117,12 +117,20 @@ export function filterTickets(rows: TicketRow[], f: TicketFilters, sort: TicketS
       (!q || [r.when, r.field, r.crop, r.driver, r.truck, r.to].join(' ').toLowerCase().includes(q)),
   )
   const dir = desc ? -1 : 1
+  const time = sort === 'when' || sort === 'out'
   return kept.sort((a, b) => {
     const x = a[sort]
     const y = b[sort]
     // A ticket with no net yet (waiting to weigh out) sorts last either way.
     if (x == null || y == null) return x == null && y == null ? 0 : x == null ? 1 : -1
-    const c = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true })
-    return c * dir || b.when.localeCompare(a.when)
+    // The two time columns are compared as moments, not as text: a weigh time
+    // is stored in UTC and a load with no time of its own stands at noon on
+    // its day, so the strings read in a different order from the clock.
+    const c = time
+      ? Date.parse(String(x)) - Date.parse(String(y))
+      : typeof x === 'number' && typeof y === 'number'
+        ? x - y
+        : String(x).localeCompare(String(y), undefined, { numeric: true })
+    return c * dir || Date.parse(b.when) - Date.parse(a.when)
   })
 }

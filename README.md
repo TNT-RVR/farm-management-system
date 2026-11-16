@@ -45,6 +45,7 @@ The demo keeps an anonymous visit count: no cookies, names or addresses.
 | **Cattle** | Herd records, grazing and pasture maps, water points and reach, a winter feed budget, daily feeding, pregnancy, cattle prices |
 | **Harvest & storage** | Scale tickets, yields from loads, grain bins and inventory, grain moisture and bin temperature monitoring |
 | **Running the farm** | To-do list, checklists, a Monday meeting page, calendar, monthly plan, day book, alerts and phone push notifications, your tasks in a phone home-screen widget, search |
+| **Research library** | 3,360 agronomy and cattle papers filed by crop, chemical, irrigation topic and breed, searched by the sentence rather than the title, and read by the app when it writes up advice. The citations ship with it; your copy fetches its own PDFs ([how](docs/RESEARCH-LIBRARY.md)) |
 | **Integrations** | John Deere Operations Center, Lindsay FieldNET pivots, QuickBooks Online ([setup checklist](docs/QUICKBOOKS.md)), weather, market prices, email invoice import, and Claude for writing up advice and reports |
 
 Each integration is off until you give it your own account or key. Nothing

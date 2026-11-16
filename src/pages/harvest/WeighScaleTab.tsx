@@ -15,6 +15,7 @@ import { useAllCropPrices } from '@/lib/forecast-data'
 import { downloadBlob, tableReportToCsv, tableReportToPdf } from '@/lib/table-report'
 import { fetchCleanYields, storedPhoto, ticketFacts, ticketsReport } from '@/lib/scale-ticket-report'
 import { usePartnerLoads } from '@/lib/partner-view'
+import { shortDay } from '@/lib/field-state'
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD } from '@/lib/table-style'
 
@@ -103,7 +104,7 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
   // "Oct 22, 1:58 p.m." on the farm's clock; a load typed in later has only its day.
   const weighedIn = (r: TicketRow) => {
     const l = byId.get(r.id)
-    return l?.full_at ? weighTime(l.full_at) : r.day
+    return l?.full_at ? weighTime(l.full_at) : shortDay(r.day)
   }
   const weighedOut = (r: TicketRow) => {
     const l = byId.get(r.id)

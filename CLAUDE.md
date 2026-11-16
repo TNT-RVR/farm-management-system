@@ -92,6 +92,13 @@ Good first steps, in roughly this order:
    farmer's own region, or leave them off.
 4. Integrations: see SETUP.md and docs/RUNNING-COSTS.md. Each is off until
    its keys are set.
+5. The research library: this copy ships 3,360 citations and no PDFs. The
+   scripts in `scripts/research-*.mjs` fetch the farm's own copies from
+   OpenAlex, DOAJ, Europe PMC, Unpaywall and open.alberta.ca, and the shelves,
+   their search terms and the place names that count as "near here" are the
+   farmer's to change. docs/RESEARCH-LIBRARY.md is the procedure and the
+   limits; read it before running any of them, and tell the farmer what the
+   storage will cost before a full harvest.
 
 For the river gauges, irrigation weather stations, moisture meter and
 irrigation district, docs/CUSTOMIZING.md has the specifics: which files, which

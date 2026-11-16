@@ -111,6 +111,8 @@ type Form = {
   netOnly: string
   /** Nobody weighed it: a best guess, marked as an estimate (9 Oct 2026). */
   estimated: boolean
+  /** The weight is already after the plant's clean-out, not field-run (16 Nov 2026). */
+  weightCleaned: boolean
   /** What the estimate is in. Stored as kg like every load. */
   estUnit: 'kg' | 't' | 'bu'
   loadCount: string
@@ -177,6 +179,7 @@ function formFrom(
         ? String(Math.round(Number(load.net_kg)))
         : '',
     estimated: load?.estimated ?? false,
+    weightCleaned: load?.weight_cleaned ?? false,
     estUnit: 'kg',
     loadCount: load?.load_count != null ? String(load.load_count) : '',
     moisture: load?.moisture_pct != null ? String(load.moisture_pct) : '',
@@ -765,6 +768,8 @@ export function WeighInForm({
         tare_kg: tare,
         entry_kind: form.kind,
         estimated: form.estimated && form.kind !== 'weighed',
+        // Only a load that went to a plant can carry a clean weight.
+        weight_cleaned: form.dest === 'plant' && form.weightCleaned,
         load_count:
           form.kind === 'bin_total' && Number(form.loadCount) > 0
             ? Math.round(Number(form.loadCount))
@@ -1174,7 +1179,9 @@ export function WeighInForm({
                   current={form.gross}
                   onWeight={(w) => set('gross', String(w))}
                 />
-                {load?.full_at && (
+                {/* A load typed in long after the fact has no weigh time, by
+                design — but it can be given one here if anybody knows it. */}
+                {load && (
                   <WeighTimeBox
                     label="Weighed in"
                     value={form.fullAt}
@@ -1320,6 +1327,19 @@ export function WeighInForm({
                   <span className="mt-0.5 block text-[11px] text-gray-400">
                     No bin: counted in the field's yield, not in any bin.
                   </span>
+                  {/* The plant's statement is sometimes the only weight there
+                  is, and it is the clean one (Sam, 16 Nov 2026). Said here,
+                  the field's yield works back what came off the field; left
+                  unsaid, such a load understates the field by its own dockage.
+                  Only a plant load can carry one — a bin load is field-run. */}
+                  <label className="mt-1.5 flex items-center gap-2 text-xs font-normal text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={form.weightCleaned}
+                      onChange={(e) => set('weightCleaned', e.target.checked)}
+                    />
+                    This weight is after the plant's clean-out
+                  </label>
                   <Select
                     value={form.contract_id}
                     ariaLabel="Contract"
@@ -1444,7 +1464,7 @@ export function WeighInForm({
                     current={form.tare}
                     onWeight={(w) => set('tare', String(w))}
                   />
-                  {load?.empty_at && (
+                  {load && (
                     <WeighTimeBox
                       label="Weighed out"
                       value={form.emptyAt}
@@ -2399,6 +2419,15 @@ export function PastLoads({
                   {l.estimated && (
                     <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-semibold uppercase text-amber-800">
                       est.
+                    </span>
+                  )}
+                  {/* Its weight is the clean one, not field-run like every other load. */}
+                  {l.weight_cleaned && (
+                    <span
+                      title="This weight is after the plant's clean-out"
+                      className="ml-1 rounded bg-sky-100 px-1 text-[10px] font-semibold uppercase text-sky-800"
+                    >
+                      clean
                     </span>
                   )}
                 </span>
