@@ -21,6 +21,7 @@ import {
   type ProgressField,
   type ProgressKind,
 } from '@/lib/fieldProgress'
+import { dbErrorMessage } from '@/lib/db-error'
 
 /**
  * How much of the farm is seeded, and how much is off.
@@ -247,7 +248,7 @@ export function FieldProgressPage() {
       })
       await qc.invalidateQueries({ queryKey: ['field_season_progress'] })
     } catch (e) {
-      setMarkFailed(e instanceof Error ? e.message : String(e))
+      setMarkFailed(dbErrorMessage(e))
     } finally {
       setMarking(null)
     }

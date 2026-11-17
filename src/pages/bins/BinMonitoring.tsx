@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ClipboardPaste, ImageUp, Loader2, Plus, Trash2, X } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { aboveGrain, differentBin, emcKind, flagsFor, moistureFor, type Level } from '@/lib/bin-monitor'
+import { aboveGrain, differentBin, emcKind, latestFlags, looksLikeMoisture, moistureFor, type Level } from '@/lib/bin-monitor'
 import {
   readCableScreenshot,
   useBinMonitorReadings,
@@ -89,18 +89,16 @@ export function BinMonitoring({
   const fromOldCrop = (r: MonitorRow) => Boolean(r.crop_id && crop?.id && r.crop_id !== crop.id)
 
   const latest = readings?.[0] ?? null
-  const latestCrop = latest ? readingCrop(latest) : null
-  const latestDryMax = latestCrop?.moisture_dry_max != null ? Number(latestCrop.moisture_dry_max) : null
-  // No warnings off a reading of grain that is gone: they would be about the
-  // last crop while the screen is describing this one.
-  const flags =
-    latest && !fromOldCrop(latest) ? flagsFor(latestCrop?.name, latest.levels, readings?.[1]?.levels ?? null, latestDryMax) : []
+  // The same count the Monitoring tab shows, from one rule in bin-monitor.
+  const flags = latestFlags(readings, crop, crops)
 
 
   return (
     <div>
+      {/* No heading: the tab above says "Monitoring". The BASF badge that sat
+          here is gone too — its report is a chip in the Reports tab, so the
+          badge only said the same thing a second time (Sam, 16 Nov 2026). */}
       <div className="mb-1 flex flex-wrap items-center gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Bin monitoring</h3>
         <div className="ml-auto flex flex-wrap gap-1.5">
           {canEdit && !adding && !editing && (
             <button
@@ -294,6 +292,8 @@ function ReadingForm({
   const [source, setSource] = useState<'manual' | 'screenshot'>((existing?.source as 'manual' | 'screenshot' | undefined) ?? 'manual')
   const [reading, setReading] = useState(false)
   const [readNote, setReadNote] = useState<string | null>(null)
+  /** The picture was not one bin's cable, so there is nothing to put in the boxes. */
+  const [wrongScreen, setWrongScreen] = useState(false)
   /** The bin named on the screenshot, when it is not this one. */
   const [wrongBin, setWrongBin] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -323,10 +323,14 @@ function ReadingForm({
     setReading(true)
     setReadNote(null)
     setWrongBin(null)
+    setWrongScreen(false)
     try {
       const r = await readCableScreenshot(file)
       if (!r.levels.length) {
-        setReadNote(r.note || 'No sensors could be read off that screenshot. Type them in.')
+        // The bin map and the other wrong screens say which one to photograph
+        // instead; that is worth more than a pale blue line (16 Nov 2026).
+        setWrongScreen(r.shows === 'bin_overview' || r.shows === 'other')
+        setReadNote(r.note || 'No sensors could be read off that picture. Type them in.')
         return
       }
       // Sensors in the headspace are ticked off, so they are not saved as a
@@ -401,15 +405,24 @@ function ReadingForm({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-gray-300 bg-white px-3 py-2 text-xs text-gray-600">
-        {reading ? <Loader2 className="h-4 w-4 animate-spin text-brand-700" /> : <ClipboardPaste className="h-4 w-4 text-gray-400" />}
-        <span>{reading ? 'Reading the screenshot…' : 'Paste a sensor-cable screenshot (Ctrl+V), drop it here, or'}</span>
+        {reading ? <Loader2 className="h-4 w-4 animate-spin text-brand-700" /> : <ClipboardPaste className="hidden h-4 w-4 text-gray-400 sm:block" />}
+        {/*
+          On a phone there is no Ctrl+V and nothing to drop, so that sentence
+          was an instruction Sam could not follow with the only button that
+          works tucked on the end of it. The phone gets the button itself.
+        */}
+        <span className={cn(reading ? '' : 'hidden sm:inline')}>
+          {reading ? 'Reading the picture…' : 'Paste a sensor-cable screenshot (Ctrl+V), drop it here, or'}
+        </span>
         <button
           type="button"
           disabled={reading}
           onClick={() => fileRef.current?.click()}
-          className="flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-2 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:px-2 sm:py-1 sm:font-normal"
         >
-          <ImageUp className="h-3.5 w-3.5" /> pick one
+          <ImageUp className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+          <span className="sm:hidden">Photograph the sensor cable</span>
+          <span className="hidden sm:inline">pick one</span>
         </button>
         <input
           ref={fileRef}
@@ -435,7 +448,17 @@ function ReadingForm({
           </button>
         </div>
       )}
-      {readNote && <p className="rounded-md bg-sky-50 px-2.5 py-1.5 text-xs text-sky-900">{readNote}</p>}
+      {readNote &&
+        (wrongScreen ? (
+          <div className="flex items-start gap-2 rounded-md border border-amber-400 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+            <p className="min-w-0 flex-1">
+              <b>Nothing was read off that picture.</b> {readNote}
+            </p>
+          </div>
+        ) : (
+          <p className="rounded-md bg-sky-50 px-2.5 py-1.5 text-xs text-sky-900">{readNote}</p>
+        ))}
 
       <div className="grid gap-2 sm:grid-cols-4">
         <label className="text-xs text-gray-600">
@@ -465,6 +488,18 @@ function ReadingForm({
           <input type="radio" checked={mode === 'moisture'} onChange={() => setMode('moisture')} /> grain moisture
         </label>
       </div>
+      {mode === 'rh' && looksLikeMoisture(crop?.name, levels.filter((l) => !l.air).map((l) => ({ temp_c: l.temp_c, pct: l.rh_pct }))) && (
+        <div className="flex flex-wrap items-start gap-2 rounded-md border border-amber-400 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+          <p className="min-w-0 flex-1 basis-48">
+            <b>Those numbers look like grain moisture, not humidity.</b> Air in a bin of dry grain sits near 50 %. Saved as
+            humidity they are outside the table, so the reading goes in with no moisture at all.
+          </p>
+          <button type="button" onClick={() => setMode('moisture')} className="rounded-md border border-amber-400 px-2 py-1 font-medium hover:bg-amber-100">
+            They are moisture
+          </button>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full text-xs">

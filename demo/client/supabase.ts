@@ -107,6 +107,18 @@ async function resetDemo() {
 }
 
 void (async () => {
+  // Asked before the farm is fetched, not after. Postgres runs here as
+  // WebAssembly (PGlite), so without it there is nothing to start — and until
+  // now a visitor downloaded the whole farm and only then met the failure
+  // (16 Nov 2026).
+  if (typeof WebAssembly === 'undefined' || typeof WebAssembly.instantiate !== 'function') {
+    worker.terminate()
+    ui.fail('WebAssembly is switched off or missing in this browser.')
+    // Both sentences name WebAssembly on purpose: the sign-in a moment later
+    // fails on this one, and ui.fail picks the right screen by the word.
+    rejectReady(new Error('WebAssembly is not available'))
+    return
+  }
   try {
     const res = await fetch('/demo-data/manifest.json', { cache: 'no-store' })
     if (!res.ok) throw new Error(`manifest ${res.status}`)

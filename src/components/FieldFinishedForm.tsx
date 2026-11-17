@@ -22,6 +22,7 @@ import { settingsLine, valuesOf } from '@/lib/combine-setting-text'
 import { farmDay } from '@/lib/harvest-date'
 import { SettingsList } from '@/pages/combine/SettingInputs'
 import { usePartnerAccess } from '@/lib/partner-view'
+import { dbErrorMessage } from '@/lib/db-error'
 
 const inputCls = 'w-full rounded-md border border-gray-300 px-2 py-2 text-sm'
 const when = (iso: string) => new Date(iso).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -190,7 +191,7 @@ export function FieldFinishedForm({
       onSaved?.(r)
       onClose()
     } catch (e) {
-      setFailed(e instanceof Error ? e.message : String(e))
+      setFailed(dbErrorMessage(e))
     }
   }
 

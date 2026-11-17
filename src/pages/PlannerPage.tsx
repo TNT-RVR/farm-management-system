@@ -20,13 +20,15 @@ import { QbAskBar } from '@/components/QbAskBar'
 import { FarmCostsTab } from '@/pages/plan/FarmCostsTab'
 import { BenchmarkTab } from '@/pages/plan/BenchmarkTab'
 import { PlannedVsActual } from '@/components/PlannedVsActual'
-import { money, money2, type PlanRowView } from '@/lib/planner'
+import { money, money2, plannedFieldCount, type PlanRowView } from '@/lib/planner'
 import { useCropZoneMutations } from '@/lib/cropZones'
 import { rentedOutIncome } from '@/lib/land-deals'
 import { withDisplay } from '@/lib/reports/columns'
 import { budgetExportColumns, planExportColumns, usePlanRows } from '@/lib/reports/plan'
 import { cutLabel, formatYieldRange, isRange, parseYieldText, planYieldText } from '@/lib/yield-estimate'
 import { cn } from '@/lib/utils'
+import { dbErrorMessage } from '@/lib/db-error'
+import { SavedViews } from '@/components/SavedViews'
 import { GoalCell, VersusCell } from '@/components/YieldScoreCells'
 import { CROP_DEFAULT } from '@/lib/forecast'
 
@@ -184,6 +186,9 @@ export function PlannerPage() {
 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ['crop_plans'] })
 
+  // What the last inline crop change did, shown beside the row it changed.
+  const [saveNote, setSaveNote] = useState<{ id: string; text: string; bad: boolean } | null>(null)
+
   const setCrop = useMutation({
     mutationFn: async ({ row, cropId }: { row: PlanRowView; cropId: string }) => {
       if (cropId === '') {
@@ -208,8 +213,23 @@ export function PlannerPage() {
       )
       if (error) throw error
     },
-    onSuccess: invalidate,
+    onSuccess: (_done, vars) => {
+      const id = vars.row.field.id
+      setSaveNote({ id, text: 'Saved', bad: false })
+      window.setTimeout(() => setSaveNote((n) => (n && !n.bad && n.id === id ? null : n)), 2500)
+      invalidate()
+    },
+    // A refused save used to leave the dropdown showing a crop the database
+    // never got, with nothing on screen to say so.
+    onError: (e, vars) => setSaveNote({ id: vars.row.field.id, text: dbErrorMessage(e), bad: true }),
   })
+
+  /** Saving… / Saved / why it was refused, beside the crop that changed. */
+  const cropSaveMark = (fieldId: string) => {
+    if (setCrop.isPending && setCrop.variables?.row.field.id === fieldId) return <span className="ml-1 text-[11px] text-gray-500">Saving…</span>
+    if (saveNote?.id !== fieldId) return null
+    return <span className={cn("ml-1 text-[11px]", saveNote.bad ? "text-red-700" : "text-gray-500")}>{saveNote.text}</span>
+  }
 
   const zoneMut = useCropZoneMutations()
 
@@ -248,7 +268,18 @@ export function PlannerPage() {
     const cutRows = planned.filter((r) => r.cutPct > 0)
     // What the cuts took off the revenue, at each row's price.
     const cutRevenue = cutRows.reduce((s, r) => s + (r.acres ?? 0) * r.revenueCutPerAcre, 0)
-    return { acres, revenue, cost, margin: revenue - cost, marginLow, marginHigh, count: planned.length, rent, cutCount: cutRows.length, cutRevenue }
+    return {
+      acres,
+      revenue,
+      cost,
+      margin: revenue - cost,
+      marginLow,
+      marginHigh,
+      count: plannedFieldCount(planned),
+      rent,
+      cutCount: cutRows.length,
+      cutRevenue,
+    }
   }, [rows, rentIn])
 
   const shownRows = useMemo(
@@ -292,7 +323,12 @@ export function PlannerPage() {
               aria-label="Zone acres"
               onBlur={(e) => {
                 const v = e.target.value === '' ? null : Number(e.target.value)
-                if (v != null && (!Number.isFinite(v) || v < 0)) return
+                if (v != null && (!Number.isFinite(v) || v < 0)) {
+                  // Put the figure back, so a refusal is visible rather than
+                  // leaving a number on screen that was never saved.
+                  e.target.value = r.acres != null ? String(r.acres) : ''
+                  return
+                }
                 if (r.zoneId && v !== r.acres) {
                   zoneMut.update.mutate({ id: r.zoneId, patch: { acres: v } })
                 }
@@ -306,11 +342,20 @@ export function PlannerPage() {
             <input
               type="number"
               step="0.01"
+              min="0"
               disabled={!canEditRow(r) || !r.plan}
+              key={`${r.plan?.id ?? r.field.id}-${r.plan?.planned_acres ?? ''}`}
               defaultValue={r.plan?.planned_acres ?? ''}
               placeholder={r.acres != null ? r.acres.toFixed(2) : '—'}
               onBlur={(e) => {
                 const v = e.target.value === '' ? null : Number(e.target.value)
+                // −100 ac used to save here and carry through the farm's
+                // acreage, the margin and the crop plan PDF (16 Nov 2026). The
+                // zone box beside this one always refused it; this one did not.
+                if (v != null && (!Number.isFinite(v) || v < 0)) {
+                  e.target.value = r.plan?.planned_acres != null ? String(r.plan.planned_acres) : ''
+                  return
+                }
                 if (r.plan && v !== r.plan.planned_acres) {
                   patchPlan.mutate({ row: r, patch: { planned_acres: v } })
                 }
@@ -351,6 +396,8 @@ export function PlannerPage() {
             </span>
           </span>
         ) : (
+          // the crop, and what the last change to it did
+          <>
           <Select
             disabled={!canEditRow(r)}
             value={r.crop?.id ?? ''}
@@ -364,7 +411,7 @@ export function PlannerPage() {
               // A plan on a retired crop (Canola, Potato) still shows it.
               ...(r.crop && !r.crop.active ? [{ value: r.crop.id, label: `${r.crop.name} (retired)` }] : []),
             ]}
-          />
+          />{cropSaveMark(r.field.id)}</>
         ),
     },
     variety: {
@@ -710,6 +757,9 @@ export function PlannerPage() {
         <p className="text-sm text-gray-500">Loading…</p>
       ) : tab === 'plan' ? (
         <>
+          <div className="mb-2 flex items-center gap-2">
+            <SavedViews />
+          </div>
           {cropParam && (
             <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-900">
               <span>
@@ -749,6 +799,16 @@ export function PlannerPage() {
           columns={budgetColumns}
           rowKey={(b) => b.crop.id}
           exportFilename={`budget-${cropYear}`}
+          // A crop total is only as trustworthy as the fields under it:
+          // open the line to see them, their acres, yields and prices.
+          onRowClick={(b) => {
+            setParams((p) => {
+              const next = new URLSearchParams(p)
+              next.set('crop', b.crop.id)
+              return next
+            })
+            setTab('plan')
+          }}
         />
       ) : tab === 'breakeven' ? (
         // The budget divided by the yield the plan expects. It sits next to the

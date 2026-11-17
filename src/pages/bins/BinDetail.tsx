@@ -7,6 +7,7 @@ import { AlertTriangle, Download, FileText, Flag, PenLine, Scale, Thermometer } 
 import { shipmentLabel } from '@/lib/bin-shipping'
 import { MoveMenu } from '@/pages/bins/MoveMenu'
 import { Modal } from '@/components/Modal'
+import { PillTabs, type PillTab } from '@/components/PillTabs'
 import { Fold } from '@/components/Fold'
 import { supabase } from '@/lib/supabase'
 import { useCrops, useFields } from '@/lib/queries'
@@ -14,13 +15,15 @@ import { useBinAllocations, useBinFieldsIn, useBinOnHand, useBins, useEstimatedB
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useDismissBinAirAlert } from '@/lib/moisture-queries'
 import { useBinContents, contentLabel, isCarryOver } from '@/lib/bin-contents'
-import { isOpenLoad, loadInBin, testWeightFor, useBinLoads, useDeliverySites, weighTime } from '@/lib/bin-loads'
+import { isOpenLoad, loadInBin, testWeightFor, useBinLoads, useDeliverySites, weighedOutAt, weighTime } from '@/lib/bin-loads'
 import { useBinProducts } from '@/lib/bins'
 import { rowClick } from '@/components/RecordEditor'
 import { GRAIN_MOVEMENT_TYPES, type GrainMovementRow } from '@/lib/inventory'
 import { cropColour } from '@/lib/crop-colour'
 import { applyVarietyToCrop, varietySettingFor } from '@/lib/crop-variety-settings'
 import { useCropVarietySettings } from '@/lib/crop-variety-settings-data'
+import { latestFlags } from '@/lib/bin-monitor'
+import { useBinMonitorReadings } from '@/lib/bin-monitor-data'
 import { cn } from '@/lib/utils'
 import { BinDrawing } from './BinDrawing'
 import { BinRunSwitches } from './BinRunSwitches'
@@ -94,6 +97,8 @@ function useBinHistory(binId: string) {
  * Opened by clicking a bin's row. The row keeps its own controls for the
  * quick jobs; this is for "what is going on with #21".
  */
+type BinTab = 'monitoring' | 'movements' | 'moisture' | 'reports' | 'notes'
+
 export function BinDetail({
   bin,
   cropYear,
@@ -264,8 +269,84 @@ export function BinDetail({
       { to: `/reports?open=bin-temperature-record&bin=${encodeURIComponent(bin.id)}&year=${reportYear}`, label: 'Bin temperature monitoring record' },
     )
 
+  /*
+   * Which tab is showing.
+   *
+   * Everything below the bin used to be stacked one section after another, so
+   * reading a movement meant scrolling past the monitoring table, and every
+   * section's heading said what the section plainly was. A tab is that heading
+   * and the way in at once. Only the tabs with something in them are offered.
+   */
+  const { data: monitorReadings } = useBinMonitorReadings(bin.id)
+  const monitorFlags = latestFlags(monitorReadings, monitorCrop, crops)
+  // Built every render on purpose: it is five entries, and the lists it
+  // counts are rebuilt here anyway.
+  const tabs = ((): PillTab<BinTab>[] => {
+    // Movements first, so a bin opens on what went in and out of it
+    // (Sam, 16 Nov 2026).
+    const t: PillTab<BinTab>[] = [
+      { key: 'movements', label: `Movements (${ledger.length})` },
+      {
+        key: 'monitoring',
+        label: monitorFlags.length ? (
+          <span className="flex items-center gap-1">
+            Monitoring
+            <span className="rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-900">{monitorFlags.length}</span>
+          </span>
+        ) : (
+          'Monitoring'
+        ),
+      },
+    ]
+    const tests = history?.tests ?? []
+    if (tests.length > 0) t.push({ key: 'moisture', label: `Moisture (${tests.length})` })
+    if (reports.length > 0) t.push({ key: 'reports', label: `Reports (${reports.length})` })
+    if (bin.notes_md) t.push({ key: 'notes', label: 'Notes' })
+    return t
+  })()
+  // Opens on the leftmost tab, as every view does, rather than naming one
+  // here that could drift from the order above.
+  const [tab, setTab] = useState<BinTab>(tabs[0].key)
+  // A tab that stops existing — the last moisture test deleted, say — hands
+  // the view back to the first one rather than showing an empty pop-up.
+  const active = tabs.some((t) => t.key === tab) ? tab : tabs[0].key
+
   return (
-    <Modal title={current.name} onClose={onClose} wide="xl">
+    <Modal
+      title={current.name}
+      onClose={onClose}
+      wide="xl"
+      /* Up beside the close button, where the app's settings gear always sits
+         (Sam, 16 Nov 2026). They used to have a row of their own under the
+         bin, which left most of that row empty. The Export word is dropped on
+         a phone so the title still fits. */
+      actions={
+        <>
+          <button
+            type="button"
+            onClick={() => setPanel(panel === 'export' ? null : 'export')}
+            aria-label="Export"
+            title="Export"
+            aria-expanded={panel === 'export'}
+            className={cn(
+              'flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs font-medium hover:bg-gray-50 sm:px-2.5',
+              panel === 'export' ? 'border-gray-400 bg-gray-50 text-gray-900' : 'border-gray-300 text-gray-700',
+            )}
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Export</span>
+          </button>
+          {isManager && (
+            <SettingsButton
+              iconOnly
+              label="Bin settings"
+              open={panel === 'edit'}
+              onClick={() => setPanel(panel === 'edit' ? null : 'edit')}
+            />
+          )}
+        </>
+      }
+    >
       <div className="space-y-4 text-sm">
         {/* How full, with what */}
         <div className="flex flex-wrap items-center gap-4">
@@ -346,39 +427,26 @@ export function BinDetail({
               <p className="mt-0.5 text-xs text-amber-800">Carry-over from {content.crop_year}, recorded by hand.</p>
             )}
           </div>
-          {canEdit && (
+          {(canEdit || extra) && (
             <div className="flex w-full flex-wrap gap-1.5 sm:w-auto">
-              <button type="button" onClick={onWeighIn} className="flex items-center gap-1 rounded-md bg-brand-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-800">
-                <Scale className="h-3.5 w-3.5" /> Weigh in
-              </button>
-              <MoveMenu held={heldTotal > 0} onAdd={onAdd} onMove={onMove} onShip={onShip} />
-              {heldTotal <= 0 && !content && (
-                <button type="button" onClick={onRecord} className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900 hover:bg-amber-100">
-                  <PenLine className="h-3.5 w-3.5" /> Record
-                </button>
+              {canEdit && (
+                <>
+                  <button type="button" onClick={onWeighIn} className="flex items-center gap-1 rounded-md bg-brand-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-800">
+                    <Scale className="h-3.5 w-3.5" /> Weigh in
+                  </button>
+                  <MoveMenu held={heldTotal > 0} onAdd={onAdd} onMove={onMove} onShip={onShip} />
+                  {heldTotal <= 0 && !content && (
+                    <button type="button" onClick={onRecord} className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900 hover:bg-amber-100">
+                      <PenLine className="h-3.5 w-3.5" /> Record
+                    </button>
+                  )}
+                </>
               )}
+              {/* The bin map's "Show on map", beside Weigh in instead of on a
+                  row of its own (Sam, 16 Nov 2026). */}
+              {extra}
             </div>
           )}
-          {extra && <div className="flex w-full flex-wrap gap-1.5">{extra}</div>}
-          {/* Beside Weigh in and Move rather than alone on a line of their
-              own, which left most of a row empty (Sam, 27 Oct 2026). */}
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              onClick={() => setPanel(panel === 'export' ? null : 'export')}
-              className="flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
-            >
-              <Download className="h-3.5 w-3.5" /> Export
-            </button>
-            {isManager && (
-              <SettingsButton
-                iconOnly
-                label="Bin settings"
-                open={panel === 'edit'}
-                onClick={() => setPanel(panel === 'edit' ? null : 'edit')}
-              />
-            )}
-          </div>
         </div>
 
         {panel === 'export' && <BinExportPanel bin={current} onDone={() => setPanel(null)} />}
@@ -387,25 +455,6 @@ export function BinDetail({
             <BinEditForm bin={current} sites={sites} onDone={() => setPanel(null)} onDeleted={onClose} />
             {pinControls && <div className="flex flex-wrap items-center gap-1.5 border-t border-gray-100 pt-2">{pinControls}</div>}
           </div>
-        )}
-
-        {/* The seed company's reports for what is in it (Sam, 20 Oct 2026). */}
-        {reports.length > 0 && (
-          <Section title="Reports">
-            <ul className="flex flex-wrap gap-1.5">
-              {reports.map((r) => (
-                <li key={r.to}>
-                  <Link
-                    to={r.to}
-                    onClick={onClose}
-                    className="flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                  >
-                    <FileText className="h-3.5 w-3.5 text-gray-400" /> {r.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </Section>
         )}
 
         {/* Needs air */}
@@ -467,225 +516,261 @@ export function BinDetail({
           </Section>
         )}
 
-        {/* Sensor cable readings, and BASF's canola report. "Latest
-            readings" was a section of its own above this, a second sensor
-            heading over the one below; the last reading entered on the
-            Integrations page (bin_readings) is one line now instead. */}
-        {(history?.readings ?? []).length > 0 && (
-          <p className="-mb-2 flex items-center gap-1.5 text-xs text-gray-600">
-            <Thermometer className="h-3.5 w-3.5 text-gray-400" />
-            {(() => {
-              const r = history!.readings[0]
-              return `Last sensor reading: ${r.temp_c != null ? `${Number(r.temp_c).toFixed(1)} °C` : ''}${r.moisture_pct != null ? ` · ${Number(r.moisture_pct).toFixed(1)}% moisture` : ''} · ${new Date(r.reading_at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })}`
-            })()}
-          </p>
-        )}
-        <BinMonitoring
-          binId={bin.id}
-          binName={bin.name}
-          cropYear={cropYear}
-          crop={monitorCrop}
-          heldBu={heldTotal}
-          capacityBu={cap}
-          lldDefault={(fields ?? []).find((f) => f.id === alloc?.field_id)?.legal_land_description ?? null}
-          canEdit={canEdit}
-        />
+        {/* The rest of the bin, a tab at a time (Sam, 16 Nov 2026).
+            What is in the bin, anything needing air and the plan stay
+            above, where you cannot tab away from them. */}
+        <PillTabs tabs={tabs} value={active} onChange={setTab} />
 
-        {/* Moisture of what went in */}
-        {(history?.tests ?? []).length > 0 && (
-          <Section title="Moisture tests">
-            <Table head={['When', 'Field', 'Moisture', 'Grade', 'Sample / note']}>
-              {history!.tests.map((t) => (
-                <tr key={t.id} onClick={rowClick(() => setTestId(t.id))} className="cursor-pointer hover:bg-gray-50">
-                  <Td>{t.tested_at.slice(0, 10)}</Td>
-                  <Td>{fieldName(t.field_id)}</Td>
-                  <Td num>{t.moisture_pct != null ? `${Number(t.moisture_pct).toFixed(1)}%` : '—'}</Td>
-                  <Td>{t.grade ?? '—'}</Td>
-                  <Td>
-                    <span className="flex flex-wrap items-center gap-1.5">
-                      <MoistureTestNote test={t} />
-                    </span>
-                  </Td>
-                </tr>
-              ))}
-            </Table>
-          </Section>
-        )}
-
-        {/*
-          One list, not two (Sam, 27 Oct 2026): "Loads weighed in" and
-          "Every movement" were the same grain written out twice. Every
-          movement is here, newest first, and the rows that are loads carry
-          what only a load knows — the weight off the scale, who drove it, the
-          field's last load — and open the load when clicked.
-        */}
-        <Section title={`Movements (${ledger.length})`}>
-          {waiting.length > 0 && (
-            <p className="mb-1 text-xs text-amber-800">
-              {waiting.length} load{waiting.length === 1 ? '' : 's'} waiting for a second weight.
-            </p>
-          )}
-          {isLoading ? (
-            <p className="text-gray-400">Loading…</p>
-          ) : ledger.length === 0 ? (
-            <p className="text-gray-400">Nothing has moved in or out of this bin yet.</p>
-          ) : (
-            <div className={cn(ledger.length > 12 && 'max-h-96 overflow-y-auto')}>
-              <Table head={['Date', 'What', 'Field', 'Crop', 'Bushels', 'Kg', 'Driver', 'Balance', ...(canEdit ? [''] : [])]}>
-                {ledger.map(({ m, label, signed, balance }) => {
-                  const load = m.ticket_number?.startsWith('load:') ? loadById.get(m.ticket_number.slice(5)) : undefined
-                  const share = load ? loadInBin(load, bin.id) : null
-                  return (
-                    <tr
-                      key={m.id}
-                      title={load ? 'Open the load to see or correct it' : (m.notes ?? undefined)}
-                      onClick={rowClick(() => (load && canEdit ? setLoadId(load.id) : setMoveId(m.id)))}
-                      className="cursor-pointer hover:bg-gray-50"
-                    >
-                      <Td>
-                        {m.moved_at}
-                        {load?.full_at && (
-                          <span className="block text-[10px] text-gray-500">
-                            in {weighTime(load.full_at, false)}
-                            {load.empty_at ? ` · out ${weighTime(load.empty_at, false)}` : ''}
-                          </span>
-                        )}
-                      </Td>
-                      <Td>
-                        {label}
-                        {load?.last_from_field && (
-                          <Flag className="ml-1 inline h-3 w-3 text-green-700" fill="currentColor" aria-label="Last load from the field" />
-                        )}
-                      </Td>
-                      <Td>{m.field_id ? fieldName(m.field_id) : '—'}</Td>
-                      <Td>{cropName(m.crop_id)}</Td>
-                      <Td num className={signed >= 0 ? 'text-green-800' : 'text-red-700'}>
-                        {signed >= 0 ? '+' : '−'}
-                        {Math.round(Math.abs(signed)).toLocaleString('en-CA')}
-                        {/* A load that filled this bin and went on into another (Sam, 20 Oct 2026). */}
-                        {load?.overflow_bin_id && share && (
-                          <span className="block text-[10px] font-normal text-gray-500">
-                            {share.part === 'first'
-                              ? `of ${bu(load.bushels)}; rest to ${(allBins ?? []).find((b) => b.id === load.overflow_bin_id)?.name ?? 'another bin'}`
-                              : `of ${bu(load.bushels)}; after ${(allBins ?? []).find((b) => b.id === load.bin_id)?.name ?? 'another bin'} filled`}
-                          </span>
-                        )}
-                      </Td>
-                      {/* Weighed where a load crossed the scale; worked out from
-                          the bushels otherwise, and said to be, so a row entered
-                          by hand is not a blank (Sam, 2 Nov 2026). */}
-                      <Td num>
-                        {share ? (
-                          kg(share.kg)
-                        ) : (
-                          (() => {
-                            const k = kgOf(m.crop_id, Math.abs(signed))
-                            return k == null ? (
-                              '—'
-                            ) : (
-                              <>
-                                {kg(k)}
-                                <span className="block text-[10px] font-normal text-gray-400">calculated</span>
-                              </>
-                            )
-                          })()
-                        )}
-                      </Td>
-                      <Td>{load?.driver ?? '—'}</Td>
-                      <Td num strong>
-                        {Math.round(balance).toLocaleString('en-CA')}
-                      </Td>
-                      {canEdit && <td className="px-1 py-1 text-right">{load && <DeleteLoadButton load={load} />}</td>}
-                    </tr>
-                  )
-                })}
-              </Table>
-            </div>
-          )}
-
-          {/* What is in it now came over the scale in these loads. By field,
-              weighed: what a seed company asks for its own canola in this bin.
-              With one field that list only says the line above it again. */}
-          {finished.length > 0 && (
-            <div className="mt-1.5 text-xs text-gray-700">
-              <p className="text-right text-gray-500">
-                In it now, over {finished.length} load{finished.length === 1 ? '' : 's'}:{' '}
-                {bu(finished.reduce((sum, l) => sum + loadInBin(l, bin.id).bushels, 0))} ·{' '}
-                {kg(finished.reduce((sum, l) => sum + loadInBin(l, bin.id).kg, 0))} ·{' '}
-                {tonnes(finished.reduce((sum, l) => sum + loadInBin(l, bin.id).kg, 0))}
+        {active === 'monitoring' && (
+          <>
+            {/* The last reading entered on the Integrations page
+                (bin_readings) is this one line; it had a heading of its own
+                above the sensor table, which was a second sensor heading over
+                the first. */}
+            {(history?.readings ?? []).length > 0 && (
+              <p className="-mb-2 flex items-center gap-1.5 text-xs text-gray-600">
+                <Thermometer className="h-3.5 w-3.5 text-gray-400" />
+                {(() => {
+                  const r = history!.readings[0]
+                  return `Last sensor reading: ${r.temp_c != null ? `${Number(r.temp_c).toFixed(1)} °C` : ''}${r.moisture_pct != null ? ` · ${Number(r.moisture_pct).toFixed(1)}% moisture` : ''} · ${new Date(r.reading_at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })}`
+                })()}
               </p>
-              {[...new Set(finished.map((l) => l.field_id))].length > 1 && (
-                <ul className="mt-0.5 space-y-0.5">
-                  {[...new Set(finished.map((l) => l.field_id))].map((fid) => {
-                    const mine = finished.filter((l) => l.field_id === fid)
-                    const net = mine.reduce((sum, l) => sum + loadInBin(l, bin.id).kg, 0)
-                    const bus = mine.reduce((sum, l) => sum + loadInBin(l, bin.id).bushels, 0)
+            )}
+            <BinMonitoring
+              binId={bin.id}
+              binName={bin.name}
+              cropYear={cropYear}
+              crop={monitorCrop}
+              heldBu={heldTotal}
+              capacityBu={cap}
+              lldDefault={(fields ?? []).find((f) => f.id === alloc?.field_id)?.legal_land_description ?? null}
+              canEdit={canEdit}
+            />
+          </>
+        )}
+
+        {active === 'movements' && (
+          <>
+            {/*
+              One list, not two (Sam, 27 Oct 2026): "Loads weighed in" and
+              "Every movement" were the same grain written out twice. Every
+              movement is here, newest first, and the rows that are loads carry
+              what only a load knows — the weight off the scale, who drove it, the
+              field's last load — and open the load when clicked.
+            */}
+            {waiting.length > 0 && (
+              <p className="mb-1 text-xs text-amber-800">
+                {waiting.length} load{waiting.length === 1 ? '' : 's'} waiting for a second weight.
+              </p>
+            )}
+            {isLoading ? (
+              <p className="text-gray-400">Loading…</p>
+            ) : ledger.length === 0 ? (
+              <p className="text-gray-400">Nothing has moved in or out of this bin yet.</p>
+            ) : (
+              <div className={cn(ledger.length > 12 && 'max-h-96 overflow-y-auto')}>
+                <Table head={['Date', 'What', 'Field', 'Crop', 'Bushels', 'Kg', 'Driver', 'Balance', ...(canEdit ? [''] : [])]}>
+                  {ledger.map(({ m, label, signed, balance }) => {
+                    const load = m.ticket_number?.startsWith('load:') ? loadById.get(m.ticket_number.slice(5)) : undefined
+                    const share = load ? loadInBin(load, bin.id) : null
                     return (
-                      <li key={fid ?? 'none'} className="flex flex-wrap justify-between gap-x-3">
-                        <span>
-                          {fid ? fieldName(fid) : 'No field'} · {mine.length} load{mine.length === 1 ? '' : 's'}
-                        </span>
-                        <span className="tabular-nums">
-                          {bu(bus)} · <b>{kg(net)}</b> · {tonnes(net)}
-                        </span>
-                      </li>
+                      <tr
+                        key={m.id}
+                        title={load ? 'Open the load to see or correct it' : (m.notes ?? undefined)}
+                        onClick={rowClick(() => (load && canEdit ? setLoadId(load.id) : setMoveId(m.id)))}
+                        className="cursor-pointer hover:bg-gray-50"
+                      >
+                        <Td>
+                          {m.moved_at}
+                          {load?.full_at && (
+                            <span className="block text-[10px] text-gray-500">
+                              in {weighTime(load.full_at, false)}
+                              {weighedOutAt(load) ? ` · out ${weighTime(load.empty_at, false)}` : ''}
+                            </span>
+                          )}
+                        </Td>
+                        <Td>
+                          {label}
+                          {load?.last_from_field && (
+                            <Flag className="ml-1 inline h-3 w-3 text-green-700" fill="currentColor" aria-label="Last load from the field" />
+                          )}
+                        </Td>
+                        <Td>{m.field_id ? fieldName(m.field_id) : '—'}</Td>
+                        <Td>{cropName(m.crop_id)}</Td>
+                        <Td num className={signed >= 0 ? 'text-green-800' : 'text-red-700'}>
+                          {signed >= 0 ? '+' : '−'}
+                          {Math.round(Math.abs(signed)).toLocaleString('en-CA')}
+                          {/* A load that filled this bin and went on into another (Sam, 20 Oct 2026). */}
+                          {load?.overflow_bin_id && share && (
+                            <span className="block text-[10px] font-normal text-gray-500">
+                              {share.part === 'first'
+                                ? `of ${bu(load.bushels)}; rest to ${(allBins ?? []).find((b) => b.id === load.overflow_bin_id)?.name ?? 'another bin'}`
+                                : `of ${bu(load.bushels)}; after ${(allBins ?? []).find((b) => b.id === load.bin_id)?.name ?? 'another bin'} filled`}
+                            </span>
+                          )}
+                        </Td>
+                        {/* Weighed where a load crossed the scale; worked out from
+                            the bushels otherwise, and said to be, so a row entered
+                            by hand is not a blank (Sam, 2 Nov 2026). */}
+                        <Td num>
+                          {share ? (
+                            kg(share.kg)
+                          ) : (
+                            (() => {
+                              const k = kgOf(m.crop_id, Math.abs(signed))
+                              return k == null ? (
+                                '—'
+                              ) : (
+                                <>
+                                  {kg(k)}
+                                  <span className="block text-[10px] font-normal text-gray-400">calculated</span>
+                                </>
+                              )
+                            })()
+                          )}
+                        </Td>
+                        <Td>{load?.driver ?? '—'}</Td>
+                        <Td num strong>
+                          {Math.round(balance).toLocaleString('en-CA')}
+                        </Td>
+                        {canEdit && <td className="px-1 py-1 text-right">{load && <DeleteLoadButton load={load} />}</td>}
+                      </tr>
                     )
                   })}
-                </ul>
-              )}
-            </div>
-          )}
-
-          {doneFields.map(([fid, year]) => (
-            <div key={fid} className="mt-2">
-              <FieldYieldNote fieldId={fid} cropYear={year} />
-            </div>
-          ))}
-
-          {edits.length > 0 && (
-            <Fold
-              title="Changes to records"
-              summary={`${edits.length} edit${edits.length === 1 ? '' : 's'}`}
-              storageKey="bin-detail-edits"
-              className="mt-2 text-sm"
-            >
-              {/* What was changed, on what grain — the crop and the bushels,
-                  so a row says something on its own (Sam, 27 Oct 2026). Who
-                  did it and the old and new figures are a click away rather
-                  than three repeated lines wide. */}
-              <div className={cn(edits.length > 8 && 'max-h-72 overflow-y-auto')}>
-                <Table head={['Changed', 'Record', 'Crop', 'Bushels', 'What']}>
-                  {edits.map((e, i) => (
-                    <tr
-                      key={`${e.at}:${i}`}
-                      onClick={rowClick(() => setEditAt(`${e.at}:${i}`))}
-                      title="Open the change"
-                      className="cursor-pointer hover:bg-gray-50"
-                    >
-                      <Td>{changedWhen(e.at)}</Td>
-                      <Td>
-                        {e.what}
-                        {e.on && <span className="block text-[10px] text-gray-400">{e.on}</span>}
-                      </Td>
-                      <Td>{e.crop ?? '—'}</Td>
-                      <Td num className={e.direction === 'out' ? 'text-red-700' : 'text-green-800'}>
-                        {e.bushels == null ? '—' : `${e.direction === 'out' ? '−' : '+'}${Math.round(e.bushels).toLocaleString('en-CA')}`}
-                      </Td>
-                      <Td>
-                        <span className="block max-w-56 truncate text-gray-600">{e.fields.join(', ')}</span>
-                      </Td>
-                    </tr>
-                  ))}
                 </Table>
               </div>
-            </Fold>
-          )}
-        </Section>
+            )}
 
-        {bin.notes_md && (
-          <Section title="Notes">
-            <p className="whitespace-pre-wrap text-gray-700">{bin.notes_md}</p>
-          </Section>
+            {/* What is in it now came over the scale in these loads. By field,
+                weighed: what a seed company asks for its own canola in this bin.
+                With one field that list only says the line above it again. */}
+            {finished.length > 0 && (
+              <div className="mt-1.5 text-xs text-gray-700">
+                <p className="text-right text-gray-500">
+                  In it now, over {finished.length} load{finished.length === 1 ? '' : 's'}:{' '}
+                  {bu(finished.reduce((sum, l) => sum + loadInBin(l, bin.id).bushels, 0))} ·{' '}
+                  {kg(finished.reduce((sum, l) => sum + loadInBin(l, bin.id).kg, 0))} ·{' '}
+                  {tonnes(finished.reduce((sum, l) => sum + loadInBin(l, bin.id).kg, 0))}
+                </p>
+                {[...new Set(finished.map((l) => l.field_id))].length > 1 && (
+                  <ul className="mt-0.5 space-y-0.5">
+                    {[...new Set(finished.map((l) => l.field_id))].map((fid) => {
+                      const mine = finished.filter((l) => l.field_id === fid)
+                      const net = mine.reduce((sum, l) => sum + loadInBin(l, bin.id).kg, 0)
+                      const bus = mine.reduce((sum, l) => sum + loadInBin(l, bin.id).bushels, 0)
+                      return (
+                        <li key={fid ?? 'none'} className="flex flex-wrap justify-between gap-x-3">
+                          <span>
+                            {fid ? fieldName(fid) : 'No field'} · {mine.length} load{mine.length === 1 ? '' : 's'}
+                          </span>
+                          <span className="tabular-nums">
+                            {bu(bus)} · <b>{kg(net)}</b> · {tonnes(net)}
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {doneFields.map(([fid, year]) => (
+              <div key={fid} className="mt-2">
+                <FieldYieldNote fieldId={fid} cropYear={year} />
+              </div>
+            ))}
+
+            {edits.length > 0 && (
+              <Fold
+                title="Changes to records"
+                summary={`${edits.length} edit${edits.length === 1 ? '' : 's'}`}
+                storageKey="bin-detail-edits"
+                className="mt-2 text-sm"
+              >
+                {/* What was changed, on what grain — the crop and the bushels,
+                    so a row says something on its own (Sam, 27 Oct 2026). Who
+                    did it and the old and new figures are a click away rather
+                    than three repeated lines wide. */}
+                <div className={cn(edits.length > 8 && 'max-h-72 overflow-y-auto')}>
+                  <Table head={['Changed', 'Record', 'Crop', 'Bushels', 'What']}>
+                    {edits.map((e, i) => (
+                      <tr
+                        key={`${e.at}:${i}`}
+                        onClick={rowClick(() => setEditAt(`${e.at}:${i}`))}
+                        title="Open the change"
+                        className="cursor-pointer hover:bg-gray-50"
+                      >
+                        <Td>{changedWhen(e.at)}</Td>
+                        <Td>
+                          {e.what}
+                          {e.on && <span className="block text-[10px] text-gray-400">{e.on}</span>}
+                        </Td>
+                        <Td>{e.crop ?? '—'}</Td>
+                        <Td num className={e.direction === 'out' ? 'text-red-700' : 'text-green-800'}>
+                          {e.bushels == null ? '—' : `${e.direction === 'out' ? '−' : '+'}${Math.round(e.bushels).toLocaleString('en-CA')}`}
+                        </Td>
+                        <Td>
+                          <span className="block max-w-56 truncate text-gray-600">{e.fields.join(', ')}</span>
+                        </Td>
+                      </tr>
+                    ))}
+                  </Table>
+                </div>
+              </Fold>
+            )}
+          </>
+        )}
+
+        {active === 'moisture' && (
+          <>
+            {/* Moisture of what went in */}
+            {(history?.tests ?? []).length > 0 && (
+              <Table head={['When', 'Field', 'Moisture', 'Grade', 'Sample / note']}>
+                {history!.tests.map((t) => (
+                  <tr key={t.id} onClick={rowClick(() => setTestId(t.id))} className="cursor-pointer hover:bg-gray-50">
+                    <Td>{t.tested_at.slice(0, 10)}</Td>
+                    <Td>{fieldName(t.field_id)}</Td>
+                    <Td num>{t.moisture_pct != null ? `${Number(t.moisture_pct).toFixed(1)}%` : '—'}</Td>
+                    <Td>{t.grade ?? '—'}</Td>
+                    <Td>
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        <MoistureTestNote test={t} />
+                      </span>
+                    </Td>
+                  </tr>
+                ))}
+              </Table>
+            )}
+          </>
+        )}
+
+        {active === 'reports' && (
+          <>
+            {/* The seed company's reports for what is in it (Sam, 20 Oct 2026). */}
+            {reports.length > 0 && (
+              <ul className="flex flex-wrap gap-1.5">
+                {reports.map((r) => (
+                  <li key={r.to}>
+                    <Link
+                      to={r.to}
+                      onClick={onClose}
+                      className="flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                    >
+                      <FileText className="h-3.5 w-3.5 text-gray-400" /> {r.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+
+        {active === 'notes' && (
+          <>
+            {bin.notes_md && (
+              <p className="whitespace-pre-wrap text-gray-700">{bin.notes_md}</p>
+            )}
+          </>
         )}
       </div>
 

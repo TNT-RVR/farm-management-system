@@ -36,6 +36,42 @@ import { cropForVariety, type VarietySettingRow } from './crop-variety-settings'
 import type { YieldScore } from './yield-goal'
 
 export type AcresSource = 'plan' | 'map' | 'zone' | null
+
+/**
+ * Whether a split field's zones add up to the field.
+ *
+ * A zoned field is budgeted from its zones alone, so acres left out of every
+ * zone are not budgeted at all: 60 acres of zones on a 160 acre field quietly
+ * drops 100 acres from the cost, the revenue and the acre count, with nothing
+ * on screen to say so.
+ */
+/**
+ * " · set Nov 16, 2026", when anyone recorded it.
+ *
+ * A price typed in March and one typed this morning read the same on screen
+ * otherwise. Rows written before the column existed have no date, and say
+ * nothing rather than claiming a day they cannot know.
+ */
+export const setOnNote = (iso: string | null | undefined) => {
+  if (!iso) return ''
+  // Read at UTC noon, as the rest of the app reads a day, so no local zone
+  // can shift it to the day before.
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00Z`)
+  if (Number.isNaN(d.getTime())) return ''
+  return ` · set ${d.toLocaleDateString('en-CA', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`
+}
+
+export function zoneCoverage(fieldAcres: number | null, zoneAcres: (number | null)[]): string | null {
+  if (fieldAcres == null || fieldAcres <= 0) return null
+  if (zoneAcres.some((a) => a == null)) return null // already said per zone
+  const covered = zoneAcres.reduce((sum: number, a) => sum + (a ?? 0), 0)
+  const out = Math.round(fieldAcres - covered)
+  const ac = (n: number) => Math.round(n).toLocaleString()
+  if (out >= 1) return `zones cover ${ac(covered)} of the field’s ${ac(fieldAcres)} ac — ${ac(out)} ac is in no zone, so nothing is budgeted for it`
+  if (out <= -1) return `zones cover ${ac(covered)} ac, ${ac(-out)} more than the field’s ${ac(fieldAcres)} ac`
+  return null
+}
+
 export type YieldSource = 'override' | 'clean' | 'pre-clean' | 'field avg' | 'farm avg' | 'goal' | null
 export type PriceSource = 'contract' | 'estimate' | null
 
@@ -182,7 +218,7 @@ export function buildPlanRows(
         pricePerUnit = r.value
         priceSource = 'estimate'
         priceBadge = basisBadge(r)
-        priceNote = r.basis === 'carried' ? `using the ${r.fromYear} price — type a ${cropYear} price on the crop to forecast it` : r.label
+        priceNote = (r.basis === 'carried' ? `using the ${r.fromYear} price — type a ${cropYear} price on the crop to forecast it` : r.label) + setOnNote(r.setOn)
       }
     }
     // Land rented out has one cost line: its land share of the fixed expenses
@@ -190,7 +226,7 @@ export function buildPlanRows(
     const c = crop ? resolveCosts(crop.id, cropYear, inputs, currentYear) : null
     const costPerAcre = c?.total ?? 0
     const costBadge = c ? basisBadge(c) : ''
-    const costNote = c ? (c.basis === 'carried' ? `using the ${c.fromYear} input budget` : c.label) : ''
+    const costNote = c ? (c.basis === 'carried' ? `using the ${c.fromYear} input budget` : c.label) + setOnNote(c.setOn) : ''
     const revenuePerAcre = (yieldPerAcre ?? 0) * (pricePerUnit ?? 0)
     return {
       yieldPerAcre,
@@ -282,11 +318,15 @@ export function buildPlanRows(
 
       // Split field → one row per crop zone (crop + acres come from the map).
       if (zones && zones.length > 0) {
+        // The field's own acreage, to check the zones add up to it.
+        const fieldAcres = boundaryByField.get(field.id)?.acres ?? planByField.get(field.id)?.planned_acres ?? null
+        const coverage = zoneCoverage(fieldAcres, zones.map((z) => z.acres))
         return zones.map((z) => {
           const crop = cropById.get(z.crop_id) ?? null
           const e = renterSide(crop, field.id, z.acres, econ(crop, field.id, null, z.id))
           const warnings = missing(crop, e, 'no yield — set the crop’s normal yield')
           if (z.acres == null) warnings.push('zone has no acres')
+          if (coverage) warnings.push(coverage)
           return {
             field,
             plan: null,
@@ -408,6 +448,16 @@ export function buildBudget(rows: PlanRowView[]): BudgetLine[] {
     })
   }
   return lines.sort((a, b) => a.crop.name.localeCompare(b.crop.name))
+}
+
+/**
+ * How many FIELDS the plan covers, not how many rows it has. A split field
+ * carries a row per crop zone, so Miller Half with wheat on one half and
+ * barley on the other once made the headline read 16 fields on a 15-field
+ * farm. The acres were never wrong — they come off each zone.
+ */
+export function plannedFieldCount(rows: Pick<PlanRowView, 'field'>[]): number {
+  return new Set(rows.map((r) => r.field.id)).size
 }
 
 export const money = (n: number): string =>

@@ -4,6 +4,7 @@ import type { YieldCut } from './yield-estimate'
 import {
   actualYield,
   fertYieldGoal,
+  goalOffScale,
   historyEstimate,
   resolveGoal,
   scorePlanRows,
@@ -185,6 +186,25 @@ describe('versus', () => {
   })
 })
 
+describe('goalOffScale', () => {
+  it('leaves alone any goal in the crop’s own range', () => {
+    expect(goalOffScale(65, 40)).toBe(false)
+    expect(goalOffScale(40, 40)).toBe(false)
+    // The edges themselves still count as a goal somebody meant.
+    expect(goalOffScale(4, 40)).toBe(false)
+    expect(goalOffScale(400, 40)).toBe(false)
+  })
+  it('catches a hay goal typed in tons on a crop measured in pounds', () => {
+    expect(goalOffScale(3, 6500)).toBe(true)
+    expect(goalOffScale(6500, 3)).toBe(true)
+  })
+  it('judges nothing without both figures', () => {
+    expect(goalOffScale(null, 6500)).toBe(false)
+    expect(goalOffScale(3, null)).toBe(false)
+    expect(goalOffScale(undefined, undefined)).toBe(false)
+  })
+})
+
 describe('scoreYield', () => {
   const history = [rec({ field_id: 'f2', crop_year: 2028, yield_per_acre: 50 }), rec({ field_id: 'f3', crop_year: 2029, yield_per_acre: 60 })]
 
@@ -199,6 +219,33 @@ describe('scoreYield', () => {
     expect(s.estimate.value).toBe(55)
     expect(s.actual).toEqual({ value: 62, clean: true })
     expect(scoreText(s, 'bu')).toBe('62 bu/ac — 7 above estimate (+13%), 3 below goal (−5%)')
+  })
+
+  it('refuses to grade against a goal that is not the crop’s scale', () => {
+    // Found 16 Nov 2026 on the demo: alfalfa cut 5,950 lbs/ac against a goal
+    // of 3 — a 3 t/ac hay target typed where the crop is measured in pounds.
+    // It read "5,947 above goal (+198,233%)" on a field just UNDER target.
+    const hay = {
+      id: 'alfalfa',
+      yield_unit: 'lbs',
+      default_yield_per_acre: 6500,
+      yield_low_per_acre: null,
+      yield_high_per_acre: null,
+      goal_yield_per_acre: 3,
+    }
+    const s = scoreYield({
+      fieldId: 'f1',
+      year: 2030,
+      crop: hay,
+      history: [rec({ crop_id: 'alfalfa', crop_year: 2030, yield_per_acre: 5950, yield_unit: 'lbs' })],
+    })
+    expect(s.actual?.value).toBe(5950)
+    expect(s.goal.value).toBe(3)
+    expect(s.goalOffScale).toBe(true)
+    expect(s.vsGoal).toBeNull()
+    const text = scoreText(s, 'lbs')
+    expect(text).toContain('goal of 3 is not this crop’s scale — not graded')
+    expect(text).not.toContain('above goal')
   })
 
   it('grades against the figure typed before the scale replaced it', () => {

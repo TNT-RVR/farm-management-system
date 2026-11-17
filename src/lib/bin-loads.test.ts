@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fieldHarvestSoFar, bushelsFromKg, testWeightFor, isOpenLoad, lastTare, lastMoistureFor, loadInBin, type BinLoad } from './bin-loads'
+import { fieldHarvestSoFar, bushelsFromKg, testWeightFor, isOpenLoad, lastTare, lastMoistureFor, loadInBin, weighedOutAt, type BinLoad } from './bin-loads'
 
 describe('bushelsFromKg', () => {
   it('turns the scale photos into the bushels that went in the bin', () => {
@@ -146,5 +146,23 @@ describe('weigh times on the farm clock', () => {
     expect(fromTimeInput('2026-10-22T13:58')).toBe('2026-10-22T19:58:00.000Z')
     expect(fromTimeInput('2026-01-05T09:00')).toBe('2026-01-05T16:00:00.000Z')
     expect(fromTimeInput('')).toBeNull()
+  })
+})
+
+describe('weighedOutAt', () => {
+  it('a weigh-out of its own counts; one typed in with the load does not', () => {
+    // Two trips across the scale: a time an hour apart is a real weigh-out.
+    expect(weighedOutAt({ full_at: '2026-10-27T16:23:06Z', empty_at: '2026-10-27T18:32:54Z' })).toBe('2026-10-27T18:32:54Z')
+    // Typed in whole: one now() stamped on both weights, so there is no
+    // second weighing to report. Sixteen of the farm's loads read this way.
+    expect(weighedOutAt({ full_at: '2026-10-27T18:33:16Z', empty_at: '2026-10-27T18:33:16Z' })).toBeNull()
+    // Same moment, written to different precision by different columns.
+    expect(weighedOutAt({ full_at: '2026-10-27T18:33:16.471+00:00', empty_at: '2026-10-27T18:33:16.471586+00:00' })).toBeNull()
+    // The three loads whose entry fell the day after: an empty time with no
+    // full one beside it was the moment somebody typed the load in.
+    expect(weighedOutAt({ full_at: null, empty_at: '2026-09-23T23:13:19Z' })).toBeNull()
+    // Weighed in and still on the road.
+    expect(weighedOutAt({ full_at: '2026-10-27T16:23:06Z', empty_at: null })).toBeNull()
+    expect(weighedOutAt({})).toBeNull()
   })
 })

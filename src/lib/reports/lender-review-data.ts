@@ -44,6 +44,7 @@ import {
   type Shares,
   type Sheet,
 } from './lender-review'
+import { dbErrorMessage } from '@/lib/db-error'
 
 /**
  * Reading the lender review: every figure comes through a read the app
@@ -69,7 +70,7 @@ async function attempt<T>(f: () => Promise<T>): Promise<Got<T>> {
   try {
     return { ok: true, data: await f() }
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
+    const message = dbErrorMessage(e)
     return { ok: false, empty: /^No /.test(message), restricted: RESTRICTED.test(message), message }
   }
 }

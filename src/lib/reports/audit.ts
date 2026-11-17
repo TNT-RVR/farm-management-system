@@ -37,9 +37,11 @@ export const AUDIT_TABLES: { value: string; label: string }[] = [
   ['bins', 'Bins'],
   ['bin_allocations', 'Bin allocations'],
   ['grain_movements', 'Grain movements'],
+  ['bin_monitor_readings', 'Bin readings'],
   ['moisture_tests', 'Moisture tests'],
   ['herd_counts', 'Herd counts'],
   ['cattle_sales', 'Cattle sales'],
+  ['eshepherd_activations', 'eShepherd activations'],
   ['feed_record_lines', 'Feed records'],
   ['land_leases', 'Leases'],
   ['grants', 'Grants'],
@@ -47,6 +49,7 @@ export const AUDIT_TABLES: { value: string; label: string }[] = [
   ['users', 'Users'],
   ['water_licences', 'Water licences'],
   ['financial_entries', 'Financial entries'],
+  ['cash_bids', 'Cash bids'],
 ].map(([value, label]) => ({ value, label }))
 
 /** Columns that change on every write and say nothing about the edit. */
@@ -79,10 +82,15 @@ export function changeSummary(r: Pick<AuditRow, 'action' | 'old_values' | 'new_v
   return s.length > max ? `${s.slice(0, max - 1)}…` : s
 }
 
-/** What the record is, in words: its name or title where it has one. */
+/**
+ * What the record is, in words: its name or title where it has one.
+ *
+ * `read_on` is last and is not a name: a reading has none, and the day it was
+ * taken says far more than the first eight characters of its uuid.
+ */
 export function recordLabel(r: Pick<AuditRow, 'record_id' | 'old_values' | 'new_values'>): string {
   const v = { ...(r.old_values ?? {}), ...(r.new_values ?? {}) }
-  for (const k of ['name', 'title', 'full_name', 'description', 'landlord', 'class_name', 'product', 'licence_number', 'invoice_no']) {
+  for (const k of ['name', 'title', 'full_name', 'description', 'landlord', 'class_name', 'product', 'licence_number', 'invoice_no', 'read_on']) {
     if (typeof v[k] === 'string' && (v[k] as string).trim()) return short(v[k], 48)
   }
   return r.record_id ? r.record_id.slice(0, 8) : '—'

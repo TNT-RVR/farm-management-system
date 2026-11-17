@@ -23,11 +23,30 @@ export type PaymentLike = { lease_id: string; due_on: string; amount: number | n
 
 export type ScheduleEntry = { date: string; share: number }
 
+const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+/**
+ * Is this 'MM-DD' a day that exists? 02-29 does, in a leap year; 02-31 never
+ * does. An impossible date used to be stored anyway, and then every rent
+ * reminder built on it came out as NaN days overdue.
+ */
+export function isRealMonthDay(mmdd: string): boolean {
+  if (!/^\d{2}-\d{2}$/.test(mmdd)) return false
+  const month = Number(mmdd.slice(0, 2))
+  const day = Number(mmdd.slice(3))
+  return month >= 1 && month <= 12 && day >= 1 && day <= DAYS_IN_MONTH[month - 1]
+}
+
+const isLeapYear = (year: number) => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
+
+/** The day a yearly rent date falls on: 29 February becomes the 28th in a common year. */
+export const dueOn = (year: number, mmdd: string) => (mmdd === '02-29' && !isLeapYear(year) ? `${year}-02-28` : `${year}-${mmdd}`)
+
 export function scheduleOf(lease: Pick<LeaseLike, 'payment_schedule'>): ScheduleEntry[] {
   const raw = Array.isArray(lease.payment_schedule) ? lease.payment_schedule : []
   return raw
     .map((e) => ({ date: String((e as ScheduleEntry)?.date ?? ''), share: Number((e as ScheduleEntry)?.share ?? 0) }))
-    .filter((e) => /^\d{2}-\d{2}$/.test(e.date) && e.share > 0)
+    .filter((e) => isRealMonthDay(e.date) && e.share > 0)
 }
 
 /** The year's cash rent: the flat figure if there is one, else $/ac × acres. */
@@ -43,7 +62,7 @@ const inTerm = (lease: LeaseLike, day: string) => (!lease.start_date || day >= l
 export function paymentsForYear(lease: LeaseLike, year: number): { due_on: string; amount: number | null }[] {
   const rent = annualRent(lease)
   return scheduleOf(lease)
-    .map((e) => ({ due_on: `${year}-${e.date}`, amount: rent == null ? null : Math.round(rent * e.share * 100) / 100 }))
+    .map((e) => ({ due_on: dueOn(year, e.date), amount: rent == null ? null : Math.round(rent * e.share * 100) / 100 }))
     .filter((p) => inTerm(lease, p.due_on))
 }
 

@@ -50,6 +50,33 @@ export function resolveGoal(
 }
 
 /**
+ * How far out a goal has to be before it cannot be a target at all. Nobody
+ * aims at a tenth of their normal crop, or at ten times it.
+ */
+const OFF_SCALE = 10
+
+/**
+ * A goal nowhere near the crop's own scale, which in practice means a figure
+ * typed in the wrong unit. A 3 t/ac hay goal entered on a crop measured in
+ * lbs/ac is stored as a bare 3, and grading an honest 5,950 lbs/ac against it
+ * read "5,947 above goal (+198,233%)" on a field that was in fact a shade
+ * UNDER its target — wrong in direction, not just in size.
+ *
+ * Nothing is stored beside the goal to say what unit it was typed in, so there
+ * is no conversion to make. Refusing to grade, and saying so, is the only
+ * honest answer. It leaves the figure on screen where somebody can fix it.
+ *
+ * Deliberately not applied to fertYieldGoal: a rate already sized to a bad
+ * goal is a separate question from how a harvest is graded, and quietly
+ * changing what fertiliser the tools ask for is not a thing to slip into a
+ * display fix.
+ */
+export function goalOffScale(goal: number | null | undefined, normal: number | null | undefined): boolean {
+  if (goal == null || normal == null) return false
+  return goal > normal * OFF_SCALE || goal < normal / OFF_SCALE
+}
+
+/**
  * The yield a fertilizer rate is sized to: the goal when one is set, else
  * what the tools used before — the plan's typed figure, the crop's normal
  * yield, the prescription's yield goal.
@@ -229,7 +256,10 @@ export type YieldScore = {
   estimate: Estimate
   actual: Actual | null
   vsEstimate: Versus | null
+  /** Null when there is no actual, and when the goal is off-scale (goalOffScale). */
   vsGoal: Versus | null
+  /** The goal is not this crop's scale, so the harvest was not graded against it. */
+  goalOffScale?: boolean
 }
 
 /** Goal, estimate and actual for one crop on one field (or one crop area). */
@@ -263,12 +293,14 @@ export function scoreYield(opts: {
     const v = pos(plan.yield_per_acre_override)
     if (v != null) actual = { value: v, clean: plan.yield_basis === 'clean' }
   }
+  const offScale = goalOffScale(goal.value, pos(crop.default_yield_per_acre))
   return {
     goal,
     estimate,
     actual,
     vsEstimate: actual ? versus(actual.value, estimate.value) : null,
-    vsGoal: actual ? versus(actual.value, goal.value) : null,
+    vsGoal: actual && !offScale ? versus(actual.value, goal.value) : null,
+    goalOffScale: offScale,
   }
 }
 
@@ -278,17 +310,27 @@ function abnormalSuffix(s: YieldScore): string {
   return a == null ? '' : ` · abnormal — left out of averages${a ? `: ${a}` : ''}`
 }
 
+/** " · goal of 3 is not this crop’s scale — not graded"; '' when the goal can be used. */
+function goalSuffix(s: YieldScore): string {
+  if (!s.goalOffScale || s.goal.value == null) return ''
+  return ` · goal of ${fmt(s.goal.value)} is not this crop’s scale — not graded`
+}
+
 /** "62 bu/ac — 7 above estimate (+13%), 3 below goal (−5%)"; empty with no actual. */
 export function scoreText(s: YieldScore, unit: string): string {
   if (!s.actual) return ''
   const parts = [s.vsEstimate && versusText(s.vsEstimate, 'estimate'), s.vsGoal && versusText(s.vsGoal, 'goal')].filter(Boolean)
   const head = `${fmt(s.actual.value)} ${unit}/ac${kgAside(s.actual.value, unit)}${s.actual.clean ? '' : ' (pre-clean)'}`
-  return (parts.length ? `${head} — ${parts.join(', ')}` : head) + abnormalSuffix(s)
+  return (parts.length ? `${head} — ${parts.join(', ')}` : head) + abnormalSuffix(s) + goalSuffix(s)
 }
 
 /** The comparisons alone: "7 above estimate (+13%), 3 below goal (−5%)", and a marked year's reason. */
 export function versusSummary(s: YieldScore): string {
-  return [s.vsEstimate && versusText(s.vsEstimate, 'estimate'), s.vsGoal && versusText(s.vsGoal, 'goal')].filter(Boolean).join(', ') + abnormalSuffix(s)
+  return (
+    [s.vsEstimate && versusText(s.vsEstimate, 'estimate'), s.vsGoal && versusText(s.vsGoal, 'goal')].filter(Boolean).join(', ') +
+    abnormalSuffix(s) +
+    goalSuffix(s)
+  )
 }
 
 export { fmt as formatYield }

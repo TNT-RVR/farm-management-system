@@ -36,6 +36,12 @@ export function overlay() {
   const bar = cover.querySelector<HTMLElement>('[data-bar]')!
   const text = cover.querySelector<HTMLElement>('[data-text]')!
   let size = 0
+  /**
+   * One failure a visit, however many ways it surfaces. A start that fails
+   * also fails the sign-in a moment later, and counting both would say two
+   * people could not get in where there was one.
+   */
+  let failed = false
 
   return {
     size(bytes: number) {
@@ -70,11 +76,29 @@ export function overlay() {
       cover.style.display = 'none'
     },
     fail(message: string) {
+      if (failed) return
+      failed = true
       count('fail', message)
       bar.style.background = '#b91c1c'
       bar.style.width = '100%'
+      const note = cover.querySelector<HTMLElement>('[data-note]')!
+      // The farm is a real Postgres compiled to WebAssembly, so a browser with
+      // WebAssembly switched off cannot run the demo at all. Three visitors met
+      // the raw "WebAssembly is not defined" and were told to reload, which
+      // cannot help (16 Nov 2026). The counter still gets the real error.
+      if (/WebAssembly/i.test(message)) {
+        text.textContent = 'This browser cannot run the demo.'
+        note.innerHTML = `The demo farm is a real database running inside your browser, and that needs
+          <b>WebAssembly</b>, which is off or missing here — so reloading will not help. It is usually a
+          browser setting, an extension that blocks scripts, or Lockdown Mode on an Apple device. Any
+          up-to-date Chrome, Edge, Firefox or Safari will run it.
+          <div style="margin-top:10px">The code itself is on
+          <a href="${PUBLIC_REPO}" target="_blank" rel="noopener noreferrer" style="color:${BRAND};font-weight:600">GitHub</a>
+          if you would rather look at that.</div>`
+        return
+      }
       text.textContent = `The demo could not start: ${message}`
-      cover.querySelector<HTMLElement>('[data-note]')!.textContent =
+      note.textContent =
         'It needs a fairly recent browser with a few hundred MB of memory free. Try reloading, or open it on a computer.'
     },
   }

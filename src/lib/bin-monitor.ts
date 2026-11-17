@@ -216,6 +216,34 @@ export function moistureFor(
   return { value: Math.round(dryToWet(dry) * 10) / 10, from: 'equation', outside }
 }
 
+/**
+ * The % on the form is set to relative humidity, but the numbers typed under
+ * it are grain moisture.
+ *
+ * Bin-Sense usually shows the moisture it has worked out for the commodity,
+ * and the two are read very differently: air in a bin of dry canola sits
+ * around 50 % humidity, so a column of 6–9 % can only be moisture. Saved as
+ * humidity those figures fall outside every table, and the reading goes in
+ * with no moisture at all — which is what happened to the 16 Nov 2026 reading
+ * of Main Yard - #21 before this existed.
+ *
+ * True only when every figure typed is low enough to be moisture and none of
+ * them converted, so a genuine humidity reading is never second-guessed.
+ */
+export function looksLikeMoisture(
+  crop: string | null | undefined,
+  rows: { temp_c: number | null; pct: number | null }[],
+): boolean {
+  // A crop with no table of its own (field peas) converts nothing, so nothing
+  // here would tell humidity from moisture: say nothing rather than guess.
+  if (moistureFor(crop, 60, 10) == null) return false
+  const filled = rows.filter((r) => r.pct != null)
+  if (filled.length < 2) return false
+  // Below 30 % is under every EMC table's floor; dry grain is 6–15 %.
+  if (!filled.every((r) => r.pct! > 0 && r.pct! < 30)) return false
+  return filled.every((r) => moistureFor(crop, r.pct, r.temp_c) == null)
+}
+
 /* ------------------------------------------------------------ the report */
 
 /**
@@ -263,6 +291,37 @@ export function flagsFor(
     }
   }
   return out
+}
+
+/** Enough of a crop for the warnings: the name sets the rules, the dry standard the line. */
+export type FlagCrop = { id: string; name: string; moisture_dry_max: number | string | null }
+/** Enough of a reading: which crop it was taken on, and the levels down the cable. */
+export type FlagReading = { crop_id: string | null; levels: Level[] }
+
+/**
+ * What the newest reading says, ready to count or to list.
+ *
+ * A reading is judged by the crop it was taken on, not by whatever is in the
+ * bin today (Sam, 2 Nov 2026: "the moisture results were for the canola but
+ * that was shipped out and now we have corn in there"), and a reading on grain
+ * that has since left says nothing about what is in there now, so it raises
+ * nothing. Shared because the bin pop-up counts these on its Monitoring tab
+ * while the panel below lists them: two readings of one rule would drift.
+ */
+export function latestFlags(
+  readings: readonly FlagReading[] | null | undefined,
+  binCrop: FlagCrop | null,
+  crops: readonly FlagCrop[] | null | undefined,
+): LevelFlag[] {
+  const latest = readings?.[0]
+  if (!latest) return []
+  if (latest.crop_id && binCrop?.id && latest.crop_id !== binCrop.id) return []
+  const on =
+    !latest.crop_id || latest.crop_id === binCrop?.id
+      ? binCrop
+      : ((crops ?? []).find((c) => c.id === latest.crop_id) ?? binCrop)
+  const dryMax = on?.moisture_dry_max != null ? Number(on.moisture_dry_max) : null
+  return flagsFor(on?.name, latest.levels, readings?.[1]?.levels ?? null, dryMax)
 }
 
 /**

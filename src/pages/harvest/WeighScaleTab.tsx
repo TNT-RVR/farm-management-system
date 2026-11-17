@@ -5,7 +5,7 @@ import { Select } from '@/components/Select'
 import { DateField } from '@/components/DateField'
 import { useCrops, useFields, useUsers } from '@/lib/queries'
 import { useBins } from '@/lib/bins'
-import { isOpenLoad, useBinLoads, useDeliverySites, weighTime, type BinLoad } from '@/lib/bin-loads'
+import { isOpenLoad, useBinLoads, useDeliverySites, weighedOutAt, weighTime, type BinLoad } from '@/lib/bin-loads'
 import { driverName, filterTickets, type TicketFilters, type TicketRow, type TicketSort } from '@/lib/weigh-scale'
 import { WeighInForm } from '@/pages/bins/WeighIn'
 import { LiveScaleCard } from '@/pages/bins/LiveScale'
@@ -72,7 +72,7 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
       .map((l) => ({
         id: l.id,
         when: l.full_at ?? `${l.loaded_on}T12:00:00`,
-        out: l.empty_at ?? null,
+        out: weighedOutAt(l),
         day: l.loaded_on,
         field: fieldName(l.field_id),
         crop: cropName(l.crop_id),
@@ -110,7 +110,8 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
     const l = byId.get(r.id)
     // Never weighed out: the empty is a best guess, and says so.
     if (l?.empty_guessed) return 'not weighed (guess)'
-    if (l?.empty_at) return weighTime(l.empty_at)
+    const out = l && weighedOutAt(l)
+    if (out) return weighTime(out)
     return l && l.entry_kind === 'weighed' && isOpenLoad(l) ? 'waiting' : '—'
   }
   // Export what the list is showing (Sam, 2 Nov 2026): a summary page of the

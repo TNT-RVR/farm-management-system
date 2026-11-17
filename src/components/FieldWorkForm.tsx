@@ -14,6 +14,7 @@ import { useRanches } from '@/lib/ranches'
 import { useFarmSettings } from '@/lib/farm-setup'
 import { useFeedStoragePlaces } from '@/lib/feed-inventory'
 import { usePartnerAccess } from '@/lib/partner-view'
+import { dbErrorMessage } from '@/lib/db-error'
 
 const numOrNull = (s: string) => {
   if (s.trim() === '') return null
@@ -214,7 +215,7 @@ export function FieldWorkForm({
       onSaved?.(r)
       onClose()
     } catch (e) {
-      setFailed(e instanceof Error ? e.message : String(e))
+      setFailed(dbErrorMessage(e))
     }
   }
 

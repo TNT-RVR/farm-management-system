@@ -174,6 +174,19 @@ export type LoadInput = {
   weighed_out_by?: string | null
 }
 
+/**
+ * When a load was weighed out, and null when it never was a weighing of its
+ * own. A load typed in whole has one moment — when somebody entered it — and
+ * the database stamps that on both weights, so an empty time equal to the
+ * full one, or standing with no full one at all, says nothing about a second
+ * trip across the scale. The empty weight itself is untouched: only the time
+ * is withheld.
+ */
+export function weighedOutAt(l: { full_at?: string | null; empty_at?: string | null }): string | null {
+  if (!l.empty_at || !l.full_at) return null
+  return Date.parse(l.empty_at) === Date.parse(l.full_at) ? null : l.empty_at
+}
+
 /** "Oct 22, 1:58 p.m." on the farm's clock: when a load was weighed in or out. */
 export function weighTime(iso: string | null | undefined, withDay = true): string | null {
   if (!iso) return null

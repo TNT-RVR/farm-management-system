@@ -164,3 +164,22 @@ describe('expectedYield with years marked not normal', () => {
     expect(expectedYield({ ...base, history: h })).toMatchObject({ value: (3200 + 3400 + 1100) / 3, basis: 'farm', seasons: 3, leftOut: [] })
   })
 })
+
+describe('how current a figure is', () => {
+  it('carries the date a price was written, and admits when there is none', () => {
+    const priced = [{ crop_id: 'wheat', crop_year: 2026, price_per_unit: 10, updated_at: '2026-03-04T10:00:00Z' }]
+    expect(resolvePrice('wheat', 2026, priced, { currentYear: 2026 }).setOn).toBe('2026-03-04T10:00:00Z')
+    // Carried forward from an earlier year: the date belongs to that year's row.
+    expect(resolvePrice('wheat', 2027, priced, { currentYear: 2026 }).setOn).toBe('2026-03-04T10:00:00Z')
+    // A row written before the column existed.
+    expect(resolvePrice('wheat', 2026, [{ crop_id: 'wheat', crop_year: 2026, price_per_unit: 10 }], { currentYear: 2026 }).setOn).toBeNull()
+  })
+
+  it('reads an input budget as current as its freshest line', () => {
+    const budget = [
+      { crop_id: 'wheat', crop_year: 2026, cost_per_acre: 100, updated_at: '2026-01-02T00:00:00Z' },
+      { crop_id: 'wheat', crop_year: 2026, cost_per_acre: 200, updated_at: '2026-05-09T00:00:00Z' },
+    ]
+    expect(resolveCosts('wheat', 2026, budget, 2026).setOn).toBe('2026-05-09T00:00:00Z')
+  })
+})

@@ -85,7 +85,15 @@ export function CropComparePage() {
     const b = boundariesForYear(boundaries ?? [], year).find((x) => x.field_id === fieldId)
     return b?.acres == null ? null : Number(b.acres)
   }, [boundaries, year, fieldId])
-  const acres = asNum(acresTyped[fieldId ?? ''] ?? '') ?? boundaryAcres ?? 0
+  /**
+   * A negative acreage is not a field. Typed in, it used to reach the heading
+   * ("Creek Flat · -100 ac"), the field totals and the verdict (16 Nov 2026),
+   * so it is refused here rather than guarded in four places downstream. The
+   * field falls back to its boundary acres and the box says why.
+   */
+  const acresTypedNum = asNum(acresTyped[fieldId ?? ''] ?? '')
+  const acresProblem = acresTypedNum != null && acresTypedNum < 0 ? 'Acres cannot be less than zero.' : null
+  const acres = (acresProblem ? null : acresTypedNum) ?? boundaryAcres ?? 0
 
   // History first; a plan stands in only for a year with nothing harvested on record.
   const byYear = useMemo(() => {
@@ -217,11 +225,13 @@ export function CropComparePage() {
           <input
             type="number"
             inputMode="decimal"
+            min="0"
             value={acresTyped[fieldId ?? ''] ?? (boundaryAcres != null ? String(Math.round(boundaryAcres * 10) / 10) : '')}
             onChange={(e) => setAcresTyped((s) => ({ ...s, [fieldId ?? '']: e.target.value }))}
             className="mt-0.5 w-full rounded-md border border-gray-200 px-2 py-1.5 text-right text-sm tabular-nums"
             aria-label="Acres"
           />
+          {acresProblem && <span className="mt-0.5 block font-normal text-red-700">{acresProblem}</span>}
         </label>
         <label className="text-xs text-gray-600">
           Crop A

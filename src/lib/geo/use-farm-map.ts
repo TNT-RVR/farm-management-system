@@ -64,6 +64,36 @@ const isRef = (c: Container): c is RefObject<HTMLElement | null> => c != null &&
  * makes it position: relative, so an `absolute inset-0` container measures 0
  * high and the map never draws.
  */
+/**
+ * Can this browser draw a map at all? Asked once and remembered: making a
+ * throwaway canvas per map is wasteful, and the answer cannot change without a
+ * reload.
+ */
+let webglAnswer: boolean | null = null
+function webglWorks(): boolean {
+  if (webglAnswer != null) return webglAnswer
+  try {
+    const canvas = document.createElement('canvas')
+    webglAnswer = Boolean(canvas.getContext('webgl2') ?? canvas.getContext('webgl'))
+  } catch {
+    webglAnswer = false
+  }
+  return webglAnswer
+}
+
+/** The message that stands in for a map this browser cannot draw. */
+function noMapHere(el: HTMLElement): void {
+  el.textContent = ''
+  const note = document.createElement('div')
+  note.className = 'flex h-full items-center justify-center p-4'
+  const inner = document.createElement('p')
+  inner.className = 'max-w-sm text-center text-sm text-gray-600'
+  inner.textContent =
+    'This browser cannot draw maps — its graphics acceleration is switched off. In Chrome it is under Settings → System. Everything else on this page still works.'
+  note.appendChild(inner)
+  el.appendChild(note)
+}
+
 export function useFarmMap(container: Container, options: FarmMapOptions = {}, deps: DependencyList = []) {
   const mapRef = useRef<maplibregl.Map | null>(null)
   const [map, setMap] = useState<maplibregl.Map | null>(null)
@@ -83,6 +113,16 @@ export function useFarmMap(container: Container, options: FarmMapOptions = {}, d
     const o = opts.current
     const kept = keepView.current
     keepView.current = null
+    // A browser with no hardware drawing makes this constructor throw, and the
+    // throw reached the error boundary: the whole screen became "Something went
+    // wrong on this screen" over raw WebGL JSON, and Try again threw the same
+    // (found 16 Nov 2026 in a cloud browser with the GPU switched off). There
+    // is no fallback that is still a map, so the message goes where the map
+    // would have been and the rest of the page carries on working.
+    if (!webglWorks()) {
+      noMapHere(el)
+      return
+    }
     const m = new maplibregl.Map({
       container: el,
       style: o.style ?? SATELLITE_STYLE,

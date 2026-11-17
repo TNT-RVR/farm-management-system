@@ -6,6 +6,7 @@ import { useFieldHailEvents, useHailMutations } from '@/lib/queries'
 import { shortDay } from '@/lib/field-state'
 import { CARD_HEAD } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
+import { dbErrorMessage } from '@/lib/db-error'
 
 /**
  * The year's hail on one field: what is recorded, and a form to add a day.
@@ -49,6 +50,20 @@ export function HailEventDialog({
     return s.trim() && Number.isFinite(n) ? n : null
   }
 
+  /**
+   * Caught here so the message names the box. lib/db-error.ts means a refusal
+   * from the database reads like English now, but being told before the save
+   * beats being told after it.
+   */
+  const lossNum = num(loss)
+  const acresNum = num(acres)
+  const problem =
+    lossNum != null && (lossNum < 0 || lossNum > 100)
+      ? 'A loss is somewhere between 0 and 100%.'
+      : acresNum != null && acresNum < 0
+        ? 'Acres cannot be less than zero.'
+        : null
+
   const save = async () => {
     setFailed(null)
     try {
@@ -63,7 +78,7 @@ export function HailEventDialog({
       setAcres('')
       setNotes('')
     } catch (e) {
-      setFailed(e instanceof Error ? e.message : String(e))
+      setFailed(dbErrorMessage(e))
     }
   }
 
@@ -114,11 +129,28 @@ export function HailEventDialog({
               </label>
               <label className="block text-sm">
                 <span className="mb-0.5 block text-xs text-gray-500">Loss %</span>
-                <input type="number" inputMode="decimal" value={loss} onChange={(e) => setLoss(e.target.value)} placeholder="not yet" className={input} />
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  max="100"
+                  value={loss}
+                  onChange={(e) => setLoss(e.target.value)}
+                  placeholder="not yet"
+                  className={input}
+                />
               </label>
               <label className="block text-sm">
                 <span className="mb-0.5 block text-xs text-gray-500">Acres</span>
-                <input type="number" inputMode="decimal" value={acres} onChange={(e) => setAcres(e.target.value)} placeholder="not yet" className={input} />
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  value={acres}
+                  onChange={(e) => setAcres(e.target.value)}
+                  placeholder="not yet"
+                  className={input}
+                />
               </label>
               <label className="col-span-2 block text-sm">
                 <span className="mb-0.5 block text-xs text-gray-500">Note</span>
@@ -130,11 +162,11 @@ export function HailEventDialog({
               when the report is uploaded on Hail reports. Type a figure here only when the
               adjuster has given one and the report has not come.
             </HelpNote>
-            {failed && <p className="mt-2 text-xs text-red-600">{failed}</p>}
+            {(problem ?? failed) && <p className="mt-2 text-xs text-red-600">{problem ?? failed}</p>}
             <button
               type="button"
               onClick={() => void save()}
-              disabled={!when || add.isPending}
+              disabled={!when || add.isPending || Boolean(problem)}
               className="mt-2 w-full rounded-md bg-brand-700 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-40 sm:w-auto"
             >
               {add.isPending ? 'Saving…' : 'Record it'}

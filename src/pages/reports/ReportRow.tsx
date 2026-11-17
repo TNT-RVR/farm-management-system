@@ -17,6 +17,7 @@ import { LOOKUP_LISTS } from './lookups'
 import { cn } from '@/lib/utils'
 import { useReportFavourites, useToggleFavourite } from '@/lib/reports/favourites'
 import { YearSelect } from '@/components/YearSelect'
+import { dbErrorMessage } from '@/lib/db-error'
 
 /**
  * One report as one row: a white card with a green edge, the name and one
@@ -27,7 +28,7 @@ import { YearSelect } from '@/components/YearSelect'
  * per report on this device.
  */
 
-const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
+const messageOf = (e: unknown) => dbErrorMessage(e)
 
 /**
  * Make the file: the PDF through the branded layout, the CSV as one flat

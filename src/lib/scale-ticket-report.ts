@@ -8,7 +8,7 @@
  * ticket's PDF and the list's PDF can never disagree.
  */
 import { supabase } from '@/lib/supabase'
-import { KG_TO_LB, bushelsFromKg, isOpenLoad, weighTime, type BinLoad } from '@/lib/bin-loads'
+import { KG_TO_LB, bushelsFromKg, isOpenLoad, weighedOutAt, weighTime, type BinLoad } from '@/lib/bin-loads'
 import { driverName } from '@/lib/weigh-scale'
 import { cleanOutFor, type CleanOut } from '@/lib/clean-out'
 import { loadValue } from '@/lib/load-value'
@@ -104,7 +104,7 @@ export function ticketFacts(l: BinLoad, lk: TicketLookups): TicketFacts {
     delivered: !!site,
     driver: driverName(l, (id) => person(id))?.trim() || '—',
     inWhen: (l.full_at ? weighTime(l.full_at) : l.loaded_on) ?? '—',
-    outWhen: (l.empty_guessed ? 'Not weighed out (empty guessed)' : l.empty_at ? weighTime(l.empty_at) : isOpenLoad(l) ? 'Waiting' : '—') ?? '—',
+    outWhen: (l.empty_guessed ? 'Not weighed out (empty guessed)' : weighedOutAt(l) ? weighTime(l.empty_at) : isOpenLoad(l) ? 'Waiting' : '—') ?? '—',
     inBy: person(l.weighed_in_by),
     outBy: person(l.weighed_out_by),
     net,

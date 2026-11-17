@@ -87,6 +87,28 @@ const today = () => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
+/**
+ * Whether saving will stamp the weigh times. The database takes now() as the
+ * weigh time only when the weight is landing live — the load's own day is
+ * today or yesterday on the farm's clock, yesterday because harvest crosses
+ * midnight. Anything older was typed in and keeps no time of its own.
+ */
+const stampsNow = (on: string) => {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return on >= `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` && on <= today()
+}
+
+/** What the weigh times will read once saved: one already set, else "now" or nothing. */
+function weighTimeLine(f: Pick<Form, 'kind' | 'loaded_on' | 'fullAt' | 'emptyAt'>, hasTare: boolean): string {
+  const live = stampsNow(f.loaded_on)
+  const set = (v: string, fallback: string) => (v ? (weighTime(fromTimeInput(v)) ?? fallback) : fallback)
+  const inAt = set(f.fullAt, live ? 'now' : 'no time')
+  if (f.kind !== 'weighed') return `Weighed ${inAt}`
+  return `Weighed in ${inAt} · weighed out ${set(f.emptyAt, !hasTare ? 'later' : live ? 'now' : 'no time')}`
+}
+
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 /** "9 Oct": a test's timestamp on the local clock, or a load's plain date. */
 const dayMonth = (on: string) => {
@@ -1688,11 +1710,7 @@ export function WeighInForm({
                 <span className="ml-1 text-brand-700 underline decoration-dotted">change</span>
               </button>
               {/* When, from the scale: a time already saved, else "now" on save. */}
-              <p className="text-[11px] text-gray-500">
-                {form.kind === 'weighed'
-                  ? `Weighed in ${load?.full_at ? weighTime(fromTimeInput(form.fullAt)) : 'now'} · weighed out ${load?.empty_at ? weighTime(fromTimeInput(form.emptyAt)) : tare != null ? 'now' : 'later'}`
-                  : `Weighed ${load?.full_at ? weighTime(fromTimeInput(form.fullAt)) : 'now'}`}
-              </p>
+              <p className="text-[11px] text-gray-500">{weighTimeLine(form, tare != null)}</p>
               {/* Worth, not sold: the load at the crop's own price, which is
                   set on the crop's page and linked to from here. */}
               {worth && crop && (

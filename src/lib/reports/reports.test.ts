@@ -155,6 +155,10 @@ describe('audit log', () => {
   it('names the record and groups by day', () => {
     expect(recordLabel({ record_id: 'abcdef123456', old_values: null, new_values: { title: 'Spray 9' } })).toBe('Spray 9')
     expect(recordLabel({ record_id: 'abcdef123456', old_values: null, new_values: {} })).toBe('abcdef12')
+    // A reading has no name; the day it was taken beats eight characters of uuid.
+    expect(recordLabel({ record_id: 'abcdef123456', old_values: null, new_values: { read_on: '2026-11-16', bin_id: 'x' } })).toBe('2026-11-16')
+    // A record with both keeps its name.
+    expect(recordLabel({ record_id: 'abcdef123456', old_values: null, new_values: { name: 'Bin 21', read_on: '2026-11-16' } })).toBe('Bin 21')
     const g = auditGroups(
       [{ changed_at: '2026-10-02T16:13:00Z', table_name: 'cattle_water', record_id: null, action: 'update', actor_id: null, old_values: { a: 1 }, new_values: { a: 2 } }],
       new Map(),

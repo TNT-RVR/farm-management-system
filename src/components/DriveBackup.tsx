@@ -12,6 +12,7 @@ import { backupJobs, jobPaths, type BackupJob, type BackupSkip } from '@/lib/dri
 import { loadGatherer, type HookRun } from '@/pages/reports/gatherers'
 import { HookRunner } from '@/pages/reports/ReportRow'
 import { setProgress } from '@/lib/drive-backup-progress'
+import { dbErrorMessage } from '@/lib/db-error'
 
 /**
  * The Google Drive backup, run in the app (see lib/drive-backup.ts for why):
@@ -94,7 +95,7 @@ export default function BackupRunner({ runId, onDone }: { runId: string; onDone:
     made
       .then((m) => save(job, m))
       .catch((e: unknown) => {
-        const why = e instanceof Error ? e.message : String(e)
+        const why = dbErrorMessage(e)
         // A gather says "nothing to report" by throwing a plain sentence; Drive and other failures are errors.
         const list = /drive|token|connect|\(\d{3}\)/i.test(why) ? tally.current.errors : tally.current.skipped
         list.push({ report: `${job.report.name} (${job.format})`, why: why.slice(0, 300) })

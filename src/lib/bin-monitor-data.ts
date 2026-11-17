@@ -85,6 +85,12 @@ export function useDeleteBinMonitor() {
 }
 
 export type CableRead = {
+  /**
+   * What the picture turned out to be. Only `cable` carries levels: the bin
+   * map and anything else come back empty, because their numbers belong to
+   * other bins or to nothing at all.
+   */
+  shows?: 'cable' | 'bin_overview' | 'other'
   bin_name: string | null
   crop: string | null
   ambient_temp_c: number | null

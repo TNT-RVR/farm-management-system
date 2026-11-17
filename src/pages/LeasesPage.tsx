@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useAllFields, useFields } from '@/lib/queries'
 import { DateField } from '@/components/DateField'
-import { annualRent, daysBetween, leaseAlerts, noticeBy, paymentsForYear, scheduleOf, type ScheduleEntry } from '@/lib/leases'
+import { annualRent, daysBetween, isRealMonthDay, leaseAlerts, noticeBy, paymentsForYear, scheduleOf, type ScheduleEntry } from '@/lib/leases'
 import type { Database } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
 import { InfoPopover } from '@/components/InfoPopover'
@@ -13,6 +13,7 @@ import { RecordEditModal, rowClick } from '@/components/RecordEditor'
 import { money as fmtMoney } from '@/lib/format'
 import { askConfirm } from '@/components/askConfirm'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { dbErrorMessage } from '@/lib/db-error'
 
 type Lease = Database['public']['Tables']['land_leases']['Row']
 type LeaseInsert = Database['public']['Tables']['land_leases']['Insert']
@@ -373,7 +374,7 @@ function LeaseForm({ lease, onClose }: { lease: Lease | null; onClose: () => voi
         notes: f.notes.trim() || null,
         active: f.active,
         field_ids: fieldIds,
-        payment_schedule: schedule.filter((s) => /^\d{2}-\d{2}$/.test(s.date) && s.share > 0),
+        payment_schedule: schedule.filter((s) => isRealMonthDay(s.date) && s.share > 0),
       }
       const { error } = lease ? await supabase.from('land_leases').update(row).eq('id', lease.id) : await supabase.from('land_leases').insert(row)
       if (error) throw error
@@ -402,6 +403,24 @@ function LeaseForm({ lease, onClose }: { lease: Lease | null; onClose: () => voi
 
   const input = 'w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm'
   const shareTotal = schedule.reduce((s, x) => s + x.share, 0)
+  const badDates = schedule.filter((s) => s.date.trim() && !isRealMonthDay(s.date)).map((s) => s.date.trim())
+
+  /**
+   * What the form will not save at all. A lease is money and acres, so the
+   * database refuses both of these as well (migration 20261116230000_acres_and_rent_cannot_be_negative) — but a
+   * farmer should be told which box is wrong before the save, not handed a
+   * refusal after it. Found 16 Nov 2026: a lease of −100 ac saved a negative
+   * yearly rent, which came off the farm's, and a term ran 20 Nov to 10 Nov.
+   */
+  const negative = (['acres', 'rent_per_acre', 'rent_total', 'crop_share_pct'] as const).some((k) => {
+    const v = num(f[k])
+    return v != null && v < 0
+  })
+  const problem = negative
+    ? 'Acres and rent cannot be less than zero.'
+    : f.start_date && f.end_date && f.end_date < f.start_date
+      ? 'The term ends before it starts.'
+      : null
   return (
     <div ref={boxRef} className="mb-4 rounded-lg border border-brand-200 bg-brand-50/40 p-3 text-sm" role="dialog" aria-label="Lease">
       <div className="mb-2 flex items-center justify-between">
@@ -554,6 +573,7 @@ function LeaseForm({ lease, onClose }: { lease: Lease | null; onClose: () => voi
         <button type="button" onClick={() => setSchedule([...schedule, { date: '', share: 0 }])} className="mt-1 text-xs text-brand-700 underline">
           add a date
         </button>
+        {badDates.length > 0 && <p className="mt-1 text-xs text-red-700">{badDates.join(' and ')} {badDates.length === 1 ? 'is not a real date' : 'are not real dates'}, so {badDates.length === 1 ? 'it' : 'they'} will not be saved. Use month-day, like 11-01.</p>}
         {schedule.length > 0 && Math.abs(shareTotal - 1) > 0.001 && <p className="mt-1 text-xs text-amber-700">The dates add up to {Math.round(shareTotal * 100)}% of the rent, not 100%.</p>}
       </div>
 
@@ -562,7 +582,9 @@ function LeaseForm({ lease, onClose }: { lease: Lease | null; onClose: () => voi
         <textarea className={input} rows={2} value={f.notes} onChange={set('notes')} />
       </label>
 
-      {(save.error || del.error) && <p className="mt-2 text-xs text-red-700">{((save.error || del.error) as Error).message}</p>}
+      {(problem ?? (save.error || del.error ? dbErrorMessage(save.error ?? del.error) : null)) && (
+        <p className="mt-2 text-xs text-red-700">{problem ?? dbErrorMessage(save.error ?? del.error)}</p>
+      )}
       <div className="mt-3 flex justify-between">
         {lease ? (
           <button
@@ -577,7 +599,7 @@ function LeaseForm({ lease, onClose }: { lease: Lease | null; onClose: () => voi
         )}
         <button
           type="button"
-          disabled={!f.landlord.trim() || save.isPending}
+          disabled={!f.landlord.trim() || save.isPending || Boolean(problem)}
           onClick={() => save.mutate()}
           className="rounded-md bg-brand-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
         >

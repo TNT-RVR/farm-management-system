@@ -27,6 +27,7 @@ import {
 } from '@/lib/afsc-mdi'
 import type { Ranch } from '@/lib/ranches'
 import { CARD_HEAD } from '@/lib/table-style'
+import { dbErrorMessage } from '@/lib/db-error'
 
 /**
  * AFSC's pasture insurance, filled in.
@@ -90,7 +91,7 @@ export function PastureInsurance({ isManager, ranch }: { isManager: boolean; ran
       a.click()
       setTimeout(() => URL.revokeObjectURL(url), 10_000)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(dbErrorMessage(e))
     } finally {
       setMaking(null)
     }

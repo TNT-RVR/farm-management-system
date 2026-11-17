@@ -37,6 +37,7 @@ import { VarietyFigures, VarietySettingsEditor } from '@/pages/crops/CropVariety
 import { askConfirm } from '@/components/askConfirm'
 import { CARD_HEAD } from '@/lib/table-style'
 import { KgAside } from '@/components/KgAside'
+import { dbErrorMessage } from '@/lib/db-error'
 
 type CropUpdate = Database['public']['Tables']['crops']['Update']
 type InputCategory = CropInputRow['category']
@@ -205,6 +206,12 @@ function CropForm({ crop, readonly }: { crop: CropRow; readonly: boolean }) {
           Test weight lb/bu
           <input
             type="number"
+            /* Every bushel figure divides by this, so −60 poisoned yields far
+               from here. The boxes either side of it were already bounded;
+               this one was not (16 Nov 2026). */
+            min={1}
+            max={200}
+            step={0.1}
             disabled={readonly}
             value={form.test_weight_lb_per_bu}
             onChange={(e) => set('test_weight_lb_per_bu', e.target.value)}
@@ -288,7 +295,7 @@ function CropForm({ crop, readonly }: { crop: CropRow; readonly: boolean }) {
         members={(crop.average_of ?? []).map((id) => allCrops?.find((c) => c.id === id)?.name).filter(Boolean) as string[]}
       />
       <ExpectedYieldNote crop={crop} />
-      {save.isError && <p className="mt-2 text-xs text-red-600">{(save.error as Error).message}</p>}
+      {save.isError && <p className="mt-2 text-xs text-red-600">{dbErrorMessage(save.error)}</p>}
     </div>
   )
 }
@@ -392,7 +399,7 @@ function VarietiesEditor({ crop, readonly }: { crop: CropRow; readonly: boolean 
   const [draft, setDraft] = useState({ name: '', company: '' })
   /** The variety whose figures are open. */
   const [figuresOf, setFiguresOf] = useState<string | null>(null)
-  const problem = (update.error ?? add.error) as Error | null
+  const problem = update.error ?? add.error
   return (
     <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
       <h3 className={cn('font-medium', CARD_HEAD)}>Varieties</h3>
@@ -521,7 +528,7 @@ function VarietiesEditor({ crop, readonly }: { crop: CropRow; readonly: boolean 
           </button>
         </form>
       )}
-      {problem && <p className="mt-2 text-xs text-red-600">{problem.message}</p>}
+      {problem && <p className="mt-2 text-xs text-red-600">{dbErrorMessage(problem)}</p>}
       {figuresOf && (
         <VarietySettingsEditor
           key={figuresOf}

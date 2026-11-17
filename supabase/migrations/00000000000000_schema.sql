@@ -5203,6 +5203,19 @@ $$;
 ALTER FUNCTION "public"."fn_touch_field_work_records"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_touch_updated_at"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  new.updated_at := now();
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."fn_touch_updated_at"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_touch_updated_at_yield_adjustments"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public', 'extensions'
@@ -6690,6 +6703,7 @@ CREATE TABLE IF NOT EXISTS "public"."crop_plans" (
     CONSTRAINT "crop_plans_goal_yield_positive" CHECK ((("goal_yield" IS NULL) OR ("goal_yield" > (0)::numeric))),
     CONSTRAINT "crop_plans_harvest_method_check" CHECK ((("harvest_method" IS NULL) OR ("harvest_method" = ANY (ARRAY['swathed'::"text", 'straight'::"text"])))),
     CONSTRAINT "crop_plans_herbicide_trait_check" CHECK ((("herbicide_trait" IS NULL) OR (("length"("btrim"("herbicide_trait")) >= 1) AND ("length"("btrim"("herbicide_trait")) <= 80)))),
+    CONSTRAINT "crop_plans_planned_acres_check" CHECK ((("planned_acres" IS NULL) OR ("planned_acres" >= (0)::numeric))),
     CONSTRAINT "crop_plans_yield_basis_check" CHECK (("yield_basis" = ANY (ARRAY['clean'::"text", 'pre_clean'::"text"]))),
     CONSTRAINT "crop_plans_yield_range_order" CHECK ((("yield_low" IS NULL) OR ("yield_high" IS NULL) OR ("yield_low" <= "yield_high")))
 );
@@ -6783,6 +6797,7 @@ CREATE TABLE IF NOT EXISTS "public"."crops" (
     CONSTRAINT "crops_max_in_a_row_check" CHECK ((("max_in_a_row" >= 1) AND ("max_in_a_row" <= 6))),
     CONSTRAINT "crops_stand_max_years_check" CHECK ((("stand_max_years" >= 1) AND ("stand_max_years" <= 12))),
     CONSTRAINT "crops_stand_min_years_check" CHECK ((("stand_min_years" >= 1) AND ("stand_min_years" <= 10))),
+    CONSTRAINT "crops_test_weight_check" CHECK ((("test_weight_lb_per_bu" IS NULL) OR (("test_weight_lb_per_bu" > (0)::numeric) AND ("test_weight_lb_per_bu" <= (200)::numeric)))),
     CONSTRAINT "crops_yield_range_order" CHECK ((("yield_low_per_acre" IS NULL) OR ("yield_high_per_acre" IS NULL) OR ("yield_low_per_acre" <= "yield_high_per_acre")))
 );
 
@@ -11500,7 +11515,8 @@ CREATE TABLE IF NOT EXISTS "public"."crop_inputs" (
     "category" "public"."input_category" DEFAULT 'other'::"public"."input_category" NOT NULL,
     "cost_per_acre" numeric DEFAULT 0 NOT NULL,
     "farm_fixed" boolean DEFAULT false NOT NULL,
-    "fixed_land_share" boolean DEFAULT false NOT NULL
+    "fixed_land_share" boolean DEFAULT false NOT NULL,
+    "updated_at" timestamp with time zone
 );
 
 
@@ -11512,6 +11528,10 @@ COMMENT ON COLUMN "public"."crop_inputs"."farm_fixed" IS 'This row is the farm-w
 
 
 COMMENT ON COLUMN "public"."crop_inputs"."fixed_land_share" IS 'This farm_fixed row is the land share of the fixed expenses on land rented out (Hillside''s seed carrots and spinach). Part of the owner-only breakdown: readable only by can_see_finances(), never audited.';
+
+
+
+COMMENT ON COLUMN "public"."crop_inputs"."updated_at" IS 'When this cost was last written. Null means it predates the column: unknown, not old.';
 
 
 
@@ -11637,7 +11657,8 @@ CREATE TABLE IF NOT EXISTS "public"."field_crop_zones" (
     "geojson" "jsonb",
     "notes" "text",
     "source" "text" DEFAULT 'drawn'::"text" NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "field_crop_zones_acres_check" CHECK ((("acres" IS NULL) OR ("acres" >= (0)::numeric)))
 );
 
 
@@ -11884,11 +11905,16 @@ CREATE TABLE IF NOT EXISTS "public"."crop_prices" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "crop_id" "uuid" NOT NULL,
     "crop_year" integer NOT NULL,
-    "price_per_unit" numeric NOT NULL
+    "price_per_unit" numeric NOT NULL,
+    "updated_at" timestamp with time zone
 );
 
 
 ALTER TABLE "public"."crop_prices" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."crop_prices"."updated_at" IS 'When this price was last written. Null means it predates the column: unknown, not old.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."crop_succession_rules" (
@@ -15716,9 +15742,14 @@ CREATE TABLE IF NOT EXISTS "public"."land_leases" (
     "we_cover" "text",
     "direction" "text" DEFAULT 'in'::"text" NOT NULL,
     "crop_ids" "uuid"[],
+    CONSTRAINT "land_leases_acres_check" CHECK ((("acres" IS NULL) OR ("acres" >= (0)::numeric))),
     CONSTRAINT "land_leases_arrangement_check" CHECK (("arrangement" = ANY (ARRAY['cash_rent'::"text", 'profit_share'::"text", 'crop_share'::"text"]))),
+    CONSTRAINT "land_leases_crop_share_pct_check" CHECK ((("crop_share_pct" IS NULL) OR (("crop_share_pct" >= (0)::numeric) AND ("crop_share_pct" <= (100)::numeric)))),
     CONSTRAINT "land_leases_direction_check" CHECK (("direction" = ANY (ARRAY['in'::"text", 'out'::"text"]))),
-    CONSTRAINT "land_leases_our_share_pct_check" CHECK ((("our_share_pct" >= (0)::numeric) AND ("our_share_pct" <= (100)::numeric)))
+    CONSTRAINT "land_leases_our_share_pct_check" CHECK ((("our_share_pct" >= (0)::numeric) AND ("our_share_pct" <= (100)::numeric))),
+    CONSTRAINT "land_leases_rent_per_acre_check" CHECK ((("rent_per_acre" IS NULL) OR ("rent_per_acre" >= (0)::numeric))),
+    CONSTRAINT "land_leases_rent_total_check" CHECK ((("rent_total" IS NULL) OR ("rent_total" >= (0)::numeric))),
+    CONSTRAINT "land_leases_term_order_check" CHECK ((("start_date" IS NULL) OR ("end_date" IS NULL) OR ("end_date" >= "start_date")))
 );
 
 
@@ -20314,7 +20345,8 @@ CREATE TABLE IF NOT EXISTS "public"."users" (
     "menu_prefs" "jsonb",
     "voice_reply" boolean DEFAULT false NOT NULL,
     "farm_id" "uuid",
-    "partner_admin" boolean DEFAULT false NOT NULL
+    "partner_admin" boolean DEFAULT false NOT NULL,
+    "saved_views" "jsonb" DEFAULT '[]'::"jsonb" NOT NULL
 );
 
 
@@ -20334,6 +20366,10 @@ COMMENT ON COLUMN "public"."users"."is_owner" IS 'An owner of the farm. Owners a
 
 
 COMMENT ON COLUMN "public"."users"."finance_access" IS 'Sees and edits the owners-only financials (the fixed-expense breakdown) without being an owner — the farm''s accountant. Only an owner can set it.';
+
+
+
+COMMENT ON COLUMN "public"."users"."saved_views" IS 'Named filters: [{ name, path, search }]. The page and query string to return to.';
 
 
 
@@ -24682,6 +24718,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."bin_monitor_readings" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."bin_readings" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -24703,6 +24743,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."canola_isolation_reports" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."cash_bids" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -24775,6 +24819,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."combine_loss_checks" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."combine_monitor_loads" FOR EACH ROW WHEN (("auth"."uid"() IS NOT NULL)) EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -24871,6 +24919,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."equipment" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."eshepherd_activations" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -25126,6 +25178,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."irrigation_events" FOR EACH ROW WHEN (("auth"."uid"() IS NOT NULL)) EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."jd_guidance_lines" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -25227,6 +25283,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."plc_commands" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."plc_line_watch" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -25455,6 +25515,14 @@ CREATE OR REPLACE TRIGGER "closes_task" AFTER INSERT ON "public"."bale_checks" F
 
 
 CREATE OR REPLACE TRIGGER "compute" BEFORE INSERT OR UPDATE ON "public"."farm_fixed_costs" FOR EACH ROW EXECUTE FUNCTION "public"."fn_farm_fixed_compute"();
+
+
+
+CREATE OR REPLACE TRIGGER "crop_inputs_touch_updated_at" BEFORE INSERT OR UPDATE ON "public"."crop_inputs" FOR EACH ROW EXECUTE FUNCTION "public"."fn_touch_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "crop_prices_touch_updated_at" BEFORE INSERT OR UPDATE ON "public"."crop_prices" FOR EACH ROW EXECUTE FUNCTION "public"."fn_touch_updated_at"();
 
 
 
@@ -36340,6 +36408,11 @@ GRANT ALL ON FUNCTION "public"."fn_texture_awc"("t" "text") TO "service_role";
 REVOKE ALL ON FUNCTION "public"."fn_touch_field_work_records"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_touch_field_work_records"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_touch_field_work_records"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_touch_updated_at"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_touch_updated_at"() TO "service_role";
 
 
 

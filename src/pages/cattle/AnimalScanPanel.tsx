@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { useCattleMutations, type CattleRow } from '@/lib/cattle'
 import { useRecentScans, useRecordScan } from '@/lib/cattle-animals'
 import { PREGNANCY_STATUSES } from '@/lib/eshepherd-animals'
+import { dbErrorMessage } from '@/lib/db-error'
 
 /**
  * Scan an animal in the yard, and write down what you find.
@@ -66,7 +67,7 @@ export function AnimalScanPanel({ ranchId, isManager }: { ranchId: string; isMan
         setMissed(eid)
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(dbErrorMessage(e))
     }
   }
 
@@ -212,7 +213,7 @@ function ScannedAnimal({ animal, isManager, onDone }: { animal: CattleRow; isMan
       setNote('')
       setTimeout(() => setSaved(false), 2500)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(dbErrorMessage(e))
     }
   }
 

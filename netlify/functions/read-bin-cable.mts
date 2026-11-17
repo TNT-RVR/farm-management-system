@@ -14,6 +14,11 @@ import { isStaff } from '../shared/staff.ts'
  * sensor's temperature and percentage, top to bottom; the person sees every
  * number in the form before anything is saved. The image is not stored.
  *
+ * It only reads the one screen that can be read: a single bin's cable. The
+ * bin map, which is the screen Bin-Sense opens on, carries one number per bin
+ * for a dozen bins, and those are not levels of anything — so it is turned
+ * away with a sentence saying which screen to photograph instead.
+ *
  * The percentage on that screen is usually grain moisture that Bin-Sense has
  * already worked out for the commodity set on the bin, not relative humidity.
  * The model says which it thinks it is and why; the form lets the person say
@@ -29,7 +34,13 @@ const json = (b: unknown, status = 200) =>
 
 const MEDIA = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 
-const PROMPT = `This is a screenshot of a grain bin monitoring app (usually Bin-Sense) showing one bin and its sensor cable(s).
+const PROMPT = `This is a picture from a grain bin monitoring app (usually Bin-Sense). It should show ONE bin and its sensor cable(s).
+
+FIRST say what the picture actually shows, in "shows":
+- "cable" — one bin, with its sensor cable: several sensors down the bin, each with its own temperature. The bin drawing and the table of that bin's sensors both count, and so does a photograph of either taken off a screen.
+- "bin_overview" — the bin map or bin list: SEVERAL bins at once, each as a tile, row or marker carrying one temperature and one percentage for the whole bin. The numbers belong to different bins, not to levels of one cable.
+- "other" — anything else (a graph, a settings screen, a photo of a bin outside, a page with no sensor numbers on it).
+Only a picture of one bin's cable can be read into a reading. If it is not "cable", leave "levels" empty and say in "note" what you see; do not put the numbers you can see into "levels".
 
 Read every sensor on the cable from the TOP of the bin to the BOTTOM. Each sensor shows a temperature (°C) and usually a percentage; a sensor may show "No Data" for the percentage.
 
@@ -45,7 +56,8 @@ Decide what the percentage is:
 - "unknown" if you cannot tell.
 
 Return ONLY JSON, no prose:
-{"bin_name": string|null, "crop": string|null, "ambient_temp_c": number|null, "bushels": number|null,
+{"shows": "cable"|"bin_overview"|"other",
+ "bin_name": string|null, "crop": string|null, "ambient_temp_c": number|null, "bushels": number|null,
  "percent_kind": "rh"|"moisture"|"unknown",
  "levels": [{"temp_c": number|null, "pct": number|null, "no_data": boolean, "above_grain": boolean}],
  "confidence": "high"|"medium"|"low", "note": string}
@@ -112,7 +124,30 @@ export default async (req: Request) => {
         }
       })
     const kind = p.percent_kind === 'rh' || p.percent_kind === 'moisture' ? p.percent_kind : 'unknown'
+    // The bin map shows every bin at once with one number each. Read as a
+    // cable those numbers become levels of a single bin — twelve other bins'
+    // readings saved as bin 21's, and nothing on the screen says so. So a
+    // picture that is not one bin's cable comes back with no levels and a
+    // sentence saying which screen to photograph instead (16 Nov 2026).
+    const shows = p.shows === 'bin_overview' || p.shows === 'other' ? p.shows : 'cable'
+    const wrongScreen =
+      shows === 'bin_overview'
+        ? 'That is the bin map — every bin at once, with one temperature each. Open this bin in Bin-Sense so its sensor cable is on screen, and photograph that.'
+        : 'That picture has no sensor cable on it. Open the bin in Bin-Sense, go to its cable, and photograph the sensors down the bin.'
+    if (shows !== 'cable')
+      return json({
+        shows,
+        bin_name: typeof p.bin_name === 'string' ? p.bin_name : null,
+        crop: typeof p.crop === 'string' ? p.crop : null,
+        ambient_temp_c: null,
+        bushels: null,
+        percent_kind: 'unknown',
+        levels: [],
+        confidence: 'low',
+        note: wrongScreen,
+      })
     return json({
+      shows,
       bin_name: typeof p.bin_name === 'string' ? p.bin_name : null,
       crop: typeof p.crop === 'string' ? p.crop : null,
       ambient_temp_c: num(p.ambient_temp_c),

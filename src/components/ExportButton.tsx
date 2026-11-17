@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { dbErrorMessage } from '@/lib/db-error'
 
 /**
  * Export, as one small icon button above a table (Sam, 29 Oct 2026).
@@ -51,7 +52,7 @@ export function ExportButton({
     try {
       await onExport(format)
     } catch (e) {
-      setFailed(e instanceof Error ? e.message : String(e))
+      setFailed(dbErrorMessage(e))
     } finally {
       setBusy(null)
     }

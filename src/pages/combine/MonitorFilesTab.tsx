@@ -42,6 +42,7 @@ import {
 import { useCropYear } from '@/lib/crop-year'
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { dbErrorMessage } from '@/lib/db-error'
 
 /**
  * Combine → Monitor files: the files the combine display reads off a stick,
@@ -72,7 +73,7 @@ function writeLast(d: LastDownload) {
   }
 }
 
-const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
+const messageOf = (e: unknown) => dbErrorMessage(e)
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })
 const shortTime = (iso: string) => new Date(iso).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 

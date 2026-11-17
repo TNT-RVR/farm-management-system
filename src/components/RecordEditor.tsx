@@ -6,6 +6,7 @@ import { ConfirmDialog, LAYER, MODAL_OPENED } from '@/components/Modal'
 import { LatLngInput } from '@/components/LatLngInput'
 import { latLngText, readLatLng } from '@/lib/latlng-text'
 import { cn } from '@/lib/utils'
+import { dbErrorMessage } from '@/lib/db-error'
 
 /**
  * The shared pieces for "click a row to see it, and add, edit or delete it"
@@ -95,7 +96,7 @@ export function RecordEditModal({
   const [confirming, setConfirming] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
   const [working, setWorking] = useState(false)
-  const reason = (e: unknown) => (e instanceof Error ? e.message : String(e))
+  const reason = (e: unknown) => dbErrorMessage(e)
 
   // A dropdown left open in the record behind this closes, as it does for
   // every other pop-up: its menu is drawn on the page body and sits above

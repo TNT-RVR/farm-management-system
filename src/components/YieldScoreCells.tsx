@@ -91,7 +91,18 @@ export function VersusCell({
         <VersusBit v={score.vsEstimate} what="estimate" />
         {score.vsEstimate && est.fromDefault && <CropDefaultBadge />}
       </span>
-      <VersusBit v={score.vsGoal} what="goal" />
+      {/* A goal in the wrong unit cannot grade a harvest (lib/yield-goal.ts). Saying
+          so beats dropping the line, which looks like no goal was ever set. */}
+      {score.goalOffScale && score.goal.value != null ? (
+        <span
+          className="text-[11px] font-medium text-amber-800"
+          title={`A goal of ${formatYield(score.goal.value)}/ac is nowhere near this crop’s normal yield — nearly always a figure typed in another unit. Fix it on the plan or in Crop settings and the harvest will be graded against it.`}
+        >
+          goal of {formatYield(score.goal.value)} looks wrong
+        </span>
+      ) : (
+        <VersusBit v={score.vsGoal} what="goal" />
+      )}
       {mark ? (
         <AbnormalYearMark {...mark} reason={score.actual.abnormal} />
       ) : (

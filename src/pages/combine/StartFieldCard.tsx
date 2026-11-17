@@ -34,6 +34,7 @@ import {
 import { useCropPlans, useCrops } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
+import { dbErrorMessage } from '@/lib/db-error'
 
 /**
  * Combine → Starting settings → Start a field: everything to set on the
@@ -42,7 +43,7 @@ import { useAuth } from '@/lib/auth'
  */
 
 const OTHER = '__other__'
-const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
+const messageOf = (e: unknown) => dbErrorMessage(e)
 
 /** The field's crop on the combines: the first of its crops the combine settings know. */
 function cropKeyOf(f: MonitorField | undefined): { key: CombineCropKey | null; name: string | null } {

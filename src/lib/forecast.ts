@@ -35,7 +35,7 @@ export function marketPrice(cropName: string | null | undefined, unit: string | 
   return b ? { value: b.perBu, label: `elevator bid, ${b.label}` } : null
 }
 
-export type PriceRow = { crop_id: string; crop_year: number; price_per_unit: number | null }
+export type PriceRow = { crop_id: string; crop_year: number; price_per_unit: number | null; updated_at?: string | null }
 
 export type PriceBasis = 'set' | 'forecast' | 'market' | 'carried' | 'none'
 
@@ -44,6 +44,8 @@ export type ResolvedPrice = {
   basis: PriceBasis
   /** The year a carried or typed price belongs to. */
   fromYear: number | null
+  /** When this figure was last written. Null when nobody recorded it. */
+  setOn: string | null
   /** Plain words for the screen: "2026 price", "2027 forecast", "elevator bid, feed barley". */
   label: string
 }
@@ -72,25 +74,28 @@ export function resolvePrice(
       basis: forecast ? 'forecast' : 'set',
       fromYear: year,
       label: forecast ? `${year} forecast` : `${year} price`,
+      setOn: own.updated_at ?? null,
     }
   }
   if (opts.market && opts.market.value > 0) {
-    return { value: opts.market.value, basis: 'market', fromYear: null, label: opts.market.label }
+    return { value: opts.market.value, basis: 'market', fromYear: null, label: opts.market.label, setOn: null }
   }
   const earlier = mine.find((p) => p.crop_year < year)
   if (earlier) {
-    return { value: Number(earlier.price_per_unit), basis: 'carried', fromYear: earlier.crop_year, label: `${earlier.crop_year} price` }
+    return { value: Number(earlier.price_per_unit), basis: 'carried', fromYear: earlier.crop_year, label: `${earlier.crop_year} price`, setOn: earlier.updated_at ?? null }
   }
-  return { value: null, basis: 'none', fromYear: null, label: 'no price' }
+  return { value: null, basis: 'none', fromYear: null, label: 'no price', setOn: null }
 }
 
-export type InputRow = { crop_id: string; crop_year: number; cost_per_acre: number | null; name?: string | null; id?: string; category?: string | null }
+export type InputRow = { crop_id: string; crop_year: number; cost_per_acre: number | null; updated_at?: string | null; name?: string | null; id?: string; category?: string | null }
 
 export type ResolvedCost<R extends InputRow = InputRow> = {
   /** $/ac, 0 when there is no budget at all. */
   total: number
   /** The budget lines used. */
   lines: R[]
+  /** When the newest line in this budget was last written. Null when unrecorded. */
+  setOn: string | null
   /** 'set' = the year's own budget (a forecast when the year is ahead); 'carried' = an earlier year's. */
   basis: 'set' | 'forecast' | 'carried' | 'none'
   fromYear: number | null
@@ -101,17 +106,19 @@ export type ResolvedCost<R extends InputRow = InputRow> = {
 export function resolveCosts<R extends InputRow>(cropId: string, year: number, inputs: R[], currentYear: number): ResolvedCost<R> {
   const mine = inputs.filter((i) => i.crop_id === cropId)
   const sum = (rows: R[]) => rows.reduce((s, i) => s + (Number(i.cost_per_acre) || 0), 0)
+  // The budget is as current as its freshest line.
+  const newest = (rows: R[]) => rows.map((i) => i.updated_at).filter((d): d is string => !!d).sort().at(-1) ?? null
   const own = mine.filter((i) => i.crop_year === year)
   if (own.length) {
     const forecast = year > currentYear
-    return { total: sum(own), lines: own, basis: forecast ? 'forecast' : 'set', fromYear: year, label: forecast ? `${year} forecast` : `${year} costs` }
+    return { total: sum(own), lines: own, basis: forecast ? 'forecast' : 'set', fromYear: year, setOn: newest(own), label: forecast ? `${year} forecast` : `${year} costs` }
   }
   const earlierYear = Math.max(-Infinity, ...mine.filter((i) => i.crop_year < year).map((i) => i.crop_year))
   if (Number.isFinite(earlierYear)) {
     const lines = mine.filter((i) => i.crop_year === earlierYear)
-    return { total: sum(lines), lines, basis: 'carried', fromYear: earlierYear, label: `${earlierYear} costs` }
+    return { total: sum(lines), lines, basis: 'carried', fromYear: earlierYear, setOn: newest(lines), label: `${earlierYear} costs` }
   }
-  return { total: 0, lines: [], basis: 'none', fromYear: null, label: 'no input budget' }
+  return { total: 0, lines: [], basis: 'none', fromYear: null, setOn: null, label: 'no input budget' }
 }
 
 export type YieldRecord = {

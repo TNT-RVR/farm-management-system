@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildBudget, buildPlanRows } from './planner'
+import { buildBudget, buildPlanRows, plannedFieldCount, setOnNote, zoneCoverage } from './planner'
 import type { BoundaryRow, CropInputRow, CropPlanRow, CropPriceRow, CropRow, FieldRow } from './queries'
 import type { YieldCut } from './yield-estimate'
 
@@ -25,6 +25,27 @@ const rows = (o: { crops?: CropRow[]; plans?: CropPlanRow[]; cuts?: YieldCut[]; 
     o.zones,
     { cropYear: 2030, currentYear: 2030, cuts: o.cuts },
   ).filter((r) => r.plan || r.isZone)
+
+describe('plannedFieldCount', () => {
+  it('counts a split field once, not once per crop zone', () => {
+    const zones = new Map([
+      [
+        'f1',
+        [
+          { id: 'z1', crop_id: 'wheat', acres: 40 },
+          { id: 'z2', crop_id: 'wheat', acres: 60 },
+        ],
+      ],
+    ])
+    const split = rows({ zones })
+    expect(split.length).toBe(2)
+    expect(plannedFieldCount(split)).toBe(1)
+  })
+
+  it('counts two planted fields as two', () => {
+    expect(plannedFieldCount(rows({ plans: [plan(), plan({ field_id: 'f2' })] }))).toBe(2)
+  })
+})
 
 describe('buildPlanRows with cuts and ranges', () => {
   it('with neither, the range is the single figure', () => {
@@ -82,5 +103,44 @@ describe('buildPlanRows with cuts and ranges', () => {
     expect([line.marginLow, line.margin, line.marginHigh]).toEqual([-20000, -10000, 0])
     expect(line.cutQuantity).toBe(5000)
     expect(line.cutCount).toBe(1)
+  })
+})
+
+describe('zoneCoverage', () => {
+  it('says how many acres are in no zone at all', () => {
+    // A zoned field is budgeted from its zones alone, so the 100 acres left
+    // over are not costed, not seeded on paper, and not in any total.
+    expect(zoneCoverage(160, [40, 20])).toBe('zones cover 60 of the field’s 160 ac — 100 ac is in no zone, so nothing is budgeted for it')
+  })
+
+  it('says when the zones overrun the field', () => {
+    expect(zoneCoverage(160, [100, 70])).toBe('zones cover 170 ac, 10 more than the field’s 160 ac')
+  })
+
+  it('stays quiet when the zones add up, give or take rounding', () => {
+    expect(zoneCoverage(160, [80, 80])).toBeNull()
+    expect(zoneCoverage(160, [80, 80.4])).toBeNull()
+    expect(zoneCoverage(160, [79.7, 80])).toBeNull()
+  })
+
+  it('leaves a zone with no acres to its own warning', () => {
+    expect(zoneCoverage(160, [80, null])).toBeNull()
+  })
+
+  it('cannot judge a field with no acreage of its own', () => {
+    expect(zoneCoverage(null, [80])).toBeNull()
+    expect(zoneCoverage(0, [80])).toBeNull()
+  })
+})
+
+describe('setOnNote', () => {
+  it('says when a figure was last written', () => {
+    expect(setOnNote('2026-11-16T15:00:00Z')).toBe(' · set Nov 16, 2026')
+  })
+
+  it('says nothing at all when nobody recorded it', () => {
+    // Rows written before the column existed: unknown, not old.
+    expect(setOnNote(null)).toBe('')
+    expect(setOnNote(undefined)).toBe('')
   })
 })

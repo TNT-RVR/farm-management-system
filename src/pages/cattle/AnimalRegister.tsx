@@ -27,6 +27,7 @@ import {
 } from '@/lib/cattle-animals'
 import { PREGNANCY_STATUSES, STOCK_CLASSES } from '@/lib/eshepherd-animals'
 import { AnimalScanPanel } from '@/pages/cattle/AnimalScanPanel'
+import { dbErrorMessage } from '@/lib/db-error'
 
 /**
  * The animal register: eShepherd's sheet in, the same sheet out.
@@ -139,7 +140,7 @@ export function AnimalRegister({
       const out = await upload.mutateAsync({ file, brandMap: brands?.map ?? new Map() })
       setResult(out)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(dbErrorMessage(e))
     } finally {
       setBusy(false)
       if (fileRef.current) fileRef.current.value = ''
@@ -160,7 +161,7 @@ export function AnimalRegister({
       a.click()
       setTimeout(() => URL.revokeObjectURL(url), 10_000)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(dbErrorMessage(e))
     } finally {
       setBusy(false)
     }
@@ -663,7 +664,7 @@ function AnimalEditor({
         try {
           await onSave(patch)
         } catch (e) {
-          setError(e instanceof Error ? e.message : String(e))
+          setError(dbErrorMessage(e))
         } finally {
           setSaving(false)
         }
@@ -720,7 +721,7 @@ function UploadArchive({ isManager }: { isManager: boolean }) {
                       try {
                         await undo.mutateAsync(u.id)
                       } catch (e) {
-                        setError(e instanceof Error ? e.message : String(e))
+                        setError(dbErrorMessage(e))
                       }
                     }}
                     className="shrink-0 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
@@ -760,7 +761,7 @@ function CollarLabels({ ranches }: { ranches: { id: string; name: string }[] }) 
     try {
       setDone(await fill.mutateAsync())
     } catch (e) {
-      setFailed(e instanceof Error ? e.message : String(e))
+      setFailed(dbErrorMessage(e))
     }
   }
 

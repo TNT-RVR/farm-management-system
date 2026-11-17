@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Flag, Scale, Trash2 } from 'lucide-react'
 import { Modal } from '@/components/Modal'
 import { useCrops, useFields } from '@/lib/queries'
-import { isOpenLoad, loadInBin, weighTime, useBinLoads, useDeleteBinLoad, useSetLastLoad, type BinLoad } from '@/lib/bin-loads'
+import { isOpenLoad, loadInBin, weighedOutAt, weighTime, useBinLoads, useDeleteBinLoad, useSetLastLoad, type BinLoad } from '@/lib/bin-loads'
 import { cn } from '@/lib/utils'
 import { rowClick } from '@/components/RecordEditor'
 import { OpenLoads, WeighInForm } from './WeighIn'
@@ -141,9 +141,9 @@ export function BinLoadsDialog({
                     >
                       <td className="px-2 py-1 tabular-nums text-gray-800">
                         {l.loaded_on}
-                        {(l.full_at || l.empty_at) && (
+                        {(l.full_at || weighedOutAt(l)) && (
                           <span className="block text-[10px] text-gray-500">
-                            {[l.full_at ? `in ${weighTime(l.full_at, false)}` : null, l.empty_at ? `out ${weighTime(l.empty_at, l.empty_at.slice(0, 10) !== l.full_at?.slice(0, 10))}` : null].filter(Boolean).join(' · ')}
+                            {[l.full_at ? `in ${weighTime(l.full_at, false)}` : null, weighedOutAt(l) ? `out ${weighTime(l.empty_at, l.empty_at!.slice(0, 10) !== l.full_at?.slice(0, 10))}` : null].filter(Boolean).join(' · ')}
                           </span>
                         )}
                         {l.estimated && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-semibold uppercase text-amber-800" title="Not weighed: a best guess. Open the load to put in the real weight.">est.</span>}
