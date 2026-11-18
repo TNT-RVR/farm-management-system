@@ -35,7 +35,8 @@ import {
 import { FieldMoistureCard } from '@/components/FieldMoistureCard'
 import { UnconfirmedSprays } from '@/components/UnconfirmedSprays'
 import { SprayCheck } from '@/components/SprayCheck'
-import { FarmWideLinks, FieldTabBar } from './field/FieldTabs'
+import { FarmWideLinks, FieldTabBar, useScrollToSection } from './field/FieldTabs'
+import { FieldInputsCard } from '@/components/FieldInputsCard'
 import { FuelTotal, PassFuel } from '@/components/FuelSummary'
 import { fuelByOp, useFuelModel } from '@/lib/operating-costs'
 import type { FuelOpRow } from '@/lib/hauling-data'
@@ -612,7 +613,7 @@ function PassCard({
 }
 
 /** Every pass on one field, in full. */
-export function FieldWorkPage() {
+export function FieldWorkPage({ section = 'work' }: { section?: 'work' | 'inputs' }) {
   const { id } = useParams<{ id: string }>()
   // Every field, archived ones included: the work done on a field that has
   // since been put away is still its work, and the heading should still say
@@ -739,6 +740,9 @@ export function FieldWorkPage() {
     return appliedByProduct(apps, acres, resolve)
   }, [shown, acres, resolve])
 
+  // /inputs is this tab, scrolled to the products.
+  useScrollToSection(section, !isLoading)
+
   if (isLoading) return <p className="p-4 text-sm text-gray-500 md:p-6">Loading…</p>
 
   return (
@@ -761,8 +765,8 @@ export function FieldWorkPage() {
         </p>
       </div>
 
-      {id && <FieldTabBar fieldId={id} active="work" />}
-      <FarmWideLinks section="work" />
+      {id && <FieldTabBar fieldId={id} active={section} />}
+      <FarmWideLinks section={section} />
 
       {/* At the top, so it is the first thing on a phone. */}
       {id && (
@@ -975,6 +979,12 @@ export function FieldWorkPage() {
           )}
         </div>
       )}
+
+      {/* The products off this year's passes, totalled: what used to be the
+          Inputs tab. /inputs scrolls here. */}
+      <div id="field-inputs" className="scroll-mt-4">
+        {id && <FieldInputsCard fieldId={id} acres={acres} />}
+      </div>
 
       {/* What came off it, beside what was done to it. Harvest moisture is the
           last thing that happens in a field's year and it was three cards away

@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { Beaker, Bug, CalendarRange, CircleDollarSign, CalendarDays, CheckSquare, ClipboardList, Cloud, CloudHail, Eye, FileSignature, FileText, FlaskConical, Fuel, Home, Info, Landmark, ListChecks, LogOut, Map as MapIcon, PiggyBank, Repeat, Scale, SprayCan, Sprout, TestTube, Timer, Tractor, UserCircle, Users, Waves, Wheat, Wrench } from 'lucide-react'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { SectionGate } from '@/components/ProtectedRoute'
 import { OfflineBanner } from '@/components/OfflineBanner'
 import { UpdateReadyBanner } from '@/components/UpdateReadyBanner'
 import { UserAvatar } from '@/components/UserAvatar'
@@ -148,7 +149,10 @@ export function PartnerShell() {
           <UpdateReadyBanner />
           <ErrorBoundary key={pathname}>
             <Suspense fallback={<PageSkeleton />}>
-              <Outlet />
+              {/* The switched-off and closed-off gates, as in the staff frame. */}
+              <SectionGate>
+                <Outlet />
+              </SectionGate>
             </Suspense>
           </ErrorBoundary>
         </main>

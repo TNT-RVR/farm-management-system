@@ -23,6 +23,7 @@ import { BooksFixedCosts } from './BooksFixedCosts'
 import { MonthlyFixedFromBooks } from './MonthlyFixedFromBooks'
 import { HelpNote } from '@/components/HelpNote'
 import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { CardList, RowCard } from '@/components/RowCards'
 
 const input = 'rounded-md border border-gray-300 px-2 py-1 text-right text-sm tabular-nums'
 const acres0 = (v: number) => v.toLocaleString('en-CA', { maximumFractionDigits: 0 })
@@ -206,6 +207,45 @@ function Form({
     !locked && !save.isPending && !needsAcres && (mode === 'breakdown' || numOrNull(lump) != null)
   const setRow = (k: FixedCategory, patch: Partial<Row>) =>
     setRows((r) => ({ ...r, [k]: { ...r[k], ...patch } }))
+  // Each part's boxes and $/ac, built once for its table row and its phone card.
+  const parts = FIXED_CATEGORIES.map((c) => {
+    const r = rows[c.key]
+    const per = linePerAcre(
+      { basis: r.basis, amount: numOrNull(r.amount), category: c.key },
+      spreadAcres,
+      rentedOutAcres,
+    )
+    return {
+      c,
+      per: per != null ? money2(per) : '—',
+      basis: (className: string) => (
+        <Select
+          value={r.basis}
+          onChange={(v) => setRow(c.key, { basis: v as FixedBasis })}
+          options={[
+            { value: 'per_acre', label: '$ per acre' },
+            { value: 'farm_total', label: 'Farm total for the year' },
+          ]}
+          size="sm"
+          className={className}
+          ariaLabel={`${c.label}: entered as`}
+          disabled={locked}
+        />
+      ),
+      amount: (className: string) => (
+        <input
+          value={r.amount}
+          onChange={(e) => setRow(c.key, { amount: e.target.value })}
+          disabled={locked}
+          inputMode="decimal"
+          placeholder="—"
+          aria-label={`${c.label} amount`}
+          className={cn(input, className)}
+        />
+      ),
+      wide: r.basis === 'farm_total',
+    }
+  })
 
   return (
     <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
@@ -273,7 +313,37 @@ function Form({
           {/* In its own sideways scroller: a row of boxes to type in is
               wider than a phone, and without this the whole page slid
               sideways with it (Sam, 27 Oct 2026). */}
-          <div className="mt-3 overflow-x-auto">
+          {/* One part a card on a phone: its two boxes side by side (design review, Nov 2026). */}
+          <CardList className="mt-3 border-y border-gray-100">
+            {parts.map(({ c, per, basis, amount, wide }) => (
+              <RowCard
+                key={c.key}
+                heading={c.label}
+                actions={<span className="text-sm tabular-nums text-gray-700">{per}</span>}
+                facts={[]}
+                summary={
+                  <div className="mt-1 flex items-center gap-2">
+                    {basis('min-w-0 flex-1')}
+                    {amount(wide ? 'w-32' : 'w-24')}
+                  </div>
+                }
+              />
+            ))}
+            <RowCard
+              heading="Fixed expenses"
+              actions={<span className="text-sm font-semibold tabular-nums text-gray-900">{money2(total)}</span>}
+              facts={[]}
+              summary={
+                hasDepreciation ? (
+                  <p className="mt-0.5 flex justify-between gap-2 text-xs text-gray-500">
+                    <span>Without depreciation — the cash part</span>
+                    <span className="tabular-nums">{money2(cash)}</span>
+                  </p>
+                ) : null
+              }
+            />
+          </CardList>
+          <div className="mt-3 hidden overflow-x-auto sm:block">
             <table className="w-max min-w-full text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
@@ -284,44 +354,13 @@ function Form({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {FIXED_CATEGORIES.map((c) => {
-                  const r = rows[c.key]
-                  const per = linePerAcre(
-                    { basis: r.basis, amount: numOrNull(r.amount), category: c.key },
-                    spreadAcres,
-                    rentedOutAcres,
-                  )
+                {parts.map(({ c, per, basis, amount, wide }) => {
                   return (
                     <tr key={c.key}>
                       <td className="py-1.5 pr-2 text-gray-800">{c.label}</td>
-                      <td className="py-1.5 pr-2">
-                        <Select
-                          value={r.basis}
-                          onChange={(v) => setRow(c.key, { basis: v as FixedBasis })}
-                          options={[
-                            { value: 'per_acre', label: '$ per acre' },
-                            { value: 'farm_total', label: 'Farm total for the year' },
-                          ]}
-                          size="sm"
-                          className="w-36 sm:w-48"
-                          ariaLabel={`${c.label}: entered as`}
-                          disabled={locked}
-                        />
-                      </td>
-                      <td className="py-1.5 text-right">
-                        <input
-                          value={r.amount}
-                          onChange={(e) => setRow(c.key, { amount: e.target.value })}
-                          disabled={locked}
-                          inputMode="decimal"
-                          placeholder="—"
-                          aria-label={`${c.label} amount`}
-                          className={cn(input, r.basis === 'farm_total' ? 'w-32' : 'w-24')}
-                        />
-                      </td>
-                      <td className="py-1.5 pl-2 text-right tabular-nums text-gray-700">
-                        {per != null ? money2(per) : '—'}
-                      </td>
+                      <td className="py-1.5 pr-2">{basis('w-36 sm:w-48')}</td>
+                      <td className="py-1.5 text-right">{amount(wide ? 'w-32' : 'w-24')}</td>
+                      <td className="py-1.5 pl-2 text-right tabular-nums text-gray-700">{per}</td>
                     </tr>
                   )
                 })}

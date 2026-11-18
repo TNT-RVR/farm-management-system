@@ -98,7 +98,10 @@ with fp as (
   left join public.field_pivots fp2 on fp2.field_id = p.field_id
   where p.crop_year = extract(year from current_date)::int
 )
-select fp.*, o.kind, o.ago, o.mix, o.rate_gal, o.op_type
+-- After 1 October the passes stop sliding with the build date: counted back
+-- from 1 October, so seeding stays in early May rather than drifting into
+-- June and July as the weekly rebuilds go on (batch 6 walk).
+select fp.*, o.kind, o.ago + greatest(0, current_date - make_date(extract(year from current_date)::int, 10, 1)) as ago, o.mix, o.rate_gal, o.op_type
 from fp
 cross join lateral (values
   ('burnoff',   157 - (fp.fx::int % 5), jsonb_build_array(jsonb_build_array('Glyphosate 540', 0.67)), 10, 'application'),

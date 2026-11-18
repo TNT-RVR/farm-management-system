@@ -1,6 +1,7 @@
 import { lazy, Suspense, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
+import { SetupLink } from '@/components/SetupLink'
+import { defaultIrrigationField, irrigationSeasonState, noModelDataNote } from '@/lib/irrigation-season-state'
 import { FileDown, FlaskConical, SlidersHorizontal } from 'lucide-react'
 import { Select } from '@/components/Select'
 import { useCropPlans, useCrops, useFields } from '@/lib/queries'
@@ -62,7 +63,9 @@ export function IrrigationGraph({ fieldId: chosen, onFieldChange }: { fieldId?: 
   // The SMRID allotment reminder links here with ?view=allocation; it lands on
   // a canal field, which is where the allotment is set.
   const canalFirst = params.get('view') === 'allocation' ? rights?.canal[0]?.fieldId : undefined
-  const selectedId = fieldId || canalFirst || activeFields[0]?.id || ''
+  // Otherwise the first field being watered this year, not a dryland one
+  // that happens to come first alphabetically.
+  const selectedId = fieldId || canalFirst || defaultIrrigationField(activeFields, seasons)
   const { data: series, isLoading } = useFieldBalanceSeries(selectedId || undefined)
   const online = useOnline()
   const w = useFieldWater(selectedId, year)
@@ -99,6 +102,9 @@ export function IrrigationGraph({ fieldId: chosen, onFieldChange }: { fieldId?: 
   // What is growing: the Crop Plan's crops on the field (a split field has
   // more than one), and what AIMM is modelling when Setup overrides it.
   const cropInfo = useMemo(() => aimmCropInfo(selectedId, plans ?? [], crops ?? [], seasons ?? [], coefs ?? []), [plans, crops, seasons, coefs, selectedId])
+
+  // Why the graph may be empty: no season this year, no planting date, or a Sync to come.
+  const emptyNote = noModelDataNote(irrigationSeasonState(selectedId, seasons), selectedId, year, `No ${year} model data for this field yet.`)
 
   const statusOf = useMemo(() => new Map((latest ?? []).map((b) => [b.field_id, b.status])), [latest])
   const graphLabel = labelOf(graph)
@@ -243,8 +249,8 @@ export function IrrigationGraph({ fieldId: chosen, onFieldChange }: { fieldId?: 
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2 py-16 text-center text-sm text-gray-400">
-              <p>No {year} model data for this field yet. It needs a planting date, then Sync.</p>
-              <SetupLink to={SETUP_LINKS.plantingDate(selectedId)}>Set the planting date</SetupLink>
+              <p>{emptyNote.text}</p>
+              {emptyNote.link && <SetupLink to={emptyNote.link.to}>{emptyNote.link.label}</SetupLink>}
             </div>
           )
         ) : (

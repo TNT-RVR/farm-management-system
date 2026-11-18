@@ -462,19 +462,20 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        <table className="w-full text-sm">
+        {/* On a phone: keep column pinned, grass and sales hidden, the gain kept (design review, Nov 2026). */}
+        <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
           <thead className={TABLE_HEAD}>
             <tr>
-              <th className="px-3 py-2 font-medium">
+              <th className="sticky left-0 z-10 bg-brand-700 px-3 py-2 font-medium">
                 Keep <CattleInfo k="keepColumn" hover />
               </th>
               <th className="px-3 py-2 text-right font-medium">
                 Cows next year <CattleInfo k="cowsNextYearColumn" hover />
               </th>
-              <th className="px-3 py-2 font-medium">
+              <th className="px-3 py-2 font-medium max-sm:hidden">
                 Grass <CattleInfo k="grassColumn" hover />
               </th>
-              <th className="px-3 py-2 text-right font-medium">
+              <th className="px-3 py-2 text-right font-medium max-sm:hidden">
                 Heifer sales now <CattleInfo k="heiferSalesColumn" hover />
               </th>
               <th className="px-3 py-2 text-right font-medium">
@@ -485,16 +486,21 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
           <tbody className="divide-y divide-gray-100">
             {shownRows.map((r) => (
               <tr key={r.keep} className={cn(r.keep === plan.recommended ? 'bg-brand-50 font-semibold' : r.keep === plan.maintain ? 'bg-gray-50' : '')}>
-                <td className="px-3 py-1.5 tabular-nums">
+                <td
+                  className={cn(
+                    'sticky left-0 z-10 px-3 py-1.5 tabular-nums',
+                    r.keep === plan.recommended ? 'bg-brand-50' : r.keep === plan.maintain ? 'bg-gray-50' : 'bg-white',
+                  )}
+                >
                   {r.keep}
                   {r.keep === plan.recommended && <span className="ml-1.5 rounded bg-brand-600 px-1.5 text-xs font-semibold text-white">recommended</span>}
                   {r.keep === plan.maintain && r.keep !== plan.recommended && <span className="ml-1.5 text-xs text-gray-500">holds herd</span>}
                 </td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{n0(r.cowsNextYear)}</td>
-                <td className={cn('px-3 py-1.5 text-xs', r.overCapacity > 0 ? 'text-red-700' : 'text-gray-500')}>
+                <td className={cn('px-3 py-1.5 text-xs max-sm:hidden', r.overCapacity > 0 ? 'text-red-700' : 'text-gray-500')}>
                   {inputs.capacityCows == null ? '—' : r.overCapacity > 0 ? `${n0(r.overCapacity)} cows over` : 'fits'}
                 </td>
-                <td className="px-3 py-1.5 text-right tabular-nums">{money(r.saleCash)}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums max-sm:hidden">{money(r.saleCash)}</td>
                 <td className={cn('px-3 py-1.5 text-right tabular-nums', r.netVsSellAll == null ? 'text-gray-400' : r.netVsSellAll >= 0 ? 'text-green-800' : 'text-red-700')}>
                   {r.netVsSellAll == null ? (
                     <button type="button" onClick={setOverstock} className="text-xs font-medium text-gray-500 underline decoration-dotted underline-offset-2 hover:text-brand-800">

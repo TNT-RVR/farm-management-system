@@ -57,8 +57,13 @@ export function depthCosts(o: {
   })
 }
 
-/** The farm's power prices (Financials → farm settings), for the pivot pages. */
+/**
+ * The farm's power prices (Utilities › Power), for the pivot pages. With the
+ * Solar switch off, `basis` is always 'buy' whatever the stored setting says
+ * (powerPrices); `solarOn` says which.
+ */
 export function usePowerPrices() {
-  const q = useQuery({ queryKey: ['farm-power-prices'], queryFn: fetchFarmPowerCost, staleTime: 10 * 60_000 })
+  // v2: the row carries solar_on (Farm setup's Solar switch).
+  const q = useQuery({ queryKey: ['farm-power-prices', 'v2'], queryFn: fetchFarmPowerCost, staleTime: 10 * 60_000 })
   return { ...q, prices: powerPrices(q.data) }
 }

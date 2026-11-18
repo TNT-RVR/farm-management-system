@@ -231,19 +231,29 @@ async function readBinCable(): Promise<Response> {
 // Static data for calls a page makes on load
 // ---------------------------------------------------------------------------
 
-/** Weather code for a day, from its rain. */
-const codeFor = (precip: number, cloudy: number) => (precip > 4 ? 63 : precip > 0.5 ? 61 : cloudy > 0.6 ? 3 : cloudy > 0.3 ? 2 : 1)
+/** Weather code for a day, from its rain and its warmth: snow when the high stays near freezing. */
+const codeFor = (precip: number, cloudy: number, hi: number) =>
+  precip > 4 ? (hi <= 1 ? 73 : 63) : precip > 0.5 ? (hi <= 1 ? 71 : 61) : cloudy > 0.6 ? 3 : cloudy > 0.3 ? 2 : 1
 
-/** Current conditions + forecast, Open-Meteo shaped: 3 days back, `days` ahead, hourly from yesterday. */
+/**
+ * Current conditions + forecast, Open-Meteo shaped: 3 days back, `days` ahead, hourly from yesterday.
+ *
+ * Each site gets its own few degrees and its own wind from its coordinates, and
+ * "now" is read off the same hour-by-hour formula the 24-hour view draws, so
+ * the cards at the top and the panel under them agree (batch 6 walk).
+ */
 function ranchWeather({ url }: Req): Response {
   const ahead = Math.max(1, Math.min(16, Number(url.searchParams.get('days')) || 7))
   const hourly = url.searchParams.get('hourly') === '1'
+  const site = `${Number(url.searchParams.get('lat') ?? 0).toFixed(2)},${Number(url.searchParams.get('lon') ?? 0).toFixed(2)}`
+  const siteWarm = 1.5 * wobble(`wx-site-t-${site}`)
+  const siteWind = 1 + 0.2 * wobble(`wx-site-w-${site}`)
   const now = new Date()
   const daily: ForecastDay[] = []
   for (let i = -3; i < ahead; i++) {
     const d = addDays(now, i)
     const key = ymd(d)
-    const mean = normalMean(d) + 4 * wobble(`wx-mean-${key}`)
+    const mean = normalMean(d) + 4 * wobble(`wx-mean-${key}`) + siteWarm
     const wet = noise(`wx-wet-${key}`)
     const precip = wet > 0.72 ? r1((wet - 0.72) * 30) : 0
     // Clock hours: about 5:05 / 22:05 at midsummer, 8:50 / 16:20 at midwinter.
@@ -251,61 +261,63 @@ function ranchWeather({ url }: Req): Response {
     const atHour = (h: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, Math.round(h * 60))
     const sunrise = atHour(6.95 - 1.9 * season)
     const sunset = atHour(19.2 + 2.85 * season)
+    const hi = r1(mean + 6 + 2 * wobble(`wx-hi-${key}`))
+    const windMax = Math.round((14 + 20 * noise(`wx-wind-${key}`)) * siteWind)
     daily.push({
       date: key,
-      code: codeFor(precip, noise(`wx-cloud-${key}`)),
-      hi: r1(mean + 6 + 2 * wobble(`wx-hi-${key}`)),
+      code: codeFor(precip, noise(`wx-cloud-${key}`), hi),
+      hi,
       lo: r1(mean - 6 + 2 * wobble(`wx-lo-${key}`)),
       precip,
       pop: Math.round(precip > 0 ? 50 + 40 * noise(`wx-pop-${key}`) : 25 * noise(`wx-pop-${key}`)),
-      windMax: Math.round(14 + 20 * noise(`wx-wind-${key}`)),
-      gustMax: Math.round(30 + 30 * noise(`wx-wind-${key}`)),
+      windMax,
+      // The day's strongest gust is its strongest hour's: 1.6 × the wind.
+      gustMax: Math.round(windMax * 1.6),
       sunrise: localIso(sunrise),
       sunset: localIso(sunset),
     })
   }
-  const today = daily[3]!
-  const hourFrac = now.getHours() + now.getMinutes() / 60
   // Coldest near sunrise, warmest mid-afternoon.
   const tempAt = (lo: number, hi: number, h: number) => r1(lo + (hi - lo) * (0.5 - 0.5 * Math.cos((2 * Math.PI * (h - 5)) / 24)))
-  const temp = tempAt(today.lo ?? 0, today.hi ?? 10, hourFrac)
+  /** One hour of one day: the same numbers for the 24-hour view and for "now". */
+  const hourOf = (day: ForecastDay, h: number): ForecastHour => {
+    const key = `${day.date}-${h}`
+    const t = tempAt(day.lo ?? 0, day.hi ?? 10, h)
+    const wet = (day.precip ?? 0) > 0 && noise(`hr-rain-${key}`) > 0.7
+    const wind = Math.round(((day.windMax ?? 20) * (0.4 + 0.6 * Math.sin((Math.PI * Math.max(0, h - 6)) / 16))) || 5)
+    return {
+      time: `${day.date}T${pad(h)}:00`,
+      temp: t,
+      rh: Math.round(Math.min(98, 85 - (t - (day.lo ?? 0)) * 3 + 8 * wobble(`hr-rh-${key}`))),
+      dew: r1((day.lo ?? 0) - 2),
+      wind,
+      gust: Math.round(wind * 1.6),
+      windDir: Math.round(250 + 60 * wobble(`hr-dir-${key}`)),
+      precip: wet ? r1((day.precip ?? 0) / 6) : 0,
+      pop: day.pop,
+      code: wet ? (t <= 0 ? 71 : 61) : day.code,
+      cloud: Math.round(100 * noise(`hr-cloud-${key}`)),
+    }
+  }
+  const today = daily[3]!
+  const nowHour = hourOf(today, now.getHours())
   const weather: RanchWeather = {
     current: {
       time: localIso(new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), Math.floor(now.getMinutes() / 15) * 15)),
-      temp,
-      apparent: r1(temp - 2.5),
-      humidity: Math.round(45 + 30 * noise(`wx-rh-${today.date}`)),
-      precip: 0,
-      code: today.code,
-      wind: Math.round((today.windMax ?? 20) * 0.6),
-      gusts: Math.round((today.gustMax ?? 35) * 0.7),
-      windDir: Math.round(250 + 60 * wobble(`wx-dir-${today.date}`)),
+      temp: nowHour.temp,
+      apparent: r1((nowHour.temp ?? 0) - ((nowHour.wind ?? 0) > 10 ? 3 : 1)),
+      humidity: nowHour.rh,
+      precip: nowHour.precip,
+      code: nowHour.code,
+      wind: nowHour.wind,
+      gusts: nowHour.gust,
+      windDir: nowHour.windDir,
     },
     daily,
   }
   if (hourly) {
     const hours: ForecastHour[] = []
-    for (const day of daily.slice(2)) {
-      for (let h = 0; h < 24; h++) {
-        const key = `${day.date}-${h}`
-        const t = tempAt(day.lo ?? 0, day.hi ?? 10, h)
-        const rainy = (day.precip ?? 0) > 0 && noise(`hr-rain-${key}`) > 0.7
-        const wind = Math.round(((day.windMax ?? 20) * (0.4 + 0.6 * Math.sin((Math.PI * Math.max(0, h - 6)) / 16))) || 5)
-        hours.push({
-          time: `${day.date}T${pad(h)}:00`,
-          temp: t,
-          rh: Math.round(Math.min(98, 85 - (t - (day.lo ?? 0)) * 3 + 8 * wobble(`hr-rh-${key}`))),
-          dew: r1((day.lo ?? 0) - 2),
-          wind,
-          gust: Math.round(wind * 1.6),
-          windDir: Math.round(250 + 60 * wobble(`hr-dir-${key}`)),
-          precip: rainy ? r1((day.precip ?? 0) / 6) : 0,
-          pop: day.pop,
-          code: rainy ? 61 : day.code,
-          cloud: Math.round(100 * noise(`hr-cloud-${key}`)),
-        })
-      }
-    }
+    for (const day of daily.slice(2)) for (let h = 0; h < 24; h++) hours.push(hourOf(day, h))
     weather.hourly = hours
   }
   return json(weather)

@@ -418,9 +418,27 @@ export function IrrigationPlanner({ year, onPickField }: { year: number; onPickF
           ) : loading ? (
             <p className="px-3 pb-3 pt-2 text-center text-xs text-gray-400">Reading the water balance…</p>
           ) : rows.length === 0 ? (
+            // Every fall the season's fields are simply done: say that, and
+            // blame planting dates only when a field still being watered
+            // has no balance (batch 6 page walk).
             <p className="px-3 pb-3 text-xs text-gray-500">
-              No {year} field has a water balance in the last two weeks. They need planting dates, then Sync.{' '}
-              <SetupLink to={SETUP_LINKS.plantingDate()}>Set planting dates</SetupLink>
+              {planFields.length === 0 && doneCount > 0 ? (
+                doneCount === 1 ? (
+                  'The one field is done watering for the season.'
+                ) : (
+                  `All ${doneCount} fields are done watering for the season.`
+                )
+              ) : planFields.length === 0 ? (
+                <>
+                  No field has an irrigation season in {year}.{' '}
+                  <SetupLink to={SETUP_LINKS.plantingDate()}>Irrigation setup</SetupLink>
+                </>
+              ) : (
+                <>
+                  No {year} field has a water balance in the last two weeks. They need planting dates, then Sync.{' '}
+                  <SetupLink to={SETUP_LINKS.plantingDate()}>Set planting dates</SetupLink>
+                </>
+              )}
             </p>
           ) : (
             <>

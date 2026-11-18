@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { AlertTriangle, Check, Minus } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ColumnHelp } from '@/components/ColumnHelp'
+import { CardList, RowCard } from '@/components/RowCards'
 import { PLANNED_VS_ACTUAL_HELP } from '@/lib/column-help'
 import { appliedByProduct, fmtMoney } from '@/lib/applied'
 import { compareCrop, prettyCrop, type CropVerdict } from '@/lib/cropMatch'
@@ -144,6 +145,82 @@ export function PlannedVsActual({ cropYear }: { cropYear: number }) {
   const mismatches = rows.filter((r) => r.verdict === 'mismatch').length
   const noWork = rows.filter((r) => r.passes === 0).length
 
+  // Each row's cells once, for the phone card and the table alike.
+  const cells = rows.map((r) => {
+    const v = VERDICT[r.verdict]
+    // Measured beats derived: if the machine says what it put out,
+    // that is the number the budget should be judged against.
+    const against = r.measuredPerAc ?? r.actualPerAc
+    const variance = r.plannedPerAc != null && against != null ? against - r.plannedPerAc : null
+    return {
+      r,
+      variance,
+      // Straight to the full pass-by-pass history — that is what someone
+      // clicking a row on this table is asking for.
+      name: (
+        <Link to={`/fields/${r.field.id}/work`} className="font-medium text-gray-800 hover:text-brand-700 hover:underline">
+          {r.field.name}
+        </Link>
+      ),
+      reported: (
+        <span className="inline-flex items-center gap-1.5">
+          <v.icon className={cn('h-3.5 w-3.5 shrink-0', v.className)} />
+          <span className="text-gray-600">
+            {r.deereCropsAmbiguous ? 'several crops' : r.deereCrop ? prettyCrop(r.deereCrop) : '—'}
+          </span>
+        </span>
+      ),
+      passes: r.passes ? (
+        <Link to={`/fields/${r.field.id}/work`} className="text-gray-600 hover:text-brand-700 hover:underline">
+          {r.passes}
+        </Link>
+      ) : (
+        <span className="text-gray-300">—</span>
+      ),
+      covered:
+        r.coverage == null ? (
+          <span className="text-gray-300">—</span>
+        ) : (
+          <span
+            title="Average share of the field each pass covered"
+            // Well under the whole field usually means a partial pass, not a
+            // saving. Worth a second look either way.
+            className={cn(r.coverage < 0.8 ? 'text-amber-700' : '')}
+          >
+            {Math.round(r.coverage * 100)}%
+            {r.passesWithMaterialNoArea > 0 && <span className="text-amber-600">*</span>}
+          </span>
+        ),
+      budget: r.plannedPerAc != null ? fmtMoney(r.plannedPerAc) : '—',
+      actual:
+        r.actualPerAc != null ? (
+          fmtMoney(r.actualPerAc)
+        ) : r.partiallyPriced ? (
+          <span className="text-xs text-gray-400">part priced</span>
+        ) : (
+          '—'
+        ),
+      asApplied:
+        r.measuredPerAc != null ? (
+          <span
+            className="font-medium text-gray-800"
+            title={
+              r.passesWithoutMeasured > 0
+                ? `${r.passesWithoutMeasured} pass(es) reported no as-applied figures`
+                : "Measured by the machine, over the field's acres"
+            }
+          >
+            {fmtMoney(r.measuredPerAc)}
+            {r.passesWithoutMeasured > 0 && <span className="text-amber-600">*</span>}
+          </span>
+        ) : (
+          <span className="text-gray-300">—</span>
+        ),
+      varianceClass: variance == null ? 'text-gray-300' : variance > 0 ? 'text-red-600' : 'text-green-700',
+      varianceText: variance == null ? '—' : `${variance > 0 ? '+' : ''}${fmtMoney(variance)}`,
+    }
+  })
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap gap-4 text-sm">
@@ -160,7 +237,26 @@ export function PlannedVsActual({ cropYear }: { cropYear: number }) {
         </button>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      {/* One field a card on a phone (design review, Nov 2026). */}
+      <CardList className="rounded-lg border border-gray-200 bg-white">
+        {cells.map((c) => (
+          <RowCard
+            key={c.r.field.id}
+            heading={c.name}
+            facts={[
+              { label: 'Planned', node: c.r.plannedCrop },
+              { label: 'Deere reports', node: c.reported },
+              ...(showWork ? [{ label: 'Passes', node: c.r.passes ? c.passes : null }, { label: 'Covered', node: c.r.coverage == null ? null : c.covered }] : []),
+              { label: 'Budget $/ac', node: c.budget },
+              { label: 'Actual $/ac', node: c.actual },
+              { label: 'As-applied $/ac', node: c.r.measuredPerAc == null ? null : c.asApplied },
+              { label: 'Variance', node: c.variance == null ? null : <span className={c.varianceClass}>{c.varianceText}</span> },
+            ]}
+          />
+        ))}
+      </CardList>
+
+      <div className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white sm:block">
         <table className="w-max min-w-full text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -192,116 +288,19 @@ export function PlannedVsActual({ cropYear }: { cropYear: number }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {rows.map((r) => {
-              const v = VERDICT[r.verdict]
-              // Measured beats derived: if the machine says what it put out,
-              // that is the number the budget should be judged against.
-              const against = r.measuredPerAc ?? r.actualPerAc
-              const variance = r.plannedPerAc != null && against != null ? against - r.plannedPerAc : null
-              return (
-                <tr key={r.field.id} className={cn(r.verdict === 'mismatch' && 'bg-amber-50/50')}>
-                  <td className="px-3 py-2">
-                    {/* Straight to the full pass-by-pass history — that is what
-                        someone clicking a row on this table is asking for. */}
-                    <Link
-                      to={`/fields/${r.field.id}/work`}
-                      className="font-medium text-gray-800 hover:text-brand-700 hover:underline"
-                    >
-                      {r.field.name}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2 text-gray-600">{r.plannedCrop ?? '—'}</td>
-                  <td className="px-3 py-2">
-                    <span className="inline-flex items-center gap-1.5">
-                      <v.icon className={cn('h-3.5 w-3.5 shrink-0', v.className)} />
-                      <span className="text-gray-600">
-                        {r.deereCropsAmbiguous
-                          ? 'several crops'
-                          : r.deereCrop
-                            ? prettyCrop(r.deereCrop)
-                            : '—'}
-                      </span>
-                    </span>
-                  </td>
-                  {showWork && (
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {r.passes ? (
-                      <Link
-                        to={`/fields/${r.field.id}/work`}
-                        className="text-gray-600 hover:text-brand-700 hover:underline"
-                      >
-                        {r.passes}
-                      </Link>
-                    ) : (
-                      <span className="text-gray-300">—</span>
-                    )}
-                  </td>
-                  )}
-                  {showWork && (
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-600">
-                    {r.coverage == null ? (
-                      <span className="text-gray-300">—</span>
-                    ) : (
-                      <span
-                        title="Average share of the field each pass covered"
-                        className={cn(
-                          // Well under the whole field usually means a partial
-                          // pass, not a saving. Worth a second look either way.
-                          r.coverage < 0.8 ? 'text-amber-700' : '',
-                        )}
-                      >
-                        {Math.round(r.coverage * 100)}%
-                        {r.passesWithMaterialNoArea > 0 && <span className="text-amber-600">*</span>}
-                      </span>
-                    )}
-                  </td>
-                  )}
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-600">
-                    {r.plannedPerAc != null ? fmtMoney(r.plannedPerAc) : '—'}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-600">
-                    {r.actualPerAc != null ? (
-                      fmtMoney(r.actualPerAc)
-                    ) : r.partiallyPriced ? (
-                      <span className="text-xs text-gray-400">part priced</span>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {r.measuredPerAc != null ? (
-                      <span
-                        className="font-medium text-gray-800"
-                        title={
-                          r.passesWithoutMeasured > 0
-                            ? `${r.passesWithoutMeasured} pass(es) reported no as-applied figures`
-                            : "Measured by the machine, over the field's acres"
-                        }
-                      >
-                        {fmtMoney(r.measuredPerAc)}
-                        {r.passesWithoutMeasured > 0 && <span className="text-amber-600">*</span>}
-                      </span>
-                    ) : (
-                      <span className="text-gray-300">—</span>
-                    )}
-                  </td>
-                  <td
-                    className={cn(
-                      'px-3 py-2 text-right tabular-nums',
-                      variance == null
-                        ? 'text-gray-300'
-                        : variance > 0
-                          ? 'text-red-600'
-                          : 'text-green-700',
-                    )}
-                  >
-                    {variance == null
-                      ? '—'
-                      : `${variance > 0 ? '+' : ''}${fmtMoney(variance)}`}
-                  </td>
-                </tr>
-              )
-            })}
+            {cells.map((c) => (
+              <tr key={c.r.field.id} className={cn(c.r.verdict === 'mismatch' && 'bg-amber-50/50')}>
+                <td className="px-3 py-2">{c.name}</td>
+                <td className="px-3 py-2 text-gray-600">{c.r.plannedCrop ?? '—'}</td>
+                <td className="px-3 py-2">{c.reported}</td>
+                {showWork && <td className="px-3 py-2 text-right tabular-nums">{c.passes}</td>}
+                {showWork && <td className="px-3 py-2 text-right tabular-nums text-gray-600">{c.covered}</td>}
+                <td className="px-3 py-2 text-right tabular-nums text-gray-600">{c.budget}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-600">{c.actual}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{c.asApplied}</td>
+                <td className={cn('px-3 py-2 text-right tabular-nums', c.varianceClass)}>{c.varianceText}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

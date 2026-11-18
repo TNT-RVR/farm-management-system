@@ -291,16 +291,17 @@ export function CropForFeedPage() {
         </p>
       ) : (
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-sm">
+        {/* On a phone: option column pinned, the cost parts hidden, the net kept (design review, Nov 2026). */}
+        <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
           <thead className={TABLE_HEAD}>
             <tr>
-              <th className="px-2 py-2 text-left font-medium">Option</th>
+              <th className="sticky left-0 z-10 bg-brand-700 px-2 py-2 text-left font-medium">Option</th>
               <th className="px-2 py-2 text-right font-medium">
                 Feed<HeadTip title="Feed">Dry matter the cattle actually get, after field losses</HeadTip>
               </th>
-              <th className="px-2 py-2 text-right font-medium">Grain</th>
-              <th className="px-2 py-2 text-right font-medium">Operations</th>
-              <th className="px-2 py-2 text-right font-medium">
+              <th className="px-2 py-2 text-right font-medium max-sm:hidden">Grain</th>
+              <th className="px-2 py-2 text-right font-medium max-sm:hidden">Operations</th>
+              <th className="px-2 py-2 text-right font-medium max-sm:hidden">
                 Nutrients out<HeadTip title="Nutrients out">Fertility hauled off in what leaves the field</HeadTip>
               </th>
               <th className="px-2 py-2 text-right font-medium">Net $/ac</th>
@@ -316,15 +317,20 @@ export function CropForFeedPage() {
                   o.unavailable ? 'text-gray-400' : i === 0 ? 'bg-brand-50 font-medium' : undefined,
                 )}
               >
-                <td className="px-2 py-1.5">
+                <td
+                  className={cn(
+                    'sticky left-0 z-10 px-2 py-1.5',
+                    !o.unavailable && i === 0 ? 'bg-brand-50' : 'bg-white',
+                  )}
+                >
                   {o.label}
                   {o.unavailable ? <span className="ml-2 text-xs">— {o.unavailable}</span> : null}
                   {!o.unavailable && i === 0 ? <span className="ml-2 text-xs text-brand-700">best</span> : null}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{o.feedTonneDmPerAc > 0 ? `${n1(o.feedTonneDmPerAc)} t` : '—'}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{o.grainRevenuePerAc > 0 ? money(o.grainRevenuePerAc, 0) : '—'}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{money(-o.operatingPerAc, 0)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">
+                <td className="px-2 py-1.5 text-right tabular-nums max-sm:hidden">{o.grainRevenuePerAc > 0 ? money(o.grainRevenuePerAc, 0) : '—'}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums max-sm:hidden">{money(-o.operatingPerAc, 0)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums max-sm:hidden">
                   {o.nutrientRemovedPerAc > 0 ? money(-o.nutrientRemovedPerAc, 0) : '—'}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{o.unavailable ? '—' : money(o.netPerAc, 0)}</td>

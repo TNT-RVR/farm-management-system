@@ -660,7 +660,7 @@ export function BlendsTab() {
         <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
           {/* Fits a phone without scrolling: the analysis goes under the
               name there instead of in its own column (design review, Nov 2026). */}
-          <table className="w-full text-xs sm:min-w-[560px] max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
+          <table className="w-full text-xs sm:min-w-[560px] max-sm:[&_td]:px-1 max-sm:[&_th]:px-1">
             <thead className={TABLE_HEAD_SUPPORT}>
               <tr>
                 <th className={TABLE_TH}>Use</th>

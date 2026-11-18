@@ -14,6 +14,7 @@ import { ourRows } from '@/lib/reports/agristability-form'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 const db = supabase as unknown as SupabaseClient
 const money0 = (v: number) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
@@ -114,32 +115,33 @@ export function InputsTab({ realm }: { realm: string }) {
 
         {cmp && (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[480px] text-sm">
+            {/* Squeezed on a phone: the input pinned, the share placed hidden (design review, Nov 2026). */}
+            <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5 sm:min-w-[480px]">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className={TABLE_TH}>Input</th>
+                  <th className={cn(TABLE_TH, 'sticky left-0 z-10 bg-brand-700')}>Input</th>
                   <th className={cn(TABLE_TH, 'text-right')}>Books</th>
                   <th className={cn(TABLE_TH, 'text-right')}>On the fields</th>
                   <th className={cn(TABLE_TH, 'text-right')}>Not on a field</th>
-                  <th className={cn(TABLE_TH, 'text-right')}>Placed</th>
+                  <th className={cn(TABLE_TH, 'text-right max-sm:hidden')}>Placed</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 tabular-nums">
                 {cmp.kinds.map((k) => (
                   <tr key={k.kind}>
-                    <td className="px-3 py-1.5 text-gray-800">{INPUT_KINDS.find((x) => x.key === k.kind)!.label}</td>
+                    <td className="sticky left-0 z-10 bg-white px-3 py-1.5 text-gray-800">{INPUT_KINDS.find((x) => x.key === k.kind)!.label}</td>
                     <td className="px-3 py-1.5 text-right text-gray-900">{money0(k.books)}</td>
                     <td className="px-3 py-1.5 text-right text-gray-700">{compared ? money0(k.app) : '—'}</td>
                     <td className={cn('px-3 py-1.5 text-right', compared && k.gap > 0 ? 'text-amber-800' : 'text-gray-500')}>{compared ? money0(k.gap) : '—'}</td>
-                    <td className="px-3 py-1.5 text-right text-gray-600">{compared ? pct(k.app, k.books) : '—'}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-600 max-sm:hidden">{compared ? pct(k.app, k.books) : '—'}</td>
                   </tr>
                 ))}
                 <tr className="font-semibold">
-                  <td className="px-3 py-1.5 text-gray-900">Inputs</td>
+                  <td className="sticky left-0 z-10 bg-white px-3 py-1.5 text-gray-900">Inputs</td>
                   <td className="px-3 py-1.5 text-right text-gray-900">{money0(booksTotal)}</td>
                   <td className="px-3 py-1.5 text-right text-gray-900">{compared ? money0(appTotal) : '—'}</td>
                   <td className="px-3 py-1.5 text-right text-gray-900">{compared ? money0(booksTotal - appTotal) : '—'}</td>
-                  <td className="px-3 py-1.5 text-right text-gray-700">{compared ? pct(appTotal, booksTotal) : '—'}</td>
+                  <td className="px-3 py-1.5 text-right text-gray-700 max-sm:hidden">{compared ? pct(appTotal, booksTotal) : '—'}</td>
                 </tr>
               </tbody>
             </table>
@@ -149,7 +151,48 @@ export function InputsTab({ realm }: { realm: string }) {
 
       {cmp && compared && (
         <Fold title="Field by field" summary={`${cmp.fields.length} fields`} storageKey="qb-inputs-fields" defaultOpen className="overflow-hidden" bodyClassName="p-0">
-          <div className="overflow-x-auto">
+          {/* One field a card on a phone (design review, Nov 2026). */}
+          <CardList>
+            {cmp.fields.map((f) => {
+              const overInvoiced = f.invoiced != null && f.invoiced > f.app.fertilizer * 1.1 + 100
+              return (
+                <RowCard
+                  key={f.fieldId}
+                  heading={
+                    <>
+                      <Link to={`/fields/${f.fieldId}`} className="text-gray-900 hover:text-brand-700 hover:underline">
+                        {f.field}
+                      </Link>
+                      <span className="block text-xs font-normal text-gray-500">
+                        {f.crop ?? '—'} · {Math.round(f.acres).toLocaleString('en-CA')} ac
+                      </span>
+                    </>
+                  }
+                  facts={[]}
+                  summary={
+                    <SummaryLine className="tabular-nums">
+                      <span className="font-semibold text-gray-900">{f.acres > 0 ? `${money0(f.appTotal / f.acres)}/ac` : '—'}</span>
+                      <Dot />
+                      <span>Fert {money0(f.app.fertilizer)}</span>
+                      <Dot />
+                      <span>Chem {money0(f.app.chemical)}</span>
+                      <Dot />
+                      <span>Seed {money0(f.app.seed)}</span>
+                      <Dot />
+                      <span>Fuel {money0(f.app.fuel)}</span>
+                      {f.invoiced != null && (
+                        <>
+                          <Dot />
+                          <span className={overInvoiced ? 'text-amber-800' : undefined}>Invoiced fert {money0(f.invoiced)}</span>
+                        </>
+                      )}
+                    </SummaryLine>
+                  }
+                />
+              )
+            })}
+          </CardList>
+          <div className="hidden overflow-x-auto sm:block">
             <table className="w-full min-w-[640px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>

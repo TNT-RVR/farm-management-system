@@ -38,6 +38,7 @@ import { farmTz } from '@/lib/farm-context'
 import { MovementDetail } from './MovementDetail'
 import { MoistureTestDetail } from '@/pages/harvest/MoistureTestDetail'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 const bu = (v: number | string | null | undefined) =>
   v == null ? '—' : `${Math.round(Number(v)).toLocaleString('en-CA')} bu`
@@ -568,77 +569,117 @@ export function BinDetail({
             ) : ledger.length === 0 ? (
               <p className="text-gray-400">Nothing has moved in or out of this bin yet.</p>
             ) : (
-              <div className={cn(ledger.length > 12 && 'max-h-96 overflow-y-auto')}>
-                <Table head={['Date', 'What', 'Field', 'Crop', 'Bushels', 'Kg', 'Driver', 'Balance', ...(canEdit ? [''] : [])]}>
-                  {ledger.map(({ m, label, signed, balance }) => {
-                    const load = m.ticket_number?.startsWith('load:') ? loadById.get(m.ticket_number.slice(5)) : undefined
-                    const share = load ? loadInBin(load, bin.id) : null
-                    return (
-                      <tr
-                        key={m.id}
-                        title={load ? 'Open the load to see or correct it' : (m.notes ?? undefined)}
-                        onClick={rowClick(() => (load && canEdit ? setLoadId(load.id) : setMoveId(m.id)))}
-                        className="cursor-pointer hover:bg-gray-50"
-                      >
-                        <Td>
-                          {m.moved_at}
-                          {load?.full_at && (
-                            <span className="block text-xs text-gray-500">
-                              in {weighTime(load.full_at, false)}
-                              {weighedOutAt(load) ? ` · out ${weighTime(load.empty_at, false)}` : ''}
-                            </span>
-                          )}
-                        </Td>
-                        <Td>
-                          {label}
-                          {load?.last_from_field && (
-                            <Flag className="ml-1 inline h-3 w-3 text-green-700" fill="currentColor" aria-label="Last load from the field" />
-                          )}
-                        </Td>
-                        <Td>{m.field_id ? fieldName(m.field_id) : '—'}</Td>
-                        <Td>{cropName(m.crop_id)}</Td>
-                        <Td num className={signed >= 0 ? 'text-green-800' : 'text-red-700'}>
-                          {signed >= 0 ? '+' : '−'}
-                          {Math.round(Math.abs(signed)).toLocaleString('en-CA')}
-                          {/* A load that filled this bin and went on into another (Sam, 20 Oct 2026). */}
-                          {load?.overflow_bin_id && share && (
-                            <span className="block text-xs font-normal text-gray-500">
-                              {share.part === 'first'
-                                ? `of ${bu(load.bushels)}; rest to ${(allBins ?? []).find((b) => b.id === load.overflow_bin_id)?.name ?? 'another bin'}`
-                                : `of ${bu(load.bushels)}; after ${(allBins ?? []).find((b) => b.id === load.bin_id)?.name ?? 'another bin'} filled`}
-                            </span>
-                          )}
-                        </Td>
-                        {/* Weighed where a load crossed the scale; worked out from
-                            the bushels otherwise, and said to be, so a row entered
-                            by hand is not a blank (Sam, 2 Nov 2026). */}
-                        <Td num>
-                          {share ? (
-                            kg(share.kg)
-                          ) : (
-                            (() => {
-                              const k = kgOf(m.crop_id, Math.abs(signed))
-                              return k == null ? (
-                                '—'
-                              ) : (
-                                <>
-                                  {kg(k)}
-                                  <span className="block text-xs font-normal text-gray-400">calculated</span>
-                                </>
-                              )
-                            })()
-                          )}
-                        </Td>
-                        <Td>{load?.driver ?? '—'}</Td>
-                        <Td num strong>
-                          {Math.round(balance).toLocaleString('en-CA')}
-                        </Td>
-                        {canEdit && <td className="px-1 py-1 text-right">{load && <DeleteLoadButton load={load} />}</td>}
-                      </tr>
-                    )
-                  })}
-                </Table>
-              </div>
+              (() => {
+                // Each movement's pieces built once, for the phone card and the table row.
+                const items = ledger.map(({ m, label, signed, balance }) => {
+                  const load = m.ticket_number?.startsWith('load:') ? loadById.get(m.ticket_number.slice(5)) : undefined
+                  const share = load ? loadInBin(load, bin.id) : null
+                  const open = rowClick(() => (load && canEdit ? setLoadId(load.id) : setMoveId(m.id)))
+                  const date = (
+                    <>
+                      {m.moved_at}
+                      {load?.full_at && (
+                        <span className="block text-xs text-gray-500">
+                          in {weighTime(load.full_at, false)}
+                          {weighedOutAt(load) ? ` · out ${weighTime(load.empty_at, false)}` : ''}
+                        </span>
+                      )}
+                    </>
+                  )
+                  const what = (
+                    <>
+                      {label}
+                      {load?.last_from_field && (
+                        <Flag className="ml-1 inline h-3 w-3 text-green-700" fill="currentColor" aria-label="Last load from the field" />
+                      )}
+                    </>
+                  )
+                  const bushels = (
+                    <>
+                      {signed >= 0 ? '+' : '−'}
+                      {Math.round(Math.abs(signed)).toLocaleString('en-CA')}
+                      {/* A load that filled this bin and went on into another (Sam, 20 Oct 2026). */}
+                      {load?.overflow_bin_id && share && (
+                        <span className="block text-xs font-normal text-gray-500">
+                          {share.part === 'first'
+                            ? `of ${bu(load.bushels)}; rest to ${(allBins ?? []).find((b) => b.id === load.overflow_bin_id)?.name ?? 'another bin'}`
+                            : `of ${bu(load.bushels)}; after ${(allBins ?? []).find((b) => b.id === load.bin_id)?.name ?? 'another bin'} filled`}
+                        </span>
+                      )}
+                    </>
+                  )
+                  // Weighed where a load crossed the scale; worked out from
+                  // the bushels otherwise, and said to be, so a row entered
+                  // by hand is not a blank (Sam, 2 Nov 2026).
+                  const k = share ? null : kgOf(m.crop_id, Math.abs(signed))
+                  const weight = share ? (
+                    kg(share.kg)
+                  ) : k == null ? (
+                    '—'
+                  ) : (
+                    <>
+                      {kg(k)}
+                      <span className="block text-xs font-normal text-gray-400">calculated</span>
+                    </>
+                  )
+                  return { m, load, signed, balance, open, date, what, bushels, weight }
+                })
+                const bushelTone = (signed: number) => (signed >= 0 ? 'text-green-800' : 'text-red-700')
+                return (
+                  <>
+                    {/* One movement a card on a phone (design review, Nov 2026). */}
+                    <CardList className={cn('rounded-md border border-gray-200', ledger.length > 12 && 'max-h-96 overflow-y-auto')}>
+                      {items.map(({ m, load, signed, balance, open, date, what, bushels, weight }) => (
+                        <RowCard
+                          key={m.id}
+                          onClick={open}
+                          heading={
+                            <>
+                              {what}
+                              <span className="block text-xs font-normal text-gray-500">{date}</span>
+                            </>
+                          }
+                          actions={canEdit && load ? <DeleteLoadButton load={load} /> : undefined}
+                          facts={[
+                            { label: 'Bushels', node: <span className={cn('tabular-nums', bushelTone(signed))}>{bushels}</span> },
+                            { label: 'Field', node: m.field_id ? fieldName(m.field_id) : null },
+                            { label: 'Crop', node: cropName(m.crop_id) },
+                            { label: 'Kg', node: weight },
+                            { label: 'Driver', node: load?.driver },
+                            { label: 'Balance', node: <span className="font-semibold tabular-nums">{Math.round(balance).toLocaleString('en-CA')}</span> },
+                          ]}
+                        />
+                      ))}
+                    </CardList>
+                    <div className={cn('hidden sm:block', ledger.length > 12 && 'max-h-96 overflow-y-auto')}>
+                      <Table head={['Date', 'What', 'Field', 'Crop', 'Bushels', 'Kg', 'Driver', 'Balance', ...(canEdit ? [''] : [])]}>
+                        {items.map(({ m, load, signed, balance, open, date, what, bushels, weight }) => (
+                          <tr
+                            key={m.id}
+                            title={load ? 'Open the load to see or correct it' : (m.notes ?? undefined)}
+                            onClick={open}
+                            className="cursor-pointer hover:bg-gray-50"
+                          >
+                            <Td>{date}</Td>
+                            <Td>{what}</Td>
+                            <Td>{m.field_id ? fieldName(m.field_id) : '—'}</Td>
+                            <Td>{cropName(m.crop_id)}</Td>
+                            <Td num className={bushelTone(signed)}>
+                              {bushels}
+                            </Td>
+                            <Td num>{weight}</Td>
+                            <Td>{load?.driver ?? '—'}</Td>
+                            <Td num strong>
+                              {Math.round(balance).toLocaleString('en-CA')}
+                            </Td>
+                            {canEdit && <td className="px-1 py-1 text-right">{load && <DeleteLoadButton load={load} />}</td>}
+                          </tr>
+                        ))}
+                      </Table>
+                    </div>
+                  </>
+                )
+              })()
             )}
 
             {/* What is in it now came over the scale in these loads. By field,
@@ -691,7 +732,39 @@ export function BinDetail({
                     so a row says something on its own (Sam, 27 Oct 2026). Who
                     did it and the old and new figures are a click away rather
                     than three repeated lines wide. */}
-                <div className={cn(edits.length > 8 && 'max-h-72 overflow-y-auto')}>
+                {/* One change a card on a phone (design review, Nov 2026). */}
+                <CardList className={cn('rounded-md border border-gray-200', edits.length > 8 && 'max-h-72 overflow-y-auto')}>
+                  {edits.map((e, i) => (
+                    <RowCard
+                      key={`${e.at}:${i}`}
+                      onClick={rowClick(() => setEditAt(`${e.at}:${i}`))}
+                      heading={
+                        <>
+                          {e.what}
+                          <span className="block text-xs font-normal text-gray-500">
+                            {changedWhen(e.at)}
+                            {e.on ? ` · ${e.on}` : ''}
+                          </span>
+                        </>
+                      }
+                      facts={[]}
+                      summary={
+                        <SummaryLine>
+                          {e.crop && <span>{e.crop}</span>}
+                          {e.crop && e.bushels != null && <Dot />}
+                          {e.bushels != null && (
+                            <span className={cn('tabular-nums', e.direction === 'out' ? 'text-red-700' : 'text-green-800')}>
+                              {e.direction === 'out' ? '−' : '+'}
+                              {Math.round(e.bushels).toLocaleString('en-CA')} bu
+                            </span>
+                          )}
+                          {e.fields.length > 0 && <span className="w-full text-gray-500">{e.fields.join(', ')}</span>}
+                        </SummaryLine>
+                      }
+                    />
+                  ))}
+                </CardList>
+                <div className={cn('hidden sm:block', edits.length > 8 && 'max-h-72 overflow-y-auto')}>
                   <Table head={['Changed', 'Record', 'Crop', 'Bushels', 'What']}>
                     {edits.map((e, i) => (
                       <tr
@@ -724,8 +797,38 @@ export function BinDetail({
         {active === 'moisture' && (
           <>
             {/* Moisture of what went in */}
+            {/* One test a card on a phone (design review, Nov 2026). */}
             {(history?.tests ?? []).length > 0 && (
-              <Table head={['When', 'Field', 'Moisture', 'Grade', 'Sample / note']}>
+              <CardList className="rounded-md border border-gray-200">
+                {history!.tests.map((t) => (
+                  <RowCard
+                    key={t.id}
+                    onClick={rowClick(() => setTestId(t.id))}
+                    heading={
+                      <>
+                        {fieldName(t.field_id)}
+                        <span className="ml-1.5 text-xs font-normal text-gray-500">{t.tested_at.slice(0, 10)}</span>
+                      </>
+                    }
+                    facts={[]}
+                    summary={
+                      <SummaryLine>
+                        <span className="tabular-nums">{t.moisture_pct != null ? `${Number(t.moisture_pct).toFixed(1)}%` : '—'}</span>
+                        {t.grade && (
+                          <>
+                            <Dot />
+                            <span>{t.grade}</span>
+                          </>
+                        )}
+                        <MoistureTestNote test={t} />
+                      </SummaryLine>
+                    }
+                  />
+                ))}
+              </CardList>
+            )}
+            {(history?.tests ?? []).length > 0 && (
+              <Table className="hidden sm:block" head={['When', 'Field', 'Moisture', 'Grade', 'Sample / note']}>
                 {history!.tests.map((t) => (
                   <tr key={t.id} onClick={rowClick(() => setTestId(t.id))} className="cursor-pointer hover:bg-gray-50">
                     <Td>{t.tested_at.slice(0, 10)}</Td>
@@ -839,9 +942,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-function Table({ head, children }: { head: string[]; children: React.ReactNode }) {
+function Table({ head, children, className }: { head: string[]; children: React.ReactNode; className?: string }) {
   return (
-    <div className="max-h-64 overflow-auto rounded-md border border-gray-200">
+    <div className={cn('max-h-64 overflow-auto rounded-md border border-gray-200', className)}>
       <table className="w-full text-xs">
         <thead className={cn(TABLE_HEAD, 'sticky top-0')}>
           <tr>

@@ -517,13 +517,14 @@ function Verdict({ A, B, acres }: { A: SideData; B: SideData; acres: number }) {
       </ul>
 
       <div className="mt-3 overflow-x-auto">
-        <table className="w-full min-w-[420px] text-xs tabular-nums">
+        {/* On a phone: yield column pinned, cells tightened (design review, Nov 2026). */}
+        <table className="w-full text-xs tabular-nums max-sm:[&_td]:px-0.5 sm:min-w-[420px]">
           <caption className="mb-1 text-left text-xs text-gray-500">
             {A.crop.name} less {B.crop.name}, $/ac, at yields either side of the expected ones. Green: {A.crop.name} wins. Red: {B.crop.name} wins.
           </caption>
           <thead className={TABLE_HEAD}>
             <tr>
-              <th className="p-1 text-left font-medium">
+              <th className="sticky left-0 z-10 bg-brand-700 p-1 text-left font-medium">
                 {A.basis.unit} ↓ · {B.basis.unit} →
               </th>
               {/* The middle column is the expected yield; on the green bar it
@@ -539,7 +540,7 @@ function Verdict({ A, B, acres }: { A: SideData; B: SideData; acres: number }) {
           <tbody>
             {grid.yieldsA.map((y, i) => (
               <tr key={i}>
-                <th className={cn('p-1 text-left font-medium', i === 2 ? 'text-gray-900' : 'text-gray-500')}>{y}</th>
+                <th className={cn('sticky left-0 z-10 bg-white p-1 text-left font-medium', i === 2 ? 'text-gray-900' : 'text-gray-500')}>{y}</th>
                 {grid.cells[i].map((d, j) => (
                   <td key={j} className={cn('p-1 text-right', d >= 0 ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800', i === 2 && j === 2 && 'font-bold ring-1 ring-gray-400')}>
                     {money(d)}
@@ -707,7 +708,8 @@ function FarmCheck({
       )}
       <Fold title="By crop" storageKey="crop-compare-farm-crops" className="mt-2">
         <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="w-full text-xs tabular-nums">
+          {/* Tighter cells on a phone (design review, Nov 2026). */}
+          <table className="w-full text-xs tabular-nums max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
             <thead className={TABLE_HEAD}>
               <tr>
                 <th className={TABLE_TH}>Crop</th>

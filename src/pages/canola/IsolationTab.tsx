@@ -236,11 +236,12 @@ export function IsolationTab() {
             <ExportButton label="Export the quarters within a mile" onExport={(f) => exportAs(f === 'PDF' ? 'pdf' : 'csv')} />
           </div>
           <div className="mt-2 overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
+            {/* On a phone: the quarter pinned with whose folded under it, cells tightened (design review, Nov 2026). */}
+            <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5 sm:min-w-[640px]">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className={TABLE_TH}>Quarter</th>
-                  <th className={TABLE_TH}>Whose</th>
+                  <th className={cn(TABLE_TH, 'sticky left-0 z-10 bg-brand-700')}>Quarter</th>
+                  <th className={cn(TABLE_TH, 'max-sm:hidden')}>Whose</th>
                   {years.map((y) => (
                     <th key={y} className={TABLE_TH}>
                       {y}
@@ -251,8 +252,11 @@ export function IsolationTab() {
               <tbody className="divide-y divide-gray-100">
                 {rows.map((r) => (
                   <tr key={r.parcel} onClick={() => setSelected(r.parcel)} className={cn('cursor-pointer hover:bg-gray-50', selected === r.parcel && 'bg-brand-50')}>
-                    <td className="px-3 py-1.5 font-medium text-gray-900">{r.label}</td>
-                    <td className="px-3 py-1.5 text-xs text-gray-600">{whoseLabel(r)}</td>
+                    <td className={cn('sticky left-0 z-10 px-3 py-1.5 font-medium text-gray-900', selected === r.parcel ? 'bg-brand-50' : 'bg-white')}>
+                      {r.label}
+                      <span className="block text-xs font-normal text-gray-600 sm:hidden">{whoseLabel(r)}</span>
+                    </td>
+                    <td className="px-3 py-1.5 text-xs text-gray-600 max-sm:hidden">{whoseLabel(r)}</td>
                     {r.cells.map((c, k) => (
                       <td key={k} className={cn('px-3 py-1.5', isCanolaCrop(c.crop) ? 'font-semibold text-amber-700' : c.crop ? 'text-gray-800' : 'text-gray-300')}>
                         {c.crop ?? '—'}

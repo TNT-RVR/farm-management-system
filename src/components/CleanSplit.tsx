@@ -96,7 +96,8 @@ export function CleanSplit({
           </p>
         </InfoPopover>
       </div>
-      <table className="mt-1 w-full text-xs">
+      {/* Tighter cells on a phone, so the kilograms wrap less (design review, Nov 2026). */}
+      <table className="mt-1 w-full text-xs max-sm:[&_td]:px-1 max-sm:[&_th]:px-1">
         <thead>
           <tr className="text-xs uppercase tracking-wide text-gray-400">
             <th className="px-2 py-0.5 text-left font-medium">Where</th>

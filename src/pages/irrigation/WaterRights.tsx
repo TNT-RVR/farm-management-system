@@ -13,6 +13,7 @@ import { useDistrictRate } from '@/lib/irrigation'
 import { n0, n1 } from '@/lib/format'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { HeadTip } from '@/components/HeadTip'
+import { CardList, RowCard } from '@/components/RowCards'
 
 const signed = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${n0(Math.abs(v))}`
 
@@ -243,6 +244,41 @@ export function LicenceCard({ pool, detail, thisSeason, highlight }: { pool: Poo
   const room = thisSeason ? pool.spareAf : pool.roomAf
   const over = pool.fields.filter((f) => (f.overShareAf ?? 0) > 0.5)
   const under = pool.fields.filter((f) => (f.overShareAf ?? 0) < -0.5)
+  // Each field's figures, built once for its table row and its phone card.
+  const shareRows = pool.fields.map((f) => ({
+    f,
+    name: (
+      <>
+        <Link to={`/fields/${f.fieldId}/work`} className="hover:underline">
+          {f.name}
+        </Link>
+        {f.pending && <span className="ml-1 rounded bg-amber-50 px-1 text-xs text-amber-800">pending amendment</span>}
+      </>
+    ),
+    share:
+      f.shareAf != null ? (
+        <>
+          {n0(f.shareAf)} ac-ft
+          {f.shareIn != null && <span className="block text-xs text-gray-400">{n1(f.shareIn)}&quot;</span>}
+        </>
+      ) : null,
+    need:
+      f.needAf != null ? (
+        <>
+          {n0(f.needAf)} ac-ft
+          {f.needIn != null && <span className="block text-xs text-gray-400">{n1(f.needIn)}&quot;</span>}
+        </>
+      ) : null,
+    vs: f.overShareAf != null ? signed(f.overShareAf) : f.pending && f.needAf != null ? signed(f.needAf) : null,
+    vsTone: (f.overShareAf ?? 0) > 0.5 ? 'text-amber-700' : (f.overShareAf ?? 0) < -0.5 ? 'text-green-700' : 'text-gray-500',
+    ceiling:
+      f.ceilingAf != null ? (
+        <>
+          {n0(f.ceilingAf)} ac-ft
+          {f.acres > 0 && <span className="block text-xs font-normal text-gray-400">{n1((f.ceilingAf * 12) / f.acres)}&quot;</span>}
+        </>
+      ) : null,
+  }))
   return (
     <div className="rounded-md border border-gray-200 bg-white p-2 text-xs">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -287,8 +323,33 @@ export function LicenceCard({ pool, detail, thisSeason, highlight }: { pool: Poo
       {/* The fields sharing the licence sit behind the same toggle: the field's
           own Used / Allowed are already on the card above, and the room line
           below says whether the licence as a whole is short. */}
+      {/* One field a card on a phone (design review, Nov 2026). */}
       {open && (
-      <div className="mt-1.5 overflow-x-auto rounded-lg border border-gray-200">
+        <CardList className="mt-1.5 rounded-lg border border-gray-200">
+          {shareRows.map(({ f, name, share, need, vs, vsTone, ceiling }) => (
+            <RowCard
+              key={f.fieldId}
+              heading={
+                <>
+                  {name}
+                  {f.fieldId === highlight && <span className="ml-1.5 text-xs font-normal text-sky-700">this field</span>}
+                </>
+              }
+              facts={[
+                { label: 'Can take up to', node: ceiling && <span className="font-medium tabular-nums">{ceiling}</span> },
+                { label: 'Acres', node: <span className="tabular-nums">{n0(f.acres)}</span> },
+                { label: 'Even share', node: share && <span className="tabular-nums">{share}</span> },
+                { label: 'Crop', node: f.crop },
+                { label: 'Needs', node: need && <span className="tabular-nums" title={f.needWhy ?? undefined}>{need}</span> },
+                { label: 'vs share', node: vs && <span className={cn('tabular-nums', vsTone)}>{vs}</span> },
+                ...(thisSeason ? [{ label: 'Used', node: <span className="tabular-nums">{n0(f.usedAf)} ac-ft</span> }] : []),
+              ]}
+            />
+          ))}
+        </CardList>
+      )}
+      {open && (
+      <div className="mt-1.5 hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
         <table className="w-full min-w-[640px]">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -305,32 +366,18 @@ export function LicenceCard({ pool, detail, thisSeason, highlight }: { pool: Poo
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {pool.fields.map((f) => (
+            {shareRows.map(({ f, name, share, need, vs, vsTone, ceiling }) => (
               <tr key={f.fieldId} className={cn(f.fieldId === highlight && 'bg-sky-50 font-medium')}>
-                <td className="px-3 py-1 text-gray-800">
-                  <Link to={`/fields/${f.fieldId}/work`} className="hover:underline">
-                    {f.name}
-                  </Link>
-                  {f.pending && <span className="ml-1 rounded bg-amber-50 px-1 text-xs text-amber-800">pending amendment</span>}
-                </td>
+                <td className="px-3 py-1 text-gray-800">{name}</td>
                 <td className="px-3 py-1 text-right tabular-nums text-gray-600">{n0(f.acres)}</td>
-                <td className="px-3 py-1 text-right tabular-nums text-gray-700">
-                  {f.shareAf != null ? `${n0(f.shareAf)} ac-ft` : '—'}
-                  {f.shareIn != null && <span className="block text-xs text-gray-400">{n1(f.shareIn)}&quot;</span>}
-                </td>
+                <td className="px-3 py-1 text-right tabular-nums text-gray-700">{share ?? '—'}</td>
                 <td className="px-3 py-1 text-gray-600">{f.crop ?? '—'}</td>
                 <td className="px-3 py-1 text-right tabular-nums text-gray-700" title={f.needWhy ?? undefined}>
-                  {f.needAf != null ? `${n0(f.needAf)} ac-ft` : '—'}
-                  {f.needIn != null && <span className="block text-xs text-gray-400">{n1(f.needIn)}&quot;</span>}
+                  {need ?? '—'}
                 </td>
-                <td className={cn('px-3 py-1 text-right tabular-nums', (f.overShareAf ?? 0) > 0.5 ? 'text-amber-700' : (f.overShareAf ?? 0) < -0.5 ? 'text-green-700' : 'text-gray-500')}>
-                  {f.overShareAf != null ? signed(f.overShareAf) : f.pending && f.needAf != null ? signed(f.needAf) : '—'}
-                </td>
+                <td className={cn('px-3 py-1 text-right tabular-nums', vsTone)}>{vs ?? '—'}</td>
                 {thisSeason && <td className="px-3 py-1 text-right tabular-nums text-gray-700">{n0(f.usedAf)}</td>}
-                <td className="px-3 py-1 text-right tabular-nums font-medium text-gray-900">
-                  {f.ceilingAf != null ? `${n0(f.ceilingAf)} ac-ft` : '—'}
-                  {f.ceilingAf != null && f.acres > 0 && <span className="block text-xs font-normal text-gray-400">{n1((f.ceilingAf * 12) / f.acres)}&quot;</span>}
-                </td>
+                <td className="px-3 py-1 text-right tabular-nums font-medium text-gray-900">{ceiling ?? '—'}</td>
               </tr>
             ))}
           </tbody>

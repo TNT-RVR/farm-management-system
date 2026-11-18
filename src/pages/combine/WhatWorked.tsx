@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { Fold } from '@/components/Fold'
+import { CardList, RowCard } from '@/components/RowCards'
 import { CROP_BASELINES, type CombineCropKey, type SettingKey } from '@/lib/combine'
 import { useCropLossHistory } from '@/lib/combine-queries'
 import { sortWhatWorked, whatWorked, type SortKey, type WhatWorkedRow } from '@/lib/combine-what-worked'
@@ -59,7 +60,14 @@ export function WhatWorked({ crop }: { crop: CombineCropKey }) {
       {!rows.length ? (
         <p className="px-3 py-3 text-xs text-gray-500">No {baseline?.label.toLowerCase() ?? ''} loss check with its settings yet. Each check saved on the Loss check tab keeps them.</p>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        {/* One loss check a card on a phone, in the table's sort order (design review, Nov 2026). */}
+        <CardList>
+          {shown.map((r) => (
+            <CheckCard key={r.row.id} r={r} field={fieldName(r.row.field_id)} combine={combineName(r.row.equipment_id)} />
+          ))}
+        </CardList>
+        <div className="hidden overflow-x-auto sm:block">
           <table className="w-full text-xs tabular-nums">
             <thead className={TABLE_HEAD}>
               <tr>
@@ -80,6 +88,7 @@ export function WhatWorked({ crop }: { crop: CombineCropKey }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
       <Fold title="Reading this" storageKey="combine-what-worked-why" className="px-3 pb-2">
         <p className="text-xs text-gray-600">
@@ -88,6 +97,39 @@ export function WhatWorked({ crop }: { crop: CombineCropKey }) {
         </p>
       </Fold>
     </section>
+  )
+}
+
+const lossText = (r: WhatWorkedRow) => (r.lossPct != null ? `${r.lossPct.toFixed(1)}%` : `${r.lossBu.toFixed(2)} bu`)
+
+function CheckCard({ r, field, combine }: { r: WhatWorkedRow; field: string; combine: string }) {
+  const settings = SETTING_COLS.filter((c) => r.settings[c.key] != null)
+    .map((c) => `${c.label} ${settingText(c.key, r.settings[c.key])}`)
+    .join(' · ')
+  const c = r.conditions
+  const conditions = [
+    c.moisturePct != null && `${c.moisturePct.toFixed(1)}% moist`,
+    c.tempC != null && `${n0(c.tempC)} °C`,
+    c.rh != null && `RH ${n0(c.rh)}`,
+    c.windKmh != null && `wind ${n0(c.windKmh)}`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  return (
+    <RowCard
+      heading={
+        <span className="flex flex-wrap items-center gap-1.5">
+          {day(r.row.checked_at)}
+          {r.best && <span className="rounded bg-green-600 px-1 text-xs font-semibold uppercase text-white">lowest</span>}
+        </span>
+      }
+      actions={<span className={cn('text-sm font-semibold tabular-nums', r.underTarget ? 'text-green-700' : 'text-gray-900')}>{lossText(r)}</span>}
+      facts={[
+        { label: 'Field', node: `${field} · ${combine}` },
+        { label: 'Settings', node: settings },
+        { label: 'Conditions', node: conditions },
+      ]}
+    />
   )
 }
 
@@ -112,7 +154,7 @@ function Row({ r, field, combine }: { r: WhatWorkedRow; field: string; combine: 
       <td className="px-2 py-1.5 text-right">{n0(r.conditions.rh)}</td>
       <td className="px-2 py-1.5 text-right">{n0(r.conditions.windKmh)}</td>
       <td className={cn('whitespace-nowrap px-2 py-1.5 text-right', r.underTarget ? 'text-green-700' : 'text-gray-900')}>
-        {r.lossPct != null ? `${r.lossPct.toFixed(1)}%` : `${r.lossBu.toFixed(2)} bu`}
+        {lossText(r)}
       </td>
     </tr>
   )

@@ -44,6 +44,7 @@ import { useMainRanch } from '@/lib/ranches'
 import { usePartnerView } from '@/lib/partner-view'
 import { cn } from '@/lib/utils'
 import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { CardList, RowCard } from '@/components/RowCards'
 
 // Lazy so recharts (the chart library) splits into its own chunk and only loads
 // when the Graph tab is opened — keeps the app shell small + PWA-precacheable.
@@ -314,7 +315,9 @@ function Setup({ isManager, focusField }: { isManager: boolean; focusField: stri
   const fieldsLoaded = Boolean(fields)
   useEffect(() => {
     if (!focusField || !fieldsLoaded) return
-    document.querySelector(`[data-setup-field="${focusField}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    // The phone card and the table row both carry it; scroll to the one shown.
+    const shown = [...document.querySelectorAll<HTMLElement>(`[data-setup-field="${focusField}"]`)].find((el) => el.offsetParent !== null)
+    shown?.scrollIntoView({ block: 'center', behavior: 'smooth' })
   }, [focusField, fieldsLoaded])
 
   // A field with crop zones gets one row — and one season — per zone. The key
@@ -376,6 +379,273 @@ function Setup({ isManager, focusField }: { isManager: boolean; focusField: stri
     return c ? `${c.crop}${c.variant ? ` (${c.variant})` : ''}` : null
   }
 
+  // Each row's controls, built once for the table's cells and the phone card alike.
+  const setupRows = (fields ?? [])
+    .filter((f) => f.active)
+    .flatMap((f): { f: typeof f; zone: { id: string; crop_id: string } | null }[] => {
+      const zs = zonesByField.get(f.id) ?? []
+      // No zones drawn: one row for the whole field, exactly as before.
+      return zs.length ? zs.map((z) => ({ f, zone: z })) : [{ f, zone: null }]
+    })
+    .map(({ f, zone }) => {
+      const s = seasonByKey.get(seasonKey(f.id, zone?.id ?? null))
+      // A zone's crop is the zone's own, not the field's plan row.
+      const planCrop = zone
+        ? (cropById.get(zone.crop_id) ?? null)
+        : (planCropByField.get(f.id) ?? null)
+      const autoLabel = curveLabel(planCrop?.crop_coefficient_id)
+      return {
+        key: `${f.id}:${zone?.id ?? ''}`,
+        f,
+        name: (
+          <>
+            {f.name}
+            {zone && (
+              <span className="ml-1.5 rounded bg-brand-50 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-brand-800">
+                {cropById.get(zone.crop_id)?.name ?? 'zone'}
+              </span>
+            )}
+          </>
+        ),
+        station: stationName(f.assigned_station_id),
+        crop: (
+          <>
+            {planCrop ? (
+              <span className="text-gray-700">{planCrop.name}</span>
+            ) : (
+              <span className="text-gray-400">— no plan —</span>
+            )}
+            {/* The curve column is folded away, so its one warning — a
+                crop with no curve will not schedule — is said here. */}
+            {planCrop && !autoLabel && !s?.crop_coefficient_id && (
+              <p className="mt-0.5 text-xs leading-tight text-amber-700">
+                no water-use curve for this crop — pick one under{' '}
+                {advanced ? (
+                  'Advanced overrides'
+                ) : (
+                  <button type="button" onClick={() => setAdvanced(true)} className="font-semibold text-brand-700 hover:underline">
+                    Advanced overrides
+                  </button>
+                )}
+              </p>
+            )}
+          </>
+        ),
+        curve: (
+          <>
+            <Select
+              value={s?.crop_coefficient_id ?? ''}
+              size="sm"
+              title="Leave on Auto to follow the crop in the Plan; pick a curve only to override."
+              ariaLabel="Crop coefficient"
+              onChange={(v) =>
+                upsert.mutate({
+                  field_id: f.id,
+                  crop_year: cropYear,
+                  zone_id: zone?.id ?? null,
+                  crop_coefficient_id: v || null,
+                  planting_date: s?.planting_date ?? null,
+                  system_capacity_mm_day: s?.system_capacity_mm_day ?? null,
+                  application_efficiency: s?.application_efficiency ?? 0.85,
+                })
+              }
+              options={[
+                {
+                  value: '',
+                  label: autoLabel ? `Auto — ${autoLabel}` : planCrop ? 'Auto — (crop unmapped)' : 'Auto',
+                },
+                ...(coefs ?? []).map((c) => ({
+                  value: c.id,
+                  label: `${c.crop}${c.variant ? ` (${c.variant})` : ''}`,
+                })),
+              ]}
+            />
+          </>
+        ),
+        planted: (
+          <>
+            <DateField
+              value={s?.planting_date ?? ''}
+              onChange={(v) =>
+                upsert.mutate({
+                  field_id: f.id,
+                  crop_year: cropYear,
+                  zone_id: zone?.id ?? null,
+                  crop_coefficient_id: s?.crop_coefficient_id ?? null,
+                  planting_date: v || null,
+                  // Typing a date claims it: the Deere sync leaves manual
+                  // dates alone. Clearing the box hands it back.
+                  planting_date_source: v ? 'manual' : null,
+                  system_capacity_mm_day: s?.system_capacity_mm_day ?? null,
+                  application_efficiency: s?.application_efficiency ?? 0.85,
+                })
+              }
+              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+            />
+            {s?.planting_date && (
+              <p className="mt-0.5 text-xs leading-none text-gray-400">
+                {s.planting_date_source === 'john_deere'
+                  ? 'from John Deere'
+                  : s.planting_date_source === 'manual'
+                    ? 'entered by hand'
+                    : ''}
+              </p>
+            )}
+          </>
+        ),
+        pivotCap: (
+          <>
+            <input
+              type="number"
+              step="0.1"
+              defaultValue={s?.system_capacity_mm_day ?? ''}
+              placeholder={autoCap(f.id) == null ? '8' : String(autoCap(f.id))}
+              title={
+                autoCap(f.id) == null
+                  ? 'No pivot flow or irrigated acres on file for this field — the balance falls back to 8 mm/day. Leave blank once the pivot record is filled in.'
+                  : `Auto from the pivot: ${autoCap(f.id)} mm/day. Type a number only to override it.`
+              }
+              onBlur={(e) =>
+                s &&
+                upsert.mutate({
+                  field_id: f.id,
+                  crop_year: cropYear,
+                  zone_id: zone?.id ?? null,
+                  crop_coefficient_id: s.crop_coefficient_id,
+                  planting_date: s.planting_date,
+                  // Blank hands the column back to the pivot record.
+                  system_capacity_mm_day:
+                    e.target.value === '' ? null : Number(e.target.value),
+                  application_efficiency: s.application_efficiency,
+                })
+              }
+              className="w-16 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums"
+            />
+            <p className="mt-0.5 text-xs leading-none text-gray-400">
+              {s?.system_capacity_mm_day != null
+                ? 'overridden'
+                : autoCap(f.id) != null
+                  ? 'from pivot'
+                  : 'no pivot data'}
+            </p>
+          </>
+        ),
+        efficiency: (
+          <>
+            <input
+              type="number"
+              step="0.01"
+              defaultValue={s?.application_efficiency ?? 0.85}
+              onBlur={(e) =>
+                s &&
+                upsert.mutate({
+                  field_id: f.id,
+                  crop_year: cropYear,
+                  zone_id: zone?.id ?? null,
+                  crop_coefficient_id: s.crop_coefficient_id,
+                  planting_date: s.planting_date,
+                  system_capacity_mm_day: s.system_capacity_mm_day,
+                  application_efficiency: Number(e.target.value),
+                })
+              }
+              className="w-16 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums"
+            />
+          </>
+        ),
+        kcMode: (
+          <>
+            <Select
+              value={s?.kc_mode ?? ''}
+              disabled={!s}
+              size="sm"
+              ariaLabel="Water-use method"
+              onChange={(v) =>
+                s &&
+                upsert.mutate({
+                  field_id: f.id,
+                  crop_year: cropYear,
+                  zone_id: zone?.id ?? null,
+                  crop_coefficient_id: s.crop_coefficient_id,
+                  planting_date: s.planting_date,
+                  system_capacity_mm_day: s.system_capacity_mm_day,
+                  application_efficiency: s.application_efficiency,
+                  kc_mode: v || null,
+                })
+              }
+              options={[
+                { value: '', label: 'farm default' },
+                { value: 'single', label: 'single' },
+                { value: 'dual', label: 'dual' },
+              ]}
+            />
+          </>
+        ),
+        soil: (
+          <>
+            <Select
+              value={f.soil_texture ?? ''}
+              disabled={!isManager}
+              size="sm"
+              title="Soil texture sets water-holding capacity. Defaults to loam."
+              ariaLabel="Soil texture"
+              onChange={(v) => setSoil.mutate({ id: f.id, soil_texture: v || null })}
+              options={[
+                { value: '', label: 'loam (default)' },
+                ...SOIL_TEXTURE_NAMES.map((t) => ({ value: t, label: t })),
+              ]}
+            />
+          </>
+        ),
+        lab: (
+          <>
+            <div className="flex items-center justify-end gap-1">
+              <input
+                type="number"
+                step="0.01"
+                disabled={!isManager}
+                defaultValue={f.soil_fc ?? ''}
+                placeholder={String(effectiveSoil(f).fc)}
+                onBlur={(e) =>
+                  setSoil.mutate({
+                    id: f.id,
+                    soil_fc: e.target.value === '' ? null : Number(e.target.value),
+                  })
+                }
+                className="w-14 rounded-md border border-gray-200 px-1.5 py-1 text-right text-sm tabular-nums disabled:opacity-50"
+                title="Field capacity from a soil test (overrides texture)"
+              />
+              <span className="text-gray-300">/</span>
+              <input
+                type="number"
+                step="0.01"
+                disabled={!isManager}
+                defaultValue={f.soil_wp ?? ''}
+                placeholder={String(effectiveSoil(f).wp)}
+                onBlur={(e) =>
+                  setSoil.mutate({
+                    id: f.id,
+                    soil_wp: e.target.value === '' ? null : Number(e.target.value),
+                  })
+                }
+                className="w-14 rounded-md border border-gray-200 px-1.5 py-1 text-right text-sm tabular-nums disabled:opacity-50"
+                title="Wilting point from a soil test (overrides texture)"
+              />
+            </div>
+          </>
+        ),
+        done: (
+          <>
+            <DoneWateringBox
+              season={s}
+              disabled={!isManager}
+              cropYear={cropYear}
+              label={f.name}
+            />
+          </>
+        ),
+      }
+    })
+
   return (
     <>
     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -434,7 +704,39 @@ function Setup({ isManager, focusField }: { isManager: boolean; focusField: stri
     </div>
     )}
     <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-      <table className="w-full min-w-[820px] text-sm">
+      {/* One field a card on a phone (design review, Nov 2026). */}
+      <CardList>
+        {setupRows.map((r) => (
+          <RowCard
+            key={r.key}
+            heading={
+              <span
+                data-setup-field={r.f.id}
+                className={cn(r.f.id === focusField && '-mx-1 rounded bg-amber-50 px-1 ring-2 ring-amber-300')}
+              >
+                {r.name}
+              </span>
+            }
+            actions={<span className="flex items-center gap-1 text-xs text-gray-500">Done {r.done}</span>}
+            facts={[
+              { label: 'Station', node: r.station },
+              { label: 'Crop', node: r.crop },
+              { label: 'Planted', node: r.planted },
+              ...(advanced
+                ? [
+                    { label: 'Curve', node: r.curve },
+                    { label: 'Pivot mm/day', node: r.pivotCap },
+                    { label: 'Efficiency', node: r.efficiency },
+                    { label: 'Water use', node: r.kcMode },
+                    { label: 'Soil', node: r.soil },
+                    { label: 'Lab FC / WP', node: r.lab },
+                  ]
+                : []),
+            ]}
+          />
+        ))}
+      </CardList>
+      <table className="hidden w-full min-w-[820px] text-sm sm:table">
         <thead className={TABLE_HEAD}>
           <tr>
             <th className="whitespace-nowrap px-3 py-2 font-medium">
@@ -482,261 +784,29 @@ function Setup({ isManager, focusField }: { isManager: boolean; focusField: stri
           </tr>
         </thead>
         <tbody>
-          {(fields ?? [])
-            .filter((f) => f.active)
-            .flatMap((f): { f: typeof f; zone: { id: string; crop_id: string } | null }[] => {
-              const zs = zonesByField.get(f.id) ?? []
-              // No zones drawn: one row for the whole field, exactly as before.
-              return zs.length ? zs.map((z) => ({ f, zone: z })) : [{ f, zone: null }]
-            })
-            .map(({ f, zone }) => {
-              const s = seasonByKey.get(seasonKey(f.id, zone?.id ?? null))
-              // A zone's crop is the zone's own, not the field's plan row.
-              const planCrop = zone
-                ? (cropById.get(zone.crop_id) ?? null)
-                : (planCropByField.get(f.id) ?? null)
-              const autoLabel = curveLabel(planCrop?.crop_coefficient_id)
-              return (
-                <tr
-                  key={`${f.id}:${zone?.id ?? ''}`}
-                  data-setup-field={f.id}
-                  className={cn('border-b border-gray-100 last:border-0', f.id === focusField && 'bg-amber-50 ring-2 ring-inset ring-amber-300')}
-                >
-                  <td className="px-3 py-2 font-medium">
-                    {f.name}
-                    {zone && (
-                      <span className="ml-1.5 rounded bg-brand-50 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-brand-800">
-                        {cropById.get(zone.crop_id)?.name ?? 'zone'}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-gray-500">{stationName(f.assigned_station_id)}</td>
-                  <td className="px-3 py-2 text-sm">
-                    {planCrop ? (
-                      <span className="text-gray-700">{planCrop.name}</span>
-                    ) : (
-                      <span className="text-gray-400">— no plan —</span>
-                    )}
-                    {/* The curve column is folded away, so its one warning — a
-                        crop with no curve will not schedule — is said here. */}
-                    {planCrop && !autoLabel && !s?.crop_coefficient_id && (
-                      <p className="mt-0.5 text-xs leading-tight text-amber-700">
-                        no water-use curve for this crop — pick one under{' '}
-                        {advanced ? (
-                          'Advanced overrides'
-                        ) : (
-                          <button type="button" onClick={() => setAdvanced(true)} className="font-semibold text-brand-700 hover:underline">
-                            Advanced overrides
-                          </button>
-                        )}
-                      </p>
-                    )}
-                  </td>
-                  {advanced && (
-                  <td className="px-3 py-2">
-                    <Select
-                      value={s?.crop_coefficient_id ?? ''}
-                      size="sm"
-                      title="Leave on Auto to follow the crop in the Plan; pick a curve only to override."
-                      ariaLabel="Crop coefficient"
-                      onChange={(v) =>
-                        upsert.mutate({
-                          field_id: f.id,
-                          crop_year: cropYear,
-                          zone_id: zone?.id ?? null,
-                          crop_coefficient_id: v || null,
-                          planting_date: s?.planting_date ?? null,
-                          system_capacity_mm_day: s?.system_capacity_mm_day ?? null,
-                          application_efficiency: s?.application_efficiency ?? 0.85,
-                        })
-                      }
-                      options={[
-                        {
-                          value: '',
-                          label: autoLabel ? `Auto — ${autoLabel}` : planCrop ? 'Auto — (crop unmapped)' : 'Auto',
-                        },
-                        ...(coefs ?? []).map((c) => ({
-                          value: c.id,
-                          label: `${c.crop}${c.variant ? ` (${c.variant})` : ''}`,
-                        })),
-                      ]}
-                    />
-                  </td>
-                  )}
-                  <td className="px-3 py-2">
-                    <DateField
-                      value={s?.planting_date ?? ''}
-                      onChange={(v) =>
-                        upsert.mutate({
-                          field_id: f.id,
-                          crop_year: cropYear,
-                          zone_id: zone?.id ?? null,
-                          crop_coefficient_id: s?.crop_coefficient_id ?? null,
-                          planting_date: v || null,
-                          // Typing a date claims it: the Deere sync leaves manual
-                          // dates alone. Clearing the box hands it back.
-                          planting_date_source: v ? 'manual' : null,
-                          system_capacity_mm_day: s?.system_capacity_mm_day ?? null,
-                          application_efficiency: s?.application_efficiency ?? 0.85,
-                        })
-                      }
-                      className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                    />
-                    {s?.planting_date && (
-                      <p className="mt-0.5 text-xs leading-none text-gray-400">
-                        {s.planting_date_source === 'john_deere'
-                          ? 'from John Deere'
-                          : s.planting_date_source === 'manual'
-                            ? 'entered by hand'
-                            : ''}
-                      </p>
-                    )}
-                  </td>
-                  {advanced && (
-                  <>
-                  <td className="px-3 py-2 text-right">
-                    <input
-                      type="number"
-                      step="0.1"
-                      defaultValue={s?.system_capacity_mm_day ?? ''}
-                      placeholder={autoCap(f.id) == null ? '8' : String(autoCap(f.id))}
-                      title={
-                        autoCap(f.id) == null
-                          ? 'No pivot flow or irrigated acres on file for this field — the balance falls back to 8 mm/day. Leave blank once the pivot record is filled in.'
-                          : `Auto from the pivot: ${autoCap(f.id)} mm/day. Type a number only to override it.`
-                      }
-                      onBlur={(e) =>
-                        s &&
-                        upsert.mutate({
-                          field_id: f.id,
-                          crop_year: cropYear,
-                          zone_id: zone?.id ?? null,
-                          crop_coefficient_id: s.crop_coefficient_id,
-                          planting_date: s.planting_date,
-                          // Blank hands the column back to the pivot record.
-                          system_capacity_mm_day:
-                            e.target.value === '' ? null : Number(e.target.value),
-                          application_efficiency: s.application_efficiency,
-                        })
-                      }
-                      className="w-16 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums"
-                    />
-                    <p className="mt-0.5 text-xs leading-none text-gray-400">
-                      {s?.system_capacity_mm_day != null
-                        ? 'overridden'
-                        : autoCap(f.id) != null
-                          ? 'from pivot'
-                          : 'no pivot data'}
-                    </p>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <input
-                      type="number"
-                      step="0.01"
-                      defaultValue={s?.application_efficiency ?? 0.85}
-                      onBlur={(e) =>
-                        s &&
-                        upsert.mutate({
-                          field_id: f.id,
-                          crop_year: cropYear,
-                          zone_id: zone?.id ?? null,
-                          crop_coefficient_id: s.crop_coefficient_id,
-                          planting_date: s.planting_date,
-                          system_capacity_mm_day: s.system_capacity_mm_day,
-                          application_efficiency: Number(e.target.value),
-                        })
-                      }
-                      className="w-16 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <Select
-                      value={s?.kc_mode ?? ''}
-                      disabled={!s}
-                      size="sm"
-                      ariaLabel="Water-use method"
-                      onChange={(v) =>
-                        s &&
-                        upsert.mutate({
-                          field_id: f.id,
-                          crop_year: cropYear,
-                          zone_id: zone?.id ?? null,
-                          crop_coefficient_id: s.crop_coefficient_id,
-                          planting_date: s.planting_date,
-                          system_capacity_mm_day: s.system_capacity_mm_day,
-                          application_efficiency: s.application_efficiency,
-                          kc_mode: v || null,
-                        })
-                      }
-                      options={[
-                        { value: '', label: 'farm default' },
-                        { value: 'single', label: 'single' },
-                        { value: 'dual', label: 'dual' },
-                      ]}
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <Select
-                      value={f.soil_texture ?? ''}
-                      disabled={!isManager}
-                      size="sm"
-                      title="Soil texture sets water-holding capacity. Defaults to loam."
-                      ariaLabel="Soil texture"
-                      onChange={(v) => setSoil.mutate({ id: f.id, soil_texture: v || null })}
-                      options={[
-                        { value: '', label: 'loam (default)' },
-                        ...SOIL_TEXTURE_NAMES.map((t) => ({ value: t, label: t })),
-                      ]}
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <input
-                        type="number"
-                        step="0.01"
-                        disabled={!isManager}
-                        defaultValue={f.soil_fc ?? ''}
-                        placeholder={String(effectiveSoil(f).fc)}
-                        onBlur={(e) =>
-                          setSoil.mutate({
-                            id: f.id,
-                            soil_fc: e.target.value === '' ? null : Number(e.target.value),
-                          })
-                        }
-                        className="w-14 rounded-md border border-gray-200 px-1.5 py-1 text-right text-sm tabular-nums disabled:opacity-50"
-                        title="Field capacity from a soil test (overrides texture)"
-                      />
-                      <span className="text-gray-300">/</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        disabled={!isManager}
-                        defaultValue={f.soil_wp ?? ''}
-                        placeholder={String(effectiveSoil(f).wp)}
-                        onBlur={(e) =>
-                          setSoil.mutate({
-                            id: f.id,
-                            soil_wp: e.target.value === '' ? null : Number(e.target.value),
-                          })
-                        }
-                        className="w-14 rounded-md border border-gray-200 px-1.5 py-1 text-right text-sm tabular-nums disabled:opacity-50"
-                        title="Wilting point from a soil test (overrides texture)"
-                      />
-                    </div>
-                  </td>
-                  </>
-                  )}
-                  <td className="px-3 py-2 text-center">
-                    <DoneWateringBox
-                      season={s}
-                      disabled={!isManager}
-                      cropYear={cropYear}
-                      label={f.name}
-                    />
-                  </td>
-                </tr>
-              )
-            })}
+          {setupRows.map((r) => (
+            <tr
+              key={r.key}
+              data-setup-field={r.f.id}
+              className={cn('border-b border-gray-100 last:border-0', r.f.id === focusField && 'bg-amber-50 ring-2 ring-inset ring-amber-300')}
+            >
+              <td className="px-3 py-2 font-medium">{r.name}</td>
+              <td className="px-3 py-2 text-xs text-gray-500">{r.station}</td>
+              <td className="px-3 py-2 text-sm">{r.crop}</td>
+              {advanced && <td className="px-3 py-2">{r.curve}</td>}
+              <td className="px-3 py-2">{r.planted}</td>
+              {advanced && (
+                <>
+                  <td className="px-3 py-2 text-right">{r.pivotCap}</td>
+                  <td className="px-3 py-2 text-right">{r.efficiency}</td>
+                  <td className="px-3 py-2">{r.kcMode}</td>
+                  <td className="px-3 py-2">{r.soil}</td>
+                  <td className="px-3 py-2 text-right">{r.lab}</td>
+                </>
+              )}
+              <td className="px-3 py-2 text-center">{r.done}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
       <HelpNote

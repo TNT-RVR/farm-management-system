@@ -140,7 +140,7 @@ export function ChecklistRunPage() {
           />
         </div>
         <p className="mt-1 text-xs text-gray-500">
-          {done} / {total} done
+          {done} / {total} {mapBased ? 'jobs done' : 'done'}
         </p>
       </div>
 

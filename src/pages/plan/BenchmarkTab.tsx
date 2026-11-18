@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import { HelpNote } from '@/components/HelpNote'
+import { CardList, RowCard } from '@/components/RowCards'
 import { Select } from '@/components/Select'
 import {
   AGRIPROFIT_SOURCE,
@@ -64,6 +65,77 @@ export function BenchmarkTab({ budget }: { budget: BudgetLine[] }) {
   )
   const source = AGRIPROFIT_SOURCE[zone]
 
+  // Each crop's cells once, for the phone card and the table row alike.
+  const shaped = matched.map((l) => {
+    const b = l.benchmark!
+    // Converted into their unit where the conversion is exact, because two
+    // numbers in different units are not a comparison. 8,818 lb of hay beside
+    // 4.5 tonnes reads as a disaster until it says 4.0.
+    const converted = inBenchmarkUnit(l.ourYield, l.ourUnit, b.unit)
+    const yieldNode = (
+      <>
+        {converted != null ? (
+          <span title={`${n1(l.ourYield ?? 0)} ${l.ourUnit} as recorded`}>{n1(converted)}</span>
+        ) : l.ourYield == null ? (
+          '—'
+        ) : (
+          `${n1(l.ourYield)} ${l.ourUnit ?? ''}`.trim()
+        )}
+        <span className="text-gray-400">
+          {' / '}
+          {b.yieldPerAcre == null ? '—' : `${n1(b.yieldPerAcre)} ${b.unit ?? ''}`.trim()}
+        </span>
+        {!l.sameUnit && converted == null && (
+          <span
+            className="ml-1 text-amber-700"
+            title={`Ours is in ${l.ourUnit ?? 'no unit'}, the benchmark is in ${b.unit}. There is no exact conversion between them — a bushel is not a mass without a test weight — so these two yields are not comparable as they stand.`}
+          >
+            ≠
+          </span>
+        )}
+      </>
+    )
+    // A cost of exactly nothing means none was entered, not that the crop was
+    // free; $0 beside their $548 would be read as a saving.
+    const ourCost = !l.ourCostPerAcre ? (
+      <span className="text-gray-400" title="No cost entered for this crop in the budget">
+        not set
+      </span>
+    ) : (
+      money(l.ourCostPerAcre)
+    )
+    const theirTotal = b.totalCosts == null ? '—' : money(b.totalCosts)
+    const marginClass = (l.ourMarginPerAcre ?? 0) < 0 ? 'text-red-700' : 'text-gray-900'
+    const margin =
+      l.ourMarginPerAcre == null || !l.ourCostPerAcre ? <span className="text-gray-400">—</span> : money(l.ourMarginPerAcre)
+    const equityClass = (b.returnToEquity ?? 0) < 0 ? 'text-red-700' : 'text-gray-700'
+    const equity = b.returnToEquity == null ? '—' : money(b.returnToEquity)
+    const breakdown = (
+      <div className="grid gap-3 md:grid-cols-2">
+        <BenchBreakdown
+          title={`What ${b.crop} cost per acre — variable`}
+          lines={costLines(b)}
+          total={b.variableCosts}
+          totalLabel="Variable costs"
+        />
+        <BenchBreakdown
+          title="Capital"
+          lines={capitalLines(b)}
+          total={b.capitalCosts}
+          totalLabel="Capital costs"
+          extra={[
+            ['Cash costs', b.cashCosts],
+            ['Total production costs', b.totalCosts],
+            ['Gross return', b.grossReturn],
+            ['Gross margin', b.grossMargin],
+            ['Return to equity', b.returnToEquity],
+          ]}
+        />
+      </div>
+    )
+    return { l, b, yieldNode, ourCost, theirTotal, marginClass, margin, equityClass, equity, breakdown }
+  })
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -104,7 +176,35 @@ export function BenchmarkTab({ budget }: { budget: BudgetLine[] }) {
 
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
         <p className={cn('font-medium', CARD_HEAD)}>Per acre, ours against the benchmark</p>
-        <div className="overflow-x-auto">
+        {/* One crop a card on a phone; tap it for the breakdown (design review, Nov 2026). */}
+        <CardList
+          isEmpty={matched.length === 0}
+          empty={`None of this year’s crops has a ${BENCHMARK_YEAR} benchmark in this zone.`}
+        >
+          {shaped.map((x) => (
+            <RowCard
+              key={x.l.crop}
+              onClick={() => setOpen(open === x.l.crop ? null : x.l.crop)}
+              heading={
+                <>
+                  {x.l.crop}
+                  <span className="ml-1.5 text-xs font-normal text-gray-400">vs {x.b.crop}</span>
+                </>
+              }
+              facts={[
+                { label: 'Acres', node: <span className="tabular-nums">{n0(x.l.acres)}</span> },
+                { label: 'Yield /ac', node: <span className="tabular-nums">{x.yieldNode}</span> },
+                { label: 'Our cost /ac', node: <span className="tabular-nums">{x.ourCost}</span> },
+                { label: 'Their total /ac', node: <span className="tabular-nums">{x.theirTotal}</span> },
+                { label: 'Our margin /ac', node: <span className={cn('font-medium tabular-nums', x.marginClass)}>{x.margin}</span> },
+                { label: 'Their return to equity', node: <span className={cn('tabular-nums', x.equityClass)}>{x.equity}</span> },
+              ]}
+            >
+              {open === x.l.crop ? x.breakdown : null}
+            </RowCard>
+          ))}
+        </CardList>
+        <div className="hidden overflow-x-auto sm:block">
           <table className="w-full min-w-[720px] table-fixed text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
@@ -124,116 +224,32 @@ export function BenchmarkTab({ budget }: { budget: BudgetLine[] }) {
               </tr>
             </thead>
             <tbody>
-              {matched.map((l) => {
-                const b = l.benchmark!
-                return (
-                  <Fragment key={l.crop}>
-                    <tr
-                      onClick={() => setOpen(open === l.crop ? null : l.crop)}
-                      className="cursor-pointer border-b border-gray-100 hover:bg-gray-50"
-                    >
-                      <td className="px-3 py-2 font-medium text-gray-900">
-                        {l.crop}
-                        <span className="ml-1.5 text-xs font-normal text-gray-400">
-                          vs {b.crop}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-gray-700">{n0(l.acres)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-gray-700">
-                        {/* Converted into their unit where the conversion is
-                            exact, because two numbers in different units are
-                            not a comparison. 8,818 lb of hay beside 4.5 tonnes
-                            reads as a disaster until it says 4.0. */}
-                        {(() => {
-                          const converted = inBenchmarkUnit(l.ourYield, l.ourUnit, b.unit)
-                          if (converted != null) {
-                            return (
-                              <span title={`${n1(l.ourYield ?? 0)} ${l.ourUnit} as recorded`}>
-                                {n1(converted)}
-                              </span>
-                            )
-                          }
-                          return l.ourYield == null ? '—' : `${n1(l.ourYield)} ${l.ourUnit ?? ''}`.trim()
-                        })()}
-                        <span className="text-gray-400">
-                          {' / '}
-                          {b.yieldPerAcre == null ? '—' : `${n1(b.yieldPerAcre)} ${b.unit ?? ''}`.trim()}
-                        </span>
-                        {!l.sameUnit && inBenchmarkUnit(l.ourYield, l.ourUnit, b.unit) == null && (
-                          <span
-                            className="ml-1 text-amber-700"
-                            title={`Ours is in ${l.ourUnit ?? 'no unit'}, the benchmark is in ${b.unit}. There is no exact conversion between them — a bushel is not a mass without a test weight — so these two yields are not comparable as they stand.`}
-                          >
-                            ≠
-                          </span>
-                        )}
-                      </td>
-                      {/* A cost of exactly nothing means none was entered, not
-                          that the crop was free; $0 beside their $548 would be
-                          read as a saving. */}
-                      <td className="px-3 py-2 text-right tabular-nums text-gray-900">
-                        {!l.ourCostPerAcre ? (
-                          <span className="text-gray-400" title="No cost entered for this crop in the budget">
-                            not set
-                          </span>
-                        ) : (
-                          money(l.ourCostPerAcre)
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-gray-700">
-                        {b.totalCosts == null ? '—' : money(b.totalCosts)}
-                      </td>
-                      <td
-                        className={cn(
-                          'px-3 py-2 text-right font-medium tabular-nums',
-                          (l.ourMarginPerAcre ?? 0) < 0 ? 'text-red-700' : 'text-gray-900',
-                        )}
-                      >
-                        {l.ourMarginPerAcre == null || !l.ourCostPerAcre ? (
-                          <span className="text-gray-400">—</span>
-                        ) : (
-                          money(l.ourMarginPerAcre)
-                        )}
-                      </td>
-                      <td
-                        className={cn(
-                          'px-3 py-2 text-right tabular-nums',
-                          (b.returnToEquity ?? 0) < 0 ? 'text-red-700' : 'text-gray-700',
-                        )}
-                      >
-                        {b.returnToEquity == null ? '—' : money(b.returnToEquity)}
+              {shaped.map(({ l, b, yieldNode, ourCost, theirTotal, marginClass, margin, equityClass, equity, breakdown }) => (
+                <Fragment key={l.crop}>
+                  <tr
+                    onClick={() => setOpen(open === l.crop ? null : l.crop)}
+                    className="cursor-pointer border-b border-gray-100 hover:bg-gray-50"
+                  >
+                    <td className="px-3 py-2 font-medium text-gray-900">
+                      {l.crop}
+                      <span className="ml-1.5 text-xs font-normal text-gray-400">vs {b.crop}</span>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-700">{n0(l.acres)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-700">{yieldNode}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-900">{ourCost}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-700">{theirTotal}</td>
+                    <td className={cn('px-3 py-2 text-right font-medium tabular-nums', marginClass)}>{margin}</td>
+                    <td className={cn('px-3 py-2 text-right tabular-nums', equityClass)}>{equity}</td>
+                  </tr>
+                  {open === l.crop && (
+                    <tr className="border-b border-gray-100 bg-gray-50/60">
+                      <td colSpan={7} className="px-3 py-2">
+                        {breakdown}
                       </td>
                     </tr>
-                    {open === l.crop && (
-                      <tr className="border-b border-gray-100 bg-gray-50/60">
-                        <td colSpan={7} className="px-3 py-2">
-                          <div className="grid gap-3 md:grid-cols-2">
-                            <BenchBreakdown
-                              title={`What ${b.crop} cost per acre — variable`}
-                              lines={costLines(b)}
-                              total={b.variableCosts}
-                              totalLabel="Variable costs"
-                            />
-                            <BenchBreakdown
-                              title="Capital"
-                              lines={capitalLines(b)}
-                              total={b.capitalCosts}
-                              totalLabel="Capital costs"
-                              extra={[
-                                ['Cash costs', b.cashCosts],
-                                ['Total production costs', b.totalCosts],
-                                ['Gross return', b.grossReturn],
-                                ['Gross margin', b.grossMargin],
-                                ['Return to equity', b.returnToEquity],
-                              ]}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                )
-              })}
+                  )}
+                </Fragment>
+              ))}
               {matched.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-3 py-8 text-center text-sm text-gray-400">

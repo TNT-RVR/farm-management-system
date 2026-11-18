@@ -137,7 +137,7 @@ export default function App() {
             component state, so a tab is a place somebody can link to, come back
             to, and open on a phone. */}
         <Route path="/fields/:id" element={<FieldDetailPage />} />
-        <Route path="/fields/:id/inputs" element={<FieldDetailPage section="inputs" />} />
+        <Route path="/fields/:id/inputs" element={<FieldWorkPage section="inputs" />} />
         <Route path="/fields/:id/irrigation" element={<FieldDetailPage section="irrigation" />} />
         <Route path="/fields/:id/soil" element={<FieldDetailPage section="soil" />} />
         <Route path="/fields/:id/history" element={<FieldDetailPage section="history" />} />

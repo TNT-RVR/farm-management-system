@@ -15,6 +15,7 @@ import { CheckCircle2, ChevronRight, Loader2, RefreshCw, Sparkles, Sprout, Uploa
 import { Select } from '@/components/Select'
 import { EditButton, RecordEditModal, rowClick, type EditField } from '@/components/RecordEditor'
 import { ColumnHelp } from '@/components/ColumnHelp'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 import { useFields } from '@/lib/queries'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -632,8 +633,47 @@ function Assessment({ report }: { report: SoilReport }) {
         <>
           {/* Timing & why is prose, so five columns in 317 px wrapped to a
               word a line; it scrolls sideways on a phone instead. */}
+          {/* One nutrient a card on a phone (design review, Nov 2026). */}
           {recs.length > 0 && (
-            <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
+            <CardList className="mt-2 rounded-lg border border-gray-200">
+              {recs.map((r, i) => (
+                <RowCard
+                  key={i}
+                  heading={r.nutrient ?? '—'}
+                  facts={[]}
+                  summary={
+                    <>
+                      <SummaryLine>
+                        {r.product && (
+                          <>
+                            <span>{r.product}</span>
+                            <Dot />
+                          </>
+                        )}
+                        <span className="tabular-nums">{r.lb_per_ac ?? '—'} lb/ac actual</span>
+                        {r.product_lb_per_ac != null && (
+                          <>
+                            <Dot />
+                            <span className="tabular-nums">{r.product_lb_per_ac} lb/ac product</span>
+                          </>
+                        )}
+                      </SummaryLine>
+                      {(r.timing || r.note) && (
+                        <p className="mt-1 text-xs leading-relaxed text-gray-600">
+                          {r.timing ? (
+                            <span className="font-medium text-gray-700">{r.timing}. </span>
+                          ) : null}
+                          {r.note}
+                        </p>
+                      )}
+                    </>
+                  }
+                />
+              ))}
+            </CardList>
+          )}
+          {recs.length > 0 && (
+            <div className="mt-2 hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
             <table className="w-full min-w-[560px] table-fixed text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>

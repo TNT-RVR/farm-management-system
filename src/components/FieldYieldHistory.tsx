@@ -24,6 +24,7 @@ import { abnormalIndex, abnormalKey, useAbnormalYears } from '@/lib/abnormal-yie
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { KgAside } from '@/components/KgAside'
 import { HeadTip } from '@/components/HeadTip'
+import { CardList, RowCard } from '@/components/RowCards'
 
 const SOURCE_LABEL: Record<string, string> = {
   scale: 'Scale loads',
@@ -285,6 +286,156 @@ export function FieldYieldHistory({
     )
   }
 
+  // Each crop-area line and each year's row, built once for the table and for
+  // the phone cards.
+  const areaRows = (areaLines ?? [])
+    .slice()
+    .sort((a, b) => b.crop_year - a.crop_year || Number(b.acres ?? 0) - Number(a.acres ?? 0))
+    .map((l) => ({
+      l,
+      key: `area-${l.crop_year}-${l.crop_id}`,
+      onClick: yearOpen(l.crop_year) ? () => setEditingArea({ cropYear: l.crop_year, cropId: l.crop_id, acres: l.acres, row: l.row }) : undefined,
+      name: cropName(l.crop_id),
+      chip: <span className="ml-1.5 rounded bg-brand-50 px-1 py-0.5 text-xs font-semibold uppercase tracking-wide text-brand-800">crop area</span>,
+      mark: (l.yield_per_acre != null || markOf(l.crop_year, l.crop_id) != null) && (
+        <AbnormalYearMark
+          className="mt-0.5 flex"
+          fieldId={fieldId}
+          cropId={l.crop_id}
+          cropYear={l.crop_year}
+          cropName={cropName(l.crop_id)}
+          reason={markOf(l.crop_year, l.crop_id)}
+          canEdit={canEdit}
+        />
+      ),
+      acres: l.acres != null ? Number(l.acres).toFixed(1) : null,
+      perAc:
+        l.yield_per_acre != null ? (
+          <>
+            {Number(l.yield_per_acre)}
+            {l.yield_unit && <span className="ml-1 text-xs text-gray-400">{l.yield_unit}</span>}
+            <KgAside value={l.yield_per_acre} unit={l.yield_unit} per="" className="text-xs" lbPerBu={crops?.find((c) => c.id === l.crop_id)?.test_weight_lb_per_bu ?? null} />
+          </>
+        ) : null,
+      total: l.actual_yield_total != null ? Number(l.actual_yield_total).toLocaleString('en-CA') : null,
+      from: l.yield_per_acre == null ? 'not yet' : l.source === 'manual' ? 'typed' : 'scale loads',
+    }))
+  const histRows = history
+    .filter((h) => !splitYears.has(h.crop_year))
+    .map((h) => {
+      const unit = h.yield_unit ?? ''
+      return {
+        h,
+        name: cropName(h.crop_id),
+        extras: (
+          <>
+            {h.variety && <span className="block text-xs text-gray-400">{h.variety}</span>}
+            <TraitBadge t={canolaTrait?.(h.crop_id, h.variety) ?? null} />
+            {/* A planned figure (Farm at Hand's goal, the rotation sheet) is no harvest to mark. */}
+            {h.crop_id &&
+              (((h.yield_per_acre != null || h.clean_yield_per_acre != null) && h.source !== 'fah_import' && h.source !== 'rotation_xlsx') ||
+                markOf(h.crop_year, h.crop_id) != null) && (
+              <AbnormalYearMark
+                className="mt-0.5 flex"
+                fieldId={fieldId}
+                cropId={h.crop_id}
+                cropYear={h.crop_year}
+                cropName={cropName(h.crop_id)}
+                reason={markOf(h.crop_year, h.crop_id)}
+                canEdit={canEdit}
+              />
+            )}
+          </>
+        ),
+        acres: cell(h, 'acres', 'w-20'),
+        perAc: (
+          <>
+            {cell(h, 'yield_per_acre', 'w-20')}
+            {unit && <span className="ml-1 text-xs text-gray-400">{unit}</span>}
+            {h.plan_yield_saved && h.clean_yield_per_acre == null && h.yield_per_acre != null && <PlanMark label="Plan uses this (pre-clean)" amber />}
+          </>
+        ),
+        total: (
+          <>
+            {cell(h, 'actual_yield_total', 'w-24')}
+            {unit && <span className="ml-1 text-xs text-gray-400">{unit}</span>}
+          </>
+        ),
+        dockage: dockageCell(h),
+        cleanPerAc: (
+          <>
+            {cell(h, 'clean_yield_per_acre', 'w-20')}
+            {h.plan_yield_saved && h.clean_yield_per_acre != null && <PlanMark label="Plan uses this" />}
+          </>
+        ),
+        cleanTotal: (
+          <>
+            {cell(h, 'clean_total', 'w-24')}
+            {h.clean_total != null && h.actual_yield_total != null && Number(h.actual_yield_total) > 0 && (
+              <span className="block text-xs text-gray-500">
+                {(((Number(h.clean_total) - Number(h.actual_yield_total)) / Number(h.actual_yield_total)) * 100).toFixed(1)}% clean-out
+              </span>
+            )}
+          </>
+        ),
+        from: h.yield_override ? (
+          <>
+            <span className="font-medium text-amber-800">Typed over the scale</span>
+            <span className="block text-xs">
+              Scale: {num(h.scale_total)} {unit}
+              {h.scale_acres ? `, ${num(Number(h.scale_total) / Number(h.scale_acres), 1)} ${unit}/ac` : ''}
+              {h.scale_wet_total != null ? ` dry (${num(h.scale_wet_total)} as weighed)` : ''}
+            </span>
+            {canEdit && (
+              <button
+                type="button"
+                disabled={resetToScale.isPending}
+                onClick={() => resetToScale.mutate(h.id, { onError: (e) => setError((e as Error).message) })}
+                className="mt-0.5 text-xs text-brand-700 underline decoration-dotted"
+              >
+                Use the scale figure
+              </button>
+            )}
+          </>
+        ) : h.source === 'scale' && h.scale_at ? (
+          <>
+            <span className="font-medium text-green-800">Scale</span>
+            <span className="block text-xs">{h.scale_loads} loads</span>
+          </>
+        ) : (
+          SOURCE_LABEL[h.source] ?? h.source
+        ),
+        actions: canEdit && !locked(h.crop_year) && (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                editMeta.reset()
+                setEditing(h)
+              }}
+              className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+              title="Edit crop, variety and unit"
+              aria-label={`Edit ${h.crop_year}`}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                remove.reset()
+                setDeleting(h)
+              }}
+              className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
+              title="Delete this year's row"
+              aria-label={`Delete ${h.crop_year}`}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </>
+        ),
+      }
+    })
+
   return (
     <div className="mt-4 space-y-3">
       {season.loads > 0 && (
@@ -314,7 +465,7 @@ export function FieldYieldHistory({
           />
           {editingLoad && <EditLoadDialog load={editingLoad} onClose={() => setEditingLoad(null)} />}
           {showLoads && (
-            <table className="mt-2 w-full rounded-md bg-white text-xs">
+            <table className="mt-2 w-full rounded-md bg-white text-xs max-sm:[&_td]:px-1.5">
               <tbody className="divide-y divide-gray-100">
                 {season.list.map((l) => (
                   <tr
@@ -336,7 +487,7 @@ export function FieldYieldHistory({
                       {l.weight_cleaned && <span className="ml-1 text-amber-700" title="After the plant's clean-out">clean</span>}
                     </td>
                     <td className="px-2 py-1 text-right font-semibold tabular-nums text-gray-900">{num(l.bushels)} bu</td>
-                    <td className="px-2 py-1 text-gray-500">{l.driver ?? ''}</td>
+                    <td className="px-2 py-1 text-gray-500 max-sm:hidden">{l.driver ?? ''}</td>
                     {canEdit && (
                       <td className="px-1 py-1 text-right">
                         <DeleteLoadButton load={l} />
@@ -394,7 +545,52 @@ export function FieldYieldHistory({
           )}
         </div>
         {history.length || areaLines?.length ? (
-          <div className="mt-3 overflow-x-auto">
+          <>
+          {/* One year a card on a phone, its boxes labelled (design review, Nov 2026). */}
+          <CardList className="mt-3 border-y border-gray-100">
+            {areaRows.map((a) => (
+              <RowCard
+                key={a.key}
+                onClick={a.onClick}
+                heading={
+                  <>
+                    {a.l.crop_year} · {a.name}
+                    {a.chip}
+                    <div className="font-normal">{a.mark}</div>
+                  </>
+                }
+                actions={a.onClick && canEdit ? <Pencil className="h-3.5 w-3.5 text-gray-400" /> : undefined}
+                facts={[
+                  { label: 'Acres', node: a.acres && <span className="tabular-nums">{a.acres}</span> },
+                  { label: 'Pre-clean / ac', node: a.perAc && <span className="tabular-nums">{a.perAc}</span> },
+                  { label: 'Pre-clean total', node: a.total && <span className="tabular-nums">{a.total}</span> },
+                  { label: 'From', node: <span className="text-gray-500">{a.from}</span> },
+                ]}
+              />
+            ))}
+            {histRows.map((r) => (
+              <RowCard
+                key={r.h.id}
+                heading={
+                  <>
+                    {r.h.crop_year} · {r.name}
+                    <div className="font-normal">{r.extras}</div>
+                  </>
+                }
+                actions={r.actions || undefined}
+                facts={[
+                  { label: 'Acres', node: r.acres },
+                  { label: 'Pre-clean / ac', node: r.perAc },
+                  { label: 'Pre-clean total', node: r.total },
+                  { label: 'Dockage %', node: r.dockage },
+                  { label: 'Clean / ac', node: r.cleanPerAc },
+                  { label: 'Clean total', node: r.cleanTotal },
+                  { label: 'From', node: <span className="text-gray-500">{r.from}</span> },
+                ]}
+              />
+            ))}
+          </CardList>
+          <div className="mt-3 hidden overflow-x-auto sm:block">
             <table className="w-full min-w-[860px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
@@ -411,161 +607,52 @@ export function FieldYieldHistory({
                 </tr>
               </thead>
               <tbody>
-                {(areaLines ?? [])
-                  .slice()
-                  .sort((a, b) => b.crop_year - a.crop_year || Number(b.acres ?? 0) - Number(a.acres ?? 0))
-                  .map((l) => {
-                    const total = l.actual_yield_total
+                {areaRows.map((a) => {
                     return (
                       <tr
-                        key={`area-${l.crop_year}-${l.crop_id}`}
-                        className={cn('border-t border-gray-100 align-top', yearOpen(l.crop_year) && 'cursor-pointer hover:bg-gray-50')}
-                        onClick={yearOpen(l.crop_year) ? () => setEditingArea({ cropYear: l.crop_year, cropId: l.crop_id, acres: l.acres, row: l.row }) : undefined}
+                        key={a.key}
+                        className={cn('border-t border-gray-100 align-top', a.onClick && 'cursor-pointer hover:bg-gray-50')}
+                        onClick={a.onClick}
                       >
-                        <td className="px-3 py-1.5">{l.crop_year}</td>
+                        <td className="px-3 py-1.5">{a.l.crop_year}</td>
                         <td className="px-3 py-1.5">
-                          {cropName(l.crop_id)}
-                          <span className="ml-1.5 rounded bg-brand-50 px-1 py-0.5 text-xs font-semibold uppercase tracking-wide text-brand-800">crop area</span>
-                          {(l.yield_per_acre != null || markOf(l.crop_year, l.crop_id) != null) && (
-                            <AbnormalYearMark
-                              className="mt-0.5 flex"
-                              fieldId={fieldId}
-                              cropId={l.crop_id}
-                              cropYear={l.crop_year}
-                              cropName={cropName(l.crop_id)}
-                              reason={markOf(l.crop_year, l.crop_id)}
-                              canEdit={canEdit}
-                            />
-                          )}
+                          {a.name}
+                          {a.chip}
+                          {a.mark}
                         </td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">{l.acres != null ? Number(l.acres).toFixed(1) : '—'}</td>
-                        <td className="px-3 py-1.5 text-right whitespace-nowrap tabular-nums">
-                          {l.yield_per_acre != null ? Number(l.yield_per_acre) : '—'}
-                          {l.yield_unit && l.yield_per_acre != null && <span className="ml-1 text-xs text-gray-400">{l.yield_unit}</span>}
-                          <KgAside value={l.yield_per_acre} unit={l.yield_unit} per="" className="text-xs" lbPerBu={crops?.find((c) => c.id === l.crop_id)?.test_weight_lb_per_bu ?? null} />
-                        </td>
-                        <td className="px-3 py-1.5 text-right whitespace-nowrap tabular-nums">{total != null ? Number(total).toLocaleString('en-CA') : '—'}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{a.acres ?? '—'}</td>
+                        <td className="px-3 py-1.5 text-right whitespace-nowrap tabular-nums">{a.perAc ?? '—'}</td>
+                        <td className="px-3 py-1.5 text-right whitespace-nowrap tabular-nums">{a.total ?? '—'}</td>
                         <td className="px-3 py-1.5 text-right text-gray-300">—</td>
                         <td className="px-3 py-1.5 text-right text-gray-300">—</td>
-                        <td className="px-3 py-1.5 text-xs text-gray-500">{l.yield_per_acre == null ? 'not yet' : l.source === 'manual' ? 'typed' : 'scale loads'}</td>
+                        <td className="px-3 py-1.5 text-xs text-gray-500">{a.from}</td>
                         {canEdit && <td className="px-3 py-1.5 text-right"><Pencil className="ml-auto h-3.5 w-3.5 text-gray-400" /></td>}
                       </tr>
                     )
                   })}
-                {history.filter((h) => !splitYears.has(h.crop_year)).map((h) => {
-                  const unit = h.yield_unit ?? ''
+                {histRows.map((r) => {
                   return (
-                    <tr key={h.id} className="border-t border-gray-100 align-top">
-                      <td className="px-3 py-1.5">{h.crop_year}</td>
+                    <tr key={r.h.id} className="border-t border-gray-100 align-top">
+                      <td className="px-3 py-1.5">{r.h.crop_year}</td>
                       <td className="px-3 py-1.5">
-                        {cropName(h.crop_id)}
-                        {h.variety && <span className="block text-xs text-gray-400">{h.variety}</span>}
-                        <TraitBadge t={canolaTrait?.(h.crop_id, h.variety) ?? null} />
-                        {/* A planned figure (Farm at Hand's goal, the rotation sheet) is no harvest to mark. */}
-                        {h.crop_id &&
-                          (((h.yield_per_acre != null || h.clean_yield_per_acre != null) && h.source !== 'fah_import' && h.source !== 'rotation_xlsx') ||
-                            markOf(h.crop_year, h.crop_id) != null) && (
-                          <AbnormalYearMark
-                            className="mt-0.5 flex"
-                            fieldId={fieldId}
-                            cropId={h.crop_id}
-                            cropYear={h.crop_year}
-                            cropName={cropName(h.crop_id)}
-                            reason={markOf(h.crop_year, h.crop_id)}
-                            canEdit={canEdit}
-                          />
-                        )}
+                        {r.name}
+                        {r.extras}
                       </td>
-                      <td className="px-3 py-1.5 text-right">{cell(h, 'acres', 'w-20')}</td>
-                      <td className="px-3 py-1.5 text-right whitespace-nowrap">
-                        {cell(h, 'yield_per_acre', 'w-20')}
-                        {unit && <span className="ml-1 text-xs text-gray-400">{unit}</span>}
-                        {h.plan_yield_saved && h.clean_yield_per_acre == null && h.yield_per_acre != null && <PlanMark label="Plan uses this (pre-clean)" amber />}
-                      </td>
-                      <td className="px-3 py-1.5 text-right whitespace-nowrap">
-                        {cell(h, 'actual_yield_total', 'w-24')}
-                        {unit && <span className="ml-1 text-xs text-gray-400">{unit}</span>}
-                      </td>
-                      <td className="px-3 py-1.5 text-right whitespace-nowrap">{dockageCell(h)}</td>
-                      <td className="px-3 py-1.5 text-right whitespace-nowrap">
-                        {cell(h, 'clean_yield_per_acre', 'w-20')}
-                        {h.plan_yield_saved && h.clean_yield_per_acre != null && <PlanMark label="Plan uses this" />}
-                      </td>
-                      <td className="px-3 py-1.5 text-right whitespace-nowrap">
-                        {cell(h, 'clean_total', 'w-24')}
-                        {h.clean_total != null && h.actual_yield_total != null && Number(h.actual_yield_total) > 0 && (
-                          <span className="block text-xs text-gray-500">
-                            {(((Number(h.clean_total) - Number(h.actual_yield_total)) / Number(h.actual_yield_total)) * 100).toFixed(1)}% clean-out
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-1.5 text-xs text-gray-500">
-                        {h.yield_override ? (
-                          <>
-                            <span className="font-medium text-amber-800">Typed over the scale</span>
-                            <span className="block text-xs">
-                              Scale: {num(h.scale_total)} {unit}
-                              {h.scale_acres ? `, ${num(Number(h.scale_total) / Number(h.scale_acres), 1)} ${unit}/ac` : ''}
-                              {h.scale_wet_total != null ? ` dry (${num(h.scale_wet_total)} as weighed)` : ''}
-                            </span>
-                            {canEdit && (
-                              <button
-                                type="button"
-                                disabled={resetToScale.isPending}
-                                onClick={() => resetToScale.mutate(h.id, { onError: (e) => setError((e as Error).message) })}
-                                className="mt-0.5 text-xs text-brand-700 underline decoration-dotted"
-                              >
-                                Use the scale figure
-                              </button>
-                            )}
-                          </>
-                        ) : h.source === 'scale' && h.scale_at ? (
-                          <>
-                            <span className="font-medium text-green-800">Scale</span>
-                            <span className="block text-xs">{h.scale_loads} loads</span>
-                          </>
-                        ) : (
-                          SOURCE_LABEL[h.source] ?? h.source
-                        )}
-                      </td>
-                      {canEdit && (
-                        <td className="whitespace-nowrap px-3 py-1.5 text-right">
-                          {!locked(h.crop_year) && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  editMeta.reset()
-                                  setEditing(h)
-                                }}
-                                className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                                title="Edit crop, variety and unit"
-                                aria-label={`Edit ${h.crop_year}`}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  remove.reset()
-                                  setDeleting(h)
-                                }}
-                                className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                                title="Delete this year's row"
-                                aria-label={`Delete ${h.crop_year}`}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </>
-                          )}
-                        </td>
-                      )}
+                      <td className="px-3 py-1.5 text-right">{r.acres}</td>
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap">{r.perAc}</td>
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap">{r.total}</td>
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap">{r.dockage}</td>
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap">{r.cleanPerAc}</td>
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap">{r.cleanTotal}</td>
+                      <td className="px-3 py-1.5 text-xs text-gray-500">{r.from}</td>
+                      {canEdit && <td className="whitespace-nowrap px-3 py-1.5 text-right">{r.actions}</td>}
                     </tr>
                   )
                 })}
               </tbody>
             </table>
           </div>
+          </>
         ) : (
           <p className="mt-2 px-4 text-sm text-gray-400">No history yet.</p>
         )}

@@ -315,10 +315,11 @@ export function PivotBlock({ fieldId, year, u }: { fieldId: string; year: number
       {data.passes.length > 0 && (
         <div>
           <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="w-full min-w-[420px]">
+          {/* On a phone: no minimum width, cells tightened, the start pinned (design review, Nov 2026). */}
+          <table className="w-full max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5 sm:min-w-[420px]">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className={TABLE_TH}>Started</th>
+                <th className={cn(TABLE_TH, 'sticky left-0 z-10 bg-brand-700')}>Started</th>
                 <th className={TABLE_TH}>Ran</th>
                 <th className={cn(TABLE_TH, 'text-right')}>Depth</th>
                 <th className={TABLE_TH}>Ended</th>
@@ -327,7 +328,7 @@ export function PivotBlock({ fieldId, year, u }: { fieldId: string; year: number
             <tbody className="divide-y divide-gray-100">
               {shown.map((p) => (
                 <tr key={p.id} className={cn(p.completed === false && 'bg-amber-50')}>
-                  <td className="px-3 py-0.5 text-gray-700">{mdt(p.started_at)}</td>
+                  <td className={cn('sticky left-0 z-10 px-3 py-0.5 text-gray-700', p.completed === false ? 'bg-amber-50' : 'bg-white')}>{mdt(p.started_at)}</td>
                   <td className="px-3 py-0.5 text-gray-600">
                     {p.start_deg != null && p.end_deg != null ? `${Math.round(p.start_deg)}° → ${Math.round(p.end_deg)}°` : '—'}
                     {p.swept_deg != null && <span className="text-gray-400"> ({Math.round(p.swept_deg)}°)</span>}

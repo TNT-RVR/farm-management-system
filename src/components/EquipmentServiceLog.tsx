@@ -7,6 +7,10 @@ import { keepOpenOnError } from '@/lib/record-actions'
 import { cn } from '@/lib/utils'
 import { money as fmtMoney } from '@/lib/format'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
+import { dbErrorMessage } from '@/lib/db-error'
+import { localDateKey } from '@/lib/ranchWeather'
+import { serviceLogProblem } from '@/lib/service-log-check'
 
 const day = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })
 const money = (v: number | null) => (v == null ? null : fmtMoney(Number(v), 2, { neg: 'inside' }))
@@ -53,6 +57,35 @@ export function EquipmentServiceLog({ equipment, canEdit, canAdd }: { equipment:
   ]
   const err = save.error ?? del.error
 
+  /** What an entry opens to, in the table row and in the phone card. */
+  const detail = (r: ServiceLogRow) => (
+    <>
+      <DetailList
+        className="text-xs"
+        rows={[
+          ['Done on', day(r.done_on)],
+          ['What', what(r)],
+          ['Engine hours', r.engine_hours != null ? Math.round(Number(r.engine_hours)).toLocaleString('en-CA') : null],
+          ['Cost', money(r.cost)],
+          ['Notes', r.notes],
+          ['Recorded by', r.done_by ? (userName.get(r.done_by) ?? null) : null],
+          ['Recorded', new Date(r.created_at).toLocaleString('en-CA')],
+        ]}
+      />
+      {canEdit && (
+        <div className="mt-1.5">
+          <EditButton
+            onClick={() => {
+              save.reset()
+              del.reset()
+              setEditing(r)
+            }}
+          />
+        </div>
+      )}
+    </>
+  )
+
   return (
     <section className="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
       <div className="flex flex-wrap items-center gap-2 px-4 pt-4">
@@ -75,7 +108,56 @@ export function EquipmentServiceLog({ equipment, canEdit, canAdd }: { equipment:
       {rows.length === 0 ? (
         <p className="mt-2 px-4 pb-4 text-sm text-gray-400">Nothing recorded yet. &ldquo;Done&rdquo; on the schedule above records a service here.</p>
       ) : (
-        <div className="mt-3 overflow-x-auto">
+        <div className="mt-3">
+          {/* One service a card on a phone; a tap opens it as the row does (design review, Nov 2026). */}
+          <CardList className="border-t border-gray-100">
+            {shown.map((r) => {
+              const isOpen = open === r.id
+              const by = r.done_by ? userName.get(r.done_by) : null
+              return (
+                <RowCard
+                  key={r.id}
+                  onClick={rowClick(() => setOpen(isOpen ? null : r.id))}
+                  heading={
+                    <span className="flex items-start gap-1">
+                      <ChevronRight className={cn('mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform', isOpen && 'rotate-90')} />
+                      <span className="min-w-0">
+                        {what(r)}
+                        {r.notes && <span className="block text-xs font-normal text-gray-500">{r.notes.length > 60 ? `${r.notes.slice(0, 60)}…` : r.notes}</span>}
+                      </span>
+                    </span>
+                  }
+                  facts={[]}
+                  summary={
+                    <SummaryLine>
+                      <span>{day(r.done_on)}</span>
+                      {r.engine_hours != null && (
+                        <>
+                          <Dot />
+                          <span className="tabular-nums">{Math.round(Number(r.engine_hours)).toLocaleString('en-CA')} h</span>
+                        </>
+                      )}
+                      {r.cost != null && (
+                        <>
+                          <Dot />
+                          <span className="tabular-nums">{money(r.cost)}</span>
+                        </>
+                      )}
+                      {by && (
+                        <>
+                          <Dot />
+                          <span>{by}</span>
+                        </>
+                      )}
+                    </SummaryLine>
+                  }
+                >
+                  {isOpen ? detail(r) : null}
+                </RowCard>
+              )
+            })}
+          </CardList>
+          <div className="hidden overflow-x-auto sm:block">
           <table className="w-full min-w-[480px] text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
@@ -109,29 +191,7 @@ export function EquipmentServiceLog({ equipment, canEdit, canAdd }: { equipment:
                       <tr className="bg-gray-50/60">
                         <td />
                         <td colSpan={5} className="px-3 pb-2 pt-1">
-                          <DetailList
-                            className="text-xs"
-                            rows={[
-                              ['Done on', day(r.done_on)],
-                              ['What', what(r)],
-                              ['Engine hours', r.engine_hours != null ? Math.round(Number(r.engine_hours)).toLocaleString('en-CA') : null],
-                              ['Cost', money(r.cost)],
-                              ['Notes', r.notes],
-                              ['Recorded by', r.done_by ? (userName.get(r.done_by) ?? null) : null],
-                              ['Recorded', new Date(r.created_at).toLocaleString('en-CA')],
-                            ]}
-                          />
-                          {canEdit && (
-                            <div className="mt-1.5">
-                              <EditButton
-                                onClick={() => {
-                                  save.reset()
-                                  del.reset()
-                                  setEditing(r)
-                                }}
-                              />
-                            </div>
-                          )}
+                          {detail(r)}
                         </td>
                       </tr>
                     )}
@@ -140,6 +200,7 @@ export function EquipmentServiceLog({ equipment, canEdit, canAdd }: { equipment:
               })}
             </tbody>
           </table>
+          </div>
           {rows.length > 10 && (
             <button type="button" onClick={() => setAll((a) => !a)} className="mx-3 my-2 text-xs text-brand-700 underline">
               {all ? 'show fewer' : `show all ${rows.length}`}
@@ -157,8 +218,23 @@ export function EquipmentServiceLog({ equipment, canEdit, canAdd }: { equipment:
               : (editing as unknown as Record<string, unknown>)
           }
           onClose={() => setEditing(null)}
-          onSave={(p) =>
-            save.mutateAsync({
+          onSave={(p) => {
+            const was = editing === 'new' ? null : editing
+            const doneOn = String(p.done_on)
+            const engineHours = p.engine_hours as number | null
+            // An old entry opened to fix its notes is not re-judged on hours it already had.
+            const hoursChanged = !was || was.done_on !== doneOn || Number(was.engine_hours ?? NaN) !== Number(engineHours ?? NaN)
+            const problem = serviceLogProblem({
+              doneOn,
+              engineHours: hoursChanged ? engineHours : null,
+              cost: p.cost as number | null,
+              today: localDateKey(),
+              meterHours: equipment.engine_hours,
+              meterOn: equipment.engine_hours_at ? localDateKey(new Date(equipment.engine_hours_at)) : null,
+              others: rows.filter((r) => r.id !== was?.id),
+            })
+            if (problem) return Promise.reject(new Error(problem))
+            return save.mutateAsync({
               id: editing === 'new' ? undefined : editing.id,
               equipment_id: equipment.id,
               plan_id: (p.plan_id as string | null) ?? null,
@@ -168,11 +244,11 @@ export function EquipmentServiceLog({ equipment, canEdit, canAdd }: { equipment:
               cost: p.cost as number | null,
               notes: (p.notes as string | null) ?? null,
             })
-          }
+          }}
           onDelete={editing === 'new' ? undefined : () => keepOpenOnError(del.mutateAsync({ id: editing.id, plan_id: editing.plan_id }))}
           deleteConfirm={editing === 'new' ? undefined : `Delete the ${what(editing).toLowerCase()} service of ${day(editing.done_on)}? The plan's last-done moves back to the service before it.`}
           saving={save.isPending || del.isPending}
-          error={err ? (err as Error).message : null}
+          error={err ? dbErrorMessage(err) : null}
         />
       )}
     </section>

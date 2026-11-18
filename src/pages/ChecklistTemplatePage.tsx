@@ -36,6 +36,8 @@ export function ChecklistTemplatePage() {
   const template = templates?.find((t) => t.id === id)
   const readonly = !hasManagerAccess(profile?.role)
   const [newItem, setNewItem] = useState('')
+  // A template emptied of its name listed as a blank row (page-walk batch 6).
+  const [nameNote, setNameNote] = useState<string | null>(null)
 
   const invalidateTpl = () =>
     void queryClient.invalidateQueries({ queryKey: ['checklist_templates'] })
@@ -110,11 +112,20 @@ export function ChecklistTemplatePage() {
         <input
           disabled={readonly}
           defaultValue={template.name}
+          aria-label="Checklist name"
           onBlur={(e) => {
-            if (e.target.value !== template.name) patchTemplate.mutate({ name: e.target.value })
+            const name = e.target.value.trim()
+            if (!name) {
+              e.target.value = template.name
+              setNameNote('A checklist needs a name, so the old one is kept.')
+              return
+            }
+            setNameNote(null)
+            if (name !== template.name) patchTemplate.mutate({ name })
           }}
           className="w-full text-xl font-bold text-gray-900 focus:outline-none"
         />
+        {nameNote && <p className="mt-1 text-xs text-amber-700">{nameNote}</p>}
         <div className="mt-3 flex flex-wrap gap-3">
           <label className="text-xs text-gray-500">
             Category

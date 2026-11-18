@@ -108,12 +108,13 @@ export function CropProgressExemptions({ canEdit }: { canEdit: boolean }) {
             <p className="text-sm text-gray-500">Loading…</p>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-gray-200">
-              <table className="w-full text-sm">
+              {/* Tighter cells on a phone so the note box keeps some width (design review, Nov 2026). */}
+              <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
                 <thead className={TABLE_HEAD}>
                   <tr>
                     <th className={TABLE_TH}>Crop</th>
-                    <th className={`${TABLE_TH} w-20 text-center`}>We seed</th>
-                    <th className={`${TABLE_TH} w-24 text-center`}>We harvest</th>
+                    <th className={`${TABLE_TH} w-20 text-center max-sm:w-14`}>We seed</th>
+                    <th className={`${TABLE_TH} w-24 text-center max-sm:w-16`}>We harvest</th>
                     <th className={TABLE_TH}>Why not</th>
                   </tr>
                 </thead>

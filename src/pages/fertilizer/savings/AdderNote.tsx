@@ -37,10 +37,11 @@ export function AdderMonths({ straightKey }: { straightKey: string }) {
   return (
     <>
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-      <table className="w-full text-xs">
+      {/* Squeezed on a phone: month pinned, cells tightened (design review, Nov 2026). */}
+      <table className="w-full text-xs max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
         <thead className={TABLE_HEAD}>
           <tr>
-            <th className={TABLE_TH}>Month</th>
+            <th className={cn(TABLE_TH, 'sticky left-0 z-10 bg-brand-700')}>Month</th>
             <th className={cn(TABLE_TH, 'text-right')}>Here</th>
             <th className={cn(TABLE_TH, 'text-right')}>DTN, CA$/t</th>
             <th className={cn(TABLE_TH, 'text-right')}>Adder</th>
@@ -49,7 +50,7 @@ export function AdderMonths({ straightKey }: { straightKey: string }) {
         <tbody>
           {months.slice(-8).map((m) => (
             <tr key={m.month} className={cn(!used.has(m.month) && 'text-gray-400', m.flag && 'line-through')} title={m.flag ?? undefined}>
-              <td className="px-3 py-0.5">
+              <td className="sticky left-0 z-10 bg-white px-3 py-0.5">
                 {m.month}
                 <span className="ml-1 text-xs text-gray-400">{m.localSource === 'ICI' ? `${farmRetailer()}, ${m.localTonnes!.toFixed(1)} t` : 'survey'}</span>
               </td>

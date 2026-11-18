@@ -9,6 +9,7 @@ import type { useGuideSoil } from '@/lib/nutrient-guide-query'
 import { rxAgainstSoilTest } from '@/lib/rx-check'
 import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
+import { CardList, RowCard, type Fact } from '@/components/RowCards'
 import { GuideRate } from './GuideRate'
 
 const LB_PER_TONNE = 2204.62
@@ -41,6 +42,27 @@ export function RxAgainstSoilTest({
   const extraLbN = higher.reduce((s, r) => s + r.nGap! * (r.acres ?? 0), 0)
   const extraUrea = extraLbN / 0.46 / LB_PER_TONNE
 
+  // Each row's figures once, for the phone card and the table cell alike.
+  const shaped = rows.map((r) => {
+    const g = guideSoils?.get(r.fieldId)
+    const crops = r.rxCrop && r.testCrop && r.rxCrop !== r.testCrop ? `${r.rxCrop} (test: ${r.testCrop})` : (r.rxCrop ?? r.testCrop ?? '—')
+    const testN = r.test ? n0(r.test.n) : <span className="text-xs text-amber-700">no soil test</span>
+    const guide = g ? <GuideRate crop={g.crop} nutrient="N" soil={g.soil} /> : <span className="text-gray-300">—</span>
+    const gap = r.nGap == null ? '—' : `${r.nGap > 0 ? '+' : ''}${n0(r.nGap)}`
+    const gapClass = r.nGap != null && r.nGap >= MATERIAL ? 'text-amber-800' : 'text-gray-500'
+    const p = `${n0(r.rx.p2o5)} / ${r.test ? n0(r.test.p2o5) : '—'}`
+    const k = `${n0(r.rx.k2o)} / ${r.test ? n0(r.test.k2o) : '—'}`
+    const facts: Fact[] = [
+      { label: 'Rx N', node: <span className="tabular-nums">{n0(r.rx.n)}</span> },
+      { label: 'Soil test N', node: <span className="tabular-nums">{testN}</span> },
+      { label: 'Alberta guide', node: g ? guide : null },
+      { label: 'Rx over test', node: r.nGap == null ? null : <span className={cn('font-semibold tabular-nums', gapClass)}>{gap}</span> },
+      { label: 'P₂O₅ Rx / test', node: <span className="tabular-nums">{p}</span> },
+      { label: 'K₂O Rx / test', node: <span className="tabular-nums">{k}</span> },
+    ]
+    return { r, crops, testN, guide, gap, gapClass, p, k, facts }
+  })
+
   return (
     <div className="mb-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
       <div className={cn('flex items-center gap-1.5', CARD_HEAD)}>
@@ -59,7 +81,22 @@ export function RxAgainstSoilTest({
           )}
         </p>
       )}
-      <div className="overflow-x-auto">
+      {/* One field a card on a phone (design review, Nov 2026). */}
+      <CardList>
+        {shaped.map(({ r, crops, facts }) => (
+          <RowCard
+            key={r.fieldId}
+            heading={
+              <span className="flex flex-wrap items-baseline gap-x-2">
+                {r.fieldName}
+                <span className="text-xs font-normal text-gray-500">{crops}</span>
+              </span>
+            }
+            facts={facts}
+          />
+        ))}
+      </CardList>
+      <div className="hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[640px] table-fixed text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -74,37 +111,18 @@ export function RxAgainstSoilTest({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => {
-              const g = guideSoils?.get(r.fieldId)
-              const crops = r.rxCrop && r.testCrop && r.rxCrop !== r.testCrop ? `${r.rxCrop} (test: ${r.testCrop})` : (r.rxCrop ?? r.testCrop ?? '—')
-              return (
-                <tr key={r.fieldId} className="border-b border-gray-100 last:border-0">
-                  <td className="px-3 py-1.5 font-medium text-gray-900">{r.fieldName}</td>
-                  <td className="px-3 py-1.5 text-xs text-gray-600">{crops}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{n0(r.rx.n)}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">
-                    {r.test ? n0(r.test.n) : <span className="text-xs text-amber-700">no soil test</span>}
-                  </td>
-                  <td className="px-3 py-1.5 text-right">
-                    {g ? <GuideRate crop={g.crop} nutrient="N" soil={g.soil} /> : <span className="text-gray-300">—</span>}
-                  </td>
-                  <td
-                    className={cn(
-                      'px-3 py-1.5 text-right font-semibold tabular-nums',
-                      r.nGap != null && r.nGap >= MATERIAL ? 'text-amber-800' : 'text-gray-500',
-                    )}
-                  >
-                    {r.nGap == null ? '—' : `${r.nGap > 0 ? '+' : ''}${n0(r.nGap)}`}
-                  </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">
-                    {n0(r.rx.p2o5)} / {r.test ? n0(r.test.p2o5) : '—'}
-                  </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">
-                    {n0(r.rx.k2o)} / {r.test ? n0(r.test.k2o) : '—'}
-                  </td>
-                </tr>
-              )
-            })}
+            {shaped.map(({ r, crops, testN, guide, gap, gapClass, p, k }) => (
+              <tr key={r.fieldId} className="border-b border-gray-100 last:border-0">
+                <td className="px-3 py-1.5 font-medium text-gray-900">{r.fieldName}</td>
+                <td className="px-3 py-1.5 text-xs text-gray-600">{crops}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums">{n0(r.rx.n)}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums">{testN}</td>
+                <td className="px-3 py-1.5 text-right">{guide}</td>
+                <td className={cn('px-3 py-1.5 text-right font-semibold tabular-nums', gapClass)}>{gap}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">{p}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">{k}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

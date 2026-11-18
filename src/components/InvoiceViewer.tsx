@@ -5,6 +5,7 @@ import { fmtMoney } from '@/lib/applied'
 import { cn } from '@/lib/utils'
 import { ImportHint } from '@/components/ImportHint'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, Dot, SummaryLine } from '@/components/RowCards'
 
 /**
  * The invoice a price came from.
@@ -97,7 +98,46 @@ export function InvoiceViewer({
             ) : lines.length === 0 ? (
               <p className="text-sm text-gray-500">Nothing recorded against this invoice number.</p>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <>
+              {/* One invoice line a card on a phone (design review, Nov 2026). */}
+              <CardList className="rounded-lg border border-gray-200">
+                {lines.map((l) => (
+                  <li
+                    key={l.id}
+                    className={cn(
+                      'px-3 py-2.5',
+                      highlightProductId && l.product_id === highlightProductId && 'bg-amber-50',
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-auto text-sm font-semibold text-gray-900">{l.description}</div>
+                      <div className="shrink-0 text-sm font-semibold tabular-nums">
+                        {l.amount == null ? '—' : fmtMoney(Number(l.amount))}
+                      </div>
+                    </div>
+                    <SummaryLine>
+                      <span className="tabular-nums">
+                        {l.quantity ?? '—'} {l.pack_unit ?? ''}
+                      </span>
+                      {l.unit_price != null && (
+                        <>
+                          <Dot />
+                          <span className="tabular-nums">{fmtMoney(Number(l.unit_price))} each</span>
+                        </>
+                      )}
+                      {l.price_per_canonical != null && (
+                        <>
+                          <Dot />
+                          <span className="tabular-nums">
+                            {fmtMoney(Number(l.price_per_canonical))}/{l.canonical_unit ?? '?'}
+                          </span>
+                        </>
+                      )}
+                    </SummaryLine>
+                  </li>
+                ))}
+              </CardList>
+              <div className="hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
                 <table className="w-full text-sm">
                   <thead className={TABLE_HEAD}>
                     <tr>
@@ -138,6 +178,7 @@ export function InvoiceViewer({
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </div>
 

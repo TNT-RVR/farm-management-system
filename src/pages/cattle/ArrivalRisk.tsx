@@ -19,6 +19,7 @@ import {
   type SourceKind,
 } from '@/lib/brd-risk'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 import { cn } from '@/lib/utils'
 
 /**
@@ -104,7 +105,39 @@ export function ArrivalRisk({ cropYear, canEdit }: { cropYear: number; canEdit: 
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto">
+          {/* One arrival a card on a phone; tap it for the factors (design review, Nov 2026). */}
+          <CardList>
+            {rows.map(({ arrival, head, risk }) => (
+              <RowCard
+                key={arrival.id}
+                onClick={() => setOpen(open === arrival.id ? null : arrival.id)}
+                heading={<span className="tabular-nums">{day(arrival.moved_on)}</span>}
+                actions={
+                  <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium tabular-nums', risk.raised > 0 ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-gray-600')}>
+                    {risk.raised} of {risk.recorded} raised
+                  </span>
+                }
+                facts={[]}
+                summary={
+                  <div className={cn(risk.windowOpen && 'rounded bg-amber-50/60')}>
+                    <SummaryLine>
+                      {head ? <span className="tabular-nums">{head} head</span> : null}
+                      {head ? <Dot /> : null}
+                      <span>{arrival.source_kind ? SOURCE_LABEL[arrival.source_kind as SourceKind] : 'source not recorded'}</span>
+                      {(arrival.origin_address ?? arrival.owner_name) && (
+                        <>
+                          <Dot />
+                          <span>{arrival.origin_address ?? arrival.owner_name}</span>
+                        </>
+                      )}
+                    </SummaryLine>
+                    <p className="mt-0.5 text-xs text-gray-600">{risk.headline}</p>
+                  </div>
+                }
+              />
+            ))}
+          </CardList>
+          <div className="hidden overflow-x-auto sm:block">
             <table className="w-full min-w-[700px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>

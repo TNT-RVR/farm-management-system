@@ -11,6 +11,7 @@ import { fmtMoney } from '@/lib/applied'
 import { fmtUnitPrice } from '@/lib/board-price'
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { CardList, RowCard } from '@/components/RowCards'
 
 /**
  * Every market price in one year, per crop, in $/bu — for "sold vs market".
@@ -116,6 +117,75 @@ export function PositionTab({ year }: { year: number }) {
     return board ? sum + Math.round(summarise(p).openValueAt(board.value) ?? 0) : sum
   }, 0)
 
+  // Each crop's cells, built once for its table row and its phone card. A
+  // blank is null here; the table draws it as a grey dash.
+  const built = rows.map((p: Position) => {
+    const s = summarise(p)
+    const board = prices?.byCrop.get(p.cropId)
+    // Market prices are per bushel, so only a bushel crop compares.
+    const vs =
+      p.unit === 'bu'
+        ? realisedVsMarket(s.avgContractPrice, marketPrices.get(p.cropId) ?? [])
+        : null
+    return {
+      p,
+      name: (
+        <>
+          {p.cropName}
+          {p.category === 'own_use' && <span className="ml-1.5 text-xs text-gray-400">own use</span>}
+        </>
+      ),
+      acres: Math.round(p.acres).toLocaleString('en-CA'),
+      expected: (
+        <>
+          {qty(p.expected, p.unit)}
+          {p.expectedLow != null && p.expectedHigh != null && p.expectedHigh - p.expectedLow > 0.5 && (
+            <span className="block text-xs text-gray-400">
+              {qty(p.expectedLow, p.unit)} to {qty(p.expectedHigh, p.unit)}
+            </span>
+          )}
+          {(p.cutQuantity ?? 0) > 0 && (
+            <span className="block text-xs font-medium text-amber-800">
+              −{qty(p.cutQuantity!, p.unit)} cut on {Math.round(p.cutAcres ?? 0).toLocaleString('en-CA')} ac
+            </span>
+          )}
+        </>
+      ),
+      contracted: p.contracted === 0 ? null : qty(p.contracted, p.unit),
+      delivered: p.delivered > 0 ? qty(p.delivered, p.unit) : null,
+      priced: (
+        <>
+          <PricedBar fraction={s.pricedFraction} />
+          {s.oversold != null && (
+            <span className="mt-0.5 block text-xs font-medium text-red-700">
+              oversold by {qty(s.oversold, p.unit)}
+            </span>
+          )}
+        </>
+      ),
+      avg: s.avgContractPrice == null ? null : `${fmtUnitPrice(s.avgContractPrice, p.unit)}/${p.unit}`,
+      vs: vs == null ? null : `${vs.pct >= 0 ? '+' : ''}${vs.pct.toFixed(1)}%`,
+      vsTone: vs == null ? 'text-gray-300' : vs.diff >= 0 ? 'text-green-700' : 'text-red-600',
+      vsTitle: vs
+        ? `Contracted at ${fmtUnitPrice(s.avgContractPrice!, p.unit)} against a ${fmtUnitPrice(vs.market, p.unit)} average`
+        : 'Needs contracts and a few months of market prices',
+      open: qty(s.open, p.unit),
+      // Only where a board price exists for this crop. A made-up price on an
+      // open position is worse than a blank. The series is $/tonne;
+      // board.value is already per crop unit.
+      atBoard: board ? (
+        <span title={`${board.name}, ${board.on} — ${board.basis}`}>
+          {fmtMoney(s.openValueAt(board.value) ?? 0)}
+          <span className="block text-xs text-gray-400">
+            at {fmtUnitPrice(board.value, board.unit)}/{board.unit}
+            {board.converted && ` (from ${board.quoted})`}
+          </span>
+        </span>
+      ) : null,
+    }
+  })
+  const dash = <span className="text-gray-300">—</span>
+
   return (
     <>
       {!anyContracts && (
@@ -129,7 +199,34 @@ export function PositionTab({ year }: { year: number }) {
         </p>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      {/* One crop a card on a phone (design review, Nov 2026). */}
+      <CardList className="rounded-lg border border-gray-200 bg-white">
+        {built.map((b) => (
+          <RowCard
+            key={`${b.p.cropYear}-${b.p.cropId}`}
+            heading={b.name}
+            facts={[
+              { label: 'Open', node: <span className="font-medium tabular-nums">{b.open}</span> },
+              { label: 'Open at board', node: b.atBoard && <span className="tabular-nums">{b.atBoard}</span> },
+              { label: 'Acres', node: <span className="tabular-nums">{b.acres}</span> },
+              { label: 'Expected', node: <span className="tabular-nums">{b.expected}</span> },
+              { label: 'Contracted', node: b.contracted && <span className="tabular-nums">{b.contracted}</span> },
+              { label: 'Delivered', node: b.delivered && <span className="tabular-nums">{b.delivered}</span> },
+              { label: 'Priced', node: b.priced },
+              { label: 'Avg price', node: b.avg && <span className="tabular-nums">{b.avg}</span> },
+              { label: 'Sold vs market', node: b.vs && <span className={cn('tabular-nums', b.vsTone)}>{b.vs}</span> },
+            ]}
+          />
+        ))}
+        {openAtBoard > 0 && (
+          <RowCard
+            heading={<>Open, at today&rsquo;s board</>}
+            facts={[]}
+            summary={<p className="mt-0.5 text-sm font-medium tabular-nums">{fmtMoney(openAtBoard)}</p>}
+          />
+        )}
+      </CardList>
+      <div className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white sm:block">
         <table className="w-full text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -146,94 +243,24 @@ export function PositionTab({ year }: { year: number }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {rows.map((p: Position) => {
-              const s = summarise(p)
-              const board = prices?.byCrop.get(p.cropId)
-              // Market prices are per bushel, so only a bushel crop compares.
-              const vs =
-                p.unit === 'bu'
-                  ? realisedVsMarket(s.avgContractPrice, marketPrices.get(p.cropId) ?? [])
-                  : null
+            {built.map((b) => {
               return (
-                <tr key={`${p.cropYear}-${p.cropId}`}>
-                  <td className="px-3 py-2 font-medium text-gray-800">
-                    {p.cropName}
-                    {p.category === 'own_use' && (
-                      <span className="ml-1.5 text-xs text-gray-400">own use</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-600">
-                    {Math.round(p.acres).toLocaleString('en-CA')}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {qty(p.expected, p.unit)}
-                    {p.expectedLow != null && p.expectedHigh != null && p.expectedHigh - p.expectedLow > 0.5 && (
-                      <span className="block text-xs text-gray-400">
-                        {qty(p.expectedLow, p.unit)} to {qty(p.expectedHigh, p.unit)}
-                      </span>
-                    )}
-                    {(p.cutQuantity ?? 0) > 0 && (
-                      <span className="block text-xs font-medium text-amber-800">
-                        −{qty(p.cutQuantity!, p.unit)} cut on {Math.round(p.cutAcres ?? 0).toLocaleString('en-CA')} ac
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {p.contracted === 0 ? (
-                      <span className="text-gray-300">—</span>
-                    ) : (
-                      qty(p.contracted, p.unit)
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-600">
-                    {p.delivered > 0 ? qty(p.delivered, p.unit) : <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="px-3 py-2">
-                    <PricedBar fraction={s.pricedFraction} />
-                    {s.oversold != null && (
-                      <span className="mt-0.5 block text-xs font-medium text-red-700">
-                        oversold by {qty(s.oversold, p.unit)}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {s.avgContractPrice == null ? (
-                      <span className="text-gray-300">—</span>
-                    ) : (
-                      `${fmtUnitPrice(s.avgContractPrice, p.unit)}/${p.unit}`
-                    )}
-                  </td>
+                <tr key={`${b.p.cropYear}-${b.p.cropId}`}>
+                  <td className="px-3 py-2 font-medium text-gray-800">{b.name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-600">{b.acres}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{b.expected}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{b.contracted ?? dash}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-600">{b.delivered ?? dash}</td>
+                  <td className="px-3 py-2">{b.priced}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{b.avg ?? dash}</td>
                   {/* What we got against the year's average market price: the
                       after-the-fact judge of timing, not of the price. */}
-                  <td
-                    className={cn(
-                      'px-3 py-2 text-right tabular-nums',
-                      vs == null ? 'text-gray-300' : vs.diff >= 0 ? 'text-green-700' : 'text-red-600',
-                    )}
-                    title={
-                      vs
-                        ? `Contracted at ${fmtUnitPrice(s.avgContractPrice!, p.unit)} against a ${fmtUnitPrice(vs.market, p.unit)} average`
-                        : 'Needs contracts and a few months of market prices'
-                    }
-                  >
-                    {vs == null ? '—' : `${vs.pct >= 0 ? '+' : ''}${vs.pct.toFixed(1)}%`}
+                  <td className={cn('px-3 py-2 text-right tabular-nums', b.vsTone)} title={b.vsTitle}>
+                    {b.vs ?? '—'}
                   </td>
-                  <td className="px-3 py-2 text-right font-medium tabular-nums">
-                    {qty(s.open, p.unit)}
-                  </td>
-                  {/* Only where a board price exists for this crop. A made-up
-                      price on an open position is worse than a blank. The
-                      series is $/tonne; board.value is already per crop unit. */}
+                  <td className="px-3 py-2 text-right font-medium tabular-nums">{b.open}</td>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {board ? (
-                      <span title={`${board.name}, ${board.on} — ${board.basis}`}>
-                        {fmtMoney(s.openValueAt(board.value) ?? 0)}
-                        <span className="block text-xs text-gray-400">
-                          at {fmtUnitPrice(board.value, board.unit)}/{board.unit}
-                          {board.converted && ` (from ${board.quoted})`}
-                        </span>
-                      </span>
-                    ) : (
+                    {b.atBoard ?? (
                       <span
                         className="text-gray-300"
                         title="No market series linked to this crop in a unit it can be converted from"

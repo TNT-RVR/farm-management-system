@@ -33,12 +33,21 @@ insert into public.farm_setup (
 update public.farms set
   river_station_number = null,
   river_station_name = null,
-  power_cost_kwh = 0.16
+  power_cost_kwh = 0.16,
+  -- No solar on the demo farm, so pumping is priced at the grid price.
+  power_value_basis = 'buy'
 where id = (select id from public.farms limit 1);
 
 -- The owner: Sam Demo (the demo account).
 update public.users set phone = '403-555-0100', is_owner = true, finance_access = true, active = true, role = 'admin'
 where id = (select id from public.users order by created_at limit 1);
+
+-- Sam's signature (a made-up scrawl), so a truck inspection or a seed form can
+-- be signed off in the demo: without one the sign-off step stops (batch 6 walk).
+insert into public.user_signatures (user_id, image)
+select id, 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAABaCAYAAAACcWsdAAAD1UlEQVR42u3dS27bMBAAUFvoEbzOwXLAHCzr3CFdBTAMW6J+9MzwPSAoUKSuKZPDGYqmLhcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAMV2rNuz28fn7+Hc/319XHzkIWOGDVdWg9dhWQZnKJpegVmCeC9ZV2lu5jQwesB4zjhE6e8U2PgYrQUtJWG6w3gertaVThlJradBWKQ+V+AxfEr4aBLePz98MpdZjYNaxlfgCVpHsqnWmytg57ttVMWiNEpjn+p6gNWiGNbeelalTtJZIlTr6q8BcdTCPuPba4t9oDf75/rq2BKpng+L28fmbYYZ/bGPW/WpLgXmUYEXBDGuuHNzbYSJ1oLXt3FJqRAsEa2+QVOm7ApdF98WOUGVwLJVN0dvR8v5GGNAjlL9KwhPS7uwlyH05+6oMrNK+NQHw3UHvyMpAhjVgORh5Y+bedr7asvH3WlFm8zXtPKsszp5l/X3W9z8CFumzyMjrdb32MUUYzEde9yxrkwKWuzfW6xbuAEfay7Xm+rZmWWd+ZhGytklAyVEW7ikH/wbp40/EwHxEeb9U+kabfLaW95eOW1SiZG2TL/oywvV9NnCPWrPbknkcfV3fuTbZs48oCRl+q0qWzOPV7veWzOrIa/DstXoFremsGte+mNy3vjO2877UfZZdHN3Opd9vCWZbyvu9ZeCeds5d1x79ZLKdgV6LtL0nld594p2ZR49MsyVrO7u9k1259NxiEHEH+xH/X2vmccQk++rfrXm9Pd81bQlaZ01S1rCCB+Z3ZpFb27mlVIoywW0ZyK2Zx5FtXHPXN/MaYcmApRzMd1fx6KwjWt+L2o41k9DWfWKpAlavN5615Ny6+S5rUJ7LACLdoDljIEfd63bWmF57wyNchjXK3cLKxzLvKX8rfe1n71ef7v9893U48/Tds294WMPqFJjX/k7GMqnlPUfOOs4ayO+6a1nxQSaT7QyxnkJdYR9b696nSFnHaE8kmsucI/e/KepxGJUX+yMP1K2f59ZyMdPAH+0htRE/mynKInT2EydbB/LSd9oyzuSVNvC2nPww4pN7BKzk+3WOfijm2kAW+QiXirv1L24c1Q5YR50pHn2WO3ITac+NgMojMu4ju0Z4bPyWgR+5HHx2PnqFMqL6QnSGM+AvznTvm330PgojeinoCJec52dRMMPaOytnmuVan8ZcMfswkBkiYFUfyAYzZz22TMAykKHsk3QELCgeNAQMAQsBQ9BAwBIwBAwELEFDWQICliwDkOEAAAAAAAAAAAAAAAAAAAAAAAAAwAn+Ax412rM9x+wNAAAAAElFTkSuQmCC'
+  from public.users order by created_at limit 1
+on conflict (user_id) do nothing;
 
 -- Staff. The sign-up trigger (handle_new_user) makes their public.users rows.
 insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data, invited_at, email_confirmed_at, created_at)

@@ -43,7 +43,8 @@ export function AdjustIrrigation({ fieldId, year, u }: { fieldId: string; year: 
               <thead className={cn(TABLE_HEAD, 'sticky top-0')}>
                 <tr>
                   <th className="px-2 py-1 font-medium">Date</th>
-                  <th className="px-2 py-1 font-medium">From</th>
+                  {/* On a phone the source folds under the date, leaving room for the correction form (design review, Nov 2026). */}
+                  <th className="px-2 py-1 font-medium max-sm:hidden">From</th>
                   <th className="px-2 py-1 text-right font-medium">Recorded ({unit})</th>
                   <th className="px-2 py-1 font-medium">Correct to</th>
                 </tr>
@@ -89,6 +90,12 @@ function EventRow({ e, u, dp }: { e: Ev; u: UnitSystem; dp: number }) {
   const unit = conv.depthUnit(u)
   const adjusted = e.adjusted_gross_mm != null
   const recorded = e.source_gross_mm ?? e.gross_mm
+  const from = (
+    <>
+      {e.source === 'fieldnet' ? 'FieldNET' : e.source === 'manual' ? 'by hand' : e.source}
+      {e.coverage_deg != null && <span className="text-gray-400"> · {e.coverage_deg}°</span>}
+    </>
+  )
   const [value, setValue] = useState(adjusted ? String(conv.depth(e.adjusted_gross_mm, u, dp)) : '')
   const [note, setNote] = useState(e.adjusted_note ?? '')
   const save = useMutation({
@@ -116,11 +123,11 @@ function EventRow({ e, u, dp }: { e: Ev; u: UnitSystem; dp: number }) {
   })
   return (
     <tr className={cn(adjusted && 'bg-amber-50/60')}>
-      <td className="px-2 py-1 whitespace-nowrap">{md(e.date)}</td>
-      <td className="px-2 py-1 text-gray-500">
-        {e.source === 'fieldnet' ? 'FieldNET' : e.source === 'manual' ? 'by hand' : e.source}
-        {e.coverage_deg != null && <span className="text-gray-400"> · {e.coverage_deg}°</span>}
+      <td className="px-2 py-1 whitespace-nowrap">
+        {md(e.date)}
+        <span className="block text-gray-500 sm:hidden">{from}</span>
       </td>
+      <td className="px-2 py-1 text-gray-500 max-sm:hidden">{from}</td>
       <td className={cn('px-2 py-1 text-right tabular-nums', adjusted && 'text-gray-400 line-through')}>{conv.depth(recorded, u, dp)}</td>
       <td className="px-2 py-1">
         <form

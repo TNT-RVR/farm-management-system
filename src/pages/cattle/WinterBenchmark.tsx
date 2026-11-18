@@ -23,6 +23,7 @@ import {
 } from '@/lib/grazing-benchmarks'
 import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
+import { CardList, RowCard } from '@/components/RowCards'
 
 /**
  * Feed → Feed plan → what wintering a cow costs us, beside Alberta's benchmark.
@@ -91,6 +92,27 @@ export function WinterBenchmark({ ranchId }: { ranchId: string }) {
 
   if (winter?.loading) return null
 
+  type Row = (typeof rows)[number]
+  const profileName = (r: Row) => (
+    <>
+      <Link to={`/research?tab=search&q=${encodeURIComponent(r.paper)}`} className="text-gray-900 underline decoration-dotted hover:decoration-solid">
+        {r.label}
+      </Link>
+      {!r.ourZone && <span className="ml-1.5 text-xs text-amber-700">another zone</span>}
+    </>
+  )
+  const timesTitle = (r: Row) =>
+    r.gapPerAud == null
+      ? undefined
+      : `${r.gapPerAud > 0 ? '+' : ''}${money2(r.gapPerAud)} an animal unit day, in ${r.year} dollars against today's`
+  const timesClass = (r: Row) => (r.timesTheirs == null ? 'text-gray-400' : r.timesTheirs > 1 ? 'text-amber-800' : 'text-green-800')
+  const times = (r: Row) => (
+    <>
+      {r.timesTheirs == null ? '—' : `${n1(r.timesTheirs)}×`}
+      <span className="ml-1 text-xs text-gray-400">{r.year}$</span>
+    </>
+  )
+
   return (
     <Card title="What a winter costs, ours against Alberta's benchmark" icon={Scale}>
       {/* Our own figure, and exactly what is in it. */}
@@ -156,7 +178,28 @@ export function WinterBenchmark({ ranchId }: { ranchId: string }) {
       )}
 
       {/* The three southern Alberta profiles plus Central Alberta. */}
-      <div className="overflow-x-auto">
+      {/* One profile a card on a phone (design review, Nov 2026). */}
+      <CardList>
+        {rows.map((r) => (
+          <RowCard
+            key={r.key}
+            heading={<span className={cn('font-normal', !r.ourZone && 'text-gray-500')}>{profileName(r)}</span>}
+            actions={
+              <span className={cn('text-sm tabular-nums', timesClass(r))} title={timesTitle(r)}>
+                {times(r)}
+              </span>
+            }
+            facts={[
+              { label: 'AUM /ac', node: n1(r.aumPerAcre) },
+              { label: 'Their cost /ac', node: money0(r.theirPerAcre) },
+              { label: 'Their cost /AUM', node: money2(r.theirPerAum) },
+              { label: 'Top third /AUM', node: money2(r.theirPerAumTop) },
+              { label: 'Their cost /AUD', node: money2(r.theirPerAud) },
+            ]}
+          />
+        ))}
+      </CardList>
+      <div className="hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[760px] text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -172,30 +215,14 @@ export function WinterBenchmark({ ranchId }: { ranchId: string }) {
           <tbody className="divide-y divide-gray-100">
             {rows.map((r) => (
               <tr key={r.key} className={cn(!r.ourZone && 'bg-gray-50 text-gray-500')}>
-                <td className="px-3 py-2">
-                  <Link to={`/research?tab=search&q=${encodeURIComponent(r.paper)}`} className="text-gray-900 underline decoration-dotted hover:decoration-solid">
-                    {r.label}
-                  </Link>
-                  {!r.ourZone && <span className="ml-1.5 text-xs text-amber-700">another zone</span>}
-                </td>
+                <td className="px-3 py-2">{profileName(r)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{n1(r.aumPerAcre)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{money0(r.theirPerAcre)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{money2(r.theirPerAum)}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-gray-500">{money2(r.theirPerAumTop)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{money2(r.theirPerAud)}</td>
-                <td
-                  className={cn(
-                    'px-3 py-2 text-right tabular-nums',
-                    r.timesTheirs == null ? 'text-gray-400' : r.timesTheirs > 1 ? 'text-amber-800' : 'text-green-800',
-                  )}
-                  title={
-                    r.gapPerAud == null
-                      ? undefined
-                      : `${r.gapPerAud > 0 ? '+' : ''}${money2(r.gapPerAud)} an animal unit day, in ${r.year} dollars against today's`
-                  }
-                >
-                  {r.timesTheirs == null ? '—' : `${n1(r.timesTheirs)}×`}
-                  <span className="ml-1 text-xs text-gray-400">{r.year}$</span>
+                <td className={cn('px-3 py-2 text-right tabular-nums', timesClass(r))} title={timesTitle(r)}>
+                  {times(r)}
                 </td>
               </tr>
             ))}
@@ -213,25 +240,26 @@ export function WinterBenchmark({ ranchId }: { ranchId: string }) {
       <div className="border-t border-gray-200">
         <p className={cn('font-medium', CARD_HEAD)}>Swath grazing against feeding in the pen, $/AUD — the like-for-like one</p>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[620px] text-sm">
+          {/* On a phone: cost basis pinned, cells tightened, the per-acre saving hidden (design review, Nov 2026). */}
+          <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5 sm:min-w-[620px]">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className={TABLE_TH}>Cost basis</th>
+                <th className={cn(TABLE_TH, 'sticky left-0 z-10 bg-brand-700')}>Cost basis</th>
                 <th className={cn(TABLE_TH, 'text-right')}>Swath grazing</th>
                 <th className={cn(TABLE_TH, 'text-right')}>Drylot</th>
                 <th className={cn(TABLE_TH, 'text-right')}>Their saving</th>
-                <th className={cn(TABLE_TH, 'text-right')}>Saving an acre</th>
+                <th className={cn(TABLE_TH, 'text-right max-sm:hidden')}>Saving an acre</th>
                 <th className={cn(TABLE_TH, 'text-right')}>Ours, today&rsquo;s $</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {drylot.map((r) => (
                 <tr key={r.key}>
-                  <td className="px-3 py-2 text-gray-900">{r.label}</td>
+                  <td className="sticky left-0 z-10 bg-white px-3 py-2 text-gray-900">{r.label}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{money2(r.swath)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{money2(r.drylot)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-green-800">{money2(r.saving)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-600">{money0(r.perAcre)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-600 max-sm:hidden">{money0(r.perAcre)}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-medium text-gray-900">
                     {r.ours == null ? <span className="text-gray-300">—</span> : money2(r.ours)}
                   </td>

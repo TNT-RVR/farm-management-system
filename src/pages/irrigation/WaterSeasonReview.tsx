@@ -9,11 +9,12 @@ import { downloadBlob, tableReportToCsv, tableReportToPdf } from '@/lib/table-re
 import { ExportButton } from '@/components/ExportButton'
 import { conv, depthValue, useUnitSystem, type UnitSystem } from '@/lib/units'
 import { cn } from '@/lib/utils'
-import { buildWaterReview, reviewTotals, RULES, type WaterReviewRow, type WaterReviewTotals } from '@/lib/water-review'
+import { buildWaterReview, reviewTotals, RULES, weightedAsShown, type WaterReviewRow, type WaterReviewTotals } from '@/lib/water-review'
 import { fetchFarmPowerCost, fetchWaterReviewData, perDepth, perUnit, powerPrices, waterReviewReport, type PowerPrices } from '@/lib/reports/water-review'
 import { money as fmtMoney, n0, n1 } from '@/lib/format'
 import { YearSelect } from '@/components/YearSelect'
 import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { CardList, FactList, RowCard } from '@/components/RowCards'
 
 /** Everything the review reads for one year. The arithmetic is in lib/water-review. */
 function useReviewData(year: number) {
@@ -27,7 +28,8 @@ function useReviewData(year: number) {
 
 function useFarmPowerCost() {
   return useQuery({
-    queryKey: ['farm-power-cost', 'v2'],
+    // v3: the row carries solar_on; without solar the pumping is priced at the buy price.
+    queryKey: ['farm-power-cost', 'v3'],
     queryFn: fetchFarmPowerCost,
     staleTime: 10 * 60_000,
   })
@@ -59,14 +61,23 @@ type Col = {
   extra?: boolean
   sort: (r: WaterReviewRow) => number | string | null
   cell: (r: WaterReviewRow) => ReactNode
-  total?: (t: WaterReviewTotals) => ReactNode
+  /** The farm row; `rows` for a figure worked from the rows as printed. */
+  total?: (t: WaterReviewTotals, rows: readonly WaterReviewRow[]) => ReactNode
 }
 
 function columns(u: UnitSystem, power: PowerPrices): Col[] {
-  const other = power.basis === 'sell' ? { rate: power.buy, label: 'bought from the grid' } : { rate: power.sell, label: 'valued at the solar sell price' }
+  // The other price, for the hover; none without solar.
+  const other = !power.solarOn ? null : power.basis === 'sell' ? { rate: power.buy, label: 'bought from the grid' } : { rate: power.sell, label: 'valued at the solar sell price' }
+  const otherNote = (kwh: number | null) => (other ? `; ${money(kwh != null ? kwh * other.rate : null)} if ${other.label}` : '')
   const unit = conv.depthUnit(u)
   const per = perDepth(u).label
   const dp = u === 'metric' ? 0 : 1
+  // The farm row's depth: the acre-weighted average of the depths and acres
+  // as the rows print them, so it is the figure a reader would work out.
+  const farmDepth = (rows: readonly WaterReviewRow[], pick: (r: WaterReviewRow) => number | null) => {
+    const v = weightedAsShown(rows, (r) => { const mm = pick(r); return mm == null ? null : depthValue(mm, u) }, (r) => r.acres, dp)
+    return v == null ? '—' : v.toFixed(dp)
+  }
   return [
     {
       key: 'field',
@@ -101,7 +112,7 @@ function columns(u: UnitSystem, power: PowerPrices): Col[] {
       title: 'Gross depth applied this year (every logged pass)',
       sort: (r) => r.grossMm,
       cell: (r) => <span title={`${r.events} pass${r.events === 1 ? '' : 'es'} logged`}>{conv.depth(r.grossMm, u, dp)}</span>,
-      total: (t) => conv.depth(t.grossMm, u, dp),
+      total: (_t, rows) => farmDepth(rows, (r) => r.grossMm),
     },
     {
       key: 'eff',
@@ -110,10 +121,10 @@ function columns(u: UnitSystem, power: PowerPrices): Col[] {
       title: 'Gross × the pivot’s application efficiency (0.85 when none is on file)',
       sort: (r) => r.effectiveMm,
       cell: (r) => <span title={`${Math.round(r.efficiency * 100)}% efficiency`}>{conv.depth(r.effectiveMm, u, dp)}</span>,
-      total: (t) => conv.depth(t.effectiveMm, u, dp),
+      total: (_t, rows) => farmDepth(rows, (r) => r.effectiveMm),
     },
-    { key: 'rain', set: 'water', label: `Rain (${unit})`, title: 'Rain on the actual days of the water balance', sort: (r) => r.rainMm, cell: (r) => conv.depth(r.rainMm, u, dp), total: (t) => conv.depth(t.rainMm, u, dp) },
-    { key: 'etc', set: 'water', label: `Crop use (${unit})`, title: 'Crop water use (ETc) on the actual days of the water balance', sort: (r) => r.etcMm, cell: (r) => conv.depth(r.etcMm, u, dp), total: (t) => conv.depth(t.etcMm, u, dp) },
+    { key: 'rain', set: 'water', label: `Rain (${unit})`, title: 'Rain on the actual days of the water balance', sort: (r) => r.rainMm, cell: (r) => conv.depth(r.rainMm, u, dp), total: (_t, rows) => farmDepth(rows, (r) => r.rainMm) },
+    { key: 'etc', set: 'water', label: `Crop use (${unit})`, title: 'Crop water use (ETc) on the actual days of the water balance', sort: (r) => r.etcMm, cell: (r) => conv.depth(r.etcMm, u, dp), total: (_t, rows) => farmDepth(rows, (r) => r.etcMm) },
     {
       key: 'stress',
       set: 'water',
@@ -172,14 +183,14 @@ function columns(u: UnitSystem, power: PowerPrices): Col[] {
           </span>
         ) : (
           <span
-            title={`${n0(r.pumpHours)} h at ${n0(r.gpm)} gpm (${r.gpmFrom}), ${n0(r.hp)} hp, ${n0(r.kwh)} kWh; ${money(r.kwh != null ? r.kwh * other.rate : null)} if ${other.label}${r.pumpNote ? ` — ${r.pumpNote}` : ''}`}
+            title={`${n0(r.pumpHours)} h at ${n0(r.gpm)} gpm (${r.gpmFrom}), ${n0(r.hp)} hp, ${n0(r.kwh)} kWh${otherNote(r.kwh)}${r.pumpNote ? ` — ${r.pumpNote}` : ''}`}
             className={cn(r.pumpNote && 'underline decoration-dotted')}
           >
             {money(r.pumpCost)}
           </span>
         ),
       total: (t) => (
-        <span title={`${t.pumpFields} of ${t.fields} fields have the pump and flow to price; ${money(t.kwh != null ? t.kwh * other.rate : null)} if ${other.label}`}>{money(t.pumpCost)}</span>
+        <span title={`${t.pumpFields} of ${t.fields} fields have the pump and flow to price${otherNote(t.kwh)}`}>{money(t.pumpCost)}</span>
       ),
     },
     { key: 'pumpAc', set: 'money', extra: true, label: '$/ac', sort: (r) => r.pumpCostPerAc, cell: (r) => money(r.pumpCostPerAc, 2), total: (t) => money(t.pumpCostPerAc, 2) },
@@ -305,6 +316,16 @@ function YieldWaterChart({ rows, u }: { rows: WaterReviewRow[]; u: UnitSystem })
  * one place, Utilities › Power (26 Oct 2026); this only shows them.
  */
 function PowerCost({ power }: { power: PowerPrices }) {
+  // No solar: one price, the grid's (batch 6 page walk).
+  if (!power.solarOn)
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+        <span title="What grid power costs, $/kWh all-in">Pumping priced at the grid&apos;s ${power.buy.toFixed(3)}/kWh</span>
+        <Link to="/utilities?tab=power" className="font-medium text-brand-700 hover:underline">
+          Change in Utilities › Power
+        </Link>
+      </div>
+    )
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
       <span title="What solar power sells for, $/kWh — the income a pump forgoes when it uses it">Sell ${power.sell.toFixed(3)}</span>
@@ -341,6 +362,10 @@ export function WaterSeasonReview({ year }: { year: number }) {
   const [colSet, setColSet] = useState<ColSet>('water')
   const [allRatios, setAllRatios] = useState(false)
   const shownCols = cols.filter((c) => !c.set || (c.set === colSet && (!c.extra || allRatios)))
+  // On a phone the field and crop head the card and the rest are its figures.
+  const fieldCol = shownCols.find((c) => c.key === 'field')
+  const cropCol = shownCols.find((c) => c.key === 'crop')
+  const cardCols = shownCols.filter((c) => c !== fieldCol && c !== cropCol)
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: 'gross', dir: -1 })
   const sorted = useMemo(() => {
     const col = cols.find((c) => c.key === sort.key) ?? cols[0]
@@ -423,7 +448,30 @@ export function WaterSeasonReview({ year }: { year: number }) {
                 </label>
               )}
             </div>
-            <div className="overflow-x-auto">
+            {/* One field a card on a phone, the chosen column set as its figures (design review, Nov 2026). */}
+            <CardList>
+              {sorted.map((r) => (
+                <RowCard
+                  key={r.fieldId}
+                  heading={
+                    <span className="flex flex-wrap items-center gap-x-2">
+                      {fieldCol?.cell(r)}
+                      <span className="text-xs font-normal text-gray-600">{cropCol?.cell(r)}</span>
+                    </span>
+                  }
+                  facts={cardCols.map((c) => ({ label: c.label, node: c.cell(r) }))}
+                />
+              ))}
+              <li className="bg-gray-50 px-3 py-2.5">
+                <div className="text-sm text-gray-900">{fieldCol?.total?.(totals, rows)}</div>
+                <FactList
+                  facts={cardCols
+                    .filter((c) => c.total)
+                    .map((c) => ({ label: c.label, node: c.total!(totals, rows) }))}
+                />
+              </li>
+            </CardList>
+            <div className="hidden overflow-x-auto sm:block">
               <table className="w-full min-w-[560px] text-xs">
                 <thead className={TABLE_HEAD}>
                   <tr>
@@ -459,7 +507,7 @@ export function WaterSeasonReview({ year }: { year: number }) {
                   <tr className="border-t-2 border-gray-200 bg-gray-50 font-medium text-gray-800">
                     {shownCols.map((c) => (
                       <td key={c.key} className={cn('px-2 py-1.5 tabular-nums', c.left ? 'text-left' : 'text-right')}>
-                        {c.total ? c.total(totals) : ''}
+                        {c.total ? c.total(totals, rows) : ''}
                       </td>
                     ))}
                   </tr>
@@ -476,17 +524,23 @@ export function WaterSeasonReview({ year }: { year: number }) {
                 title="Reading the review"
               >
                 <p>
-                  Depths in the farm row are acre-weighted averages; yields don&apos;t add across crops, so they are left out. Pumping prices {totals.pumpFields} of {totals.fields}{' '}
+                  Depths in the farm row are acre-weighted averages of the rows as shown; yields don&apos;t add across crops, so they are left out. Pumping prices {totals.pumpFields} of {totals.fields}{' '}
                   fields at ${rate.toFixed(2)}/kWh. A * marks a field with more than one crop this year (the largest is shown).
                 </p>
-                <p>
-                  {power.basis === 'sell'
-                    ? `Power is valued at the solar sell price ($${power.sell.toFixed(2)}/kWh): with solar the farm mostly makes more than it buys, so a kWh a pump uses is a kWh not sold — the income forgone. Any of it drawn from the grid costs $${power.buy.toFixed(2)}/kWh instead`
-                    : `Power is priced at the grid buy price ($${power.buy.toFixed(2)}/kWh). With solar most of it is power not sold, worth the sell price ($${power.sell.toFixed(2)}/kWh)`}
-                  {totals.kwh != null &&
-                    `: ${n0(totals.kwh)} kWh this season is ${money(totals.kwh * power.sell)} at the sell price, ${money(totals.kwh * power.buy)} at the buy price.`}
-                  {totals.kwh == null && '.'}
-                </p>
+                {power.solarOn ? (
+                  <p>
+                    {power.basis === 'sell'
+                      ? `Power is valued at the solar sell price ($${power.sell.toFixed(2)}/kWh): with solar the farm mostly makes more than it buys, so a kWh a pump uses is a kWh not sold — the income forgone. Any of it drawn from the grid costs $${power.buy.toFixed(2)}/kWh instead`
+                      : `Power is priced at the grid buy price ($${power.buy.toFixed(2)}/kWh). With solar most of it is power not sold, worth the sell price ($${power.sell.toFixed(2)}/kWh)`}
+                    {totals.kwh != null &&
+                      `: ${n0(totals.kwh)} kWh this season is ${money(totals.kwh * power.sell)} at the sell price, ${money(totals.kwh * power.buy)} at the buy price.`}
+                    {totals.kwh == null && '.'}
+                  </p>
+                ) : (
+                  <p>
+                    Power is priced at the grid buy price (${power.buy.toFixed(2)}/kWh){totals.kwh != null ? `: ${n0(totals.kwh)} kWh this season.` : '.'}
+                  </p>
+                )}
                 <p>The table shows one set of columns at a time — Water, Yield or $; the CSV has them all.</p>
               </HelpNote>
               {missingPump.length > 0 && (

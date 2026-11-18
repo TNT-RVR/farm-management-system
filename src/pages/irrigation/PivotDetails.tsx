@@ -117,29 +117,30 @@ function PivotWaterCost({ pivot, fieldName, pump, pivotsOnPump }: { pivot: Field
         </InfoPopover>
       </div>
       <div className="w-fit max-w-full overflow-x-auto rounded-lg border border-gray-200">
-      <table className="text-xs tabular-nums">
+      {/* On a phone: depth pinned, cells tightened, kWh and the water total left out (design review, Nov 2026). */}
+      <table className="text-xs tabular-nums max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
         <thead className={TABLE_HEAD}>
           <tr>
-            <th className={TABLE_TH}>Depth</th>
+            <th className={cn(TABLE_TH, 'sticky left-0 z-10 bg-brand-700')}>Depth</th>
             {showTimer && <th className={cn(TABLE_TH, 'text-right')}>Timer</th>}
             <th className={cn(TABLE_TH, 'text-right')}>Hours</th>
-            <th className={cn(TABLE_TH, 'text-right')}>kWh</th>
+            <th className={cn(TABLE_TH, 'text-right max-sm:hidden')}>kWh</th>
             <th className={cn(TABLE_TH, 'text-right')}>Cost</th>
             <th className={cn(TABLE_TH, 'text-right')}>$/ac</th>
-            {showWater && <th className={cn(TABLE_TH, 'text-right')}>Water</th>}
+            {showWater && <th className={cn(TABLE_TH, 'text-right max-sm:hidden')}>Water</th>}
             {showWater && <th className={cn(TABLE_TH, 'text-right')}>Water $/ac</th>}
           </tr>
         </thead>
         <tbody className="text-gray-700">
           {rows.map((r) => (
             <tr key={r.depthIn}>
-              <td className="px-3 py-0.5 font-medium text-gray-800">{DEPTH_LABEL[r.depthIn] ?? `${r.depthIn} in`}</td>
+              <td className="sticky left-0 z-10 bg-white px-3 py-0.5 font-medium text-gray-800">{DEPTH_LABEL[r.depthIn] ?? `${r.depthIn} in`}</td>
               {showTimer && <td className="px-3 py-0.5 text-right">{r.timerPct != null ? `${r.timerPct.toFixed(r.timerPct < 10 ? 1 : 0)}%` : '—'}</td>}
               <td className="px-3 py-0.5 text-right">{r.hours.toFixed(1)}</td>
-              <td className="px-3 py-0.5 text-right">{r.kwh != null ? Math.round(r.kwh).toLocaleString('en-CA') : '—'}</td>
+              <td className="px-3 py-0.5 text-right max-sm:hidden">{r.kwh != null ? Math.round(r.kwh).toLocaleString('en-CA') : '—'}</td>
               <td className="px-3 py-0.5 text-right">{r.cost != null ? money(r.cost) : '—'}</td>
               <td className="px-3 py-0.5 text-right">{r.perAcre != null ? `$${r.perAcre.toFixed(2)}` : '—'}</td>
-              {showWater && <td className="px-3 py-0.5 text-right">{r.waterValue != null ? money(r.waterValue) : '—'}</td>}
+              {showWater && <td className="px-3 py-0.5 text-right max-sm:hidden">{r.waterValue != null ? money(r.waterValue) : '—'}</td>}
               {showWater && <td className="px-3 py-0.5 text-right">{r.waterValue != null ? `$${(r.waterValue / acres!).toFixed(2)}` : '—'}</td>}
             </tr>
           ))}

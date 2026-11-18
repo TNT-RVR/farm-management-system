@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { rowClick } from '@/components/RecordEditor'
 import { OpenLoads, WeighInForm } from './WeighIn'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 const kg = (v: number | string | null | undefined) =>
   v == null ? '—' : `${Number(v).toLocaleString('en-CA', { maximumFractionDigits: 0 })} kg`
@@ -66,6 +67,49 @@ export function BinLoadsDialog({
   const total = loads.reduce((s, l) => s + loadInBin(l, binId).bushels, 0)
   const totalKg = loads.reduce((s, l) => s + loadInBin(l, binId).kg, 0)
 
+  // The last-load flag and the delete, shared by a load's card and its row.
+  const lastFlag = (l: BinLoad) =>
+    !l.field_id ? null : canEdit ? (
+      <button
+        type="button"
+        disabled={setLast.isPending}
+        onClick={() => setLast.mutate({ id: l.id, last: !l.last_from_field })}
+        title={l.last_from_field ? 'Last load from this field — click to reopen the harvest' : 'Mark as the last load from this field and record its yield'}
+        className={cn(
+          'rounded p-0.5',
+          l.last_from_field ? 'text-green-700 hover:bg-green-50' : 'text-gray-300 hover:bg-gray-100 hover:text-gray-500',
+        )}
+      >
+        <Flag className="h-3 w-3" fill={l.last_from_field ? 'currentColor' : 'none'} />
+      </button>
+    ) : l.last_from_field ? (
+      <Flag className="h-3 w-3 text-green-700" fill="currentColor" aria-label="Last load from this field" />
+    ) : null
+  const deleteControl = (l: BinLoad) =>
+    confirm === l.id ? (
+      <span className="inline-flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => del.mutate(l.id, { onSuccess: () => setConfirm(null) })}
+          className="rounded bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white"
+        >
+          Delete
+        </button>
+        <button type="button" onClick={() => setConfirm(null)} className="text-xs text-gray-500 underline">
+          keep
+        </button>
+      </span>
+    ) : (
+      <button
+        type="button"
+        onClick={() => setConfirm(l.id)}
+        className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-600"
+        aria-label="Delete this load"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    )
+
   return (
     <Modal title={`Loads into ${binName}`} onClose={onClose}>
       <div className="space-y-3 text-sm">
@@ -116,8 +160,68 @@ export function BinLoadsDialog({
           {!listOpen ? null : !loads.length ? (
             <p className="px-3 py-4 text-center text-xs text-gray-400">No loads weighed in yet.</p>
           ) : (
-            // Scrolls on its own on a phone, so the dialog around it never does.
-            <div className="overflow-x-auto">
+            <>
+            {/* One load a card on a phone (design review, Nov 2026). */}
+            <CardList>
+              {loads.map((l) => {
+                const inBin = loadInBin(l, binId)
+                return (
+                  <RowCard
+                    key={l.id}
+                    onClick={canEdit ? rowClick(() => setFinishing(l)) : undefined}
+                    heading={
+                      <span className={cn('flex flex-wrap items-center gap-x-2 gap-y-0.5', finishing?.id === l.id && 'text-brand-800')}>
+                        <span className="tabular-nums">{l.loaded_on}</span>
+                        <span className="inline-flex items-center gap-1 font-normal text-gray-700">
+                          {fieldName(l.field_id)}
+                          {lastFlag(l)}
+                        </span>
+                        {l.estimated && <span className="rounded bg-amber-100 px-1 text-xs font-semibold uppercase text-amber-800">est.</span>}
+                      </span>
+                    }
+                    actions={canEdit ? deleteControl(l) : undefined}
+                    facts={[]}
+                    summary={
+                      <SummaryLine>
+                        <span className="font-semibold tabular-nums text-gray-900">{bu(inBin.bushels)}</span>
+                        <Dot />
+                        <span className="tabular-nums">{kg(inBin.kg)} net</span>
+                        {l.entry_kind === 'weighed' ? (
+                          <>
+                            <Dot />
+                            <span className="tabular-nums">{kg(l.gross_kg)} full · {kg(l.tare_kg)} empty</span>
+                          </>
+                        ) : (
+                          <>
+                            <Dot />
+                            <span>{l.entry_kind === 'bin_total' ? `bin total${l.load_count ? `, ${l.load_count} loads` : ''}` : 'net off the truck'}</span>
+                          </>
+                        )}
+                        <Dot />
+                        <span>
+                          {cropName(l.crop_id)}
+                          {l.variety ? ` · ${l.variety}` : ''} · {Number(l.lb_per_bu)} lb/bu
+                        </span>
+                        {l.overflow_bin_id && (
+                          <>
+                            <Dot />
+                            <span>{inBin.part === 'first' ? 'filled the bin' : 'the rest'} of {bu(l.bushels)}</span>
+                          </>
+                        )}
+                        {(l.driver || l.truck || l.trailer) && (
+                          <>
+                            <Dot />
+                            <span>{[l.driver, [l.truck, l.trailer].filter(Boolean).join(' + ')].filter(Boolean).join(' · ')}</span>
+                          </>
+                        )}
+                      </SummaryLine>
+                    }
+                  />
+                )
+              })}
+            </CardList>
+            {/* Scrolls on its own, so the dialog around it never does. */}
+            <div className="hidden overflow-x-auto sm:block">
               <table className="w-full text-xs">
                 <thead className={TABLE_HEAD}>
                   <tr>
@@ -151,22 +255,7 @@ export function BinLoadsDialog({
                       <td className="px-2 py-1 text-gray-700">
                         <span className="flex items-center gap-1">
                           {fieldName(l.field_id)}
-                          {l.field_id && (canEdit ? (
-                            <button
-                              type="button"
-                              disabled={setLast.isPending}
-                              onClick={() => setLast.mutate({ id: l.id, last: !l.last_from_field })}
-                              title={l.last_from_field ? 'Last load from this field — click to reopen the harvest' : 'Mark as the last load from this field and record its yield'}
-                              className={cn(
-                                'rounded p-0.5',
-                                l.last_from_field ? 'text-green-700 hover:bg-green-50' : 'text-gray-300 hover:bg-gray-100 hover:text-gray-500',
-                              )}
-                            >
-                              <Flag className="h-3 w-3" fill={l.last_from_field ? 'currentColor' : 'none'} />
-                            </button>
-                          ) : l.last_from_field ? (
-                            <Flag className="h-3 w-3 text-green-700" fill="currentColor" aria-label="Last load from this field" />
-                          ) : null)}
+                          {lastFlag(l)}
                         </span>
                         <span className="block text-xs text-gray-400">
                           {cropName(l.crop_id)}
@@ -197,29 +286,7 @@ export function BinLoadsDialog({
                       </td>
                       {canEdit && (
                         <td className="px-2 py-1 text-right">
-                          {confirm === l.id ? (
-                            <span className="inline-flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => del.mutate(l.id, { onSuccess: () => setConfirm(null) })}
-                                className="rounded bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white"
-                              >
-                                Delete
-                              </button>
-                              <button type="button" onClick={() => setConfirm(null)} className="text-xs text-gray-500 underline">
-                                keep
-                              </button>
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setConfirm(l.id)}
-                              className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-600"
-                              aria-label="Delete this load"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
+                          {deleteControl(l)}
                         </td>
                       )}
                     </tr>
@@ -227,6 +294,7 @@ export function BinLoadsDialog({
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
       </div>

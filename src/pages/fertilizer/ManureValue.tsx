@@ -16,6 +16,7 @@ import { FieldLink, Sources, money, n1 } from './savings/ui'
 import { SettingsGroup, type NumberField } from '../hauling/ui'
 import { S } from './savings/sources'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 /** The job each field is priced on: ten tonnes an acre over the whole field. */
 const TONS_PER_ACRE = 10
@@ -204,7 +205,57 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
             </p>
           </HelpNote>
         )}
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
+        {/* One field a card on a phone (design review, Nov 2026). */}
+        <CardList className="rounded-lg border border-gray-200">
+          {shown.map(({ f, needs, fromRec, t, gross, c, o, net }) => (
+            <RowCard
+              key={f.id}
+              heading={<FieldLink id={f.id} name={f.name} to="soil" />}
+              facts={[]}
+              summary={
+                <SummaryLine className="tabular-nums">
+                  <span className={cn('font-semibold', (net ?? 0) > 0 ? 'text-green-800' : 'text-red-700')}>
+                    Net {net != null ? `${money(net, 2)}/t` : '—'}
+                  </span>
+                  {net != null && (
+                    <>
+                      <Dot />
+                      <span>
+                        {money(net * TONS_PER_ACRE)}/ac at {TONS_PER_ACRE} t/ac
+                      </span>
+                    </>
+                  )}
+                  <Dot />
+                  <span>Worth {money(gross, 2)}/t</span>
+                  {c && (
+                    <>
+                      <Dot />
+                      <span>Custom {money(c.perTonne, 2)}/t</span>
+                    </>
+                  )}
+                  {o && (
+                    <>
+                      <Dot />
+                      <span>Ourselves {money(o.perTonne, 2)}/t</span>
+                    </>
+                  )}
+                  {t && (
+                    <>
+                      <Dot />
+                      <span className={cn(t.basis === 'straight' && 'text-amber-700')}>{n1(t.km)} km</span>
+                    </>
+                  )}
+                  <Dot />
+                  <span>
+                    Needs {[needs.n && 'N', needs.p && 'P', needs.k && 'K'].filter(Boolean).join(' ') || 'nothing'} (
+                    {fromRec ? 'recommendation' : 'soil test'})
+                  </span>
+                </SummaryLine>
+              }
+            />
+          ))}
+        </CardList>
+        <div className="hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
           <table className="w-full text-xs">
             <thead className={TABLE_HEAD}>
               <tr>
@@ -262,7 +313,39 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
         {jobs.length > 0 && (
           <div className="mt-3">
             <h3 className="text-xs font-semibold text-gray-700">Against what the custom hauler actually billed</h3>
-            <div className="mt-1 overflow-x-auto rounded-lg border border-gray-200">
+            {/* One job a card on a phone (design review, Nov 2026). */}
+            <CardList className="mt-1 rounded-lg border border-gray-200">
+              {jobs.map((j) => (
+                <RowCard
+                  key={j.id}
+                  heading={
+                    <>
+                      {j.fieldId ? <FieldLink id={j.fieldId} name={j.name} to="soil" /> : j.name}
+                      {j.on && <span className="block text-xs font-normal text-gray-400">{j.on}</span>}
+                    </>
+                  }
+                  facts={[]}
+                  summary={
+                    <SummaryLine className="tabular-nums">
+                      <span>{n1(j.tonnes)} t</span>
+                      <Dot />
+                      <span>Billed {money(j.billed)}</span>
+                      {j.o && (
+                        <>
+                          <Dot />
+                          <span>Ourselves {money(j.o.total)}</span>
+                          <Dot />
+                          <span className={j.o.total < j.billed ? 'text-green-800' : 'text-red-700'}>
+                            {j.o.total < j.billed ? `${money(j.billed - j.o.total)} cheaper ourselves` : `${money(j.o.total - j.billed)} dearer ourselves`}
+                          </span>
+                        </>
+                      )}
+                    </SummaryLine>
+                  }
+                />
+              ))}
+            </CardList>
+            <div className="mt-1 hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
               <table className="w-full text-xs">
                 <thead className={TABLE_HEAD}>
                   <tr>

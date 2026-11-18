@@ -34,6 +34,7 @@ import { cropGrazingSummary, type GrazingRule } from '@/lib/grazing-restrictions
 import { useLabelGrazingRules } from '@/lib/grazing-restrictions-hooks'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { HeadTip } from '@/components/HeadTip'
+import { CardList, RowCard } from '@/components/RowCards'
 
 const METHOD_LABEL: Record<string, string> = {
   ground: 'Ground rig only',
@@ -88,6 +89,7 @@ function CropRow({
   canEdit,
   onDone,
   grazing,
+  card = false,
 }: {
   row: Partial<ChemicalLabelCrop>
   reg: string
@@ -95,6 +97,8 @@ function CropRow({
   onDone?: () => void
   /** The label's grazing and feeding rules, for this crop's column. */
   grazing?: GrazingRule[]
+  /** Drawn as a phone card rather than a table row. */
+  card?: boolean
 }) {
   const [editing, setEditing] = useState(!row.id)
   const [d, setD] = useState({
@@ -111,9 +115,8 @@ function CropRow({
   const num = (v: string) => (v.trim() === '' ? null : Number(v))
 
   if (editing) {
-    return (
-      <tr className="bg-brand-50/40">
-        <td colSpan={7} className="px-3 py-2">
+    const form = (
+      <>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <label className="text-xs text-gray-500">
               Crop *
@@ -212,8 +215,55 @@ function CropRow({
               </span>
             )}
           </div>
+      </>
+    )
+    return card ? (
+      <li className="bg-brand-50/40 px-3 py-2">{form}</li>
+    ) : (
+      <tr className="bg-brand-50/40">
+        <td colSpan={7} className="px-3 py-2">
+          {form}
         </td>
       </tr>
+    )
+  }
+
+  // Per acre for reading; the label's own per-hectare wording on hover.
+  const rateTitle = row.rate && perAcre(row.rate) !== row.rate ? `On the label: ${row.rate}` : undefined
+  const editButtons = canEdit && (
+    <span className="ml-2 inline-flex gap-1 align-middle">
+      <button
+        onClick={() => setEditing(true)}
+        className="text-gray-300 hover:text-brand-700"
+        aria-label="Edit this crop"
+      >
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+      <button
+        onClick={() => del.mutate({ id: row.id!, registration_number: reg })}
+        className="text-gray-300 hover:text-red-600"
+        aria-label="Delete this crop"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </span>
+  )
+
+  if (card) {
+    const g = grazingInfo(grazing, reg, row.crop ?? '')
+    return (
+      <RowCard
+        heading={readable(row.crop)}
+        actions={editButtons || undefined}
+        facts={[
+          { label: 'Rate', node: row.rate && <span className="tabular-nums" title={rateTitle}>{perAcre(row.rate)}</span> },
+          { label: 'Pests', node: row.pest ? readable(row.pest) : null },
+          { label: 'Days to harvest', node: row.preharvest_interval_days != null ? `${row.preharvest_interval_days} d` : null },
+          { label: 'Days to replant', node: row.replant_interval_days != null ? `${row.replant_interval_days} d` : null },
+          { label: 'Cannot follow', node: row.rotation_restriction ? readable(row.rotation_restriction) : null },
+          { label: 'Grazing / feeding', node: <span className={g.className} title={g.title}>{g.node}</span> },
+        ]}
+      />
     )
   }
 
@@ -221,10 +271,7 @@ function CropRow({
     <tr className="align-top">
       <td className="px-3 py-1.5 font-medium text-gray-900">{readable(row.crop)}</td>
       {/* Per acre for reading; the label's own per-hectare wording on hover. */}
-      <td
-        className="px-3 py-1.5 tabular-nums text-gray-900"
-        title={row.rate && perAcre(row.rate) !== row.rate ? `On the label: ${row.rate}` : undefined}
-      >
+      <td className="px-3 py-1.5 tabular-nums text-gray-900" title={rateTitle}>
         {row.rate ? perAcre(row.rate) : '—'}
       </td>
       <td className="px-3 py-1.5 text-gray-600">{row.pest ? readable(row.pest) : '—'}</td>
@@ -236,26 +283,7 @@ function CropRow({
       </td>
       <td className="px-3 py-1.5 text-gray-600">{row.rotation_restriction ? readable(row.rotation_restriction) : '—'}</td>
       <GrazingCell rules={grazing} reg={reg} crop={row.crop ?? ''} />
-      <td className="px-3 py-1.5 text-gray-600">
-        {canEdit && (
-          <span className="ml-2 inline-flex gap-1 align-middle">
-            <button
-              onClick={() => setEditing(true)}
-              className="text-gray-300 hover:text-brand-700"
-              aria-label="Edit this crop"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => del.mutate({ id: row.id!, registration_number: reg })}
-              className="text-gray-300 hover:text-red-600"
-              aria-label="Delete this crop"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </span>
-        )}
-      </td>
+      <td className="px-3 py-1.5 text-gray-600">{editButtons}</td>
     </tr>
   )
 }
@@ -266,15 +294,29 @@ function CropRow({
  * Red when it rules grazing or feeding out altogether.
  */
 function GrazingCell({ rules, reg, crop }: { rules?: GrazingRule[]; reg: string; crop: string }) {
-  if (!rules) return <td className="px-3 py-1.5 text-gray-300">…</td>
-  const s = crop ? cropGrazingSummary(rules, reg, crop) : null
-  if (!s) return <td className="px-3 py-1.5 text-gray-400">{rules.length ? 'none for this crop' : '—'}</td>
+  const g = grazingInfo(rules, reg, crop)
   return (
-    <td className={cn('px-3 py-1.5', /not at all/.test(s.text) ? 'font-medium text-red-700' : 'text-amber-800')} title={s.quote ?? undefined}>
-      {s.text}
-      {s.assumed && <span className="text-gray-400"> *</span>}
+    <td className={cn('px-3 py-1.5', g.className)} title={g.title}>
+      {g.node}
     </td>
   )
+}
+
+/** The grazing line's text and tone, for the table cell and the phone card. */
+function grazingInfo(rules: GrazingRule[] | undefined, reg: string, crop: string): { className: string; title?: string; node: React.ReactNode } {
+  if (!rules) return { className: 'text-gray-300', node: '…' }
+  const s = crop ? cropGrazingSummary(rules, reg, crop) : null
+  if (!s) return { className: 'text-gray-400', node: rules.length ? 'none for this crop' : '—' }
+  return {
+    className: /not at all/.test(s.text) ? 'font-medium text-red-700' : 'text-amber-800',
+    title: s.quote ?? undefined,
+    node: (
+      <>
+        {s.text}
+        {s.assumed && <span className="text-gray-400"> *</span>}
+      </>
+    ),
+  }
 }
 
 /** The per-crop rows as a table. Headings in plain case, not capitals. */
@@ -293,7 +335,17 @@ function CropTable({
 }) {
   const { data: grazing } = useLabelGrazingRules(reg)
   return (
-    <div className="mt-1 overflow-x-auto rounded-lg border border-gray-200">
+    <>
+    {/* One crop a card on a phone (design review, Nov 2026). */}
+    {(rows.length > 0 || adding) && (
+      <CardList className="mt-1 rounded-lg border border-gray-200">
+        {rows.map((c) => (
+          <CropRow key={c.id} card row={c} reg={reg} canEdit={canEdit} grazing={grazing} />
+        ))}
+        {adding && <CropRow card row={{}} reg={reg} canEdit={canEdit} onDone={onAdded} />}
+      </CardList>
+    )}
+    <div className="mt-1 hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
       <table className="w-full text-sm">
         <thead className={TABLE_HEAD}>
           <tr>
@@ -317,6 +369,7 @@ function CropTable({
         </tbody>
       </table>
     </div>
+    </>
   )
 }
 

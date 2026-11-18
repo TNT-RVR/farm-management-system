@@ -368,8 +368,10 @@ export function EquipmentMaintenance({
                   </span>
                 )}
                 <span className="text-xs text-gray-500">
-                  {a.occurred_at ? new Date(a.occurred_at).toLocaleDateString('en-CA') : '—'}
-                  {a.engine_hours != null && ` · ${Math.round(a.engine_hours)} h`}
+                  {a.occurred_at
+                    ? new Date(a.occurred_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : '—'}
+                  {a.engine_hours != null && ` · ${Math.round(a.engine_hours).toLocaleString('en-CA')} h`}
                 </span>
                 {canEdit && !a.task_id && (
                   <button
@@ -380,7 +382,7 @@ export function EquipmentMaintenance({
                           `John Deere reported this on ${equipment.name ?? 'the machine'}.`,
                           a.description ?? '',
                           a.occurred_at ? `First seen ${new Date(a.occurred_at).toLocaleString('en-CA')}.` : '',
-                          a.engine_hours != null ? `At ${Math.round(a.engine_hours)} engine hours.` : '',
+                          a.engine_hours != null ? `At ${Math.round(a.engine_hours).toLocaleString('en-CA')} engine hours.` : '',
                         ]
                           .filter(Boolean)
                           .join('\n\n'),

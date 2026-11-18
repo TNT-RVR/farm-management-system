@@ -144,6 +144,38 @@ select '0de30000-0000-4000-8000-000000000711', l.id, l.name, l.geojson, l.instru
   from public.checklist_template_locations l
  where l.template_id = '0de30000-0000-4000-8000-000000000702';
 
+-- Each place's own jobs, as the farm's map checklists have them: a place with
+-- nothing to tick could never turn green (batch 6 walk). The pump station was
+-- done yesterday, as its note says; the rest are still to do.
+with jobs(place, n, job) as (values
+  ('Creek pump station', 1, 'Shut the pump off at the panel and lock it out'),
+  ('Creek pump station', 2, 'Open the casing drain and the check valve'),
+  ('Creek pump station', 3, 'Photo of the panel showing off'),
+  ('Mainline low point', 1, 'Open the low-point drain'),
+  ('Mainline low point', 2, 'Check the air vent at each pivot riser'),
+  ('Pivot: Creek Pivot East', 1, 'Park it downwind, tires on high ground'),
+  ('Pivot: Creek Pivot East', 2, 'Open the end drains and the riser drain'),
+  ('Pivot: Creek Pivot East', 3, 'Panel off; note the hours'),
+  ('Pivot: Creek Pivot West', 1, 'Park it downwind, tires on high ground'),
+  ('Pivot: Creek Pivot West', 2, 'Open the end drains and the riser drain'),
+  ('Pivot: Creek Pivot West', 3, 'Panel off; note the hours'),
+  ('Pivot: North Pivot', 1, 'Park it downwind, tires on high ground'),
+  ('Pivot: North Pivot', 2, 'Open the end drains and the riser drain'),
+  ('Pivot: North Pivot', 3, 'Panel off; note the hours')
+), t as (
+  insert into public.checklist_template_items (template_id, sort_order, text, location_id)
+  select '0de30000-0000-4000-8000-000000000702', 100 + l.sort_order * 10 + j.n, j.job, l.id
+    from jobs j join public.checklist_template_locations l on l.name = j.place and l.template_id = '0de30000-0000-4000-8000-000000000702'
+  returning 1
+)
+insert into public.checklist_run_items (run_id, sort_order, item_text_snapshot, checked, checked_by, checked_at, run_location_id)
+select '0de30000-0000-4000-8000-000000000711', 100 + l.sort_order * 10 + j.n, j.job,
+       l.name = 'Creek pump station',
+       case when l.name = 'Creek pump station' then '0de30000-0000-4000-8000-0000000000a2'::uuid end,
+       case when l.name = 'Creek pump station' then now() - interval '1 day' end,
+       l.id
+  from jobs j join public.checklist_run_locations l on l.name = j.place and l.run_id = '0de30000-0000-4000-8000-000000000711';
+
 -- ── Utilities: a year of power bills ───────────────────────────────────────
 -- One bill a month from a made-up retailer: the pump station (heavy in the
 -- irrigation season), the yard and shop, and the bin aeration fans (heavy in
@@ -201,8 +233,10 @@ with months as (
 insert into public.gas_bill_sites (bill_id, site_id, meter_number, address, legal_land, distributor, period_start, period_end, gj,
   energy_charge, admin_fee, delivery_fixed, delivery_variable, carbon_levy, gst, total)
 select b.id, s.site_id, s.meter_number, s.address, s.legal_land, 'Example Gas Distribution (made up)', b.period_start, b.period_end, g.gj,
-       round(g.gj * 2.65, 2), 7.50, 28.00, round(g.gj * 1.35, 2), round(g.gj * 4.18, 2),
-       round((g.gj * 8.18 + 35.5) * 0.05, 2), round((g.gj * 8.18 + 35.5) * 1.05, 2)
+       -- No carbon levy: the consumer charge ended on 1 April 2025, and the
+       -- farm's own bills since then carry none.
+       round(g.gj * 2.65, 2), 7.50, 28.00, round(g.gj * 1.35, 2), null,
+       round((g.gj * 4.00 + 35.5) * 0.05, 2), round((g.gj * 4.00 + 35.5) * 1.05, 2)
   from bills b cross join public.gas_sites s
  cross join lateral (
    select round(case s.place_kind

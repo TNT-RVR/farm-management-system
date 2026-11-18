@@ -4,10 +4,11 @@ import { HelpNote } from '@/components/HelpNote'
 import { PageHeader } from '@/components/PageHeader'
 import { PillTabs } from '@/components/PillTabs'
 import { TABLE_HEAD } from '@/lib/table-style'
-import { money, n0, n1 } from '@/lib/format'
+import { money, n0, n1, n1Fixed } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import {
   DEFAULT_SYSTEMS,
+  herdProblems,
   LARDNER,
   netAfter,
   waterSystemPayback,
@@ -19,6 +20,7 @@ import {
   type WaterSystem,
 } from '@/lib/water-system-payback'
 import { HeadTip } from '@/components/HeadTip'
+import { CardList, RowCard } from '@/components/RowCards'
 
 /**
  * Does a trough pay for itself?
@@ -39,6 +41,7 @@ function Num({
   unit,
   step = '1',
   title,
+  error,
 }: {
   label: string
   value: string
@@ -46,22 +49,31 @@ function Num({
   unit?: string
   step?: string
   title?: string
+  /** A short reason the value can't be used, shown under the box. */
+  error?: string
 }) {
   return (
-    <label className="flex items-center justify-between gap-2 text-sm" title={title}>
-      <span className="text-gray-600">{label}</span>
-      <span className="flex items-center gap-1">
-        <input
-          type="number"
-          inputMode="decimal"
-          step={step}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-24 rounded border border-gray-300 px-2 py-1 text-right tabular-nums focus:border-brand-500 focus:outline-none"
-        />
-        {unit ? <span className="w-16 text-xs text-gray-400">{unit}</span> : null}
-      </span>
-    </label>
+    <div>
+      <label className="flex items-center justify-between gap-2 text-sm" title={title}>
+        <span className="text-gray-600">{label}</span>
+        <span className="flex items-center gap-1">
+          <input
+            type="number"
+            inputMode="decimal"
+            step={step}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            aria-invalid={error ? true : undefined}
+            className={cn(
+              'w-24 rounded border px-2 py-1 text-right tabular-nums focus:border-brand-500 focus:outline-none',
+              error ? 'border-red-400' : 'border-gray-300',
+            )}
+          />
+          {unit ? <span className="w-16 text-xs text-gray-400">{unit}</span> : null}
+        </span>
+      </label>
+      {error ? <p className="mt-0.5 text-right text-xs text-red-600">{error}</p> : null}
+    </div>
   )
 }
 
@@ -83,12 +95,35 @@ export function WaterPaybackPage() {
   const setRow = (id: string, field: keyof WaterSystem) => (v: string) =>
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, [field]: field === 'label' ? v : Number(v) || 0 } : r)))
 
+  // One system's number box, the same in its table cell and on its phone card.
+  const SYSTEM_NUMS: [keyof WaterSystem & keyof Row, string][] = [
+    ['capital', 'To put in'],
+    ['funding', 'Grant'],
+    ['powerPerYear', 'Power/yr'],
+    ['maintenancePerYear', 'Upkeep/yr'],
+    ['lifeYears', 'Life'],
+  ]
+  const numBox = (r: Row, k: keyof WaterSystem & keyof Row, label: string) => (
+    <input
+      type="number"
+      value={r[k] as number}
+      onChange={(e) => setRow(r.id, k)(e.target.value)}
+      aria-label={`${r.label}: ${label}`}
+      className={k === 'lifeYears' ? 'w-16 rounded border border-gray-300 px-2 py-1 text-right tabular-nums' : cell}
+    />
+  )
+  const removeBtn = (r: Row) => (
+    <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.id !== r.id))} aria-label={`Remove ${r.label}`} className="text-gray-400 hover:text-red-600">
+      <X className="h-4 w-4" />
+    </button>
+  )
+
   const num = (v: string) => {
     const x = Number(v)
     return Number.isFinite(x) ? x : 0
   }
 
-  const result = useMemo(() => {
+  const { result, problems } = useMemo(() => {
     const herd: WaterHerd = {
       kind,
       head: num(h.head),
@@ -97,8 +132,10 @@ export function WaterPaybackPage() {
       cullPricePerLb: num(h.cullPricePerLb),
       aerated,
     }
-    return waterSystemPayback(herd, rows)
+    return { result: waterSystemPayback(herd, rows), problems: herdProblems(herd) }
   }, [kind, aerated, h, rows])
+  // No figures at all rather than confident nonsense: no head means no per-head cost.
+  const blocked = problems.head ?? (Object.keys(problems).length ? 'Fix the inputs above' : null)
 
   const horizon = num(h.horizon)
   const headLabel = kind === 'cow_calf' ? 'pair' : 'head'
@@ -124,13 +161,14 @@ export function WaterPaybackPage() {
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">The herd on this water</p>
           <div className="space-y-1.5">
-            <Num label={kind === 'cow_calf' ? 'Pairs' : 'Yearlings'} value={h.head} onChange={set('head')} unit="head" />
+            <Num label={kind === 'cow_calf' ? 'Pairs' : 'Yearlings'} value={h.head} onChange={set('head')} unit="head" error={problems.head} />
             <Num
               label={kind === 'cow_calf' ? 'Calf price' : 'Sale price'}
               value={h.salePricePerLb}
               onChange={set('salePricePerLb')}
               unit="$/lb"
               step="0.05"
+              error={problems.salePricePerLb}
             />
             {kind === 'cow_calf' ? (
               <>
@@ -139,9 +177,10 @@ export function WaterPaybackPage() {
                   value={h.cullSharePct}
                   onChange={set('cullSharePct')}
                   unit="%"
+                  error={problems.cullShare}
                   title="The extra gain on a cow is condition, not a cheque — it is money only on the cows that leave this year."
                 />
-                <Num label="Cull price" value={h.cullPricePerLb} onChange={set('cullPricePerLb')} unit="$/lb" step="0.05" />
+                <Num label="Cull price" value={h.cullPricePerLb} onChange={set('cullPricePerLb')} unit="$/lb" step="0.05" error={problems.cullPricePerLb} />
               </>
             ) : (
               <label className="flex items-center justify-between gap-2 text-sm">
@@ -163,8 +202,8 @@ export function WaterPaybackPage() {
                   <td className="py-1 text-right tabular-nums text-gray-500">{p.days} days</td>
                   <td className="py-1 text-right tabular-nums">
                     {kind === 'cow_calf'
-                      ? `${LARDNER.gain.calf[i]!.toFixed(2)} lb/day`
-                      : `${(aerated ? LARDNER.gain.yearlingAerated : LARDNER.gain.yearling)[i]!.toFixed(2)} lb/day`}
+                      ? `${LARDNER.gain.calf[i]!.toFixed(3)} lb/day`
+                      : `${(aerated ? LARDNER.gain.yearlingAerated : LARDNER.gain.yearling)[i]!.toFixed(3)} lb/day`}
                   </td>
                 </tr>
               ))}
@@ -176,11 +215,13 @@ export function WaterPaybackPage() {
               <tr>
                 <td className="py-1 text-gray-600">Worth, a {headLabel} a year</td>
                 <td />
-                <td className="py-1 text-right tabular-nums font-medium">{money(result.benefit.perHeadPerYear, 2)}</td>
+                <td className="py-1 text-right tabular-nums font-medium">
+                  {problems.salePricePerLb || problems.cullShare || problems.cullPricePerLb ? '—' : money(result.benefit.perHeadPerYear, 2)}
+                </td>
               </tr>
             </tbody>
           </table>
-          {kind === 'cow_calf' && (
+          {kind === 'cow_calf' && !problems.cullShare && !problems.cullPricePerLb && (
             <p className="mt-2 border-t border-gray-100 pt-2 text-xs text-gray-500">
               The cows gain {n1(result.benefit.cowGainLb)} lb each as well. That is condition, not a cheque — counted here only on the{' '}
               {Math.round(num(h.cullSharePct))}% sold this year, worth {money(result.benefit.cullValue, 2)} a pair.
@@ -205,7 +246,25 @@ export function WaterPaybackPage() {
             <Plus className="h-3.5 w-3.5" /> Add a system
           </button>
         </div>
-        <div className="overflow-x-auto">
+        {/* One system a card on a phone, its boxes labelled (design review, Nov 2026). */}
+        <CardList>
+          {rows.map((r) => (
+            <RowCard
+              key={r.id}
+              heading={
+                <input
+                  value={r.label}
+                  onChange={(e) => setRow(r.id, 'label')(e.target.value)}
+                  aria-label="System name"
+                  className="w-full rounded border border-gray-300 px-2 py-1 text-sm font-normal"
+                />
+              }
+              actions={removeBtn(r)}
+              facts={SYSTEM_NUMS.map(([k, label]) => ({ label, node: numBox(r, k, label) }))}
+            />
+          ))}
+        </CardList>
+        <div className="hidden overflow-x-auto sm:block">
           <table className="w-full text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
@@ -224,26 +283,12 @@ export function WaterPaybackPage() {
                   <td className="px-2 py-1">
                     <input value={r.label} onChange={(e) => setRow(r.id, 'label')(e.target.value)} className="w-36 rounded border border-gray-300 px-2 py-1" />
                   </td>
-                  <td className="px-2 py-1 text-right">
-                    <input type="number" value={r.capital} onChange={(e) => setRow(r.id, 'capital')(e.target.value)} className={cell} />
-                  </td>
-                  <td className="px-2 py-1 text-right">
-                    <input type="number" value={r.funding} onChange={(e) => setRow(r.id, 'funding')(e.target.value)} className={cell} />
-                  </td>
-                  <td className="px-2 py-1 text-right">
-                    <input type="number" value={r.powerPerYear} onChange={(e) => setRow(r.id, 'powerPerYear')(e.target.value)} className={cell} />
-                  </td>
-                  <td className="px-2 py-1 text-right">
-                    <input type="number" value={r.maintenancePerYear} onChange={(e) => setRow(r.id, 'maintenancePerYear')(e.target.value)} className={cell} />
-                  </td>
-                  <td className="px-2 py-1 text-right">
-                    <input type="number" value={r.lifeYears} onChange={(e) => setRow(r.id, 'lifeYears')(e.target.value)} className="w-16 rounded border border-gray-300 px-2 py-1 text-right tabular-nums" />
-                  </td>
-                  <td className="px-2 py-1 text-right">
-                    <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.id !== r.id))} aria-label={`Remove ${r.label}`} className="text-gray-400 hover:text-red-600">
-                      <X className="h-4 w-4" />
-                    </button>
-                  </td>
+                  {SYSTEM_NUMS.map(([k, label]) => (
+                    <td key={k} className="px-2 py-1 text-right">
+                      {numBox(r, k, label)}
+                    </td>
+                  ))}
+                  <td className="px-2 py-1 text-right">{removeBtn(r)}</td>
                 </tr>
               ))}
             </tbody>
@@ -251,42 +296,53 @@ export function WaterPaybackPage() {
         </div>
       </div>
 
+      {/* On a phone: system pinned, Running and Their figure dropped (design review, Nov 2026). */}
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
           <thead className={TABLE_HEAD}>
             <tr>
-              <th className="px-2 py-2 text-left font-medium">System</th>
+              <th className="sticky left-0 z-10 bg-brand-700 px-2 py-2 text-left font-medium">System</th>
               <th className="px-2 py-2 text-right font-medium">Cost after grant</th>
-              <th className="px-2 py-2 text-right font-medium">Running</th>
+              <th className="px-2 py-2 text-right font-medium max-sm:hidden">Running</th>
               <th className="px-2 py-2 text-right font-medium">
                 Net a year<HeadTip title="Net a year">What the water earns, less what the system costs to run</HeadTip>
               </th>
               <th className="px-2 py-2 text-right font-medium">Pays back in</th>
-              <th className="px-2 py-2 text-right font-medium">
+              <th className="px-2 py-2 text-right font-medium max-sm:hidden">
                 Their figure<HeadTip title="Their figure">The BCRC&apos;s own figure, which leaves running costs out</HeadTip>
               </th>
-              <th className="px-2 py-2 text-right font-medium">After {n0(horizon)} yr</th>
+              <th className="px-2 py-2 text-right font-medium">
+                After {n0(horizon)} yr
+                <HeadTip title={`After ${n0(horizon)} yr`}>Cash a head after these years. A system that wears out sooner is bought again.</HeadTip>
+              </th>
             </tr>
           </thead>
           <tbody>
-            {result.systems.map((s, i) => (
+            {blocked ? (
+              <tr className="border-t border-gray-100">
+                <td colSpan={7} className="px-2 py-3 text-center text-sm text-amber-700">
+                  {blocked}
+                </td>
+              </tr>
+            ) : null}
+            {!blocked && result.systems.map((s, i) => (
               <tr key={s.key} className={cn('border-t border-gray-100', i === 0 && s.paybackYears != null && 'bg-brand-50 font-medium')}>
-                <td className="px-2 py-1.5">
+                <td className={cn('sticky left-0 z-10 px-2 py-1.5', i === 0 && s.paybackYears != null ? 'bg-brand-50' : 'bg-white')}>
                   {s.label}
                   {s.paybackYears != null && !s.paysWithinLife ? (
                     <span className="ml-2 text-xs font-medium text-amber-700">wears out first</span>
                   ) : null}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{money(s.netCapitalPerHead, 0)}/{headLabel}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{money(s.runningPerHead, 2)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums max-sm:hidden">{money(s.runningPerHead, 2)}</td>
                 <td className={cn('px-2 py-1.5 text-right tabular-nums', s.netPerHeadPerYear <= 0 && 'text-red-600')}>
                   {money(s.netPerHeadPerYear, 2)}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums">
-                  {s.paybackYears == null ? <span className="font-medium text-red-600">never</span> : `${n1(s.paybackYears)} yr`}
+                  {s.paybackYears == null ? <span className="font-medium text-red-600">never</span> : `${n1Fixed(s.paybackYears)} yr`}
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-gray-400">
-                  {s.paybackYearsTheirWay == null ? '—' : `${n1(s.paybackYearsTheirWay)} yr`}
+                <td className="px-2 py-1.5 text-right tabular-nums text-gray-400 max-sm:hidden">
+                  {s.paybackYearsTheirWay == null ? '—' : `${n1Fixed(s.paybackYearsTheirWay)} yr`}
                 </td>
                 <td className={cn('px-2 py-1.5 text-right tabular-nums', netAfter(s, horizon) < 0 && 'text-red-600')}>
                   {money(netAfter(s, horizon), 0)}
@@ -310,7 +366,7 @@ export function WaterPaybackPage() {
         </p>
         <p>
           A system that takes longer to pay back than it lasts is marked. The last column is the cash position after the years you set,
-          capital counted once and running costs every year.
+          running costs every year and the capital again each time the system wears out inside them (the grant counted once).
         </p>
         <p>
           Each starting cost is the pump plus a {money(TROUGH_COST, 0)} trough and a {money(TANK_COST, 0)} tank, because a pump on its own

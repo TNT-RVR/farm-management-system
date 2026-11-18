@@ -84,11 +84,12 @@ export function WaterQualityCard({ isManager }: { isManager: boolean }) {
         <p className="text-xs text-gray-500">Loading…</p>
       ) : !stations.length ? null : (
         <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="w-full min-w-[560px] text-xs">
+          {/* On a phone: the station pinned, the date folded under it, cells tightened (design review, Nov 2026). */}
+          <table className="w-full text-xs max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5 sm:min-w-[560px]">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className={TABLE_TH}>Station</th>
-                <th className={TABLE_TH}>Latest</th>
+                <th className={cn(TABLE_TH, 'sticky left-0 z-10 bg-brand-700')}>Station</th>
+                <th className={cn(TABLE_TH, 'max-sm:hidden')}>Latest</th>
                 {WQ_PARAMS.map((p) => (
                   <th key={p.key} className={cn(TABLE_TH, 'text-right')}>
                     {p.label}
@@ -103,11 +104,12 @@ export function WaterQualityCard({ isManager }: { isManager: boolean }) {
                 const at = m ? [...m.values()].map((x) => x.at).sort().pop() : null
                 return (
                   <tr key={s.station_id}>
-                    <td className="px-3 py-1">
+                    <td className="sticky left-0 z-10 bg-white px-3 py-1">
                       {s.name}
                       {s.for_credit && <span className="ml-1 rounded bg-sky-100 px-1 text-xs text-sky-800">in the credit</span>}
+                      <span className="block text-gray-500 sm:hidden">{at ? at.slice(0, 10) : 'none yet'}</span>
                     </td>
-                    <td className="px-3 py-1 whitespace-nowrap text-gray-500">{at ? at.slice(0, 10) : 'none yet'}</td>
+                    <td className="px-3 py-1 whitespace-nowrap text-gray-500 max-sm:hidden">{at ? at.slice(0, 10) : 'none yet'}</td>
                     {WQ_PARAMS.map((p) => {
                       const r = m?.get(p.key)
                       return (

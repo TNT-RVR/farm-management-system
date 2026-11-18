@@ -840,6 +840,24 @@ function PurchaseHistory({
   const litres = Number(form.litres)
   const price = Number(form.price)
   const valid = litres > 0 && price > 0 && price < 10 && !!form.on
+  // Why Add purchase is greyed, once something has been typed (an untouched
+  // form says nothing).
+  const litresTyped = form.litres.trim() !== ''
+  const priceTyped = form.price.trim() !== ''
+  const whyNot =
+    !litresTyped && !priceTyped
+      ? null
+      : litresTyped && !(litres > 0)
+        ? 'Litres must be a number above 0.'
+        : priceTyped && !(price > 0)
+          ? 'The price must be a number above 0.'
+          : priceTyped && price >= 10
+            ? 'The price is a litre’s, under $10.'
+            : !litresTyped || !priceTyped
+              ? 'Needs both the litres and the price.'
+              : !form.on
+                ? 'Needs a date.'
+                : null
 
   return (
     <Fold
@@ -1050,6 +1068,7 @@ function PurchaseHistory({
           >
             Add purchase
           </button>
+          {whyNot && <p className="w-full text-xs text-amber-700">{whyNot}</p>}
           {save.error && (
             <p className="w-full text-xs text-red-600">{(save.error as Error).message}</p>
           )}

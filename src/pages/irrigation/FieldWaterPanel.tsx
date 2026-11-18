@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { STATUS_COLOR, STATUS_LABEL, useFieldSeasons, useForecastCrossings, useLatestBalance, useSeasonEtTotals } from '@/lib/irrigation'
 import { conv, type UnitSystem } from '@/lib/units'
 import { cn } from '@/lib/utils'
-import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
+import { SetupLink } from '@/components/SetupLink'
+import { irrigationSeasonState, noModelDataNote } from '@/lib/irrigation-season-state'
 import { Fold } from '@/components/Fold'
 import { HelpNote } from '@/components/HelpNote'
 import { allocationRows, FieldAllocation, SmridAllotment, useAllocation, VERDICT } from './AllocationTab'
@@ -88,15 +89,24 @@ function Section({ icon, title, children, wide }: { icon: ReactNode; title: stri
   )
 }
 
-function StatusBlock({ w, u, fieldId }: { w: FieldWater; u: UnitSystem; fieldId: string }) {
+function StatusBlock({ w, u, fieldId, year }: { w: FieldWater; u: UnitSystem; fieldId: string; year: number }) {
+  const { data: seasons } = useFieldSeasons(year)
   const b = w.latest
-  if (!b)
+  if (!b) {
+    // A dryland field has no season to model, not a missing planting date.
+    const note = noModelDataNote(irrigationSeasonState(fieldId, seasons), fieldId, year, 'No balance for this field in the last 30 days.')
     return (
       <p className="text-xs text-gray-400">
-        No balance for this field in the last 30 days. It needs a planting date, then Sync.{' '}
-        <SetupLink to={SETUP_LINKS.plantingDate(fieldId)}>Set the planting date</SetupLink>
+        {note.text}
+        {note.link && (
+          <>
+            {' '}
+            <SetupLink to={note.link.to}>{note.link.label}</SetupLink>
+          </>
+        )}
       </p>
     )
+  }
   const rawUsed = b.raw_mm && b.dr_mm != null ? Math.min(100, (b.dr_mm / b.raw_mm) * 100) : 0
   const unit = conv.depthUnit(u)
   const needsWater = b.status === 'now' || b.status === 'stress'
@@ -175,7 +185,8 @@ function AppliedBlock({ fieldId, w, u, year }: { fieldId: string; w: FieldWater;
       {w.events.length > 0 && (
         <div className="mt-1.5">
           <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="w-full min-w-[320px]">
+          {/* On a phone: From left out (a tap on the row shows it) and cells tightened (design review, Nov 2026). */}
+          <table className="w-full max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5 sm:min-w-[320px]">
             <thead className={TABLE_HEAD}>
               <tr>
                 <th className={TABLE_TH}>Date</th>
@@ -183,7 +194,7 @@ function AppliedBlock({ fieldId, w, u, year }: { fieldId: string; w: FieldWater;
                 <th className={cn(TABLE_TH, 'text-right')} title={`Gross × the pivot's ${Math.round(eff * 100)}% application efficiency — what the model counts as reaching the root zone`}>
                   Net ({unit})
                 </th>
-                <th className={TABLE_TH}>From</th>
+                <th className={cn(TABLE_TH, 'max-sm:hidden')}>From</th>
                 <th className={cn(TABLE_TH, 'text-right')}>Covered<HeadTip title="Covered">Degrees of the circle FieldNET recorded water on that day</HeadTip></th>
               </tr>
             </thead>
@@ -200,7 +211,7 @@ function AppliedBlock({ fieldId, w, u, year }: { fieldId: string; w: FieldWater;
                     {e.adjusted_gross_mm != null && <span className="text-amber-700">*</span>}
                   </td>
                   <td className="px-3 py-0.5 text-right tabular-nums text-gray-500">{conv.depth(netOf(e), u, dp)}</td>
-                  <td className="px-3 py-0.5 text-gray-500">{e.source === 'fieldnet' ? 'FieldNET' : e.source === 'manual' ? 'logged by hand' : e.source}</td>
+                  <td className="px-3 py-0.5 text-gray-500 max-sm:hidden">{e.source === 'fieldnet' ? 'FieldNET' : e.source === 'manual' ? 'logged by hand' : e.source}</td>
                   <td className="px-3 py-0.5 text-right tabular-nums text-gray-500">{e.coverage_deg != null ? `${e.coverage_deg}°` : ''}</td>
                 </tr>
                 {/* The pass in full, and for one logged by hand its Edit and
@@ -270,7 +281,7 @@ export function FieldWaterPanel({ fieldId, w, u, year, fc }: { fieldId: string; 
     <div className="mt-3 space-y-3">
       <div className="grid gap-3 lg:grid-cols-2">
         <Section icon={<Gauge className="h-4 w-4 text-brand-700" />} title="Today">
-          <StatusBlock w={w} u={u} fieldId={fieldId} />
+          <StatusBlock w={w} u={u} fieldId={fieldId} year={year} />
         </Section>
         <Section icon={<Droplets className="h-4 w-4 text-sky-500" />} title={`Irrigation applied ${year}`}>
           {/* A silent panel is a warning about the data, so it stays in view

@@ -2,12 +2,14 @@ import { supabase } from '@/lib/supabase'
 import { cropVarietySettingsQuery } from '@/lib/crop-variety-settings-data'
 import type { TableReport } from '@/lib/table-report'
 import { conv, depthValue, type UnitSystem } from '@/lib/units'
+import { FRESH_OFF } from '@/lib/farm-context'
 import {
   buildWaterReview,
   DEFAULT_POWER_BUY_KWH,
   DEFAULT_POWER_SELL_KWH,
   MM_PER_IN,
   reviewTotals,
+  weightedAsShown,
   type ReviewData,
   type WaterReviewRow,
   type WaterReviewTotals,
@@ -106,25 +108,51 @@ export type PowerPrices = {
   sell: number
   buy: number
   basis: 'sell' | 'buy'
+  /** The farm has solar (Farm setup's Solar switch). Without it there is no sell price to forgo, so basis is always 'buy'. */
+  solarOn: boolean
   /** What an acre-foot of water is worth to the farm (farms.water_value_af); null when not set. */
   waterValueAf: number | null
 }
 
-/** The farm's two power prices and which one prices the pumping. */
+/**
+ * The farm's two power prices and which one prices the pumping, with whether
+ * it has solar at all. farms.power_value_basis defaults to 'sell', so a farm
+ * with no panels had its pumping priced at a solar sell price it never gets
+ * (batch 6 page walk, Nov 2026); powerPrices reads solar_on to stop that.
+ */
 export async function fetchFarmPowerCost() {
-  const { data, error } = await supabase.from('farms').select('id, power_buy_kwh, power_sell_kwh, power_value_basis, water_value_af').limit(1).single()
-  if (error) throw error
-  return data
+  const [farm, setup] = await Promise.all([
+    supabase.from('farms').select('id, power_buy_kwh, power_sell_kwh, power_value_basis, water_value_af').limit(1).single(),
+    supabase.from('farm_setup').select('features').limit(1).maybeSingle(),
+  ])
+  if (farm.error) throw farm.error
+  if (setup.error) throw setup.error
+  // As useFeature reads it: the farm's own switches once setup is saved, the
+  // fresh-install defaults (solar off) before.
+  const features = (setup.data ? setup.data.features : FRESH_OFF) as Record<string, unknown> | null
+  return { ...farm.data, solar_on: features?.solar !== false }
 }
 
 /** The farm row's prices, or the defaults where none is set. */
 export function powerPrices(
-  farm: { power_sell_kwh: number | string | null; power_buy_kwh: number | string | null; power_value_basis: string | null; water_value_af?: number | string | null } | null | undefined,
+  farm:
+    | {
+        power_sell_kwh: number | string | null
+        power_buy_kwh: number | string | null
+        power_value_basis: string | null
+        water_value_af?: number | string | null
+        /** From fetchFarmPowerCost: false prices the pumping at the buy price whatever the setting says. */
+        solar_on?: boolean
+      }
+    | null
+    | undefined,
 ): PowerPrices {
+  const solarOn = farm?.solar_on !== false
   return {
     sell: farm?.power_sell_kwh != null ? Number(farm.power_sell_kwh) : DEFAULT_POWER_SELL_KWH,
     buy: farm?.power_buy_kwh != null ? Number(farm.power_buy_kwh) : DEFAULT_POWER_BUY_KWH,
-    basis: farm?.power_value_basis === 'sell' ? 'sell' : 'buy',
+    basis: solarOn && farm?.power_value_basis === 'sell' ? 'sell' : 'buy',
+    solarOn,
     waterValueAf: farm?.water_value_af != null ? Number(farm.water_value_af) : null,
   }
 }
@@ -153,8 +181,12 @@ export function waterReviewReport(rows: WaterReviewRow[], t: WaterReviewTotals, 
     r.gpm == null ? null : Math.round(r.gpm), r.gpmFrom, r2(r.hp), r2(r.acreInches), r2(r.pumpHours), r.kwh == null ? null : Math.round(r.kwh), r2(r.pumpCost), r2(r.pumpCostPerAc), r2(r.pumpCostPerAcIn), r.pumpNote,
     r.price, r.priceFrom, r2(r.grossPerAc), r2(perUnit(r.dollarsPerInIrrigation, u)), r.verdict,
   ])
+  // Farm depths from the rows as printed (depth and acres rounded as above),
+  // so the farm row is what a reader weighting the rows would get.
+  const farmD = (pick: (r: WaterReviewRow) => number | null) =>
+    weightedAsShown(rows, (r) => { const mm = pick(r); return mm == null ? null : depthValue(mm, u) }, (r) => r.acres, u === 'metric' ? 0 : 2, 2)
   const total = [
-    `Farm (${t.fields} fields)`, '', r2(t.acres), null, d(t.grossMm), null, d(t.effectiveMm), d(t.rainMm), d(t.etcMm),
+    `Farm (${t.fields} fields)`, '', r2(t.acres), null, farmD((r) => r.grossMm), null, farmD((r) => r.effectiveMm), farmD((r) => r.rainMm), farmD((r) => r.etcMm),
     null, r2(t.stressDays), r2(t.belowThresholdDays), null, null, null, null, null, null,
     null, null, null, r2(t.acreInches), null, null, r2(t.pumpCost), r2(t.pumpCostPerAc), r2(t.pumpCostPerAcIn), `${t.pumpFields} of ${t.fields} fields priced`,
     null, null, r2(t.grossPerAc), null, 'Depths are acre-weighted averages',
@@ -163,7 +195,15 @@ export function waterReviewReport(rows: WaterReviewRow[], t: WaterReviewTotals, 
     title: `Water against yield ${year}`,
     meta: [
       ['Power valued at', power.basis === 'sell' ? `$${power.sell}/kWh, the solar sell price (income forgone)` : `$${power.buy}/kWh, the grid price`],
-      ['Power the other way', power.basis === 'sell' ? `$${power.buy}/kWh from the grid: $${t.kwh != null ? Math.round(t.kwh * power.buy) : '—'}` : `$${power.sell}/kWh sell price: $${t.kwh != null ? Math.round(t.kwh * power.sell) : '—'}`],
+      // No solar, no sell price to set beside it.
+      ...(power.solarOn
+        ? ([
+            [
+              'Power the other way',
+              power.basis === 'sell' ? `$${power.buy}/kWh from the grid: $${t.kwh != null ? Math.round(t.kwh * power.buy) : '—'}` : `$${power.sell}/kWh sell price: $${t.kwh != null ? Math.round(t.kwh * power.sell) : '—'}`,
+            ],
+          ] as [string, string][])
+        : []),
       ['Depths in', unit],
       ['Exported', today],
     ],

@@ -79,15 +79,17 @@ export function HorizonTable({
   ]
   const shown = columns.filter((c) => !(compact && c.hideCompact))
 
+  // On a phone the profile stays a grid: Horizon pinned, cells tightened, and
+  // the columns the compact popup drops hidden too (design review, Nov 2026).
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-200">
-      <table className="w-full text-xs">
+      <table className="w-full text-xs max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
         <thead className={TABLE_HEAD}>
           <tr>
             {shown.map((c) => (
               <th
                 key={c.key}
-                className={`${TABLE_TH} ${c.right ? 'text-right' : ''}`}
+                className={`${TABLE_TH} ${c.right ? 'text-right' : ''} ${c.key === 'horizon' ? 'sticky left-0 z-[2] bg-brand-700' : ''} ${c.hideCompact ? 'max-sm:hidden' : ''}`}
               >
                 <span className="inline-flex items-center">
                   {c.label}
@@ -100,7 +102,7 @@ export function HorizonTable({
         <tbody>
           {horizons.map((h, i) => (
             <tr key={i} className="border-b border-gray-100 last:border-0">
-              <td className="px-3 py-1">
+              <td className="sticky left-0 z-[1] bg-white px-3 py-1">
                 <HorizonInfo code={h.horizon} />
               </td>
               <td className="px-3 py-1 text-gray-600">
@@ -110,11 +112,11 @@ export function HorizonTable({
                 {h.texture ? (TEXTURE[h.texture] ?? h.texture) : '—'}
               </td>
               <td className="px-3 py-1 text-right tabular-nums">{n1(h.clay)}</td>
-              {!compact && <td className="px-3 py-1 text-right tabular-nums">{n1(h.organicCarbon)}</td>}
+              {!compact && <td className="px-3 py-1 text-right tabular-nums max-sm:hidden">{n1(h.organicCarbon)}</td>}
               <td className="px-3 py-1 text-right tabular-nums">{n1(h.ph)}</td>
               <td className="px-3 py-1 text-right tabular-nums">{n1(h.ec)}</td>
-              {!compact && <td className="px-3 py-1 text-right tabular-nums">{n1(h.cec)}</td>}
-              {!compact && <td className="px-3 py-1 text-right tabular-nums">{n1(h.caco3)}</td>}
+              {!compact && <td className="px-3 py-1 text-right tabular-nums max-sm:hidden">{n1(h.cec)}</td>}
+              {!compact && <td className="px-3 py-1 text-right tabular-nums max-sm:hidden">{n1(h.caco3)}</td>}
             </tr>
           ))}
         </tbody>

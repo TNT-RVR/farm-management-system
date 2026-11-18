@@ -12529,7 +12529,7 @@ CREATE TABLE IF NOT EXISTS "public"."farms" (
     "power_cost_kwh" numeric DEFAULT 0.15 NOT NULL,
     "power_buy_kwh" numeric,
     "power_sell_kwh" numeric,
-    "power_value_basis" "text" DEFAULT 'sell'::"text" NOT NULL,
+    "power_value_basis" "text" DEFAULT 'buy'::"text" NOT NULL,
     "water_value_af" numeric,
     "is_home" boolean DEFAULT false NOT NULL,
     CONSTRAINT "farms_power_value_basis_check" CHECK (("power_value_basis" = ANY (ARRAY['sell'::"text", 'buy'::"text"]))),
@@ -12556,7 +12556,7 @@ COMMENT ON COLUMN "public"."farms"."power_sell_kwh" IS 'What the farm is paid fo
 
 
 
-COMMENT ON COLUMN "public"."farms"."power_value_basis" IS 'Which price the water review charges pumping at: sell (income forgone, the default with solar) or buy (grid).';
+COMMENT ON COLUMN "public"."farms"."power_value_basis" IS 'Which price the water review charges pumping at: buy (grid, the default) or sell (the solar sell price, income forgone; only for a farm with solar).';
 
 
 
@@ -18287,11 +18287,16 @@ CREATE TABLE IF NOT EXISTS "public"."power_bill_sites" (
     "pump_unconfirmed" boolean DEFAULT false NOT NULL,
     "riders" numeric,
     "demand_unit" "text",
+    "not_pump" boolean DEFAULT false NOT NULL,
     CONSTRAINT "power_bill_sites_demand_unit_check" CHECK ((("demand_unit" IS NULL) OR ("demand_unit" = ANY (ARRAY['kW'::"text", 'kVA'::"text"]))))
 );
 
 
 ALTER TABLE "public"."power_bill_sites" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."power_bill_sites"."not_pump" IS 'Marked by hand as not a pump (shop, aeration fans): left out of Power bills by pump and not asked about again.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."power_bills" (

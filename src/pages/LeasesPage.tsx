@@ -14,6 +14,7 @@ import { money as fmtMoney } from '@/lib/format'
 import { askConfirm } from '@/components/askConfirm'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { dbErrorMessage } from '@/lib/db-error'
+import { CardList, RowCard } from '@/components/RowCards'
 
 type Lease = Database['public']['Tables']['land_leases']['Row']
 type LeaseInsert = Database['public']['Tables']['land_leases']['Insert']
@@ -22,6 +23,41 @@ type Payment = Database['public']['Tables']['land_lease_payments']['Row']
 const money = (v: number | null | undefined) => fmtMoney(v, 0, { neg: 'inside' })
 const fmt = (d: string | null) => (d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '—')
 const num = (s: string) => (s.trim() === '' ? null : Number(s))
+
+/** What a lease pays, in the table's Deal cell and on the phone card. */
+function deal(l: Lease) {
+  return (
+    <>
+      {l.direction === 'out' ? (
+        l.arrangement === 'profit_share' ? (
+          <span className="font-medium">{Number(l.our_share_pct ?? 50)}% of the gross to us, the grower pays the inputs</span>
+        ) : (
+          <>
+            {annualRent(l) != null ? `${money(annualRent(l))} rent to us` : <span className="text-amber-700">rent not set</span>}
+            {l.rent_per_acre != null && <div className="text-xs text-gray-500">${Number(l.rent_per_acre)}/ac a year</div>}
+          </>
+        )
+      ) : l.arrangement === 'profit_share' ? (
+        <>
+          <span className="font-medium">
+            {l.inputs_shared
+              ? `${Number(l.our_share_pct ?? 50)}/${100 - Number(l.our_share_pct ?? 50)} net profit`
+              : `${100 - Number(l.our_share_pct ?? 50)}% of the gross to the owner`}
+          </span>
+          {l.owner_covers && <div className="text-xs text-gray-500">they cover: {l.owner_covers}</div>}
+          {l.we_cover && <div className="text-xs text-gray-500">we cover: {l.we_cover}</div>}
+        </>
+      ) : l.arrangement === 'crop_share' ? (
+        <span>{Number(l.crop_share_pct ?? 0)}% crop share</span>
+      ) : (
+        <>
+          {annualRent(l) != null ? money(annualRent(l)) : <span className="text-amber-700">rent not set</span>}
+          {l.rent_per_acre != null && <div className="text-xs text-gray-500">${Number(l.rent_per_acre)}/ac a year</div>}
+        </>
+      )}
+    </>
+  )
+}
 
 function useLeases() {
   return useQuery({
@@ -142,7 +178,50 @@ export function LeasesPage() {
 
       {editing && <LeaseForm key={editing === 'new' ? 'new' : editing.id} lease={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        {/* One lease a card on a phone (design review, Nov 2026). */}
+        <CardList isEmpty={!leases.length} empty="No leases yet.">
+          {leases.map((l) => {
+            const by = noticeBy(l)
+            const soon = by != null && by >= today && daysBetween(today, by) <= 60
+            const contact = [l.phone, l.email].filter(Boolean).join(' · ')
+            return (
+              <RowCard
+                key={l.id}
+                onClick={rowClick(() => setEditing(l))}
+                heading={
+                  <span className={cn(!l.active && 'opacity-50')}>
+                    {l.landlord}
+                    {l.direction === 'out' && <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-xs font-medium text-sky-800">farms our land</span>}
+                    {contact && <span className="block text-xs font-normal text-gray-500">{contact}</span>}
+                  </span>
+                }
+                actions={
+                  <button type="button" onClick={() => setEditing(l)} aria-label={`Edit ${l.landlord}`} className="rounded p-1 text-gray-500 hover:bg-gray-100">
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                }
+                facts={[
+                  {
+                    label: 'Land',
+                    node: (
+                      <>
+                        {l.field_ids.map(fieldName).join(', ') || '—'}
+                        {l.legal_land && <div className="text-gray-500">{l.legal_land}</div>}
+                      </>
+                    ),
+                  },
+                  { label: 'Acres', node: l.acres != null ? <span className="tabular-nums">{l.acres}</span> : null },
+                  { label: 'Deal', node: deal(l) },
+                  { label: 'Term', node: `${fmt(l.start_date)} – ${fmt(l.end_date)}` },
+                  { label: 'Notice by', node: by ? <span className={cn(soon && 'font-semibold text-amber-700')}>{fmt(by)}</span> : null },
+                  { label: 'Status', node: l.active ? null : 'Not active' },
+                ]}
+              />
+            )
+          })}
+        </CardList>
+        <div className="hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[840px] text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -174,33 +253,7 @@ export function LeasesPage() {
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{l.acres ?? '—'}</td>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {l.direction === 'out' ? (
-                      l.arrangement === 'profit_share' ? (
-                        <span className="font-medium">{Number(l.our_share_pct ?? 50)}% of the gross to us, the grower pays the inputs</span>
-                      ) : (
-                        <>
-                          {annualRent(l) != null ? `${money(annualRent(l))} rent to us` : <span className="text-amber-700">rent not set</span>}
-                          {l.rent_per_acre != null && <div className="text-xs text-gray-500">${Number(l.rent_per_acre)}/ac a year</div>}
-                        </>
-                      )
-                    ) : l.arrangement === 'profit_share' ? (
-                      <>
-                        <span className="font-medium">
-                          {l.inputs_shared
-                            ? `${Number(l.our_share_pct ?? 50)}/${100 - Number(l.our_share_pct ?? 50)} net profit`
-                            : `${100 - Number(l.our_share_pct ?? 50)}% of the gross to the owner`}
-                        </span>
-                        {l.owner_covers && <div className="text-xs text-gray-500">they cover: {l.owner_covers}</div>}
-                        {l.we_cover && <div className="text-xs text-gray-500">we cover: {l.we_cover}</div>}
-                      </>
-                    ) : l.arrangement === 'crop_share' ? (
-                      <span>{Number(l.crop_share_pct ?? 0)}% crop share</span>
-                    ) : (
-                      <>
-                        {annualRent(l) != null ? money(annualRent(l)) : <span className="text-amber-700">rent not set</span>}
-                        {l.rent_per_acre != null && <div className="text-xs text-gray-500">${Number(l.rent_per_acre)}/ac a year</div>}
-                      </>
-                    )}
+                    {deal(l)}
                   </td>
                   <td className="px-3 py-2 text-xs text-gray-700">
                     {fmt(l.start_date)} – {fmt(l.end_date)}
@@ -223,6 +276,7 @@ export function LeasesPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       <section className="mt-4 rounded-lg border border-gray-200 bg-white p-3">

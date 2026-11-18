@@ -20,6 +20,7 @@ import {
 } from '@/lib/cash-flow'
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, RowCard } from '@/components/RowCards'
 
 const money0 = (v: number) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
 const short = (v: number) => (Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : Math.abs(v) >= 1e3 ? `${Math.round(v / 1e3)}k` : String(Math.round(v)))
@@ -129,10 +130,11 @@ export function CashFlowTab({ realm }: { realm: string }) {
           <BalanceChart months={forecast.months} />
 
           <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-            <table className="w-full text-sm">
+            {/* On a phone: the month pinned and the cells tightened (design review, Nov 2026). */}
+            <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className="px-3 py-1.5 text-left font-medium">Month</th>
+                  <th className="sticky left-0 z-10 bg-brand-700 px-3 py-1.5 text-left font-medium">Month</th>
                   <th className="px-2 py-1.5 text-right font-medium">In</th>
                   <th className="px-2 py-1.5 text-right font-medium">Out</th>
                   <th className="px-2 py-1.5 text-right font-medium">Net</th>
@@ -150,7 +152,7 @@ export function CashFlowTab({ realm }: { realm: string }) {
                 {forecast.months.map((m) => (
                   <Fragment key={m.month}>
                     <tr onClick={() => setOpen(open === m.month ? null : m.month)} className={cn('cursor-pointer hover:bg-gray-50', m.month === forecast.low.month && 'bg-amber-50')}>
-                      <td className="px-3 py-1.5 text-gray-800">{monthLabel(m.month)}</td>
+                      <td className={cn('sticky left-0 z-10 px-3 py-1.5 text-gray-800', m.month === forecast.low.month ? 'bg-amber-50' : 'bg-white')}>{monthLabel(m.month)}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums text-gray-900">{short(m.in)}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums text-gray-900">{short(m.out)}</td>
                       <td className={cn('px-2 py-1.5 text-right tabular-nums', m.net < 0 ? 'text-red-700' : 'text-emerald-700')}>{short(m.net)}</td>
@@ -180,7 +182,46 @@ export function CashFlowTab({ realm }: { realm: string }) {
           </div>
 
           <Fold title="By kind" summary={`${lines.length} kinds`} storageKey="cash-flow-kinds" className="overflow-hidden" bodyClassName="p-0">
-            <div className="overflow-x-auto">
+            {/* One kind a card on a phone (design review, Nov 2026). */}
+            <CardList>
+              {lines.map((l) => (
+                <RowCard
+                  key={l.key}
+                  heading={
+                    <>
+                      {l.label}
+                      <span className="font-normal text-gray-400"> · {l.side}</span>
+                    </>
+                  }
+                  actions={<span className="text-sm font-semibold tabular-nums text-gray-900">{money0(l.annual)}</span>}
+                  facts={[
+                    { label: 'Last year', node: money0(l.lastYear) },
+                    {
+                      label: 'Amount from',
+                      node: (
+                        <>
+                          {l.from}
+                          {forecast.takenOff[l.key] ? <span className="text-gray-400"> · less {money0(forecast.takenOff[l.key])} open</span> : null}
+                        </>
+                      ),
+                    },
+                    {
+                      label: 'Paid in',
+                      node: (
+                        <>
+                          {peakMonths(l.timing.shares) || 'spread through the year'}
+                          <span className={cn(l.timing.from === 'assumed' ? 'text-amber-700' : 'text-gray-400')}>
+                            {' '}
+                            · {l.timing.from === 'books' ? `books, ${l.timing.years} yr` : 'assumed'}
+                          </span>
+                        </>
+                      ),
+                    },
+                  ]}
+                />
+              ))}
+            </CardList>
+            <div className="hidden overflow-x-auto sm:block">
               <table className="w-full text-xs">
                 <thead className={TABLE_HEAD}>
                   <tr>

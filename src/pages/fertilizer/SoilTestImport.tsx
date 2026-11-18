@@ -23,6 +23,7 @@ import {
 } from '@/lib/soil-import'
 import { SOIL_QUERY_ROOTS } from '@/lib/soilTests'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 const SKIP = '__skip'
 
@@ -125,6 +126,11 @@ export function SoilTestImport({ onClose }: { onClose: () => void }) {
   }, [grouped, fieldList])
 
   const chosenField = (g: ImportGroup) => fieldChoice[g.key] ?? auto.get(g.key)?.fieldId ?? SKIP
+  const matchNote = (g: ImportGroup) => {
+    const how = auto.get(g.key)?.how
+    if (fieldChoice[g.key] != null || !how) return undefined
+    return how === 'legal' ? 'Matched by legal land description' : 'Matched by field name'
+  }
   const chosenYear = (g: ImportGroup) => {
     const v = yearChoice[g.key]
     return v != null ? Number(v) : g.cropYear
@@ -295,17 +301,18 @@ export function SoilTestImport({ onClose }: { onClose: () => void }) {
                 </HelpNote>
               </div>
               <div className="max-h-72 overflow-auto rounded-md border border-gray-200">
-                <table className="w-full min-w-[460px] text-xs">
+                {/* On a phone the example column is dropped and the picker narrowed (design review, Nov 2026). */}
+                <table className="w-full text-xs sm:min-w-[460px]">
                   <tbody>
                     {header.map((h, i) => {
                       const example = rows.find((r) => (r[i] ?? '').trim())?.[i] ?? ''
                       return (
                         <tr key={i} className="border-b border-gray-100 last:border-0">
                           <td className="px-2 py-1 font-medium text-gray-800">{h || <i>(blank)</i>}</td>
-                          <td className="max-w-[10rem] truncate px-2 py-1 text-gray-400" title={example}>
+                          <td className="max-w-[10rem] truncate px-2 py-1 text-gray-400 max-sm:hidden" title={example}>
                             {example}
                           </td>
-                          <td className="w-56 px-2 py-1">
+                          <td className="w-56 px-2 py-1 max-sm:w-40">
                             <Select
                               size="sm"
                               value={mapping[i] ?? 'ignore'}
@@ -355,7 +362,46 @@ export function SoilTestImport({ onClose }: { onClose: () => void }) {
                     change the year if that is wrong.
                   </HelpNote>
                 </div>
-                <div className="overflow-x-auto rounded-md border border-gray-200">
+                {/* One sampling a card on a phone (design review, Nov 2026). */}
+                <CardList className="rounded-md border border-gray-200">
+                  {grouped.groups.map((g) => (
+                    <RowCard
+                      key={g.key}
+                      heading={<span className="text-xs">{g.label}</span>}
+                      facts={[]}
+                      summary={
+                        <SummaryLine>
+                          <span>{g.date}</span>
+                          <Dot />
+                          <span>
+                            {g.samples.length} sample{g.samples.length === 1 ? '' : 's'}
+                          </span>
+                        </SummaryLine>
+                      }
+                    >
+                      <div className="flex items-center gap-2 text-xs">
+                        <div className="min-w-0 flex-1">
+                          <Select
+                            size="sm"
+                            value={chosenField(g)}
+                            onChange={(v) => setFieldChoice((c) => ({ ...c, [g.key]: v }))}
+                            options={fieldOptions}
+                            ariaLabel={`Field for ${g.label}`}
+                            title={matchNote(g)}
+                          />
+                        </div>
+                        <input
+                          type="number"
+                          value={yearChoice[g.key] ?? String(g.cropYear ?? '')}
+                          onChange={(e) => setYearChoice((c) => ({ ...c, [g.key]: e.target.value }))}
+                          className="w-20 rounded border border-gray-200 px-1.5 py-0.5"
+                          aria-label={`Crop year for ${g.label}`}
+                        />
+                      </div>
+                    </RowCard>
+                  ))}
+                </CardList>
+                <div className="hidden overflow-x-auto rounded-md border border-gray-200 sm:block">
                   <table className="w-full min-w-[480px] text-xs">
                     <thead className={TABLE_HEAD}>
                       <tr>
@@ -369,7 +415,6 @@ export function SoilTestImport({ onClose }: { onClose: () => void }) {
                     <tbody>
                       {grouped.groups.map((g) => {
                         const f = chosenField(g)
-                        const how = auto.get(g.key)?.how
                         return (
                           <tr key={g.key} className="border-t border-gray-100">
                             <td className="px-2 py-1 text-gray-800">{g.label}</td>
@@ -382,13 +427,7 @@ export function SoilTestImport({ onClose }: { onClose: () => void }) {
                                 onChange={(v) => setFieldChoice((c) => ({ ...c, [g.key]: v }))}
                                 options={fieldOptions}
                                 ariaLabel={`Field for ${g.label}`}
-                                title={
-                                  fieldChoice[g.key] == null && how
-                                    ? how === 'legal'
-                                      ? 'Matched by legal land description'
-                                      : 'Matched by field name'
-                                    : undefined
-                                }
+                                title={matchNote(g)}
                               />
                             </td>
                             <td className="px-2 py-1">

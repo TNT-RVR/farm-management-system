@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { MapPin, RefreshCw } from 'lucide-react'
 import { FUEL_COLOUR, FuelTankMap } from './FuelTankMap'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 const L = (v: number) => `${Math.round(v).toLocaleString('en-CA')} L`
 
@@ -63,6 +64,26 @@ function gaugeTrouble(t: FuelTank): string | null {
 /** Room left in a tank, where its level is known. */
 const roomOf = (t: FuelTank) => (t.level_l == null ? null : Math.max(0, t.capacity_l - t.level_l))
 
+/** Where a tank's level came from and anything wrong with its gauge, under the level. */
+function LevelNote({ t }: { t: FuelTank }) {
+  return (
+    <>
+      {t.level_source === 'telus' && t.level_at ? (
+        <p className="text-xs text-emerald-700" title={`TELUS gauge, read ${new Date(t.level_at).toLocaleString('en-CA')}`}>
+          gauge · {ago(t.level_at)}
+        </p>
+      ) : t.level_source === 'typed' && t.level_at ? (
+        <p className="text-xs text-gray-500" title="Typed in; the gauge's next report replaces it">
+          typed · {ago(t.level_at)}
+        </p>
+      ) : (
+        t.level_on && <p className="text-xs text-gray-400">{t.level_on}</p>
+      )}
+      {gaugeTrouble(t) && <p className="text-xs text-amber-700">{gaugeTrouble(t)}</p>}
+    </>
+  )
+}
+
 /**
  * The farm's fuel tanks: what each holds and how big it is, so an order can be
  * sized without walking the yard. Totals per fuel, and the room left where a
@@ -83,16 +104,32 @@ export function FuelTanks({ isManager }: { isManager: boolean }) {
     setPlacingId(null)
     save.mutate({ id, patch: { lat, lng } })
   }
+  const pinButton = (t: FuelTank) => (
+    <button
+      type="button"
+      onClick={() => setPlacingId(placingId === t.id ? null : t.id)}
+      className={cn(
+        'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs',
+        placingId === t.id ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50',
+      )}
+    >
+      <MapPin className="h-3.5 w-3.5" /> {t.lat == null ? 'Pin' : 'Move'}
+    </button>
+  )
 
   const byFuel = useMemo(() => {
-    const m = new Map<FuelProduct, { capacity: number; room: number; unknown: number; count: number }>()
+    // knownCapacity is the read tanks only, so what's in them + room adds up to it.
+    const m = new Map<FuelProduct, { capacity: number; knownCapacity: number; room: number; unknown: number; count: number }>()
     for (const t of tanks ?? []) {
-      const s = m.get(t.product) ?? { capacity: 0, room: 0, unknown: 0, count: 0 }
+      const s = m.get(t.product) ?? { capacity: 0, knownCapacity: 0, room: 0, unknown: 0, count: 0 }
       s.capacity += t.capacity_l
       s.count++
       const room = roomOf(t)
       if (room == null) s.unknown++
-      else s.room += room
+      else {
+        s.room += room
+        s.knownCapacity += t.capacity_l
+      }
       m.set(t.product, s)
     }
     return [...m.entries()]
@@ -136,7 +173,18 @@ export function FuelTanks({ isManager }: { isManager: boolean }) {
                 <p className="text-xs text-gray-500">
                   {FUEL_PRODUCT_LABEL[p]} · {s.count} tank{s.count === 1 ? '' : 's'}
                 </p>
-                <p className="font-semibold tabular-nums text-gray-900">{L(s.capacity)}</p>
+                <p className="font-semibold tabular-nums text-gray-900">
+                  {s.unknown === s.count ? (
+                    <>
+                      {L(s.capacity)} <span className="text-xs font-normal text-gray-500">capacity</span>
+                    </>
+                  ) : (
+                    <>
+                      {Math.round(s.knownCapacity - s.room).toLocaleString('en-CA')}{' '}
+                      <span className="text-xs font-normal text-gray-500">of</span> {L(s.knownCapacity)}
+                    </>
+                  )}
+                </p>
                 <p className="text-xs text-gray-500">
                   {s.unknown === s.count ? 'Levels not read' : `Room for ${L(s.room)}${s.unknown ? ` + ${s.unknown} not read` : ''}`}
                 </p>
@@ -160,7 +208,61 @@ export function FuelTanks({ isManager }: { isManager: boolean }) {
             {sync.error && <span className="text-red-600">{(sync.error as Error).message}</span>}
             {sync.data && !sync.isPending && <span className="text-emerald-700">{sync.data}</span>}
           </div>
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
+          <div className="overflow-hidden rounded-lg border border-gray-200">
+          {/* One tank a card on a phone (design review, Nov 2026). */}
+          <CardList>
+            {tanks.map((t) => {
+              const room = roomOf(t)
+              const pct = t.level_l == null ? null : Math.round((100 * t.level_l) / t.capacity_l)
+              return (
+                <RowCard
+                  key={t.id}
+                  onClick={isManager ? rowClick(() => setOpen(t)) : undefined}
+                  heading={
+                    <span className="flex flex-wrap items-center gap-x-2">
+                      {t.name}
+                      <span className="text-xs font-normal text-gray-600">
+                        <span className="mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: FUEL_COLOUR[t.product] }} />
+                        {FUEL_PRODUCT_LABEL[t.product]}
+                      </span>
+                    </span>
+                  }
+                  actions={isManager && pinButton(t)}
+                  facts={[]}
+                  summary={
+                    <div>
+                      <SummaryLine>
+                        {t.location && (
+                          <>
+                            <span>{t.location}</span>
+                            <Dot />
+                          </>
+                        )}
+                        <span className="tabular-nums">{L(t.capacity_l)} tank</span>
+                        {t.level_l != null && (
+                          <>
+                            <Dot />
+                            <span className="tabular-nums">
+                              {L(t.level_l)} in it ({pct}%)
+                            </span>
+                          </>
+                        )}
+                        {room != null && (
+                          <>
+                            <Dot />
+                            <span className="tabular-nums">{L(room)} room</span>
+                          </>
+                        )}
+                      </SummaryLine>
+                      {t.level_l != null && <LevelNote t={t} />}
+                      {t.notes && <p className="text-xs text-gray-500">{t.notes}</p>}
+                    </div>
+                  }
+                />
+              )
+            })}
+          </CardList>
+          <div className="hidden overflow-x-auto sm:block">
             <table className="w-full min-w-[640px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
@@ -199,41 +301,20 @@ export function FuelTanks({ isManager }: { isManager: boolean }) {
                         ) : (
                           <>
                             {L(t.level_l)} <span className="text-gray-400">({pct}%)</span>
-                            {t.level_source === 'telus' && t.level_at ? (
-                              <p className="text-xs text-emerald-700" title={`TELUS gauge, read ${new Date(t.level_at).toLocaleString('en-CA')}`}>
-                                gauge · {ago(t.level_at)}
-                              </p>
-                            ) : t.level_source === 'typed' && t.level_at ? (
-                              <p className="text-xs text-gray-500" title="Typed in; the gauge's next report replaces it">
-                                typed · {ago(t.level_at)}
-                              </p>
-                            ) : (
-                              t.level_on && <p className="text-xs text-gray-400">{t.level_on}</p>
-                            )}
-                            {gaugeTrouble(t) && <p className="text-xs text-amber-700">{gaugeTrouble(t)}</p>}
+                            <LevelNote t={t} />
                           </>
                         )}
                       </td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{room == null ? '—' : L(room)}</td>
                       {isManager && (
-                        <td className="px-3 py-1.5 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setPlacingId(placingId === t.id ? null : t.id)}
-                            className={cn(
-                              'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs',
-                              placingId === t.id ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50',
-                            )}
-                          >
-                            <MapPin className="h-3.5 w-3.5" /> {t.lat == null ? 'Pin' : 'Move'}
-                          </button>
-                        </td>
+                        <td className="px-3 py-1.5 text-right">{pinButton(t)}</td>
                       )}
                     </tr>
                   )
                 })}
               </tbody>
             </table>
+          </div>
           </div>
         </>
       )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { billedPricePerKwh, coveredByPortal, powerByPump, siteCost, type BillSiteRow } from './power-bills-core'
+import { billedPricePerKwh, coveredByPortal, latestMeterByPump, notPumpKeys, powerByPump, siteCost, siteKey, type BillSiteRow } from './power-bills-core'
 import { matchPump } from '../../netlify/shared/power-bill-read'
 
 // Made-up bills.
@@ -124,5 +124,31 @@ describe('coveredByPortal', () => {
     expect(coveredByPortal([s('0099900000022', '2030-02-01', '2030-02-28')], null, portal)).toEqual([true])
     expect(coveredByPortal([s('0099900000022', '2030-01-01', '2030-01-31')], null, portal)).toEqual([false])
     expect(coveredByPortal([s(null, '2030-02-01', '2030-02-28')], null, portal)).toEqual([false])
+  })
+})
+
+describe('notPumpKeys', () => {
+  it('drops a site once any of its bills is marked not a pump, and never a matched one', () => {
+    const shop1 = site({ site_id: '0040000000011', not_pump: true })
+    const shop2 = site({ site_id: '0040000000011' })
+    const fans = site({ meter_number: 'M-1' })
+    const pump = site({ site_id: '0040000000022', pump_id: 'p1', not_pump: true })
+    const keys = notPumpKeys([shop1, shop2, fans, pump])
+    expect(keys.has(siteKey(shop2))).toBe(true)
+    expect(keys.has(siteKey(fans))).toBe(false)
+    expect(keys.has(siteKey(pump))).toBe(false)
+  })
+})
+
+describe('latestMeterByPump', () => {
+  it("takes the meter off the pump's latest bill that prints one", () => {
+    const m = latestMeterByPump([
+      site({ pump_id: 'p1', meter_number: 'M-1', period_end: '2026-05-31' }),
+      site({ pump_id: 'p1', meter_number: 'M-77310', period_end: '2026-06-30' }),
+      site({ pump_id: 'p1', meter_number: null, period_end: '2026-07-31' }),
+      site({ pump_id: null, meter_number: 'M-9' }),
+    ])
+    expect(m.get('p1')).toBe('M-77310')
+    expect(m.size).toBe(1)
   })
 })

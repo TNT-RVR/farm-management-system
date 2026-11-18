@@ -65,7 +65,9 @@ export function TruckingTab({ year, isManager }: { year: number; isManager: bool
         }),
     [fields, crops, plans, sites, farmYards, trip, truck, basics],
   )
-  const total = rows.reduce((s, r) => s + (r.t.cost?.total ?? 0), 0)
+  // The rows as printed (whole dollars, and only where a cost is shown), so the
+  // header is never a dollar off the column it sums.
+  const total = rows.reduce((s, r) => s + (r.t.cost?.legs.length ? Math.round(r.t.cost.total) : 0), 0)
   const planned = rows.filter((r) => r.plan).length
 
   /* Each field's figures, built once and handed to both the table and the

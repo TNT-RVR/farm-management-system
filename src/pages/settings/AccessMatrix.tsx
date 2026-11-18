@@ -216,11 +216,12 @@ export function AccessMatrix() {
             {setAccess.isError && <span className="text-xs text-red-600">{(setAccess.error as Error).message}</span>}
           </div>
 
+          {/* Phone: narrower section column and tighter cells, so a person or two sit beside it (design review, Nov 2026). */}
           <div className="inline-block max-w-full overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm" onMouseLeave={() => setHover({ row: null, col: null })}>
-            <table className="text-sm">
+            <table className="text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
               <thead className={cn(TABLE_HEAD, 'sticky top-0 z-20')}>
                 <tr>
-                  <th className="sticky left-0 z-30 min-w-56 border-r border-brand-800 bg-brand-700 px-3 py-3 text-left font-semibold">Section</th>
+                  <th className="sticky left-0 z-30 min-w-56 max-sm:min-w-36 border-r border-brand-800 bg-brand-700 px-3 py-3 text-left font-semibold">Section</th>
                   {people.map((u, i) => {
                     const c = colour(i)
                     const hidden = ALL_PATHS.filter((p) => denied(u).has(p)).length
@@ -229,7 +230,7 @@ export function AccessMatrix() {
                       <th
                         key={u.id}
                         onMouseEnter={() => setHover({ row: null, col: u.id })}
-                        className={cn('min-w-28 px-3 py-3 align-bottom font-medium', hover.col === u.id && c.soft)}
+                        className={cn('min-w-28 px-3 py-3 align-bottom font-medium max-sm:min-w-20', hover.col === u.id && c.soft)}
                       >
                         <div className="flex flex-col items-center gap-1">
                           <span className={cn('flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm', c.badge)}>{initials(u.full_name)}</span>
@@ -283,7 +284,7 @@ export function AccessMatrix() {
                           const KidIcon = k.icon
                           return (
                             <tr key={k.to} className={rowCls(k.to, band)} onMouseEnter={() => setHover((h) => ({ ...h, row: k.to }))}>
-                              <td className={cn(labelCls(k.to, band), 'pl-10')}>
+                              <td className={cn(labelCls(k.to, band), 'pl-10 max-sm:pl-6!')}>
                                 <span className="flex items-center gap-2 text-gray-700">
                                   <span className="h-4 w-px bg-gray-300" />
                                   <KidIcon className="h-3.5 w-3.5 shrink-0 text-gray-400" />

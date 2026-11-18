@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
+import { CardList, RowCard } from '@/components/RowCards'
 
 type Row = { id: string; name: string; grazed_after_harvest: boolean; open_to_pasture: boolean; never_grazed: boolean; grazing_note: string | null }
 type Tick = 'grazed_after_harvest' | 'open_to_pasture' | 'never_grazed'
@@ -74,6 +75,20 @@ export function FieldLivestockAccess({ isManager }: { isManager: boolean }) {
       void qc.invalidateQueries({ queryKey: ['grazing-restrictions'] })
     },
   })
+  // One tick box, the same in the table cell and on the phone card.
+  const tickBox = (f: Row, k: Tick, label: string) => (
+    <input
+      type="checkbox"
+      checked={f[k]}
+      disabled={!isManager || set.isPending}
+      onChange={(e) => set.mutate({ id: f.id, patch: { [k]: e.target.checked } })}
+      aria-label={`${f.name}: ${label.toLowerCase()}`}
+      className="h-4 w-4"
+    />
+  )
+  const noteCell = (f: Row) => (
+    <NoteCell key={f.grazing_note ?? ''} row={f} canEdit={isManager} onSave={(note) => set.mutate({ id: f.id, patch: { grazing_note: note } })} />
+  )
   return (
     <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
       <h2 className={cn('font-medium', CARD_HEAD)}>Cattle on crop fields</h2>
@@ -93,7 +108,30 @@ export function FieldLivestockAccess({ isManager }: { isManager: boolean }) {
         </HelpNote>
       </div>
       {/* The green bar runs the tile's full width: the table sits outside the padding. */}
-      <div className="overflow-x-auto">
+      {/* One field a card on a phone, its ticks labelled (design review, Nov 2026). */}
+      <CardList className="border-t border-gray-100">
+        {(fields ?? []).map((f) => (
+          <RowCard
+            key={f.id}
+            heading={f.name}
+            facts={[]}
+            summary={
+              <div className="mt-1 space-y-1.5 text-xs text-gray-700">
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                  {TICKS.map(({ key: k, label }) => (
+                    <label key={k} className="flex items-center gap-1.5">
+                      {tickBox(f, k, label)}
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                {noteCell(f)}
+              </div>
+            }
+          />
+        ))}
+      </CardList>
+      <div className="hidden overflow-x-auto sm:block">
         <table className="w-full text-xs">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -112,19 +150,10 @@ export function FieldLivestockAccess({ isManager }: { isManager: boolean }) {
                 <td className="whitespace-nowrap px-3 py-1 text-gray-800">{f.name}</td>
                 {TICKS.map(({ key: k, label }) => (
                   <td key={k} className="px-3 py-2.5 text-center sm:py-1">
-                    <input
-                      type="checkbox"
-                      checked={f[k]}
-                      disabled={!isManager || set.isPending}
-                      onChange={(e) => set.mutate({ id: f.id, patch: { [k]: e.target.checked } })}
-                      aria-label={`${f.name}: ${label.toLowerCase()}`}
-                      className="h-4 w-4"
-                    />
+                    {tickBox(f, k, label)}
                   </td>
                 ))}
-                <td className="px-3 py-0.5">
-                  <NoteCell key={f.grazing_note ?? ''} row={f} canEdit={isManager} onSave={(note) => set.mutate({ id: f.id, patch: { grazing_note: note } })} />
-                </td>
+                <td className="px-3 py-0.5">{noteCell(f)}</td>
               </tr>
             ))}
           </tbody>

@@ -42,6 +42,7 @@ import { RouteMap } from './RouteMap'
 import { FieldLink, Sources, n1 } from '../fertilizer/savings/ui'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { HeadTip } from '@/components/HeadTip'
+import { CardList, RowCard } from '@/components/RowCards'
 
 /** The farm's own map centre (Farm setup), which a typed place is checked against. */
 const farmCentre = (): LatLng => {
@@ -162,7 +163,64 @@ export function DistancesTab({ isManager }: { isManager: boolean }) {
       </Card>
 
       <Card title="Distances to each field">
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <div className="overflow-hidden rounded-lg border border-gray-200">
+          {/* One field a card on a phone (design review, Nov 2026). */}
+          <CardList>
+            {rows.map(({ f, shopT, binsT, end, basis }) => (
+              <RowCard
+                key={f.id}
+                heading={
+                  <span className="flex flex-wrap items-baseline gap-x-1.5">
+                    <button type="button" onClick={() => setSelected(f.id)} className="text-left hover:underline" title="Show on the map">
+                      {f.name}
+                    </button>
+                    <span className="text-xs font-normal text-gray-400">
+                      <FieldLink id={f.id} name="work" to="work" />
+                    </span>
+                    {f.id === selected && <span className="rounded bg-yellow-100 px-1.5 text-xs font-normal text-yellow-800">on the map</span>}
+                  </span>
+                }
+                facts={[
+                  {
+                    label: 'From the shop',
+                    node: (
+                      <span className="tabular-nums">
+                        <span className="font-medium">{shopT ? `${n1(shopT.km)} km` : '—'}</span>
+                        {shopT?.minutes != null && <span className="ml-1 text-gray-500">{Math.round(shopT.minutes)} min</span>}{' '}
+                        <Method t={shopT} />
+                        {isManager && shop && end && <ManualKm from={shopKey} to={fieldKey(f.id)} fromPt={shop} toPt={end} trip={shopT} />}
+                      </span>
+                    ),
+                  },
+                  {
+                    label: 'To the bins',
+                    node: (
+                      <span className="tabular-nums">
+                        <span className="font-medium">{binsT ? `${n1(binsT.km)} km` : '—'}</span>
+                        {binsT?.minutes != null && <span className="ml-1 text-gray-500">{Math.round(binsT.minutes)} min</span>}{' '}
+                        <Method t={binsT} />
+                        {isManager && bins && end && <ManualKm from={binsKey} to={fieldKey(f.id)} fromPt={bins} toPt={end} trip={binsT} />}
+                      </span>
+                    ),
+                  },
+                  { label: 'Entry', node: basis ? <span className={cn(basis === 'pin' ? 'text-green-700' : 'text-gray-500')}>{ENTRY_LABEL[basis] ?? basis}</span> : null },
+                  ...elevators.map((st) => {
+                    const e = trip(fieldKey(f.id), siteKey(st.id))
+                    return {
+                      key: st.id,
+                      label: `To ${st.name}`,
+                      node: e ? (
+                        <span className={cn('tabular-nums', e.basis === 'straight' && 'text-amber-700')} title={e.note ?? undefined}>
+                          {n1(e.km)} km
+                        </span>
+                      ) : null,
+                    }
+                  }),
+                ]}
+              />
+            ))}
+          </CardList>
+          <div className="hidden overflow-x-auto sm:block">
           <table className="w-full text-xs">
             <thead className={TABLE_HEAD}>
               <tr>
@@ -195,7 +253,7 @@ export function DistancesTab({ isManager }: { isManager: boolean }) {
                     </span>
                   </td>
                   <td className="px-3 py-1 text-right tabular-nums">
-                    <span className="font-medium">{shopT ? n1(shopT.km) : '—'}</span>
+                    <span className="font-medium">{shopT ? `${n1(shopT.km)} km` : '—'}</span>
                     {shopT?.minutes != null && <span className="ml-1 text-gray-500">{Math.round(shopT.minutes)} min</span>}
                   </td>
                   <td className="px-3 py-1">
@@ -203,7 +261,7 @@ export function DistancesTab({ isManager }: { isManager: boolean }) {
                     {isManager && shop && end && <ManualKm from={shopKey} to={fieldKey(f.id)} fromPt={shop} toPt={end} trip={shopT} />}
                   </td>
                   <td className="px-3 py-1 text-right tabular-nums">
-                    <span className="font-medium">{binsT ? n1(binsT.km) : '—'}</span>
+                    <span className="font-medium">{binsT ? `${n1(binsT.km)} km` : '—'}</span>
                     {binsT?.minutes != null && <span className="ml-1 text-gray-500">{Math.round(binsT.minutes)} min</span>}
                   </td>
                   <td className="px-3 py-1">
@@ -223,6 +281,7 @@ export function DistancesTab({ isManager }: { isManager: boolean }) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
         <HelpNote className="mt-2" summary="One way." title="Which distance is used where">
           One way. From the shop is what every pass’s road fuel uses (Fuel, Spreading, the Work list, the books); to the bins is what trucking the crop
@@ -357,7 +416,7 @@ function ManualKm({ from, to, fromPt, toPt, trip }: { from: string; to: string; 
   if (!open)
     return (
       <button type="button" onClick={() => setOpen(true)} className="relative ml-1.5 text-xs text-brand-700 underline decoration-dotted after:absolute after:-inset-2 after:content-[''] sm:after:content-none">
-        {trip?.basis === 'manual' ? 'change' : 'type'}
+        {trip?.basis === 'manual' ? 'change km' : 'set km'}
       </button>
     )
   return (

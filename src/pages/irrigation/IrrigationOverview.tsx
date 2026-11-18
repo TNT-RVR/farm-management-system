@@ -14,6 +14,7 @@ import { allocationRows, useAllocation, VERDICT } from './AllocationTab'
 import { IrrigationPlanner } from './IrrigationPlanner'
 import { CropTriggerCard } from './CropTriggerCard'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, RowCard } from '@/components/RowCards'
 
 const WaterSeasonReview = lazy(() => import('./WaterSeasonReview').then((m) => ({ default: m.WaterSeasonReview })))
 
@@ -115,6 +116,49 @@ export function IrrigationOverview({
       .sort((x, y) => Number(x.done) - Number(y.done) || rank(x.status) - rank(y.status) || x.name.localeCompare(y.name))
   }, [fields, seasons, latest, totals, alloc.data, today, year, fieldnet, plans, crops, crossings])
 
+  // A row's mixed cells, built once for the phone card and the table alike.
+  const nodesOf = (r: (typeof rows)[number]) => ({
+    status: (
+      <>
+        {r.done ? (
+          <span className="whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-600">Done for the season</span>
+        ) : r.status ? (
+          <span className={cn('whitespace-nowrap rounded-full px-2 py-0.5 font-medium', STATUS_COLOR[r.status])}>{STATUS_LABEL[r.status] ?? r.status}</span>
+        ) : (
+          <span className="text-gray-400">no balance</span>
+        )}
+        {r.done && r.status && <span className="mt-0.5 block text-xs text-gray-400">model: {STATUS_LABEL[r.status] ?? r.status}</span>}
+        {r.statusAsOf && <span className="mt-0.5 block text-xs text-gray-400">as of {md(r.statusAsOf)}</span>}
+      </>
+    ),
+    allowance: (r.unlogged || (r.verdict && r.verdict !== 'unknown')) && (
+      <>
+        {r.unlogged && <span className="block text-xs text-amber-700">{r.unlogged}</span>}
+        {/* The allowance, in brief — the field's Water allowance
+            card in its Detailed View has the full working. */}
+        {r.verdict && r.verdict !== 'unknown' && (
+          <span
+            className={cn('mt-0.5 inline-block whitespace-nowrap rounded px-1 text-xs', VERDICT[r.verdict].cls)}
+            title={`${VERDICT[r.verdict].label} — see Water allowance in the field's Detailed View`}
+          >
+            {r.pct != null ? `${Math.round(r.pct)}% of allowance` : VERDICT[r.verdict].label}
+            {r.allowedMm != null && ` · ${conv.depth(r.allowedMm, u, u === 'metric' ? 0 : 1)} ${conv.depthUnit(u)} allowed`}
+          </span>
+        )}
+      </>
+    ),
+    lastOn: r.running ? <span className="font-medium text-sky-700">running now</span> : r.last ? md(r.last) : <span className="text-gray-400">not this year</span>,
+    needs: r.done ? (
+      <span className="text-gray-400">—</span>
+    ) : r.status === 'now' || r.status === 'stress' ? (
+      <span className="font-medium text-red-700">now</span>
+    ) : r.next ? (
+      md(r.next)
+    ) : (
+      <span className="text-gray-400">not this week</span>
+    ),
+  })
+
   const loading = seasonsLoading || totalsLoading || alloc.isLoading
   // What a folded table must still say: fields whose irrigation is not being
   // recorded, and fields at or heading past their water allowance.
@@ -148,7 +192,37 @@ export function IrrigationOverview({
         ) : rows.length === 0 ? (
           <p className="px-3 py-4 text-xs text-gray-500">No field has an irrigation season set up for {year}. <SetupLink to={SETUP_LINKS.plantingDate()}>Add planting dates</SetupLink></p>
         ) : (
-          <div className="mt-2 overflow-x-auto">
+          <>
+          {/* One field a card on a phone; tap it for the Detailed View (design review, Nov 2026). */}
+          <CardList className="mt-2 border-t border-gray-100">
+            {rows.map((r) => {
+              const n = nodesOf(r)
+              return (
+                <RowCard
+                  key={r.id}
+                  onClick={() => onOpenField(r.id)}
+                  heading={
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="text-brand-700">{r.name}</span>
+                      <span className="text-xs font-normal">{n.status}</span>
+                    </span>
+                  }
+                  actions={<ChevronRight className="h-4 w-4 text-gray-300" />}
+                  facts={[
+                    { label: 'Crop', node: r.crop ?? 'no crop planned' },
+                    { label: 'Total water', node: r.totalMm != null && <Depth mm={r.totalMm} u={u} strong /> },
+                    { label: 'Rain', node: r.rainMm != null && <Depth mm={r.rainMm} u={u} /> },
+                    { label: 'Irrigation', node: r.grossMm != null && <Depth mm={r.grossMm} u={u} /> },
+                    { label: 'Allowance', node: n.allowance },
+                    { label: 'Crop used', node: r.etcMm != null && <Depth mm={r.etcMm} u={u} /> },
+                    { label: 'Pivot last on', node: n.lastOn },
+                    { label: 'Needs water', node: n.needs },
+                  ]}
+                />
+              )
+            })}
+          </CardList>
+          <div className="mt-2 hidden overflow-x-auto sm:block">
             <table className="w-full min-w-[860px] text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>
@@ -172,23 +246,15 @@ export function IrrigationOverview({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {rows.map((r) => (
+                {rows.map((r) => {
+                  const n = nodesOf(r)
+                  return (
                   <tr key={r.id} onClick={() => onOpenField(r.id)} className="cursor-pointer align-top hover:bg-gray-50">
                     <td className="px-3 py-1.5">
                       <span className="font-medium text-brand-700">{r.name}</span>
                       <span className="block text-gray-500">{r.crop ?? 'no crop planned'}</span>
                     </td>
-                    <td className="px-3 py-1.5">
-                      {r.done ? (
-                        <span className="whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-600">Done for the season</span>
-                      ) : r.status ? (
-                        <span className={cn('whitespace-nowrap rounded-full px-2 py-0.5 font-medium', STATUS_COLOR[r.status])}>{STATUS_LABEL[r.status] ?? r.status}</span>
-                      ) : (
-                        <span className="text-gray-400">no balance</span>
-                      )}
-                      {r.done && r.status && <span className="mt-0.5 block text-xs text-gray-400">model: {STATUS_LABEL[r.status] ?? r.status}</span>}
-                      {r.statusAsOf && <span className="mt-0.5 block text-xs text-gray-400">as of {md(r.statusAsOf)}</span>}
-                    </td>
+                    <td className="px-3 py-1.5">{n.status}</td>
                     <td className="px-3 py-1.5 text-right">
                       <Depth mm={r.totalMm} u={u} strong />
                     </td>
@@ -197,44 +263,23 @@ export function IrrigationOverview({
                     </td>
                     <td className="px-3 py-1.5 text-right">
                       <Depth mm={r.grossMm} u={u} />
-                      {r.unlogged && <span className="block text-xs text-amber-700">{r.unlogged}</span>}
-                      {/* The allowance, in brief — the field's Water allowance
-                          card in its Detailed View has the full working. */}
-                      {r.verdict && r.verdict !== 'unknown' && (
-                        <span
-                          className={cn('mt-0.5 inline-block whitespace-nowrap rounded px-1 text-xs', VERDICT[r.verdict].cls)}
-                          title={`${VERDICT[r.verdict].label} — see Water allowance in the field's Detailed View`}
-                        >
-                          {r.pct != null ? `${Math.round(r.pct)}% of allowance` : VERDICT[r.verdict].label}
-                          {r.allowedMm != null && ` · ${conv.depth(r.allowedMm, u, u === 'metric' ? 0 : 1)} ${conv.depthUnit(u)} allowed`}
-                        </span>
-                      )}
+                      {n.allowance}
                     </td>
                     <td className="px-3 py-1.5 text-right">
                       <Depth mm={r.etcMm} u={u} />
                     </td>
-                    <td className="px-3 py-1.5 whitespace-nowrap">
-                      {r.running ? <span className="font-medium text-sky-700">running now</span> : r.last ? md(r.last) : <span className="text-gray-400">not this year</span>}
-                    </td>
-                    <td className="px-3 py-1.5 whitespace-nowrap">
-                      {r.done ? (
-                        <span className="text-gray-400">—</span>
-                      ) : r.status === 'now' || r.status === 'stress' ? (
-                        <span className="font-medium text-red-700">now</span>
-                      ) : r.next ? (
-                        md(r.next)
-                      ) : (
-                        <span className="text-gray-400">not this week</span>
-                      )}
-                    </td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{n.lastOn}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{n.needs}</td>
                     <td className="px-3 py-1.5 text-gray-300">
                       <ChevronRight className="h-4 w-4" />
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
+          </>
         )}
         <HelpNote className="mt-2" summary="Irrigation is the gross depth pumped. Fields with no FieldNET panel need water logged by hand." title="Where these numbers come from">
           <p>

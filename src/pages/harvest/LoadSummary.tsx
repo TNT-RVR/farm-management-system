@@ -1,5 +1,6 @@
 import { Pencil } from 'lucide-react'
 import { Modal } from '@/components/Modal'
+import { cn } from '@/lib/utils'
 import { ExportButton } from '@/components/ExportButton'
 import { useCrops, useFields, useUsers } from '@/lib/queries'
 import { useBins } from '@/lib/bins'
@@ -110,12 +111,14 @@ export function LoadSummary({ load: l, onEdit, onClose }: { load: BinLoad; onEdi
           {net == null ? (
             <p className="mt-1 text-amber-700">Not weighed out yet</p>
           ) : (
+            // On a phone: tonnes and bushels only; the kilograms are in the two
+            // weighed boxes below (design review, Nov 2026).
             <div className="mt-1 overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
                 <thead>
                   <tr className="text-xs text-gray-500">
-                    {UNITS_HEAD.map((h) => (
-                      <th key={h} className={h ? 'px-2 py-1 text-right font-normal' : 'py-1 pr-2 text-left font-normal'}>
+                    {UNITS_HEAD.map((h, j) => (
+                      <th key={h} className={cn(h ? 'px-2 py-1 text-right font-normal' : 'py-1 pr-2 text-left font-normal', (j === 1 || j === 2) && 'max-sm:hidden')}>
                         {h}
                       </th>
                     ))}
@@ -131,7 +134,7 @@ export function LoadSummary({ load: l, onEdit, onClose }: { load: BinLoad; onEdi
                         </td>
                       ) : (
                         cells.map((c, j) => (
-                          <td key={j} className="whitespace-nowrap px-2 py-1 text-right font-semibold tabular-nums text-gray-900">
+                          <td key={j} className={cn('whitespace-nowrap px-2 py-1 text-right font-semibold tabular-nums text-gray-900', j < 2 && 'max-sm:hidden')}>
                             {c}
                           </td>
                         ))

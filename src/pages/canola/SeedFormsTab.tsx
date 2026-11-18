@@ -30,6 +30,7 @@ import { growerBinLabel, longDate, nextCheck, type Position } from '@/lib/seed-f
 import { formStyleFor, type FormStyle } from '@/lib/seed-forms/styles'
 import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
+import { CardList, RowCard } from '@/components/RowCards'
 
 const input = 'mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-brand-500 focus:outline-none disabled:bg-gray-50'
 const btn =
@@ -462,12 +463,76 @@ function BinTable({ report, bins, binName, style }: { report: SeedReport; bins: 
     current && !binOptions.some((o) => o.value === current) ? [{ value: current, label: growerBinLabel(binName(current)) || 'Bin' }, ...binOptions] : binOptions
   const patch = (b: SeedReportBin, p: Partial<SeedReportBin>) => saveBin.mutate({ id: b.id, report_id: report.id, patch: p })
   const cell = 'w-full rounded border border-gray-300 px-1.5 py-1 text-sm'
+  // One bin's controls, built once for the table's cells and the phone card alike.
+  const controls = (b: SeedReportBin) => ({
+    bin: <Select value={b.bin_id ?? ''} onChange={(v) => patch(b, { bin_id: v || null })} options={options(b.bin_id)} size="sm" className="w-44" ariaLabel="Grower bin" />,
+    companyBin: (
+      <input defaultValue={str(b.company_bin_id)} placeholder="A1" aria-label={style.companyBin(report.company)} onBlur={(e) => e.target.value !== str(b.company_bin_id) && patch(b, { company_bin_id: e.target.value.trim() || null })} className={`${cell} w-20`} />
+    ),
+    kg: <input defaultValue={str(b.quantity_kg)} inputMode="decimal" aria-label="Seed kg" onBlur={(e) => e.target.value !== str(b.quantity_kg) && patch(b, { quantity_kg: num(e.target.value) })} className={`${cell} w-28`} />,
+    moisture: (
+      <input defaultValue={str(b.moisture_pct)} inputMode="decimal" aria-label="Moisture %" onBlur={(e) => e.target.value !== str(b.moisture_pct) && patch(b, { moisture_pct: num(e.target.value) })} className={`${cell} w-20`} />
+    ),
+    temp: (
+      <input defaultValue={str(b.seed_temp_c)} inputMode="decimal" aria-label="Seed temperature °C" onBlur={(e) => e.target.value !== str(b.seed_temp_c) && patch(b, { seed_temp_c: num(e.target.value) })} className={`${cell} w-20`} />
+    ),
+    kit: (k: 'temp_cables' | 'moisture_cables' | 'aeration') => (
+      <input type="checkbox" checked={b[k]} aria-label={KIT_LABEL[k]} onChange={(e) => patch(b, { [k]: e.target.checked })} className="h-4 w-4 rounded border-gray-300" />
+    ),
+    bottom: (
+      <Select
+        value={b.bottom}
+        onChange={(v) => patch(b, { bottom: v as SeedReportBin['bottom'] })}
+        options={[
+          { value: 'flat', label: 'Flat' },
+          { value: 'coned', label: 'Coned' },
+        ]}
+        size="sm"
+        className="w-24"
+        ariaLabel="Bottom"
+      />
+    ),
+    shipped: (
+      <input type="date" defaultValue={str(b.shipped_on)} aria-label="Shipped on" onBlur={(e) => e.target.value !== str(b.shipped_on) && patch(b, { shipped_on: e.target.value || null })} className={`${cell} w-36`} />
+    ),
+    remove: (
+      <button type="button" onClick={() => setRemoving(b)} aria-label="Remove this bin" className="rounded p-1 text-gray-400 hover:text-red-700">
+        <Trash2 className="h-4 w-4" />
+      </button>
+    ),
+  })
+  const shown = bins.map((b) => ({ b, c: controls(b) }))
 
   return (
     <section className="overflow-hidden space-y-2 rounded-lg border border-gray-200 bg-white">
       <h2 className={cn('font-medium', CARD_HEAD)}>Bins</h2>
       <div className="p-4">
-      <div className="overflow-x-auto">
+      {/* One bin a card on a phone (design review, Nov 2026). */}
+      <CardList className="-mx-4">
+        {shown.map(({ b, c }) => (
+          <RowCard
+            key={`${b.id}:${b.updated_at}`}
+            heading={c.bin}
+            actions={c.remove}
+            facts={[
+              { label: style.companyBin(report.company), node: c.companyBin },
+              { label: 'Seed (kg)', node: c.kg },
+              { label: 'Moisture %', node: c.moisture },
+              { label: 'Seed temp °C', node: c.temp },
+              ...(style.asksBinKit
+                ? [
+                    { label: 'Temp cables', node: c.kit('temp_cables') },
+                    { label: 'Moisture cables', node: c.kit('moisture_cables') },
+                    { label: 'Aeration', node: c.kit('aeration') },
+                    { label: 'Bottom', node: c.bottom },
+                  ]
+                : []),
+              { label: 'Shipped', node: c.shipped },
+            ]}
+          />
+        ))}
+      </CardList>
+      <div className="hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[44rem] text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -489,53 +554,25 @@ function BinTable({ report, bins, binName, style }: { report: SeedReport; bins: 
             </tr>
           </thead>
           <tbody>
-            {bins.map((b) => (
+            {shown.map(({ b, c }) => (
               <tr key={`${b.id}:${b.updated_at}`} className="border-t border-gray-100 align-top">
-                <td className="py-1.5 pr-2">
-                  <Select value={b.bin_id ?? ''} onChange={(v) => patch(b, { bin_id: v || null })} options={options(b.bin_id)} size="sm" className="w-44" ariaLabel="Grower bin" />
-                </td>
-                <td className="py-1.5 pr-2">
-                  <input defaultValue={str(b.company_bin_id)} placeholder="A1" aria-label={style.companyBin(report.company)} onBlur={(e) => e.target.value !== str(b.company_bin_id) && patch(b, { company_bin_id: e.target.value.trim() || null })} className={`${cell} w-20`} />
-                </td>
-                <td className="py-1.5 pr-2">
-                  <input defaultValue={str(b.quantity_kg)} inputMode="decimal" aria-label="Seed kg" onBlur={(e) => e.target.value !== str(b.quantity_kg) && patch(b, { quantity_kg: num(e.target.value) })} className={`${cell} w-28`} />
-                </td>
-                <td className="py-1.5 pr-2">
-                  <input defaultValue={str(b.moisture_pct)} inputMode="decimal" aria-label="Moisture %" onBlur={(e) => e.target.value !== str(b.moisture_pct) && patch(b, { moisture_pct: num(e.target.value) })} className={`${cell} w-20`} />
-                </td>
-                <td className="py-1.5 pr-2">
-                  <input defaultValue={str(b.seed_temp_c)} inputMode="decimal" aria-label="Seed temperature °C" onBlur={(e) => e.target.value !== str(b.seed_temp_c) && patch(b, { seed_temp_c: num(e.target.value) })} className={`${cell} w-20`} />
-                </td>
+                <td className="py-1.5 pr-2">{c.bin}</td>
+                <td className="py-1.5 pr-2">{c.companyBin}</td>
+                <td className="py-1.5 pr-2">{c.kg}</td>
+                <td className="py-1.5 pr-2">{c.moisture}</td>
+                <td className="py-1.5 pr-2">{c.temp}</td>
                 {style.asksBinKit && (
                   <>
                     {(['temp_cables', 'moisture_cables', 'aeration'] as const).map((k) => (
                       <td key={k} className="py-1.5 pr-2 text-center">
-                        <input type="checkbox" checked={b[k]} aria-label={KIT_LABEL[k]} onChange={(e) => patch(b, { [k]: e.target.checked })} className="h-4 w-4 rounded border-gray-300" />
+                        {c.kit(k)}
                       </td>
                     ))}
-                    <td className="py-1.5 pr-2">
-                      <Select
-                        value={b.bottom}
-                        onChange={(v) => patch(b, { bottom: v as SeedReportBin['bottom'] })}
-                        options={[
-                          { value: 'flat', label: 'Flat' },
-                          { value: 'coned', label: 'Coned' },
-                        ]}
-                        size="sm"
-                        className="w-24"
-                        ariaLabel="Bottom"
-                      />
-                    </td>
+                    <td className="py-1.5 pr-2">{c.bottom}</td>
                   </>
                 )}
-                <td className="py-1.5 pr-2">
-                  <input type="date" defaultValue={str(b.shipped_on)} aria-label="Shipped on" onBlur={(e) => e.target.value !== str(b.shipped_on) && patch(b, { shipped_on: e.target.value || null })} className={`${cell} w-36`} />
-                </td>
-                <td className="py-1.5 text-right">
-                  <button type="button" onClick={() => setRemoving(b)} aria-label="Remove this bin" className="rounded p-1 text-gray-400 hover:text-red-700">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </td>
+                <td className="py-1.5 pr-2">{c.shipped}</td>
+                <td className="py-1.5 text-right">{c.remove}</td>
               </tr>
             ))}
           </tbody>
@@ -715,10 +752,11 @@ function BinRecord(p: { report: SeedReport; bin: SeedReportBin; name: string; cr
       {saveBin.error && <p className="mx-3 mb-2 text-xs text-red-600">{(saveBin.error as Error).message}</p>}
       {rows.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[40rem] text-xs">
+          {/* Squeezed on a phone: date pinned, cells tightened (design review, Nov 2026). */}
+          <table className="w-full text-xs max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5 sm:min-w-[40rem]">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className={TABLE_TH}>Date</th>
+                <th className={cn(TABLE_TH, 'sticky left-0 z-10 bg-brand-700')}>Date</th>
                 {Array.from({ length: n }, (_, i) => (
                   <th key={i} className={TABLE_TH}>
                     {style.sensors.topFirst ? style.sensors.label(i, n) : i === 0 ? '1 (bottom)' : i + 1}
@@ -730,7 +768,7 @@ function BinRecord(p: { report: SeedReport; bin: SeedReportBin; name: string; cr
             <tbody>
               {[...rows].reverse().map((r) => (
                 <tr key={r.id} onClick={() => setEditing(r)} className="cursor-pointer border-t border-gray-100 hover:bg-gray-50">
-                  <td className="px-3 py-1 text-gray-700">{longDate(r.read_on)}</td>
+                  <td className="sticky left-0 z-10 bg-white px-3 py-1 text-gray-700">{longDate(r.read_on)}</td>
                   {Array.from({ length: n }, (_, i) => style.sensors.read(r.levels)[i]).map((pos, i) => (
                     <td key={i} className="px-3 py-1 tabular-nums text-gray-700">
                       {style.sensors.cell(pos)}

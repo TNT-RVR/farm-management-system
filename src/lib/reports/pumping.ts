@@ -170,7 +170,10 @@ export async function gatherPumping(p: ParamValues, ctx: GatherContext): Promise
       ['kWh', Math.round(r.kwh).toLocaleString('en-CA')],
       ['Cost', `$${Math.round(r.cost).toLocaleString('en-CA')}`],
       ['Power valued at', power.basis === 'sell' ? `$${power.sell}/kWh, the solar sell price` : `$${power.buy}/kWh, the grid price`],
-      [power.basis === 'sell' ? 'At the grid price' : 'At the sell price', `$${Math.round(r.kwh * other).toLocaleString('en-CA')} ($${other}/kWh)`],
+      // With no solar there is no sell price to set beside it.
+      ...(power.solarOn
+        ? ([[power.basis === 'sell' ? 'At the grid price' : 'At the sell price', `$${Math.round(r.kwh * other).toLocaleString('en-CA')} ($${other}/kWh)`]] as [string, Cell][])
+        : []),
       ...(r.unpriced ? ([['Pivots not priced', r.unpriced]] as [string, Cell][]) : []),
     ],
     summary: [
@@ -178,7 +181,9 @@ export async function gatherPumping(p: ParamValues, ctx: GatherContext): Promise
       'kWh is the horsepower charged × 0.7457 ÷ 0.9 motor efficiency × hours. A pump that feeds several pivots charges each its share of the horsepower by flow.',
       power.basis === 'sell'
         ? 'Power is valued at what the solar would have sold for: a kWh pumped is a kWh not sold. The grid price is beside it for power that does come off the grid.'
-        : 'Power is valued at the grid price. The solar sell price is beside it.',
+        : power.solarOn
+          ? 'Power is valued at the grid price. The solar sell price is beside it.'
+          : 'Power is valued at the grid price.',
     ],
     columns: PUMPING_COLUMNS,
     groups: r.groups,

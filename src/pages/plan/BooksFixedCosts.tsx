@@ -168,12 +168,13 @@ export function BooksFixedCosts({ year, locked, setting }: { year: number; locke
           </div>
 
           <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
-            <table className="w-full min-w-[520px] text-sm">
+            {/* On a phone: the part pinned, Books and Fee off left out, cells tightened (design review, Nov 2026). */}
+            <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5 sm:min-w-[520px]">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className={TABLE_TH}>Part</th>
-                  <th className={cn(TABLE_TH, 'text-right')}>Books</th>
-                  <th className={cn(TABLE_TH, 'text-right')}>Fee off</th>
+                  <th className={cn(TABLE_TH, 'sticky left-0 z-10 bg-brand-700')}>Part</th>
+                  <th className={cn(TABLE_TH, 'text-right max-sm:hidden')}>Books</th>
+                  <th className={cn(TABLE_TH, 'text-right max-sm:hidden')}>Fee off</th>
                   <th className={cn(TABLE_TH, 'text-right')}>Crops&apos; share</th>
                   <th className={cn(TABLE_TH, 'text-right')}>Saved now</th>
                   <th className={cn(TABLE_TH, 'text-right')}>Change</th>
@@ -186,9 +187,9 @@ export function BooksFixedCosts({ year, locked, setting }: { year: number; locke
                   const diff = now == null ? null : p.crops - now
                   return (
                     <tr key={c.key}>
-                      <td className="px-3 py-1.5 text-gray-800">{c.label}</td>
-                      <td className="px-3 py-1.5 text-right text-gray-700">{money0(p.total)}</td>
-                      <td className="px-3 py-1.5 text-right text-gray-500">{p.fee ? `−${money0(p.fee)}` : '—'}</td>
+                      <td className="sticky left-0 z-10 bg-white px-3 py-1.5 text-gray-800">{c.label}</td>
+                      <td className="px-3 py-1.5 text-right text-gray-700 max-sm:hidden">{money0(p.total)}</td>
+                      <td className="px-3 py-1.5 text-right text-gray-500 max-sm:hidden">{p.fee ? `−${money0(p.fee)}` : '—'}</td>
                       <td className="px-3 py-1.5 text-right font-medium text-gray-900">{money0(p.crops)}</td>
                       <td className="px-3 py-1.5 text-right text-gray-500">{now == null ? '—' : money0(now)}</td>
                       <td className={cn('px-3 py-1.5 text-right', diff == null || Math.abs(diff) < 1 ? 'text-gray-400' : diff > 0 ? 'text-red-700' : 'text-green-700')}>
@@ -198,9 +199,11 @@ export function BooksFixedCosts({ year, locked, setting }: { year: number; locke
                   )
                 })}
                 <tr>
-                  <td className="px-3 py-1.5 font-semibold text-gray-900" colSpan={3}>
+                  <td className="px-3 py-1.5 font-semibold text-gray-900 max-sm:hidden" colSpan={3}>
                     Fixed expenses, crops&apos; share
                   </td>
+                  {/* The same label on a phone, where Books and Fee off are not there to span. */}
+                  <td className="sticky left-0 z-10 bg-white px-3 py-1.5 font-semibold text-gray-900 sm:hidden">Fixed, crops&apos; share</td>
                   <td className="px-3 py-1.5 text-right font-semibold text-gray-900">{money0(totalCrops)}</td>
                   <td colSpan={2} className="px-3 py-1.5 text-right text-xs text-gray-500">
                     {setting?.spread_acres ? `≈ ${money2(totalCrops / Number(setting.spread_acres))}/ac over ${Math.round(Number(setting.spread_acres)).toLocaleString('en-CA')} ac` : ''}

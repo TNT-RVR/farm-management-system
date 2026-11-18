@@ -17,7 +17,7 @@ insert into public.fuel_tanks (name, location, product, capacity_l, level_l, lev
   ('Diesel #1 (main)', 'Main Yard, east of the shop', 'farm_diesel', 22700, 14300, current_date - 2, now() - interval '2 days', 'Dipped', 'Marked diesel. Gravity feed with a filter and a meter.', 52.45660, -113.54180),
   ('Diesel #2',        'Main Yard, by the bins',     'farm_diesel', 11400,  3100, current_date - 2, now() - interval '2 days', 'Dipped', 'Kept for the trucks at harvest; let it run down over winter.', 52.45640, -113.54090),
   ('Clear diesel',     'Main Yard, by the shop door', 'clear_diesel', 2300,  1650, current_date - 9, now() - interval '9 days', 'Dipped', 'Road diesel for the semis. Taxed fuel: keep the receipts separate.', 52.45655, -113.54210),
-  ('Gas',              'Main Yard, by the shop door', 'farm_gasoline', 2300,   820, current_date - 9, now() - interval '9 days', 'Dipped', 'Pickups, the quad and the pressure washer.', 52.45650, -113.54225),
+  ('Gas',              'Main Yard, by the shop door', 'gasoline', 2300,   820, current_date - 9, now() - interval '9 days', 'Dipped', 'Pickups, the quad and the pressure washer.', 52.45650, -113.54225),
   ('North Yard diesel', 'North Yard',                'farm_diesel',  4500,  2600, current_date - 16, now() - interval '16 days', 'Dipped', 'Fills the truck and the auger tractor at the north bins.', 52.50780, -113.50360);
 
 -- ── The yearly semi inspection (Checklists → Trucks) ─────────────────────

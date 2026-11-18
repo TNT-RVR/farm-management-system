@@ -3,7 +3,9 @@ import {
   LARDNER,
   DEFAULT_SYSTEMS,
   herdBenefit,
+  herdProblems,
   netAfter,
+  purchasesWithin,
   seasonGainLb,
   waterSystemPayback,
   type WaterHerd,
@@ -33,6 +35,13 @@ describe('seasonGainLb', () => {
     expect(seasonGainLb(LARDNER.gain.cow)).toBeCloseTo(49.61, 2)
     expect(seasonGainLb(LARDNER.gain.yearling)).toBeCloseTo(10.32, 2)
     expect(seasonGainLb(LARDNER.gain.yearlingAerated)).toBeCloseTo(22.21, 2)
+  })
+  it('prints daily gains, at 3 decimals, that multiply out to the printed season total', () => {
+    // The page prints these rates to 3 places and the season to 1.
+    for (const rates of [LARDNER.gain.calf, LARDNER.gain.yearling, LARDNER.gain.yearlingAerated]) {
+      const printed = rates.map((r) => Number(r.toFixed(3)))
+      expect(seasonGainLb(printed).toFixed(1)).toBe(seasonGainLb(rates).toFixed(1))
+    }
   })
   it('treats a missing period as no gain rather than NaN', () => {
     expect(seasonGainLb([0.1])).toBeCloseTo(69 * 0.1, 6)
@@ -134,6 +143,32 @@ describe('waterSystemPayback', () => {
     expect(netAfter(s, 5)).toBeCloseTo(s.netPerHeadPerYear * 5 - s.netCapitalPerHead, 6)
     // At its own payback year the net is nil, which is what payback means.
     expect(netAfter(s, s.paybackYears!)).toBeCloseTo(0, 6)
+  })
+
+  it('buys the system again each time it wears out inside the look-ahead', () => {
+    // A 10-year pipeline over 40 years is bought at 0, 10, 20 and 30.
+    expect(purchasesWithin(10, 40)).toBe(4)
+    expect(purchasesWithin(10, 10)).toBe(1)
+    expect(purchasesWithin(10, 10.5)).toBe(2)
+    expect(purchasesWithin(10, 0)).toBe(1)
+    expect(purchasesWithin(0, 40)).toBe(1)
+    const s = waterSystemPayback(pairs, [system({ lifeYears: 10, funding: 4000 })]).systems[0]
+    // Inside its life, capital once (after the grant).
+    expect(netAfter(s, 10)).toBeCloseTo(s.netPerHeadPerYear * 10 - s.netCapitalPerHead, 6)
+    // Over 40 years, three more at full price: the grant was a one-off.
+    expect(netAfter(s, 40)).toBeCloseTo(s.netPerHeadPerYear * 40 - s.netCapitalPerHead - 3 * s.capitalPerHead, 6)
+  })
+
+  it('refuses a herd it cannot cost', () => {
+    expect(herdProblems(pairs)).toEqual({})
+    expect(herdProblems({ ...pairs, head: 0 }).head).toMatch(/head count/)
+    expect(herdProblems({ ...pairs, head: -40 }).head).toMatch(/head count/)
+    expect(herdProblems({ ...pairs, salePricePerLb: -3 }).salePricePerLb).toBeTruthy()
+    expect(herdProblems({ ...pairs, cullShare: 2.5 }).cullShare).toBeTruthy()
+    expect(herdProblems({ ...pairs, cullShare: 1 })).toEqual({})
+    expect(herdProblems({ ...pairs, cullPricePerLb: -1 }).cullPricePerLb).toBeTruthy()
+    // Yearlings have no culls to check.
+    expect(herdProblems({ ...yearlings, cullShare: 9 })).toEqual({})
   })
 
   it('does not divide by a herd of nothing', () => {

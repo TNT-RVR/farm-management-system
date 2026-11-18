@@ -6,8 +6,20 @@ import { depthText, populationText, usePlanterProfiles, type PlanterProfile } fr
 import { hasPlanterOverrides } from '@/lib/crop-variety-settings'
 import { useCropVarietySettings } from '@/lib/crop-variety-settings-data'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { CardList, RowCard } from '@/components/RowCards'
 
 const joined = (parts: (string | null | undefined | false)[]) => parts.filter(Boolean).join(' · ') || '—'
+
+/** One crop's settings as text, shared by the table's cells and the phone card. */
+function settingsText(p: PlanterProfile) {
+  return {
+    depth: joined([p.depth_setting && `Stop ${p.depth_setting}`, depthText(p)]),
+    seeds: populationText(p) ?? (p.seeds_per_m2 ? `${p.seeds_per_m2}/m²` : '—'),
+    disc: joined([p.plate_holes != null && `${p.plate_holes} holes`, p.disc_number]),
+    singulator: p.singulator ?? '—',
+    speed: p.planting_speed_mph ? `${p.planting_speed_mph} mph` : '—',
+  }
+}
 
 /**
  * Every active crop's planter settings in one table: the depth stop, the disc
@@ -50,7 +62,39 @@ export function CropPlanterList() {
       {rows.length === 0 ? (
         <p className="text-sm text-gray-500">No crop has planter settings yet. Add them on the crop&apos;s page.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          {/* One crop a card on a phone (design review, Nov 2026). */}
+          <CardList>
+            {rows.map(({ id, name, p, varieties: n }) => {
+              const t = settingsText(p)
+              return (
+                <RowCard
+                  key={id}
+                  heading={
+                    <>
+                      <Link to={`/crops/${id}`} className="text-brand-700 hover:underline">
+                        {name}
+                      </Link>
+                      {n > 0 && (
+                        <span className="block text-xs font-normal text-gray-500">
+                          {n} {n === 1 ? 'variety' : 'varieties'} set differently
+                        </span>
+                      )}
+                    </>
+                  }
+                  facts={[
+                    { label: 'Depth', node: t.depth },
+                    { label: 'Seeds/ac', node: t.seeds },
+                    { label: 'Disc', node: t.disc },
+                    { label: 'Singulators', node: t.singulator },
+                    { label: 'Speed', node: t.speed },
+                    { label: 'Notes', node: p.notes ?? '' },
+                  ]}
+                />
+              )
+            })}
+          </CardList>
+          <div className="hidden overflow-x-auto sm:block">
           <table className="w-full min-w-[620px] text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
@@ -64,7 +108,9 @@ export function CropPlanterList() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {rows.map(({ id, name, p, varieties: n }) => (
+              {rows.map(({ id, name, p, varieties: n }) => {
+                const t = settingsText(p)
+                return (
                 <tr key={id} className="align-top">
                   <td className="px-3 py-2">
                     <Link to={`/crops/${id}`} className="font-medium text-brand-700 hover:underline">
@@ -76,24 +122,18 @@ export function CropPlanterList() {
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 tabular-nums text-gray-700">
-                    {joined([p.depth_setting && `Stop ${p.depth_setting}`, depthText(p)])}
-                  </td>
-                  <td className="px-3 py-2 tabular-nums text-gray-700">
-                    {populationText(p) ?? (p.seeds_per_m2 ? `${p.seeds_per_m2}/m²` : '—')}
-                  </td>
-                  <td className="px-3 py-2 tabular-nums text-gray-700">
-                    {joined([p.plate_holes != null && `${p.plate_holes} holes`, p.disc_number])}
-                  </td>
-                  <td className="px-3 py-2 tabular-nums text-gray-700">{p.singulator ?? '—'}</td>
-                  <td className="px-3 py-2 tabular-nums text-gray-700">
-                    {p.planting_speed_mph ? `${p.planting_speed_mph} mph` : '—'}
-                  </td>
+                  <td className="px-3 py-2 tabular-nums text-gray-700">{t.depth}</td>
+                  <td className="px-3 py-2 tabular-nums text-gray-700">{t.seeds}</td>
+                  <td className="px-3 py-2 tabular-nums text-gray-700">{t.disc}</td>
+                  <td className="px-3 py-2 tabular-nums text-gray-700">{t.singulator}</td>
+                  <td className="px-3 py-2 tabular-nums text-gray-700">{t.speed}</td>
                   <td className="px-3 py-2 text-xs text-gray-500">{p.notes ?? ''}</td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
       {missing.length > 0 && (

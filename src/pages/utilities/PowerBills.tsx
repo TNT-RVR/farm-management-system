@@ -10,6 +10,7 @@ import { usePumps } from '@/lib/irrigation'
 import { usePowerPrices } from '@/lib/pivot-cost'
 import {
   billedPricePerKwh,
+  notPumpKeys,
   powerByPump,
   siteKey,
   useConfirmSitePump,
@@ -18,6 +19,7 @@ import {
   usePowerBillSites,
   useReadQbPowerBills,
   useRereadPowerBill,
+  useSetSiteNotPump,
   useSetSitePump,
   useUploadPowerBills,
   type PowerBill,
@@ -27,7 +29,10 @@ import { PUBLIC_COPY } from '@/config/edition'
 import { EnergyProviderNote } from '@/pages/utilities/EnergyProviderNote'
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
+/** The pick-a-pump list's "none of them" choice. */
+const NOT_PUMP = '__not_pump'
 const money0 = (v: number) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
 const kwh0 = (v: number) => `${Math.round(v).toLocaleString('en-CA')} kWh`
 const cents = (v: number) => `${(v * 100).toFixed(1)}¢`
@@ -53,6 +58,7 @@ export function PowerBills() {
   const fromQb = useReadQbPowerBills()
   const reread = useRereadPowerBill()
   const setPump = useSetSitePump()
+  const setNotPump = useSetSiteNotPump()
   const confirmPump = useConfirmSitePump()
   const del = useDeletePowerBill()
   const file = useRef<HTMLInputElement>(null)
@@ -73,7 +79,10 @@ export function PowerBills() {
 
   if (!manager) return null
   const from = months === 'all' ? null : new Date(now - Number(months) * 30.44 * 86400_000).toISOString().slice(0, 10)
-  const rows = powerByPump(sites ?? [], from)
+  // Sites marked "not a pump" (the shop, the fans) leave the by-pump table.
+  const notPump = notPumpKeys(sites ?? [])
+  const rows = powerByPump((sites ?? []).filter((s) => !notPump.has(siteKey(s))), from)
+  const notPumpRows = powerByPump((sites ?? []).filter((s) => notPump.has(siteKey(s))), null)
   const billed = billedPricePerKwh(rows)
   const pumpName = new Map((pumps ?? []).map((p) => [p.id, p.name]))
   const pumpOptions = [{ value: '', label: 'Which pump?' }, ...[...(pumps ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en-CA', { numeric: true })).map((p) => ({ value: p.id, label: p.name }))]
@@ -81,6 +90,56 @@ export function PowerBills() {
   const errors = (bills ?? []).filter((b) => b.status === 'error')
   // Every bill of that site, not only those in the period shown.
   const siteIdsFor = (key: string) => (sites ?? []).filter((s) => siteKey(s) === key).map((s) => s.id)
+  // The pump, or the pick-a-pump controls: one copy for the phone card and the table cell.
+  const pumpCell = (r: (typeof rows)[number]) =>
+    r.pumpId ? (
+      <span className="flex flex-wrap items-center gap-1.5">
+        <Link to={`/irrigation-info?tab=pump&pump=${r.pumpId}`} className="hover:text-brand-700 hover:underline">
+          {pumpName.get(r.pumpId) ?? 'Pump'}
+        </Link>
+        {r.unconfirmed && (
+          <>
+            <span className="font-semibold text-amber-700" title="Put on this pump by its size, not its meter: needs confirming">
+              *
+            </span>
+            <button
+              type="button"
+              onClick={() => confirmPump.mutate(r.pumpId!)}
+              disabled={confirmPump.isPending}
+              className="rounded border border-amber-300 px-1.5 text-xs text-amber-900 hover:bg-amber-50 disabled:opacity-50"
+            >
+              Confirm
+            </button>
+            <Select
+              value=""
+              onChange={(v) =>
+                v && setPump.mutate({ siteIds: (sites ?? []).filter((s) => s.pump_id === r.pumpId && s.pump_unconfirmed).map((s) => s.id), pumpId: v })
+              }
+              options={[{ value: '', label: 'or it’s…' }, ...pumpOptions.slice(1)]}
+              size="sm"
+              className="w-32"
+              ariaLabel={`${pumpName.get(r.pumpId!) ?? 'Pump'}: a different pump`}
+            />
+          </>
+        )}
+      </span>
+    ) : (
+      <span className="flex flex-wrap items-center gap-1.5">
+        <span className="text-amber-800">{r.label}</span>
+        <Select
+          value=""
+          onChange={(v) =>
+            v === NOT_PUMP
+              ? setNotPump.mutate({ siteIds: siteIdsFor(r.key), notPump: true })
+              : v && setPump.mutate({ siteIds: siteIdsFor(r.key), pumpId: v })
+          }
+          options={[...pumpOptions, { value: NOT_PUMP, label: 'Not a pump' }]}
+          size="sm"
+          className="w-40"
+          ariaLabel={`${r.label}: which pump`}
+        />
+      </span>
+    )
 
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-3">
@@ -158,14 +217,56 @@ export function PowerBills() {
               </span>
             )}
           </div>
-          <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
+          {/* One pump a card on a phone (design review, Nov 2026). */}
+          <CardList className="mt-2 rounded-lg border border-gray-200">
+            {rows.map((r) => (
+              <RowCard
+                key={r.key}
+                heading={pumpCell(r)}
+                actions={
+                  <span className="text-sm font-semibold tabular-nums">
+                    {money0(r.cost)} <span className="text-xs font-normal text-gray-500">before GST</span>
+                  </span>
+                }
+                facts={[]}
+                summary={
+                  <SummaryLine className="tabular-nums">
+                    <span>
+                      {r.bills} bill{r.bills === 1 ? '' : 's'}
+                    </span>
+                    <Dot />
+                    <span>{kwh0(r.kwh)}</span>
+                    {r.perKwh != null && (
+                      <>
+                        <Dot />
+                        <span>{cents(r.perKwh)}/kWh</span>
+                      </>
+                    )}
+                    {r.demandCharges ? (
+                      <>
+                        <Dot />
+                        <span>{money0(r.demandCharges)} demand</span>
+                      </>
+                    ) : null}
+                    {r.peakKw != null && (
+                      <>
+                        <Dot />
+                        <span>{r.peakKw.toLocaleString('en-CA', { maximumFractionDigits: 0 })} kW peak</span>
+                      </>
+                    )}
+                  </SummaryLine>
+                }
+              />
+            ))}
+          </CardList>
+          <div className="mt-2 hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
             <table className="w-full min-w-[560px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
                   <th className={TABLE_TH}>Pump</th>
                   <th className={cn(TABLE_TH, 'text-right')}>Bills</th>
                   <th className={cn(TABLE_TH, 'text-right')}>kWh</th>
-                  <th className={cn(TABLE_TH, 'text-right')}>Cost</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Cost before GST</th>
                   <th className={cn(TABLE_TH, 'text-right')}>¢/kWh</th>
                   <th className={cn(TABLE_TH, 'text-right')}>Demand $</th>
                   <th className={cn(TABLE_TH, 'text-right')}>Peak kW</th>
@@ -175,50 +276,7 @@ export function PowerBills() {
                 {rows.map((r) => (
                   <tr key={r.key}>
                     <td className="px-3 py-1.5 text-gray-900">
-                      {r.pumpId ? (
-                        <span className="flex flex-wrap items-center gap-1.5">
-                          <Link to={`/irrigation-info?tab=pump&pump=${r.pumpId}`} className="hover:text-brand-700 hover:underline">
-                            {pumpName.get(r.pumpId) ?? 'Pump'}
-                          </Link>
-                          {r.unconfirmed && (
-                            <>
-                              <span className="font-semibold text-amber-700" title="Put on this pump by its size, not its meter: needs confirming">
-                                *
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => confirmPump.mutate(r.pumpId!)}
-                                disabled={confirmPump.isPending}
-                                className="rounded border border-amber-300 px-1.5 text-xs text-amber-900 hover:bg-amber-50 disabled:opacity-50"
-                              >
-                                Confirm
-                              </button>
-                              <Select
-                                value=""
-                                onChange={(v) =>
-                                  v && setPump.mutate({ siteIds: (sites ?? []).filter((s) => s.pump_id === r.pumpId && s.pump_unconfirmed).map((s) => s.id), pumpId: v })
-                                }
-                                options={[{ value: '', label: 'or it’s…' }, ...pumpOptions.slice(1)]}
-                                size="sm"
-                                className="w-32"
-                                ariaLabel={`${pumpName.get(r.pumpId!) ?? 'Pump'}: a different pump`}
-                              />
-                            </>
-                          )}
-                        </span>
-                      ) : (
-                        <span className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-amber-800">{r.label}</span>
-                          <Select
-                            value=""
-                            onChange={(v) => v && setPump.mutate({ siteIds: siteIdsFor(r.key), pumpId: v })}
-                            options={pumpOptions}
-                            size="sm"
-                            className="w-40"
-                            ariaLabel={`${r.label}: which pump`}
-                          />
-                        </span>
-                      )}
+                      {pumpCell(r)}
                     </td>
                     <td className="px-3 py-1.5 text-right text-gray-600">{r.bills}</td>
                     <td className="px-3 py-1.5 text-right text-gray-700">{Math.round(r.kwh).toLocaleString('en-CA')}</td>
@@ -232,7 +290,28 @@ export function PowerBills() {
             </table>
           </div>
           {rows.some((r) => r.unconfirmed) && <p className="mt-1 text-xs text-amber-800">* Matched by the pump&apos;s size, not its meter: confirm it, or pick the right pump beside it.</p>}
-          {(setPump.error || confirmPump.error) && <p className="mt-1 text-xs text-red-600">{((setPump.error ?? confirmPump.error) as Error).message}</p>}
+          {notPumpRows.length > 0 && (
+            <p className="mt-1 text-xs text-gray-500">
+              Not pumps:{' '}
+              {notPumpRows.map((r, i) => (
+                <span key={r.key}>
+                  {i > 0 && ', '}
+                  {r.label}{' '}
+                  <button
+                    type="button"
+                    onClick={() => setNotPump.mutate({ siteIds: siteIdsFor(r.key), notPump: false })}
+                    disabled={setNotPump.isPending}
+                    className="text-brand-700 underline disabled:opacity-50"
+                  >
+                    undo
+                  </button>
+                </span>
+              ))}
+            </p>
+          )}
+          {(setPump.error || confirmPump.error || setNotPump.error) && (
+            <p className="mt-1 text-xs text-red-600">{((setPump.error ?? confirmPump.error ?? setNotPump.error) as Error).message}</p>
+          )}
         </>
       ) : (
         !pending && <p className="mt-3 text-sm text-gray-500">No bills read yet.</p>
@@ -245,7 +324,7 @@ export function PowerBills() {
       )}
 
       {(bills ?? []).length > 0 && (
-        <Fold title="Every bill" summary={`${bills!.length} bills`} storageKey="power-bills-list" className="mt-3">
+        <Fold title="Every bill" summary={`${bills!.length} bills · totals with GST`} storageKey="power-bills-list" className="mt-3">
           <ul className="divide-y divide-gray-100 text-sm">
             {bills!.map((b) => (
               <BillRow key={b.id} b={b} onReread={() => reread.mutate(b.id)} onDelete={() => del.mutate(b)} />

@@ -320,17 +320,18 @@ export function CalvingDistributionPage() {
 
       {ready && (
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-          <table className="w-full text-sm">
+          {/* Squeezed on a phone: scenario pinned, the cycle shares and head weaned folded under it (design review, Nov 2026). */}
+          <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className="px-2 py-2 text-left font-medium">Distribution</th>
+                <th className="sticky left-0 z-10 bg-brand-700 px-2 py-2 text-left font-medium">Distribution</th>
                 {CYCLE_LABELS.map((l) => (
-                  <th key={l} className="px-2 py-2 text-right font-medium">
+                  <th key={l} className="px-2 py-2 text-right font-medium max-sm:hidden">
                     {l}
                   </th>
                 ))}
                 <th className="px-2 py-2 text-right font-medium">Average weaning wt</th>
-                <th className="px-2 py-2 text-right font-medium">Weaned</th>
+                <th className="px-2 py-2 text-right font-medium max-sm:hidden">Weaned</th>
                 <th className="px-2 py-2 text-right font-medium">Worth</th>
                 <th className="px-2 py-2 text-right font-medium">vs today</th>
               </tr>
@@ -338,14 +339,19 @@ export function CalvingDistributionPage() {
             <tbody>
               {r.results.map((x, i) => (
                 <tr key={x.key} className={cn('border-t border-gray-100', i === 0 && 'bg-gray-50')}>
-                  <td className="px-2 py-1.5">{x.label}</td>
+                  <td className={cn('sticky left-0 z-10 px-2 py-1.5', i === 0 ? 'bg-gray-50' : 'bg-white')}>
+                    {x.label}
+                    <span className="block text-xs tabular-nums text-gray-500 sm:hidden">
+                      {x.shares.map(pct).join(' · ')} · {n0(x.calvesWeaned)} weaned
+                    </span>
+                  </td>
                   {x.shares.map((s, k) => (
-                    <td key={k} className="px-2 py-1.5 text-right tabular-nums text-gray-500">
+                    <td key={k} className="px-2 py-1.5 text-right tabular-nums text-gray-500 max-sm:hidden">
                       {pct(s)}
                     </td>
                   ))}
                   <td className="px-2 py-1.5 text-right tabular-nums">{n0(x.avgWeaningWeightLb)} lb</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{n0(x.calvesWeaned)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums max-sm:hidden">{n0(x.calvesWeaned)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{money(x.value, 0)}</td>
                   <td className={cn('px-2 py-1.5 text-right tabular-nums font-medium', x.vsBaseline < 0 ? 'text-red-600' : x.vsBaseline > 0 ? 'text-green-700' : 'text-gray-400')}>
                     {i === 0 ? '—' : money(x.vsBaseline, 0)}

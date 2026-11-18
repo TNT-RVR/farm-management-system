@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { Card, SettingsGroup, type NumberField } from './ui'
 import { FieldLink, money, n1 } from '../fertilizer/savings/ui'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 const FIELDS: NumberField<keyof SpreaderInputs>[] = [
   { key: 'widthFt', label: 'Spread width', unit: 'ft', hint: 'the bout, not the spinner throw' },
@@ -106,7 +107,33 @@ export function SpreadingTab({ isManager }: { isManager: boolean }) {
       </Card>
 
       <Card title="By field, with the drive there and back">
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
+        {/* One field a card on a phone (design review, Nov 2026). */}
+        <CardList className="rounded-lg border border-gray-200">
+          {rows.map(({ f, acres, km, c }) => (
+            <RowCard
+              key={f.id}
+              heading={<FieldLink id={f.id} name={f.name} to="work" />}
+              actions={<span className="text-sm font-semibold tabular-nums">{money(c.perAcre.total, 2)}/ac</span>}
+              facts={[]}
+              summary={
+                <SummaryLine>
+                  <span className="tabular-nums">{n1(acres)} ac</span>
+                  <Dot />
+                  <span className="tabular-nums">{n1(km)} km round trip</span>
+                  <Dot />
+                  <span className="tabular-nums">{n1(c.hoursPerAcre * acres)} h</span>
+                  <Dot />
+                  <span className="tabular-nums">drive {money(c.perAcre.travel, 2)}/ac</span>
+                  <Dot />
+                  <span className="tabular-nums">field {money(c.perAcre.total * acres)}</span>
+                  <Dot />
+                  <span className={cn('tabular-nums', c.vsCustom < 0 ? 'text-green-800' : 'text-red-700')}>{money(c.vsCustom, 2)} vs custom</span>
+                </SummaryLine>
+              }
+            />
+          ))}
+        </CardList>
+        <div className="hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
           <table className="w-full text-xs">
             <thead className={TABLE_HEAD}>
               <tr>

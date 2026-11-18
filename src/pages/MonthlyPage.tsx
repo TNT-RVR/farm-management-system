@@ -12,6 +12,7 @@ import { useUsers } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 import { YearSelect } from '@/components/YearSelect'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 /**
  * Monthly jobs (rebuilt 24 Oct 2026): what typically needs doing in a month.
@@ -151,7 +152,45 @@ function JobsTab() {
           <AddButton label="New job" onClick={() => setEditing('new')} />
         </div>
       )}
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white sm:hidden">
+        {/* One job a card on a phone (design review, Nov 2026). */}
+        <CardList empty="No monthly jobs yet." isEmpty={(jobs ?? []).length === 0}>
+          {(jobs ?? []).map((j) => (
+            <RowCard
+              key={j.id}
+              onClick={isManager ? rowClick(() => setEditing(j)) : undefined}
+              heading={
+                <span className={cn(!j.active && 'text-gray-400')}>
+                  {j.title}
+                  {!j.active && <span className="ml-2 text-xs font-normal">off</span>}
+                </span>
+              }
+              facts={[]}
+              summary={
+                <div className={cn(!j.active && 'text-gray-400')}>
+                  <SummaryLine>
+                    <span>{jobWhen(j)}</span>
+                    {nameOf(j.default_assignee) && (
+                      <>
+                        <Dot />
+                        <span>{nameOf(j.default_assignee)}</span>
+                      </>
+                    )}
+                    {checklistOf(j.checklist_template_id) && (
+                      <>
+                        <Dot />
+                        <span>{checklistOf(j.checklist_template_id)}</span>
+                      </>
+                    )}
+                  </SummaryLine>
+                  {j.notes_md && <p className="mt-0.5 text-xs text-gray-500">{j.notes_md}</p>}
+                </div>
+              }
+            />
+          ))}
+        </CardList>
+      </div>
+      <div className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white sm:block">
         <table className="w-full text-sm">
           <thead className={TABLE_HEAD}>
             <tr>

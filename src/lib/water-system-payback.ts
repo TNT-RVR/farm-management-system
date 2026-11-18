@@ -162,9 +162,47 @@ export type SystemResult = {
   lifeYears: number
 }
 
-/** Net cash a head after `years`, capital and running costs counted. */
+/**
+ * How many times the system is bought inside `years`: once at the start and
+ * again each time it wears out before the look-ahead ends. A 10-year pipeline
+ * over 40 years is bought at 0, 10, 20 and 30 — four times.
+ */
+export function purchasesWithin(lifeYears: number, years: number): number {
+  const life = n(lifeYears)
+  const y = Math.max(0, n(years))
+  if (life <= 0 || y <= 0) return 1
+  // The small slack keeps 40 / 10 at 4 rather than a float's 4.0000001 → 5.
+  return Math.max(1, Math.ceil(y / life - 1e-9))
+}
+
+/**
+ * Net cash a head after `years`. Running costs every year; the capital at the
+ * start (after the grant) and again in full each time the system wears out
+ * inside the look-ahead — a grant is counted once.
+ */
 export function netAfter(r: SystemResult, years: number): number {
-  return r.netPerHeadPerYear * Math.max(0, n(years)) - r.netCapitalPerHead
+  const replacements = purchasesWithin(r.lifeYears, years) - 1
+  return r.netPerHeadPerYear * Math.max(0, n(years)) - r.netCapitalPerHead - replacements * r.capitalPerHead
+}
+
+export type HerdField = 'head' | 'salePricePerLb' | 'cullShare' | 'cullPricePerLb'
+
+/**
+ * Inputs the arithmetic cannot honestly answer, each with a short reason for
+ * beside its box. Empty when the herd is fine. With no head there is no
+ * per-head cost at all, so the page shows "needs the head count" rather than
+ * an instant payback.
+ */
+export function herdProblems(h: WaterHerd): Partial<Record<HerdField, string>> {
+  const out: Partial<Record<HerdField, string>> = {}
+  if (!(n(h.head) > 0)) out.head = 'Needs the head count'
+  if (n(h.salePricePerLb) < 0) out.salePricePerLb = 'A price can’t be negative'
+  if (h.kind === 'cow_calf') {
+    const share = n(h.cullShare)
+    if (share < 0 || share > 1) out.cullShare = 'Between 0 and 100 %'
+    if (n(h.cullPricePerLb) < 0) out.cullPricePerLb = 'A price can’t be negative'
+  }
+  return out
 }
 
 /**

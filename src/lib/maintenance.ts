@@ -153,20 +153,27 @@ export function dueState(
   return { state: 'ok', hoursRemaining, daysRemaining, ...dueAt, reason: 'not due' }
 }
 
-/** "in 120 h", "overdue by 40 h", "in 3 weeks" — whichever half is closer. */
+/**
+ * "in 120 h · in 3 weeks", "40 h past due". Once either half is past due only
+ * the past-due half is said: "18 h past due · in 10 months" read as if the
+ * service could wait (page-walk batch 6).
+ */
 export function dueLabel(due: Due): string {
   if (due.state === 'unknown') return 'cannot tell'
-  const bits: string[] = []
+  const halves: { past: boolean; text: string }[] = []
   if (due.hoursRemaining != null) {
-    const h = Math.round(Math.abs(due.hoursRemaining))
-    bits.push(due.hoursRemaining <= 0 ? `${h} h past due` : `in ${h} h`)
+    const h = Math.round(Math.abs(due.hoursRemaining)).toLocaleString('en-CA')
+    const past = due.hoursRemaining <= 0
+    halves.push({ past, text: past ? `${h} h past due` : `in ${h} h` })
   }
   if (due.daysRemaining != null) {
     const d = Math.abs(due.daysRemaining)
     const span = d >= 60 ? `${Math.round(d / 30)} months` : d >= 14 ? `${Math.round(d / 7)} weeks` : `${d} days`
-    bits.push(due.daysRemaining <= 0 ? `${span} past due` : `in ${span}`)
+    const past = due.daysRemaining <= 0
+    halves.push({ past, text: past ? `${span} past due` : `in ${span}` })
   }
-  return bits.join(' · ')
+  const past = halves.filter((b) => b.past)
+  return (past.length ? past : halves).map((b) => b.text).join(' · ')
 }
 
 /** Worst state first, so what needs doing is at the top. */

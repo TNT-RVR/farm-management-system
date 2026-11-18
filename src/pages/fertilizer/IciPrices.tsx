@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils'
 import { STRAIGHTS, straightKeyOf } from '@/lib/fert-savings/straights'
 import { money as fmtMoney } from '@/lib/format'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 /**
  * What ICI has charged this farm for fertilizer, product by product.
@@ -177,6 +178,44 @@ export function IciPrices({ isManager }: { isManager: boolean }) {
     (products?.products ?? []).find((p) => p.id === form.product_id) ??
     (newStraight ? { id: form.product_id, unit: newStraight.densityKgL ? 'L' : 'kg' } : null)
 
+  // Each blend's name and invoice link, built once for its row and its phone card.
+  const blendRows = blends.map((r) => {
+    const info = fertInfo(r.product.name)
+    return {
+      r,
+      name: (
+        <span className="inline-flex items-center gap-1">
+          {info.title}
+          <InfoPopover title={info.title} hover width={400}>
+            <p>{info.what}</p>
+            <p>
+              <b>Used for:</b> {info.usedFor}
+            </p>
+            <p>
+              <b>Last used here:</b>{' '}
+              {r.lastUse
+                ? `${r.lastUse.on} on ${r.lastUse.field}${r.lastUse.crop ? ` (${r.lastUse.crop})` : ''}.`
+                : 'no application on record from Deere.'}
+            </p>
+          </InfoPopover>
+        </span>
+      ),
+      invoice: (
+        <>
+          {r.latest?.invoice_date}{' '}
+          <button
+            type="button"
+            onClick={() => setInvoice({ no: r.latest!.invoice_no ?? '', productId: r.product.id })}
+            className="inline-flex items-center gap-0.5 font-medium text-brand-700 hover:underline"
+          >
+            <FileText className="h-3 w-3" /> {r.latest?.invoice_no}
+          </button>
+        </>
+      ),
+      tonnes: r.tonnes ? r.tonnes.toLocaleString('en-CA', { maximumFractionDigits: 1 }) : null,
+    }
+  })
+
   return (
     <>
       <section className="rounded-lg border border-gray-200 bg-white p-3">
@@ -309,8 +348,41 @@ export function IciPrices({ isManager }: { isManager: boolean }) {
                 · {blends.length} recipes · newest {blends[0].latest?.invoice_date}, {money(blends[0].price.value)}/t
               </span>
             </button>
+            {/* One blend a card on a phone (design review, Nov 2026). */}
             {blendsOpen && (
-              <div className="overflow-x-auto border-t border-gray-100">
+              <CardList className="border-t border-gray-100">
+                {blendRows.map(({ r, name, invoice, tonnes }) => (
+                  <RowCard
+                    key={r.product.id}
+                    heading={name}
+                    facts={[]}
+                    summary={
+                      <SummaryLine>
+                        <span className="font-medium tabular-nums text-gray-900">{money(r.price.value)}/t</span>
+                        {tonnes && (
+                          <>
+                            <Dot />
+                            <span className="tabular-nums">{tonnes} t</span>
+                          </>
+                        )}
+                        <Dot />
+                        <span>{invoice}</span>
+                        {r.lastUse && (
+                          <>
+                            <Dot />
+                            <span>
+                              last used {r.lastUse.on} · {r.lastUse.field}
+                            </span>
+                          </>
+                        )}
+                      </SummaryLine>
+                    }
+                  />
+                ))}
+              </CardList>
+            )}
+            {blendsOpen && (
+              <div className="hidden overflow-x-auto border-t border-gray-100 sm:block">
                 <table className="w-full text-xs">
                   <thead className={TABLE_HEAD}>
                     <tr>
@@ -322,41 +394,13 @@ export function IciPrices({ isManager }: { isManager: boolean }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {blends.map((r) => {
-                      const info = fertInfo(r.product.name)
+                    {blendRows.map(({ r, name, invoice, tonnes }) => {
                       return (
                         <tr key={r.product.id}>
-                          <td className="px-2 py-1 text-gray-800">
-                            <span className="inline-flex items-center gap-1">
-                              {info.title}
-                              <InfoPopover title={info.title} hover width={400}>
-                                <p>{info.what}</p>
-                                <p>
-                                  <b>Used for:</b> {info.usedFor}
-                                </p>
-                                <p>
-                                  <b>Last used here:</b>{' '}
-                                  {r.lastUse
-                                    ? `${r.lastUse.on} on ${r.lastUse.field}${r.lastUse.crop ? ` (${r.lastUse.crop})` : ''}.`
-                                    : 'no application on record from Deere.'}
-                                </p>
-                              </InfoPopover>
-                            </span>
-                          </td>
+                          <td className="px-2 py-1 text-gray-800">{name}</td>
                           <td className="px-2 py-1 text-right tabular-nums text-gray-900">{money(r.price.value)}</td>
-                          <td className="px-2 py-1 text-right tabular-nums text-gray-600">
-                            {r.tonnes ? r.tonnes.toLocaleString('en-CA', { maximumFractionDigits: 1 }) : '—'}
-                          </td>
-                          <td className="px-2 py-1 text-gray-600">
-                            {r.latest?.invoice_date}{' '}
-                            <button
-                              type="button"
-                              onClick={() => setInvoice({ no: r.latest!.invoice_no ?? '', productId: r.product.id })}
-                              className="inline-flex items-center gap-0.5 font-medium text-brand-700 hover:underline"
-                            >
-                              <FileText className="h-3 w-3" /> {r.latest?.invoice_no}
-                            </button>
-                          </td>
+                          <td className="px-2 py-1 text-right tabular-nums text-gray-600">{tonnes ?? '—'}</td>
+                          <td className="px-2 py-1 text-gray-600">{invoice}</td>
                           <td className="px-2 py-1 text-gray-600">
                             {r.lastUse ? `${r.lastUse.on} · ${r.lastUse.field}` : '—'}
                           </td>

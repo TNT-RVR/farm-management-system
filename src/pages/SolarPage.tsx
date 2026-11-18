@@ -15,6 +15,7 @@ import { useSolarDaily, useSolarHealth, useSolarLatest, useSolarRefresh, useSola
 import { cn } from '@/lib/utils'
 import { money as fmtMoney } from '@/lib/format'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 const kwh = (v: number | null | undefined) => (v == null ? '—' : Math.round(v).toLocaleString('en-CA'))
 const kw = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString('en-CA', { maximumFractionDigits: 1 }))
@@ -144,7 +145,34 @@ export function SolarPage({ embedded = false }: { embedded?: boolean } = {}) {
         </p>
       )}
 
-      <section className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      {/* One plant a card on a phone (design review, Nov 2026). */}
+      <CardList
+        className="rounded-lg border border-gray-200 bg-white"
+        isEmpty={!s.rows.length}
+        empty={sites.isLoading ? 'Loading…' : 'No solar plants yet — they appear after the first SolisCloud read.'}
+      >
+        {s.rows.map((r) => (
+          <SiteCard key={r.id} r={r} current={s.current} cropYear={cropYear} />
+        ))}
+        {s.rows.length > 1 && (
+          <RowCard
+            heading="All plants"
+            actions={<span className="text-sm font-semibold tabular-nums">{dollars(s.total.yearValue)}</span>}
+            facts={[]}
+            summary={
+              <SolarLine
+                capacityKwp={s.total.capacityKwp}
+                powerKw={s.total.powerKw}
+                todayKwh={s.total.todayKwh}
+                yearKwh={s.total.yearKwh}
+                current={s.current}
+                cropYear={cropYear}
+              />
+            }
+          />
+        )}
+      </CardList>
+      <section className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white sm:block">
         <table className="w-full text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -191,11 +219,12 @@ export function SolarPage({ embedded = false }: { embedded?: boolean } = {}) {
 
       {s.byMonth.length > 0 && (
         <Fold title={`${cropYear} by month`} storageKey="solar.byMonth" summary={`${kwh(s.total.yearKwh)} kWh`}>
+          {/* Months down, plants across: the month stays pinned on a phone (design review, Nov 2026). */}
           <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
               <thead className={TABLE_HEAD}>
                 <tr>
-                  <th className={TABLE_TH}>Month</th>
+                  <th className={cn(TABLE_TH, 'sticky left-0 z-10 bg-brand-700')}>Month</th>
                   {s.rows.map((r) => (
                     <th key={r.id} className={cn(TABLE_TH, 'text-right')}>
                       {r.name}
@@ -207,7 +236,7 @@ export function SolarPage({ embedded = false }: { embedded?: boolean } = {}) {
               <tbody>
                 {s.byMonth.map((m) => (
                   <tr key={m.month} className="border-b border-gray-100 last:border-0">
-                    <td className="px-3 py-1 text-gray-700">{MONTH(m.month)}</td>
+                    <td className="sticky left-0 z-10 bg-white px-3 py-1 text-gray-700">{MONTH(m.month)}</td>
                     {s.rows.map((r) => (
                       <td key={r.id} className="px-3 py-1 text-right tabular-nums">
                         {kwh(m.bySite.get(r.id))}
@@ -222,6 +251,67 @@ export function SolarPage({ embedded = false }: { embedded?: boolean } = {}) {
         </Fold>
       )}
     </div>
+  )
+}
+
+/** A plant's figures on one line, for its phone card. */
+function SolarLine({
+  capacityKwp,
+  powerKw,
+  todayKwh,
+  yearKwh,
+  current,
+  cropYear,
+}: {
+  capacityKwp: number | null | undefined
+  powerKw: number | null | undefined
+  todayKwh: number | null | undefined
+  yearKwh: number | null | undefined
+  current: boolean
+  cropYear: number
+}) {
+  return (
+    <SummaryLine>
+      <span className="tabular-nums">{kw(capacityKwp)} kWp</span>
+      {current && (
+        <>
+          <Dot />
+          <span className="tabular-nums">{kw(powerKw)} kW now</span>
+          <Dot />
+          <span className="tabular-nums">{kwh(todayKwh)} kWh today</span>
+        </>
+      )}
+      <Dot />
+      <span className="tabular-nums">
+        {kwh(yearKwh)} kWh in {cropYear}
+      </span>
+    </SummaryLine>
+  )
+}
+
+function SiteCard({ r, current, cropYear }: { r: SolarSiteSummary; current: boolean; cropYear: number }) {
+  const st = r.state != null ? SOLAR_STATE[r.state] : undefined
+  return (
+    <RowCard
+      heading={
+        <span className="flex flex-wrap items-center gap-1.5">
+          {r.name}
+          {st && current && <span className={cn('rounded-full px-1.5 py-0.5 text-xs font-medium', TONE[st.tone])}>{st.label}</span>}
+        </span>
+      }
+      actions={<span className="text-sm font-semibold tabular-nums">{dollars(r.yearValue)}</span>}
+      facts={[]}
+      summary={
+        <SolarLine
+          capacityKwp={r.capacityKwp}
+          powerKw={r.powerKw}
+          todayKwh={r.todayKwh}
+          yearKwh={r.yearKwh}
+          current={current}
+          cropYear={cropYear}
+        />
+      }
+    />
   )
 }
 

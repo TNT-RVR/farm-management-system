@@ -42,6 +42,7 @@ import {
 import { useCropYear } from '@/lib/crop-year'
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 import { dbErrorMessage } from '@/lib/db-error'
 
 /**
@@ -575,7 +576,65 @@ function BoundariesCard({
         {canEdit && <EditButton label="Edit grower and farm" onClick={() => setEditingSettings(true)} />}
       </div>
 
-      <div className="mt-2 max-h-96 overflow-auto rounded-lg border border-gray-200">
+      {/* One field a card on a phone, its tick box in the heading (design review, Nov 2026). */}
+      <div className="mt-2 max-h-96 overflow-auto rounded-lg border border-gray-200 sm:hidden">
+        <CardList>
+          {fields.map((f) => (
+            <RowCard
+              key={f.id}
+              heading={
+                <label className={cn('flex flex-wrap items-center gap-x-1.5 gap-y-0.5', !f.hasBoundary && 'text-gray-400')}>
+                  <input
+                    type="checkbox"
+                    aria-label={`Include ${f.name}`}
+                    disabled={!f.hasBoundary}
+                    checked={f.hasBoundary && chosen.has(f.id)}
+                    onChange={() => toggle(f.id)}
+                  />
+                  {f.monitor.name}
+                  {f.monitor.source === 'override' && <span className="rounded bg-gray-100 px-1 text-xs font-normal text-gray-600">set</span>}
+                  {f.monitor.shortened && <span className="rounded bg-amber-100 px-1 text-xs font-normal text-amber-800">shortened</span>}
+                  {f.monitor.quarterDropped && <span className="rounded bg-amber-100 px-1 text-xs font-normal text-amber-800">quarter dropped</span>}
+                </label>
+              }
+              actions={canEdit && <EditButton label="Edit" onClick={() => setNaming(f)} />}
+              facts={[]}
+              summary={
+                <div className={cn(!f.hasBoundary && 'text-gray-400')}>
+                  <SummaryLine>
+                    <span>
+                      {f.monitor.farm}
+                      {f.monitor.farmSet && ' (set)'}
+                    </span>
+                    {f.monitor.name !== f.name && (
+                      <>
+                        <Dot />
+                        <span>app: {f.name}</span>
+                      </>
+                    )}
+                    <Dot />
+                    <span className="tabular-nums">{f.acres != null ? `${f.acres.toFixed(1)} ac` : 'No boundary'}</span>
+                    {f.crops.length > 0 && (
+                      <>
+                        <Dot />
+                        <span>{f.crops.join(' / ')}</span>
+                      </>
+                    )}
+                  </SummaryLine>
+                  {f.monitor.fileName !== f.monitor.name && <div className="text-xs text-gray-500">file: {f.monitor.fileName}</div>}
+                  {f.lines.map((l) => (
+                    <div key={l.id} className="text-xs text-gray-500">
+                      ↳ {l.name} · {lineTypeNote(l.lineType)}
+                      {l.fileName !== l.name && ` · file: ${l.fileName}`}
+                    </div>
+                  ))}
+                </div>
+              }
+            />
+          ))}
+        </CardList>
+      </div>
+      <div className="mt-2 hidden max-h-96 overflow-auto rounded-lg border border-gray-200 sm:block">
         <table className="w-full text-sm">
           <thead className={cn(TABLE_HEAD, 'sticky top-0')}>
             <tr>

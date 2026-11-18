@@ -109,10 +109,11 @@ function RotationRules({
           run back to back (1 = never twice). <b>Stand</b>: a perennial kept in at least the first number of years and taken out after the second.
         </HelpNote>
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-          <table className="w-full min-w-[480px] text-sm">
+          {/* Squeezed on a phone: crop pinned, cells and boxes tightened (design review, Nov 2026). */}
+          <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5 sm:min-w-[480px]">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className={TABLE_TH}>Crop</th>
+                <th className={cn(TABLE_TH, 'sticky left-0 z-10 bg-brand-700')}>Crop</th>
                 <th className={cn(TABLE_TH, 'text-right')}>Return (yrs)</th>
                 <th className={cn(TABLE_TH, 'text-right')}>In a row</th>
                 <th className={cn(TABLE_TH, 'text-right')}>Stand min</th>
@@ -123,10 +124,10 @@ function RotationRules({
               {crops.map((c) => {
                 const full = allCrops?.find((x) => x.id === c.id)
                 const num = (v: string) => (v.trim() === '' ? null : Math.max(0, Math.round(Number(v))))
-                const box = 'w-14 rounded border border-gray-200 px-1 py-0.5 text-right tabular-nums'
+                const box = 'w-12 sm:w-14 rounded border border-gray-200 px-1 py-0.5 text-right tabular-nums'
                 return (
                   <tr key={c.id}>
-                    <td className="px-3 py-1 text-gray-800">{c.name}</td>
+                    <td className="sticky left-0 z-10 bg-white px-3 py-1 text-gray-800">{c.name}</td>
                     <td className="px-3 py-1 text-right">
                       <input
                         type="number"

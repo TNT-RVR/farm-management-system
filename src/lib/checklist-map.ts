@@ -58,9 +58,13 @@ export type ChecklistPhoto = {
 
 export type PlaceStatus = 'done' | 'partial' | 'todo'
 
-/** A place is done when every job at it is ticked. */
-export function placeStatus(items: { checked: boolean }[]): PlaceStatus {
-  if (!items.length) return 'todo'
+/**
+ * A place is done when every job at it is ticked. A place with no jobs has
+ * nothing to tick, so it is done once someone leaves a note there; it used to
+ * sit "Not started" for good (page-walk batch 6).
+ */
+export function placeStatus(items: { checked: boolean }[], note?: string | null): PlaceStatus {
+  if (!items.length) return note?.trim() ? 'done' : 'todo'
   const n = items.filter((i) => i.checked).length
   return n === items.length ? 'done' : n > 0 ? 'partial' : 'todo'
 }

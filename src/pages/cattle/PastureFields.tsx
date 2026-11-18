@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { InfoPopover } from '@/components/InfoPopover'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 import { shortDay, type FieldForage } from '@/lib/field-residue'
 import { AU_INTAKE_LB_PER_DAY, audsFromLb, type PastureCalc } from '@/lib/grazing'
 import { n0 } from '@/lib/format'
@@ -79,7 +80,59 @@ export function PastureFeedBreakdown({ p }: { p: PastureCalc }) {
 
   return (
     <div className="max-w-3xl">
-      <table className="w-full text-xs">
+      {/* One source of feed a card on a phone (design review, Nov 2026). */}
+      <CardList className="-mx-3">
+        {lines.map((l) => (
+          <RowCard
+            key={l.key}
+            heading={<span className={cn('text-xs', l.uncounted && 'text-gray-400')}>{l.label}</span>}
+            facts={[]}
+            summary={
+              <div className={cn(l.uncounted && 'text-gray-400')}>
+                {(l.what || l.tdnPct != null) && (
+                  <div className="text-xs text-gray-500">
+                    {l.what}
+                    {l.tdnPct != null && <span className="text-gray-400"> · {l.tdnPct}% energy (TDN)</span>}
+                  </div>
+                )}
+                <SummaryLine>
+                  <span className={cn(l.uncounted && 'line-through')}>{n0(l.acres)} ac</span>
+                  {l.lb > 0 && (
+                    <>
+                      <Dot />
+                      {l.acres > 0 && (
+                        <>
+                          <span>{n0(l.lb / l.acres)} lb/ac</span>
+                          <Dot />
+                        </>
+                      )}
+                      <span>{n0(l.lb)} lb</span>
+                      <Dot />
+                      <span>{n0(audsFromLb(l.lb, AU_INTAKE_LB_PER_DAY))} AUDs</span>
+                    </>
+                  )}
+                </SummaryLine>
+              </div>
+            }
+          />
+        ))}
+        <RowCard
+          heading={<span className="text-xs">This pasture</span>}
+          facts={[]}
+          summary={
+            <SummaryLine className="font-semibold text-gray-700">
+              <span>{n0(p.totalGrazeableAc)} ac</span>
+              <Dot />
+              <span>{n0(p.foragePerAcreUtil)} lb/ac</span>
+              <Dot />
+              <span>{n0(p.totalLbs)} lb</span>
+              <Dot />
+              <span>{n0(p.auds)} AUDs</span>
+            </SummaryLine>
+          }
+        />
+      </CardList>
+      <table className="hidden w-full text-xs sm:table">
         <thead>
           <tr className="text-gray-400">
             <th className="py-1 pr-2 text-left font-medium">Where the feed comes from</th>

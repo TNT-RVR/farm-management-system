@@ -10,6 +10,7 @@ import { money, n0 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { grossMargins, switchGain, type CowCalf, type LandEnterprise } from '@/lib/gross-margin'
 import { HeadTip } from '@/components/HeadTip'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 /**
  * What an acre earns under each use.
@@ -344,7 +345,67 @@ export function GrossMarginPage() {
         </div>
       </Group>
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      {/* One land use a card on a phone (design review, Nov 2026). */}
+      <CardList className="rounded-lg border border-gray-200 bg-white">
+        <RowCard
+          heading={
+            <>
+              Cow-calf
+              <span className="ml-2 text-xs font-normal text-gray-400">{money(result.cowCalf.grossMarginPerCow, 0)}/cow</span>
+            </>
+          }
+          actions={<span className="text-sm font-semibold tabular-nums">{money(result.cowCalf.grossMargin, 0)}</span>}
+          facts={[]}
+          summary={
+            <SummaryLine className="tabular-nums">
+              <span>{money(result.cowCalf.revenue, 0)} revenue</span>
+              <Dot />
+              <span>{money(-result.cowCalf.directCost, 0)} costs</span>
+              {result.cowCalf.ratio != null && (
+                <>
+                  <Dot />
+                  <span>{Math.round(result.cowCalf.ratio * 100)}% of revenue</span>
+                </>
+              )}
+            </SummaryLine>
+          }
+        />
+        {result.land.map((e) => (
+          <RowCard
+            key={e.key}
+            heading={
+              <span className={cn(e.internal && 'text-gray-500')}>
+                {e.label}
+                {e.internal ? <span className="ml-2 text-xs font-normal text-gray-400">charged to the cows</span> : null}
+              </span>
+            }
+            actions={<span className={cn('text-sm font-semibold tabular-nums', e.internal && 'text-gray-500')}>{money(e.grossMargin, 0)}</span>}
+            facts={[]}
+            summary={
+              <SummaryLine className="tabular-nums">
+                <span>{n0(e.acres)} ac</span>
+                {e.grossMarginPerAcre != null && (
+                  <>
+                    <Dot />
+                    <span>{money(e.grossMarginPerAcre, 0)}/ac</span>
+                  </>
+                )}
+                <Dot />
+                <span>{money(e.revenue, 0)} revenue</span>
+                <Dot />
+                <span>{money(-e.directCost, 0)} costs</span>
+                {e.ratio != null && (
+                  <>
+                    <Dot />
+                    <span>{Math.round(e.ratio * 100)}% of revenue</span>
+                  </>
+                )}
+              </SummaryLine>
+            }
+          />
+        ))}
+      </CardList>
+      <div className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white sm:block">
         <table className="w-full text-sm">
           <thead className={TABLE_HEAD}>
             <tr>

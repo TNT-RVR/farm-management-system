@@ -26,6 +26,8 @@ export type BillSiteRow = {
   pump_set_by_hand: boolean
   /** On this pump by a guess (its size), not a meter or a person: shown with an asterisk until confirmed. */
   pump_unconfirmed?: boolean
+  /** Marked "not a pump" by hand (the shop, the aeration fans): stops asking which pump. */
+  not_pump?: boolean
 }
 
 export type PumpPower = {
@@ -51,6 +53,27 @@ export type PumpPower = {
 /** What groups a site's bills together when it has no pump: its meter, else its site id or name. */
 export const siteKey = (s: Pick<BillSiteRow, 'pump_id' | 'meter_number' | 'site_id' | 'site_name' | 'id'>) =>
   s.pump_id ?? `site:${s.meter_number ?? s.site_id ?? s.site_name ?? s.id}`
+
+/**
+ * The unmatched sites somebody marked "not a pump". A site is out once any of
+ * its bills is marked, so a later bill from the same meter does not ask again.
+ */
+export function notPumpKeys(sites: Pick<BillSiteRow, 'pump_id' | 'meter_number' | 'site_id' | 'site_name' | 'id' | 'not_pump'>[]): Set<string> {
+  return new Set(sites.filter((s) => s.not_pump && !s.pump_id).map(siteKey))
+}
+
+/** Each pump's meter number as its latest bill prints it, for a pump with none entered. */
+export function latestMeterByPump(sites: Pick<BillSiteRow, 'pump_id' | 'meter_number' | 'period_end' | 'period_start'>[]): Map<string, string> {
+  const best = new Map<string, { meter: string; at: string }>()
+  for (const s of sites) {
+    const meter = s.meter_number?.trim()
+    if (!s.pump_id || !meter) continue
+    const at = s.period_end ?? s.period_start ?? ''
+    const was = best.get(s.pump_id)
+    if (!was || at > was.at) best.set(s.pump_id, { meter, at })
+  }
+  return new Map([...best].map(([k, v]) => [k, v.meter]))
+}
 
 const n = (v: unknown) => (v == null || !Number.isFinite(Number(v)) ? 0 : Number(v))
 

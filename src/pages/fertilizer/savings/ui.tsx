@@ -195,10 +195,18 @@ export function ToolCard({
   )
 }
 
+/**
+ * Every tool's table. On a phone the first column (the field, the product)
+ * stays pinned while the figures scroll under it, and the cells close up
+ * (design review, Nov 2026).
+ */
+const PHONE_GRID =
+  'max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5 max-sm:[&_td:first-child]:sticky max-sm:[&_td:first-child]:left-0 max-sm:[&_td:first-child]:z-10 max-sm:[&_td:first-child]:bg-white max-sm:[&_th:first-child]:sticky max-sm:[&_th:first-child]:left-0 max-sm:[&_th:first-child]:z-10 max-sm:[&_th:first-child]:bg-brand-700'
+
 export function Table({ head, children, className }: { head: ReactNode[]; children: ReactNode; className?: string }) {
   return (
     <div className={cn('overflow-x-auto rounded-lg border border-gray-200', className)}>
-      <table className="w-full text-xs">
+      <table className={cn('w-full text-xs', PHONE_GRID)}>
         <thead className={TABLE_HEAD}>
           <tr>
             {head.map((h, i) => (

@@ -9,12 +9,14 @@ import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useFeature } from '@/lib/farm-setup'
 import { usePumps } from '@/lib/irrigation'
 import { usePowerPrices } from '@/lib/pivot-cost'
+import { latestMeterByPump, usePowerBills, usePowerBillSites } from '@/lib/power-bills'
 import { supabase } from '@/lib/supabase'
 import { useTab } from '@/lib/useTab'
 import { SolarPage } from '@/pages/SolarPage'
 import { GasBills } from '@/pages/utilities/GasBills'
 import { PowerBills } from '@/pages/utilities/PowerBills'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 const TABS = ['solar', 'power', 'gas'] as const
 type Tab = (typeof TABS)[number]
@@ -33,7 +35,7 @@ export function UtilitiesPage() {
   const [tab, setTab] = useTab<Tab>('utilities', tabs)
   return (
     <div className="mx-auto max-w-4xl space-y-3 p-4 md:p-6">
-      <PageHeader title="Utilities" icon={<Plug className="h-5 w-5 text-brand-700" />} subtitle="Solar, power and natural gas" />
+      <PageHeader title="Utilities" icon={<Plug className="h-5 w-5 text-brand-700" />} subtitle={solarOn ? 'Solar, power and natural gas' : 'Power and natural gas'} />
       <PillTabs
         tabs={[
           ...(solarOn ? [{ key: 'solar' as const, label: <span className="flex items-center gap-1.5"><Sun className="h-3.5 w-3.5" /> Solar</span> }] : []),
@@ -43,7 +45,7 @@ export function UtilitiesPage() {
         value={tab}
         onChange={setTab}
       />
-      {tab === 'solar' && solarOn ? <SolarPage embedded /> : tab === 'gas' ? <GasBills /> : <PowerTab />}
+      {tab === 'solar' && solarOn ? <SolarPage embedded /> : tab === 'gas' ? <GasBills /> : <PowerTab solarOn={solarOn} />}
     </div>
   )
 }
@@ -89,7 +91,7 @@ function PowerPriceCard({ label, note, value, onSave }: { label: string; note: s
 const round4 = (v: number) => Math.round(v * 10000) / 10000
 
 /** The two power prices, and every pump's meter: the numbers a power bill is matched against. */
-function PowerTab() {
+function PowerTab({ solarOn }: { solarOn: boolean }) {
   const { data: farm, prices } = usePowerPrices()
   const { profile } = useAuth()
   const canEdit = hasManagerAccess(profile?.role) && !!farm?.id
@@ -107,38 +109,70 @@ function PowerTab() {
   const { data: pumps } = usePumps()
   const navigate = useNavigate()
   const byId = new Map((pumps ?? []).map((p) => [p.id, p]))
+  // A pump with no meter typed in still has one on its bills (same query as Power bills, so cached).
+  const { data: bills } = usePowerBills()
+  const { data: billSites } = usePowerBillSites((bills ?? []).filter((b) => b.status !== 'pending').length)
+  const billMeter = latestMeterByPump(billSites ?? [])
   const rows = [...(pumps ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en-CA', { numeric: true }))
+  // Each pump's meter and last reading, built once for its row and its phone card.
+  const meters = rows.map((p) => {
+    const shares = p.power_meter_shared_with ? byId.get(p.power_meter_shared_with) : null
+    return {
+      p,
+      to: `/irrigation-info?tab=pump&pump=${p.id}`,
+      meter:
+        p.power_meter_number ??
+        (shares ? (
+          <span className="text-gray-500">on {shares.name}&apos;s meter</span>
+        ) : billMeter.get(p.id) ? (
+          <>
+            {billMeter.get(p.id)} <span className="text-xs text-gray-500">from the bills</span>
+          </>
+        ) : (
+          <span className="text-amber-700">not entered</span>
+        )),
+      reading:
+        p.power_meter_reading_kwh != null
+          ? `${Number(p.power_meter_reading_kwh).toLocaleString('en-CA')} kWh${p.power_meter_read_on ? ` · ${p.power_meter_read_on}` : ''}`
+          : null,
+    }
+  })
   return (
     <div className="space-y-4">
       <section className="space-y-2">
         <div className="grid gap-3 sm:grid-cols-2">
           <PowerPriceCard
             label="Grid power, what the farm pays"
-            note="The pumps run on it: the solar is not at the pump sites."
+            note={solarOn ? 'The pumps run on it: the solar is not at the pump sites.' : 'The pumps run on it.'}
             value={prices.buy}
             onSave={canEdit ? (v) => save.mutate({ power_buy_kwh: round4(v) }) : undefined}
           />
-          <PowerPriceCard
-            label="Solar, what it sells for"
-            note="The value of the panels' kWh on the Solar tab, and the income a pump forgoes when it uses it."
-            value={prices.sell}
-            onSave={canEdit ? (v) => save.mutate({ power_sell_kwh: round4(v) }) : undefined}
-          />
+          {/* A farm with no panels has no sell price and nothing to choose (batch 6). */}
+          {solarOn && (
+            <PowerPriceCard
+              label="Solar, what it sells for"
+              note="The value of the panels' kWh on the Solar tab, and the income a pump forgoes when it uses it."
+              value={prices.sell}
+              onSave={canEdit ? (v) => save.mutate({ power_sell_kwh: round4(v) }) : undefined}
+            />
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-          <label className="flex items-center gap-1">
-            Price pumping at
-            <select
-              value={prices.basis}
-              disabled={!canEdit || save.isPending}
-              onChange={(e) => save.mutate({ power_value_basis: e.target.value as 'sell' | 'buy' })}
-              className="rounded-md border border-gray-300 px-1.5 py-1 text-xs"
-              aria-label="Price pumping at"
-            >
-              <option value="sell">sell price (income forgone)</option>
-              <option value="buy">buy price (grid)</option>
-            </select>
-          </label>
+          {solarOn && (
+            <label className="flex items-center gap-1">
+              Price pumping at
+              <select
+                value={prices.basis}
+                disabled={!canEdit || save.isPending}
+                onChange={(e) => save.mutate({ power_value_basis: e.target.value as 'sell' | 'buy' })}
+                className="rounded-md border border-gray-300 px-1.5 py-1 text-xs"
+                aria-label="Price pumping at"
+              >
+                <option value="sell">sell price (income forgone)</option>
+                <option value="buy">buy price (grid)</option>
+              </select>
+            </label>
+          )}
           {save.isPending && <span className="text-gray-400">saving…</span>}
           {save.error && <span className="text-red-700">{(save.error as Error).message}</span>}
         </div>
@@ -156,7 +190,45 @@ function PowerTab() {
             </p>
           </InfoPopover>
         </div>
-        <div className="overflow-x-auto">
+        {/* One pump a card on a phone (design review, Nov 2026). */}
+        <CardList>
+          {meters.map(({ p, to, meter, reading }) => (
+            <RowCard
+              key={p.id}
+              onClick={rowClick(() => navigate(to))}
+              heading={
+                <Link to={to} className="hover:text-brand-700 hover:underline">
+                  {p.name}
+                </Link>
+              }
+              facts={[]}
+              summary={
+                <SummaryLine>
+                  {p.horse_power != null && (
+                    <>
+                      <span className="tabular-nums">{p.horse_power} HP</span>
+                      <Dot />
+                    </>
+                  )}
+                  {p.power_utility && (
+                    <>
+                      <span>{p.power_utility}</span>
+                      <Dot />
+                    </>
+                  )}
+                  <span className="tabular-nums">Meter {meter}</span>
+                  {reading && (
+                    <>
+                      <Dot />
+                      <span className="tabular-nums">{reading}</span>
+                    </>
+                  )}
+                </SummaryLine>
+              }
+            />
+          ))}
+        </CardList>
+        <div className="hidden overflow-x-auto sm:block">
           <table className="w-full min-w-[480px] text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
@@ -168,27 +240,20 @@ function PowerTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {rows.map((p) => {
-                const shares = p.power_meter_shared_with ? byId.get(p.power_meter_shared_with) : null
+              {meters.map(({ p, to, meter, reading }) => {
                 return (
                   // The whole row opens the pump's record on Pump Information,
                   // expanded and scrolled to (Sam, 7 Oct 2026).
-                  <tr key={p.id} className="cursor-pointer hover:bg-gray-50" onClick={rowClick(() => navigate(`/irrigation-info?tab=pump&pump=${p.id}`))}>
+                  <tr key={p.id} className="cursor-pointer hover:bg-gray-50" onClick={rowClick(() => navigate(to))}>
                     <td className="px-3 py-1.5 text-gray-900">
-                      <Link to={`/irrigation-info?tab=pump&pump=${p.id}`} className="hover:text-brand-700 hover:underline">
+                      <Link to={to} className="hover:text-brand-700 hover:underline">
                         {p.name}
                       </Link>
                     </td>
                     <td className="px-3 py-1.5 tabular-nums text-gray-700">{p.horse_power ?? '—'}</td>
                     <td className="px-3 py-1.5 text-gray-700">{p.power_utility ?? '—'}</td>
-                    <td className="px-3 py-1.5 tabular-nums text-gray-700">
-                      {p.power_meter_number ?? (shares ? <span className="text-gray-500">on {shares.name}&apos;s meter</span> : <span className="text-amber-700">not entered</span>)}
-                    </td>
-                    <td className="px-3 py-1.5 tabular-nums text-gray-700">
-                      {p.power_meter_reading_kwh != null
-                        ? `${Number(p.power_meter_reading_kwh).toLocaleString('en-CA')} kWh${p.power_meter_read_on ? ` · ${p.power_meter_read_on}` : ''}`
-                        : '—'}
-                    </td>
+                    <td className="px-3 py-1.5 tabular-nums text-gray-700">{meter}</td>
+                    <td className="px-3 py-1.5 tabular-nums text-gray-700">{reading ?? '—'}</td>
                   </tr>
                 )
               })}

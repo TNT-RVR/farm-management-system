@@ -509,6 +509,31 @@ export type WaterReviewTotals = {
   grossPerAc: number | null
 }
 
+/**
+ * An acre-weighted average worked from the figures as the rows print them:
+ * each value rounded to `dp` places and each weight (acres) to `weightDp`,
+ * then the average rounded to `dp`. Worked from the unrounded figures, rows
+ * of 9.4, 6.6 and 6.6 in on 130, 131 and 130 ac gave a farm row of 7.6 when
+ * the rows weight to 7.5 (batch 6 page walk; the app's rounding rule: a total
+ * adds up to what is shown). Rows with no value or no weight are left out;
+ * null when none is left.
+ */
+export function weightedAsShown<T>(rows: readonly T[], value: (r: T) => number | null | undefined, weight: (r: T) => number | null | undefined, dp: number, weightDp = 0): number | null {
+  const round = (v: number, d: number) => Number(v.toFixed(d))
+  let sum = 0
+  let w = 0
+  for (const r of rows) {
+    const v = value(r)
+    const a = weight(r)
+    if (v == null || a == null || !Number.isFinite(v) || !Number.isFinite(a)) continue
+    const shownW = round(a, weightDp)
+    if (shownW <= 0) continue
+    sum += round(v, dp) * shownW
+    w += shownW
+  }
+  return w > 0 ? round(sum / w, dp) : null
+}
+
 /** The table's totals row. Yields are left out: corn and beans don't add. */
 export function reviewTotals(rows: WaterReviewRow[]): WaterReviewTotals {
   const acres = rows.reduce((s, r) => s + (r.acres ?? 0), 0)

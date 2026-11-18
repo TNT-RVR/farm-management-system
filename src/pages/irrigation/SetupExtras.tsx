@@ -106,10 +106,11 @@ export function SoilProfileEditor({ isManager }: { isManager: boolean }) {
           </div>
 
           <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="w-full text-sm">
+          {/* On a phone: depth pinned, headers wrap, inputs and cells tightened (design review, Nov 2026). */}
+          <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5 max-sm:[&_th]:whitespace-normal">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className={cn(TABLE_TH, 'whitespace-nowrap')}>
+                <th className={cn(TABLE_TH, 'sticky left-0 z-10 whitespace-nowrap bg-brand-700')}>
                   Depth (cm) <ColumnHelp help={SOIL_PROFILE_HELP.layerDepth} />
                 </th>
                 <th className={cn(TABLE_TH, 'whitespace-nowrap')}>
@@ -130,10 +131,10 @@ export function SoilProfileEditor({ isManager }: { isManager: boolean }) {
             <tbody>
               {layers.map((l, i) => (
                 <tr key={i} className="border-b border-gray-100 last:border-0">
-                  <td className="px-3 py-1">
+                  <td className="sticky left-0 z-10 bg-white px-3 py-1">
                     <input type="number" disabled={!isManager} defaultValue={l.depth_cm}
                       onBlur={(e) => setLayer(i, 'depth_cm', Number(e.target.value))}
-                      className="w-20 rounded border border-gray-200 px-1.5 py-1 text-right tabular-nums disabled:opacity-50" />
+                      className="w-14 sm:w-20 rounded border border-gray-200 px-1.5 py-1 text-right tabular-nums disabled:opacity-50" />
                   </td>
                   <td className="px-3 py-1">
                     <Select value={l.soil_type} disabled={!isManager} size="sm"
@@ -143,12 +144,12 @@ export function SoilProfileEditor({ isManager }: { isManager: boolean }) {
                   <td className="px-3 py-1 text-right">
                     <input type="number" disabled={!isManager} defaultValue={l.aw_fc_mm}
                       onBlur={(e) => setLayer(i, 'aw_fc_mm', Number(e.target.value))}
-                      className="w-24 rounded border border-gray-200 px-1.5 py-1 text-right tabular-nums disabled:opacity-50" />
+                      className="w-16 sm:w-24 rounded border border-gray-200 px-1.5 py-1 text-right tabular-nums disabled:opacity-50" />
                   </td>
                   <td className="px-3 py-1 text-right">
                     <input type="number" disabled={!isManager} defaultValue={l.wp_mm}
                       onBlur={(e) => setLayer(i, 'wp_mm', Number(e.target.value))}
-                      className="w-24 rounded border border-gray-200 px-1.5 py-1 text-right tabular-nums disabled:opacity-50" />
+                      className="w-16 sm:w-24 rounded border border-gray-200 px-1.5 py-1 text-right tabular-nums disabled:opacity-50" />
                   </td>
                   {isManager && (
                     <td className="px-1 text-center">

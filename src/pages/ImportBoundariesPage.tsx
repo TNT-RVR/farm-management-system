@@ -13,6 +13,7 @@ import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { boundsOf } from '@/lib/geo/area'
 import { cleanFieldName } from '@/lib/field-name'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { CardList, RowCard } from '@/components/RowCards'
 
 /**
  * The "Create a new field" choice in a row's field picker. Not a uuid, so it
@@ -236,6 +237,55 @@ export function ImportBoundariesPage() {
   }
 
   const readyCount = rows.filter((r) => r.status === 'ready' && r.fieldId).length
+  // One copy of each for the phone card and the table cell.
+  const fieldPicker = (row: RowState) => (
+    <>
+      <Select
+        value={row.fieldId}
+        disabled={row.status === 'done' || row.status === 'importing'}
+        size="sm"
+        ariaLabel="Field"
+        className="max-w-60"
+        onChange={(v) =>
+          setRows((rs) => rs.map((r) => (r.key === row.key ? { ...r, fieldId: v } : r)))
+        }
+        options={[
+          { value: '', label: '— skip —' },
+          { value: NEW_FIELD, label: 'Create a new field' },
+          ...(fields ?? []).map((f) => ({ value: f.id, label: f.name })),
+        ]}
+      />
+      {row.fieldId === NEW_FIELD && row.status !== 'done' && (
+        <input
+          value={row.newName}
+          disabled={row.status === 'importing'}
+          aria-label="New field name"
+          onChange={(e) =>
+            setRows((rs) =>
+              rs.map((r) => (r.key === row.key ? { ...r, newName: e.target.value } : r)),
+            )
+          }
+          className="mt-1 block w-full max-w-60 rounded-md border border-gray-300 px-2 py-1 text-xs"
+        />
+      )}
+    </>
+  )
+  const statusOf = (row: RowState) =>
+    row.status === 'done' ? (
+      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">
+        imported
+      </span>
+    ) : row.status === 'importing' ? (
+      <span className="text-xs text-gray-500">importing…</span>
+    ) : row.status === 'error' ? (
+      <span className="text-xs text-red-600">{row.message}</span>
+    ) : row.fieldId === NEW_FIELD ? (
+      <span className="text-xs text-gray-500">ready — new field</span>
+    ) : row.fieldId ? (
+      <span className="text-xs text-gray-500">ready</span>
+    ) : (
+      <span className="text-xs text-gray-400">no field selected</span>
+    )
   const unmatchedCount = rows.filter(
     (r) => (r.status === 'ready' || r.status === 'error') && (r.fieldId === '' || r.fieldId === NEW_FIELD),
   ).length
@@ -305,7 +355,29 @@ export function ImportBoundariesPage() {
             </div>
           )}
 
-          <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200 bg-white">
+          {/* One shape a card on a phone (design review, Nov 2026). */}
+          <CardList className="mt-4 rounded-lg border border-gray-200 bg-white">
+            {rows.map((row) => (
+              <RowCard
+                key={row.key}
+                heading={
+                  <>
+                    {row.name ?? '(unnamed)'}
+                    <span className="ml-1.5 text-xs font-normal tabular-nums text-gray-500">{row.acres.toFixed(2)} ac</span>
+                    {row.warnings.length > 0 && <p className="text-xs font-normal text-amber-600">{row.warnings.join('; ')}</p>}
+                  </>
+                }
+                facts={[]}
+                summary={
+                  <div className="mt-1.5 space-y-1">
+                    {fieldPicker(row)}
+                    <div>{statusOf(row)}</div>
+                  </div>
+                }
+              />
+            ))}
+          </CardList>
+          <div className="mt-4 hidden overflow-x-auto rounded-lg border border-gray-200 bg-white sm:block">
             <table className="w-full text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
@@ -325,53 +397,8 @@ export function ImportBoundariesPage() {
                       )}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{row.acres.toFixed(2)}</td>
-                    <td className="px-3 py-2">
-                      <Select
-                        value={row.fieldId}
-                        disabled={row.status === 'done' || row.status === 'importing'}
-                        size="sm"
-                        ariaLabel="Field"
-                        className="max-w-60"
-                        onChange={(v) =>
-                          setRows((rs) => rs.map((r) => (r.key === row.key ? { ...r, fieldId: v } : r)))
-                        }
-                        options={[
-                          { value: '', label: '— skip —' },
-                          { value: NEW_FIELD, label: 'Create a new field' },
-                          ...(fields ?? []).map((f) => ({ value: f.id, label: f.name })),
-                        ]}
-                      />
-                      {row.fieldId === NEW_FIELD && row.status !== 'done' && (
-                        <input
-                          value={row.newName}
-                          disabled={row.status === 'importing'}
-                          aria-label="New field name"
-                          onChange={(e) =>
-                            setRows((rs) =>
-                              rs.map((r) => (r.key === row.key ? { ...r, newName: e.target.value } : r)),
-                            )
-                          }
-                          className="mt-1 block w-full max-w-60 rounded-md border border-gray-300 px-2 py-1 text-xs"
-                        />
-                      )}
-                    </td>
-                    <td className="px-3 py-2">
-                      {row.status === 'done' ? (
-                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">
-                          imported
-                        </span>
-                      ) : row.status === 'importing' ? (
-                        <span className="text-xs text-gray-500">importing…</span>
-                      ) : row.status === 'error' ? (
-                        <span className="text-xs text-red-600">{row.message}</span>
-                      ) : row.fieldId === NEW_FIELD ? (
-                        <span className="text-xs text-gray-500">ready — new field</span>
-                      ) : row.fieldId ? (
-                        <span className="text-xs text-gray-500">ready</span>
-                      ) : (
-                        <span className="text-xs text-gray-400">no field selected</span>
-                      )}
-                    </td>
+                    <td className="px-3 py-2">{fieldPicker(row)}</td>
+                    <td className="px-3 py-2">{statusOf(row)}</td>
                   </tr>
                 ))}
               </tbody>

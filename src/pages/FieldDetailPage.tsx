@@ -1,5 +1,5 @@
 import { waterSourceLabel } from '@/lib/water-source-names'
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import type { MultiPolygon } from 'geojson'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -19,7 +19,6 @@ import { PivotStatusPanel } from '@/components/PivotStatusPanel'
 import { FieldTenure } from '@/components/FieldTenure'
 import { ReentryWarning } from '@/components/ReentryWarning'
 import { FieldGrazingRestriction } from '@/components/GrazingRestrictions'
-import { FieldInputsCard } from '@/components/FieldInputsCard'
 import { FieldSoilOverride } from '@/components/FieldSoilOverride'
 import { FieldSalinityCard } from '@/components/FieldSalinityCard'
 import { FieldSoilSurvey } from '@/components/FieldSoilSurvey'
@@ -38,7 +37,7 @@ import { labelPointOf } from '@/lib/geo/area'
 import { reverseLld, sameParcel } from '@/lib/geo/ats'
 import { useTownshipTable } from '@/lib/geo/atsTownships'
 import { parseLld } from '@/lib/geo/lld'
-import { FarmWideLinks, FieldTabBar, fieldSectionPath, isFinanceSection, type FieldSection } from './field/FieldTabs'
+import { FarmWideLinks, FieldTabBar, fieldSectionPath, isFinanceSection, tabFor, useScrollToSection, type FieldSection } from './field/FieldTabs'
 import { FieldScoutReports } from './field/FieldScoutReports'
 import { grownTrait, isCanola } from '@/lib/canola-trait'
 import { companyLookup } from '@/lib/crop-label'
@@ -791,13 +790,9 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
     [allBoundaries, id],
   )
 
-  // The old Notes tab's address lands on Overview; take it to the notes.
-  const fieldLoaded = !!field
-  useEffect(() => {
-    if (section === 'notes' && fieldLoaded) {
-      document.getElementById('field-notes')?.scrollIntoView({ block: 'start' })
-    }
-  }, [section, fieldLoaded])
+  // /notes, /soil and /scout-reports open their tab at that section.
+  useScrollToSection(section, !!field)
+  const tab = tabFor(section)?.key
 
   if (!field) {
     return (
@@ -836,7 +831,7 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
       <FieldTabBar fieldId={field.id} active={section} />
       <FarmWideLinks section={section} />
 
-      {(section === 'overview' || section === 'notes') && (
+      {tab === 'overview' && (
         <>
           {/* What the field looks like, before what it measures. The first
               question about a field is which one it is, and a shape answers
@@ -854,10 +849,10 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
 
           {/* Acres are in the heading above; where the boundary came from and
               since when are under Settings, beside the button that redraws it.
-              The link says what it does rather than where to go: on a narrow
-              window the Settings tab is folded into the tab bar's overflow, so
-              "under Settings" sent people hunting for a tab they could not
-              see — past a link that would have taken them straight there. */}
+              The link says what it does rather than where to go: Settings is
+              a small ⚙ at the end of the tab bar, and "under Settings" sent
+              people hunting past a link that would have taken them straight
+              there. */}
           {!boundary && canEdit && (
             <p className="mt-2 text-xs text-gray-500">
               This field has no boundary, so it has no acres, no soil survey and no place on the
@@ -911,11 +906,8 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
         </>
       )}
 
-      {section === 'inputs' && (
-        <FieldInputsCard fieldId={field.id} acres={boundary?.acres ?? null} />
-      )}
-
-      {section === 'irrigation' && (
+      {/* Water & soil: the pivot, then the ground it waters. */}
+      {tab === 'irrigation' && (
         <>
           <FieldIrrigationCard fieldId={field.id} />
           <FieldNetLiveCard fieldId={field.id} />
@@ -929,11 +921,7 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
               readOnly={fieldReadOnly}
             />
           </div>
-        </>
-      )}
-
-      {section === 'soil' && (
-        <>
+          <div id="field-soil" className="scroll-mt-4" />
           <FieldSoilOverride
             fieldId={field.id}
             fc={field.soil_fc}
@@ -969,16 +957,17 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
         </>
       )}
 
-      {section === 'scouting' && (
-        <TabSuspense>
-          <FieldScouting fieldId={field.id} />
-        </TabSuspense>
-      )}
-
-      {section === 'scout-reports' && (
-        <TabSuspense>
-          <FieldScoutReports fieldId={field.id} />
-        </TabSuspense>
+      {tab === 'scouting' && (
+        <>
+          <TabSuspense>
+            <FieldScouting fieldId={field.id} />
+          </TabSuspense>
+          <div id="field-scout-reports" className="mt-4 scroll-mt-4">
+            <TabSuspense>
+              <FieldScoutReports fieldId={field.id} />
+            </TabSuspense>
+          </div>
+        </>
       )}
 
       {/* Typing /money without finance access lands on the field itself. The

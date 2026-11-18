@@ -22,6 +22,7 @@ import {
 import { cn } from '@/lib/utils'
 import { contactNameOf, cropNameOf, quickBooksColumns } from '@/lib/reports/lists'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 function Variance({ value, goodWhenPositive }: { value: number; goodWhenPositive: boolean }) {
   if (Math.abs(value) < 0.5) return <span className="text-gray-400">—</span>
@@ -146,7 +147,48 @@ export function ActualsTab({ budget, locked }: { budget: BudgetLine[]; locked: b
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-max min-w-full text-sm">
+        {/* One crop a card on a phone: revenue and cost, actual against budget (design review, Nov 2026). */}
+        <CardList empty={`No budget or actuals for ${cropYear}.`} isEmpty={lines.length === 0 && unassigned.revenue <= 0 && unassigned.cost <= 0}>
+          {lines.map((l) => (
+            <RowCard
+              key={l.cropId ?? 'null'}
+              heading={l.cropName}
+              facts={[]}
+              summary={
+                <>
+                  <SummaryLine>
+                    <span>Revenue</span>
+                    <span className="font-medium tabular-nums text-gray-900">{money(l.actualRevenue)}</span>
+                    <span className="tabular-nums">of {money(l.budgetedRevenue)}</span>
+                    <Dot />
+                    <Variance value={l.revenueVariance} goodWhenPositive />
+                  </SummaryLine>
+                  <SummaryLine>
+                    <span>Cost</span>
+                    <span className="font-medium tabular-nums text-gray-900">{money(l.actualCost)}</span>
+                    <span className="tabular-nums">of {money(l.budgetedCost)}</span>
+                    <Dot />
+                    <Variance value={l.costVariance} goodWhenPositive={false} />
+                  </SummaryLine>
+                </>
+              }
+            />
+          ))}
+          {(unassigned.revenue > 0 || unassigned.cost > 0) && (
+            <RowCard
+              heading={<span className="italic text-gray-500">Unassigned</span>}
+              facts={[]}
+              summary={
+                <SummaryLine>
+                  <span className="tabular-nums">Revenue {money(unassigned.revenue)}</span>
+                  <Dot />
+                  <span className="tabular-nums">Cost {money(unassigned.cost)}</span>
+                </SummaryLine>
+              }
+            />
+          )}
+        </CardList>
+        <table className="hidden w-max min-w-full text-sm sm:table">
           <thead className={TABLE_HEAD}>
             <tr>
               <th className="px-3 py-2 font-medium">Crop</th>

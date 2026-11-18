@@ -23,6 +23,7 @@ import { RxAgainstSoilTest } from './RxAgainstSoilTest'
 import { n0, n1Fixed as n1, n2 } from '@/lib/format'
 import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 export function Requirements() {
   const { cropYear } = useCropYear()
@@ -136,10 +137,40 @@ export function Requirements() {
           <Package className="h-4 w-4 text-white" />
           <h3 className="font-medium">Product needed across the farm · {cropYear}</h3>
         </div>
-        {/* On a phone Fields drops out so Tonnes, the figure ordered against,
-            fits on screen instead of behind a sideways scroll. */}
-        <div className="overflow-x-auto">
-        <table className="w-full table-fixed text-sm sm:min-w-[480px]">
+        {/* One product a card on a phone (design review, Nov 2026). */}
+        <CardList empty="Nothing to total yet." isEmpty={products.length === 0}>
+          {products.map((p) => (
+            <RowCard
+              key={p.product}
+              heading={p.product}
+              facts={[]}
+              summary={
+                <>
+                  <SummaryLine>
+                    <span className="font-semibold text-gray-900">{n1(p.totalTonnes)} t</span>
+                    <Dot />
+                    <span>{n0(p.totalLb)} lb</span>
+                    <Dot />
+                    <span>
+                      {p.fields} field{p.fields === 1 ? '' : 's'}
+                    </span>
+                  </SummaryLine>
+                  {(p.missingAcres.length > 0 || p.missingRate.length > 0) && (
+                    <p className="mt-0.5 text-xs text-amber-700">
+                      {p.missingRate.length > 0 && `rate not derivable for ${p.missingRate.join(', ')}`}
+                      {p.missingRate.length > 0 && p.missingAcres.length > 0 && ' · '}
+                      {p.missingAcres.length > 0 && `no acres for ${p.missingAcres.join(', ')}`}
+                    </p>
+                  )}
+                </>
+              }
+            />
+          ))}
+        </CardList>
+        {/* Scrolls sideways at the narrowest sizes rather than squeezing each
+            cell to a word a line. */}
+        <div className="hidden overflow-x-auto sm:block">
+        <table className="w-full min-w-[480px] table-fixed text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
               <th className="px-3 py-2 font-medium">Product</th>
@@ -227,9 +258,78 @@ export function Requirements() {
       {/* Per field. */}
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
         <p className={cn('font-medium', CARD_HEAD)}>By field</p>
-        {/* Scrolls sideways on a phone rather than squeezing each cell to a
-            word a line. */}
-        <div className="overflow-x-auto">
+        {/* One field a card on a phone, its products under it when opened (design review, Nov 2026). */}
+        <CardList>
+          {requirements.map((r) => (
+            <RowCard
+              key={r.fieldId}
+              onClick={() => setExpanded(expanded === r.fieldId ? null : r.fieldId)}
+              heading={r.fieldName}
+              facts={[]}
+              summary={
+                <SummaryLine>
+                  {r.cropLabel && (
+                    <>
+                      <span>{r.cropLabel}</span>
+                      <Dot />
+                    </>
+                  )}
+                  {r.acres == null ? <span className="text-amber-700">acres not set</span> : <span>{n0(r.acres)} ac</span>}
+                  <Dot />
+                  {r.lines == null ? (
+                    <span className="text-gray-400">no assessment</span>
+                  ) : (
+                    <span>
+                      {r.lines.length} product{r.lines.length === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </SummaryLine>
+              }
+            >
+              {expanded === r.fieldId && r.lines && (
+                // A tap on the guide rate's ⓘ, or inside its panel, is not a tap to close the field.
+                <ul className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
+                  {r.lines.map((l, i) => (
+                    <li key={i} className="text-xs">
+                      <div className="text-gray-900">
+                        <span className="font-semibold">{l.nutrient}</span> <span className="text-gray-700">{l.product}</span>
+                      </div>
+                      <SummaryLine>
+                        <span>{n2(l.lbPerAc)} lb/ac actual</span>
+                        <Dot />
+                        <span className="inline-flex items-center gap-1">
+                          guide
+                          <GuideRate
+                            crop={guideSoils?.get(r.fieldId)?.crop ?? null}
+                            nutrient={l.nutrient}
+                            soil={guideSoils?.get(r.fieldId)?.soil ?? {}}
+                          />
+                        </span>
+                        <Dot />
+                        {l.productLbPerAc == null ? (
+                          <span className="text-amber-700">product lb/ac n/a</span>
+                        ) : (
+                          <span>{n2(l.productLbPerAc)} lb/ac product</span>
+                        )}
+                        <Dot />
+                        <span className="font-medium text-gray-900">{n0(l.productLbTotal)} lb</span>
+                        {l.timing && (
+                          <>
+                            <Dot />
+                            <span>{l.timing}</span>
+                          </>
+                        )}
+                      </SummaryLine>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </RowCard>
+          ))}
+        </CardList>
+        {/* Scrolls sideways at the narrowest sizes rather than squeezing each
+            cell to a word a line. */}
+        <div className="hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[520px] table-fixed text-sm">
           <thead className={TABLE_HEAD}>
             <tr>

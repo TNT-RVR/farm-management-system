@@ -28,6 +28,7 @@ import { DriveBackupScheduler } from '@/components/DriveBackupScheduler'
 import { usePartnerView } from '@/lib/partner-view'
 import { PartnerShell } from './PartnerShell'
 import { PageSkeleton } from '@/components/Skeleton'
+import { SectionGate } from '@/components/ProtectedRoute'
 
 /** Ctrl+K (⌘K), or / when not typing in a box, opens the search from anywhere. */
 function useSearchShortcut(open: () => void) {
@@ -262,7 +263,10 @@ function StaffShell() {
             <ErrorBoundary key={pathname}>
               {/* Pages load on first open (App.tsx); the shell stays put meanwhile. */}
               <Suspense fallback={<PageSkeleton />}>
-                <Outlet />
+                {/* A switched-off or closed-off section says so here, inside the frame. */}
+                <SectionGate>
+                  <Outlet />
+                </SectionGate>
               </Suspense>
             </ErrorBoundary>
           </main>

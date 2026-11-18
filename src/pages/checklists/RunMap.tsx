@@ -64,7 +64,7 @@ export function RunMap({
     return m
   }, [items])
   const general = items.filter((i) => !i.run_location_id)
-  const status = (id: string) => placeStatus(byPlace.get(id) ?? [])
+  const status = (id: string) => placeStatus(byPlace.get(id) ?? [], places?.find((p) => p.id === id)?.note)
   const mapPlaces: MapPlace[] = (places ?? []).map((p) => ({ id: p.id, name: p.name, geojson: p.geojson, colour: p.colour ?? PLAIN_COLOUR, status: status(p.id) }))
   const kinds = categoriesOf(places ?? [])
   const counts = (places ?? []).reduce((c, p) => ({ ...c, [status(p.id)]: c[status(p.id)] + 1 }), { done: 0, partial: 0, todo: 0 } as Record<PlaceStatus, number>)
@@ -82,6 +82,8 @@ export function RunMap({
           onChange={setView}
         />
         <span className="flex items-center gap-3 text-xs text-gray-600">
+          {/* Places, not jobs: the bar above the map counts the jobs. */}
+          <span className="font-medium text-gray-700">Places:</span>
           {(['todo', 'partial', 'done'] as PlaceStatus[]).map((s) => (
             <span key={s} className="flex items-center gap-1">
               <StatusIcon s={s} /> {STATUS_LABEL[s]} {counts[s]}
@@ -237,7 +239,7 @@ function PlacePanel({
   const keep = usePhotoToTemplate()
   const keptPaths = new Set(howTo.map((p) => p.storage_path))
   const unkept = found.filter((p) => !keptPaths.has(p.storage_path))
-  const s = placeStatus(items)
+  const s = placeStatus(items, place.note)
   // The pump(s) this place stands for, through the map pin it follows or the pump list.
   const { profile } = useAuth()
   const { data: templatePlaces } = useTemplateLocations(run.template_id ?? undefined)

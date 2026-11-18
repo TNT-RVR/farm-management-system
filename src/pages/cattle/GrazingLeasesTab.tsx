@@ -46,6 +46,7 @@ import {
   useStockReturns,
 } from '@/lib/grazing-leases-data'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, RowCard } from '@/components/RowCards'
 
 const LEASE_KEY = 'grazing_lease_id'
 const readLease = () => {
@@ -1033,9 +1034,43 @@ function RowsEditor<T extends Record<string, unknown>>({
     const v = type === 'number' ? (raw === '' ? null : Number(raw)) : raw
     onChange(rows.map((r, j) => (j === i ? { ...r, [key]: v } : r)))
   }
+  const cell = (r: T, i: number, c: Col<T>) => (
+    <input
+      type={c.type ?? 'text'}
+      value={r[c.key] == null ? '' : String(r[c.key])}
+      disabled={disabled}
+      list={c.list ? `${listId}-${c.key}` : undefined}
+      placeholder={c.placeholder}
+      aria-label={c.label}
+      onChange={(e) => set(i, c.key, e.target.value, c.type)}
+      className={cn(input, c.type === 'number' && 'text-right')}
+    />
+  )
+  const remove = (i: number) =>
+    !disabled && (
+      <button
+        type="button"
+        onClick={() => onChange(rows.filter((_, j) => j !== i))}
+        className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-600"
+        aria-label="Remove row"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
+    )
   return (
     <div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
+      {/* One row a card of labelled boxes on a phone (design review, Nov 2026). */}
+      <CardList className="rounded-lg border border-gray-200" isEmpty={!rows.length} empty="None entered.">
+        {rows.map((r, i) => (
+          <RowCard
+            key={i}
+            heading={<span className="text-xs font-medium text-gray-500">Row {i + 1}</span>}
+            actions={remove(i)}
+            facts={columns.map((c) => ({ label: c.label, node: cell(r, i, c) }))}
+          />
+        ))}
+      </CardList>
+      <div className="hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
         <table className="w-full text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -1052,29 +1087,10 @@ function RowsEditor<T extends Record<string, unknown>>({
               <tr key={i}>
                 {columns.map((c) => (
                   <td key={c.key} className={cn('px-3 py-1', c.width)}>
-                    <input
-                      type={c.type ?? 'text'}
-                      value={r[c.key] == null ? '' : String(r[c.key])}
-                      disabled={disabled}
-                      list={c.list ? `${listId}-${c.key}` : undefined}
-                      placeholder={c.placeholder}
-                      onChange={(e) => set(i, c.key, e.target.value, c.type)}
-                      className={cn(input, c.type === 'number' && 'text-right')}
-                    />
+                    {cell(r, i, c)}
                   </td>
                 ))}
-                <td className="py-1 pr-1">
-                  {!disabled && (
-                    <button
-                      type="button"
-                      onClick={() => onChange(rows.filter((_, j) => j !== i))}
-                      className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-600"
-                      aria-label="Remove row"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </td>
+                <td className="py-1 pr-1">{remove(i)}</td>
               </tr>
             ))}
             {!rows.length && (

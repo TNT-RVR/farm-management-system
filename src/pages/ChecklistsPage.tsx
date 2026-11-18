@@ -196,6 +196,9 @@ export function ChecklistsPage() {
   // write policy says). Its assignees' "Checklist: …" tasks follow it.
   const [renaming, setRenaming] = useState<RunRow | null>(null)
   const [deletingRun, setDeletingRun] = useState<RunRow | null>(null)
+  // "New" asks for the name first; it used to make a "New checklist" on the
+  // click, left behind if you walked away (page-walk batch 6).
+  const [naming, setNaming] = useState(false)
   const runsChanged = () => {
     void queryClient.invalidateQueries({ queryKey: ['checklist_runs'] })
     void queryClient.invalidateQueries({ queryKey: ['checklist_run'] })
@@ -247,16 +250,19 @@ export function ChecklistsPage() {
   }, [templates, cat, search])
 
   const createTemplate = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (name: string) => {
       const { data, error } = await supabase
         .from('checklist_templates')
-        .insert({ name: 'New checklist', category: 'other' })
+        .insert({ name, category: 'other' })
         .select('id')
         .single()
       if (error) throw error
       return data.id
     },
+    // The reason shows on the page, under the dialog it would hide behind.
+    onError: () => setNaming(false),
     onSuccess: (id) => {
+      setNaming(false)
       void queryClient.invalidateQueries({ queryKey: ['checklist_templates'] })
       navigate(`/checklists/templates/${id}`)
     },
@@ -301,7 +307,10 @@ export function ChecklistsPage() {
             />
             {isManager && (
               <button
-                onClick={() => createTemplate.mutate()}
+                onClick={() => {
+                  createTemplate.reset()
+                  setNaming(true)
+                }}
                 className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-800"
               >
                 <Plus className="h-3.5 w-3.5" /> New
@@ -460,6 +469,19 @@ export function ChecklistsPage() {
       )}
 
       {starting && <StartRunDialog template={starting} onClose={() => setStarting(null)} />}
+      {naming && (
+        <PromptDialog
+          title="New checklist"
+          label="Name"
+          placeholder="e.g. Pivot winterizing"
+          confirmLabel={createTemplate.isPending ? 'Adding…' : 'Add'}
+          onClose={() => setNaming(false)}
+          onSubmit={(name) => {
+            if (!createTemplate.isPending) createTemplate.mutate(name)
+          }}
+        />
+      )}
+      {createTemplate.isError && <p className="mt-2 text-xs text-red-600">Not added: {(createTemplate.error as Error).message}</p>}
       {renameRun.isError && <p className="mt-2 text-xs text-red-600">Not renamed: {(renameRun.error as Error).message}</p>}
       {renaming && (
         <PromptDialog

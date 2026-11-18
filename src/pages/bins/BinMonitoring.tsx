@@ -159,17 +159,19 @@ export function BinMonitoring({
       {!readings?.length ? (
         !adding && <p className="text-xs text-gray-400">No readings yet.</p>
       ) : (
+        // A date-by-level grid stays a grid on a phone, the date pinned while
+        // the levels scroll under it (design review, Nov 2026).
         <div className="max-h-72 overflow-auto rounded-md border border-gray-200">
-          <table className="w-full text-xs">
-            <thead className={cn(TABLE_HEAD, 'sticky top-0')}>
+          <table className="w-full text-xs max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
+            <thead className={cn(TABLE_HEAD, 'sticky top-0 z-[3]')}>
               <tr>
-                <th className="px-2 py-1 font-medium">Date</th>
+                <th className="sticky left-0 z-[2] bg-brand-700 px-2 py-1 font-medium">Date</th>
                 {Array.from({ length: Math.max(...readings.map((r) => r.levels.length), 1) }, (_, i) => (
                   <th key={i} className="px-2 py-1 text-right font-medium">
                     {i === 0 ? '1 top' : i + 1}
                   </th>
                 ))}
-                <th className="px-2 py-1 font-medium">By</th>
+                <th className="px-2 py-1 font-medium max-sm:hidden">By</th>
                 {canEdit && <th />}
               </tr>
             </thead>
@@ -188,7 +190,7 @@ export function BinMonitoring({
                   title={canEdit ? 'Open the reading to correct it' : (r.notes ?? undefined)}
                   className={cn('align-top', canEdit && 'cursor-pointer hover:bg-gray-50', editing?.id === r.id && 'bg-brand-50')}
                 >
-                  <td className="whitespace-nowrap px-2 py-1 text-gray-700">
+                  <td className={cn('sticky left-0 z-[1] whitespace-nowrap px-2 py-1 text-gray-700', editing?.id === r.id ? 'bg-brand-50' : 'bg-white')}>
                     {r.read_on}
                     {/* What it was read on, said on the row itself when that is
                         no longer what is in the bin. */}
@@ -218,7 +220,7 @@ export function BinMonitoring({
                       </td>
                     )
                   })}
-                  <td className="px-2 py-1 text-gray-600">{r.initials ?? '—'}</td>{/* who read it */}
+                  <td className="px-2 py-1 text-gray-600 max-sm:hidden">{r.initials ?? '—'}</td>{/* who read it */}
                   {canEdit && (
                     <td className="px-1 py-1 text-right">
                       <button
@@ -502,15 +504,16 @@ function ReadingForm({
         </div>
       )}
 
+      {/* Tighter on a phone, the level pinned (design review, Nov 2026). */}
       <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="w-full text-xs">
+        <table className="w-full text-xs max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
           <thead className={TABLE_HEAD}>
             <tr>
-              <th className={TABLE_TH}>Level</th>
+              <th className={cn(TABLE_TH, 'sticky left-0 z-[2] bg-brand-700')}>Level</th>
               <th className={TABLE_TH}>Temp °C</th>
               <th className={TABLE_TH}>{mode === 'rh' ? 'RH %' : 'Moisture %'}</th>
               <th className={cn(TABLE_TH, 'text-right')}>Moisture</th>
-              <th className={TABLE_TH}>Above grain<HeadTip title="Above grain">The sensor is in the headspace, not buried in the grain. Left out of the reading.</HeadTip></th>
+              <th className={TABLE_TH}><span className="sm:hidden">Air</span><span className="max-sm:hidden">Above grain</span><HeadTip title="Above grain">The sensor is in the headspace, not buried in the grain. Left out of the reading.</HeadTip></th>
               <th />
             </tr>
           </thead>
@@ -520,12 +523,12 @@ function ReadingForm({
               const outside = mode === 'rh' && l.temp_c != null && l.rh_pct != null && l.moisture_pct == null
               return (
                 <tr key={i}>
-                  <td className="px-3 py-0.5 text-gray-600">{i === 0 ? '1 (top)' : i === rows.length - 1 ? `${i + 1} (bottom)` : i + 1}</td>
+                  <td className="sticky left-0 z-[1] bg-white px-3 py-0.5 text-gray-600">{i === 0 ? '1 (top)' : i === rows.length - 1 ? `${i + 1} (bottom)` : i + 1}</td>
                   <td className="px-3 py-0.5">
-                    <input inputMode="decimal" value={r.temp} onChange={(e) => set(i, { temp: e.target.value })} className={cn(inputCls, 'w-20 text-right')} />
+                    <input inputMode="decimal" value={r.temp} onChange={(e) => set(i, { temp: e.target.value })} className={cn(inputCls, 'w-20 text-right max-sm:w-16')} />
                   </td>
                   <td className="px-3 py-0.5">
-                    <input inputMode="decimal" value={r.pct} onChange={(e) => set(i, { pct: e.target.value })} className={cn(inputCls, 'w-20 text-right')} />
+                    <input inputMode="decimal" value={r.pct} onChange={(e) => set(i, { pct: e.target.value })} className={cn(inputCls, 'w-20 text-right max-sm:w-16')} />
                   </td>
                   <td className="px-3 py-0.5 text-right tabular-nums">
                     {l.moisture_pct != null ? (

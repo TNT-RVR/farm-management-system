@@ -74,11 +74,22 @@ const BY_CONSTRAINT: Record<string, string> = {
   land_leases_crop_share_pct_check: 'The crop share has to be between 0 and 100%.',
   land_leases_our_share_pct_check: 'Our share has to be between 0 and 100%.',
 
+  // Equipment service
+  equipment_service_log_cost_check: 'A service cost cannot be negative.',
+  equipment_service_log_engine_hours_check: 'Engine hours cannot be negative.',
+
   // Field work
   field_work_records_order: 'The finish time has to be at or after the start time.',
   field_work_records_hours_check: 'Hours cannot be negative.',
   field_work_records_hay_cut_check: 'The hay cut has to be between 1 and 5.',
   field_boundaries_check: 'The boundary end date has to be after its start date.',
+
+  // Pumps and pivots
+  pumps_efficiency_pct_check: 'Pump efficiency has to be more than 0 and at most 100%.',
+  pumps_power_factor_pct_check: 'Power factor has to be more than 0 and at most 100%.',
+  pumps_stages_check: 'Stages has to be 1 or more.',
+  pumps_phase_check: 'Phase has to be 1 or 3.',
+  field_pivots_phase_check: 'Phase has to be 1 or 3.',
 }
 
 /** The generic story for a class of database error, when no constraint matched. */

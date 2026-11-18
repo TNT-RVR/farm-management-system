@@ -24,6 +24,8 @@ export const GENERIC_NAMES: [string, string][] = [
   // pivots
   ['Lindsay FieldNET', 'Prairieline Pivot'],
   ['FieldNET Advisor', 'Prairieline Pivot Advisor'],
+  // "FieldNET pivot" would read "Prairieline Pivot pivot" (batch 6 walk).
+  ['FieldNET pivot', 'Prairieline pivot'],
   ['FieldNET', 'Prairieline Pivot'],
   ['Lindsay', 'Prairieline'],
   // books, files, tasks, solar, virtual fencing

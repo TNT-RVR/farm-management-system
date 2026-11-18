@@ -42,6 +42,7 @@ import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
 import { n0, n1 } from '@/lib/format'
 import { YearSelect } from '@/components/YearSelect'
 import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 const SRC = 'manure'
 const FILL = 'manure-fill'
@@ -485,10 +486,122 @@ function Ranking({ year }: { year: number }) {
     return rankFields(rows, year, { zone }).map((r) => ({ ...r, input: byId.get(r.fieldId)! }))
   }, [fields, soil, allManure, acresOf, year, irrigated, zone])
 
+  // Each row's pieces built once, for the phone card and the table row alike.
+  const rows = ranked.map((r, i) => {
+    const s = soil?.get(r.fieldId)
+    const rx = prescriptions?.find((p) => p.field_id === r.fieldId)
+    const zones = rx ? neediestZones(rx.zones) : []
+    const expanded = open === r.fieldId
+    const toggle = () => setOpen(expanded ? null : r.fieldId)
+    const name = (
+      <>
+        {r.name}
+        {r.caution && <AlertTriangle className="ml-1 inline h-3.5 w-3.5 text-amber-600" />}
+      </>
+    )
+    const lastManured =
+      r.input.lastManureYear == null ? (
+        <span className="text-amber-700">never</span>
+      ) : (
+        <>
+          {manuredWhen(r.input)}
+          {r.input.acres &&
+            r.input.lastManureAcres &&
+            r.input.lastManureAcres < r.input.acres * 0.9 && (
+              <span className="text-gray-400">
+                {' '}
+                ({n0(r.input.lastManureAcres)} of {n0(r.input.acres)} ac)
+              </span>
+            )}
+        </>
+      )
+    const priority = (
+      <span className="inline-flex items-center gap-1.5">
+        <span className="h-1.5 w-16 overflow-hidden rounded bg-gray-200">
+          <span className="block h-full bg-amber-600" style={{ width: `${r.score}%` }} />
+        </span>
+        <span className="w-6 tabular-nums text-gray-700">{r.score}</span>
+      </span>
+    )
+    const detail = expanded ? (
+      <>
+        <ul className="list-disc space-y-0.5 pl-4">
+          {r.reasons.map((why) => (
+            <li key={why}>{why}</li>
+          ))}
+        </ul>
+        {r.caution && <p className="mt-1 font-medium text-amber-800">{r.caution}</p>}
+        {s?.testYear && <p className="mt-1 text-gray-500">Soil test from {s.testYear}.</p>}
+        {zones.length > 0 ? (
+          <p className="mt-1">
+            Poorest ground first, from the {rx?.crop_year} fertility zones:{' '}
+            {zones
+              .slice(0, 3)
+              .map((z) => `zone ${z.zone} (${z.index ?? 'no band'}, ${n1(z.acres)} ac)`)
+              .join(', ')}
+            .
+          </p>
+        ) : (
+          <p className="mt-1 text-gray-500">
+            No fertility zones mapped for this field, so there is nothing to say about where on
+            it.
+          </p>
+        )}
+      </>
+    ) : null
+    return { r, i, s, expanded, toggle, name, lastManured, priority, detail }
+  })
+
   return (
     <div className="space-y-2">
       <h2 className="text-sm font-semibold text-gray-900">Where a load would do the most good</h2>
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white sm:hidden">
+        {/* One field a card on a phone (design review, Nov 2026). */}
+        <CardList>
+          {rows.map(({ r, i, s, expanded, toggle, name, lastManured, priority, detail }) => (
+            <RowCard
+              key={r.fieldId}
+              onClick={toggle}
+              heading={
+                <span className={cn(expanded && 'text-amber-900')}>
+                  <span className="mr-1 font-normal text-gray-400">{i + 1}</span>
+                  {name}
+                </span>
+              }
+              actions={priority}
+              facts={[]}
+              summary={
+                <SummaryLine>
+                  {r.acres != null && <span>{n0(r.acres)} ac</span>}
+                  {s?.omPct != null && (
+                    <>
+                      <Dot />
+                      <span>OM {n1(s.omPct)}%</span>
+                    </>
+                  )}
+                  {s?.olsenPPpm != null && (
+                    <>
+                      <Dot />
+                      <span>P {n0(s.olsenPPpm)}</span>
+                    </>
+                  )}
+                  {s?.kPpm != null && (
+                    <>
+                      <Dot />
+                      <span>K {n0(s.kPpm)} ppm</span>
+                    </>
+                  )}
+                  <Dot />
+                  <span>manured {lastManured}</span>
+                </SummaryLine>
+              }
+            >
+              {detail && <div className="text-xs text-gray-700">{detail}</div>}
+            </RowCard>
+          ))}
+        </CardList>
+      </div>
+      <div className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white sm:block">
         <table className="w-full text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -503,99 +616,34 @@ function Ranking({ year }: { year: number }) {
             </tr>
           </thead>
           <tbody>
-            {ranked.map((r, i) => {
-              const s = soil?.get(r.fieldId)
-              const rx = prescriptions?.find((p) => p.field_id === r.fieldId)
-              const zones = rx ? neediestZones(rx.zones) : []
-              const expanded = open === r.fieldId
-              return (
-                <Fragment key={r.fieldId}>
-                  <tr
-                    onClick={() => setOpen(expanded ? null : r.fieldId)}
-                    className={cn(
-                      'cursor-pointer border-b border-gray-100 hover:bg-gray-50',
-                      expanded && 'bg-amber-50/50',
-                    )}
-                  >
-                    <td className="px-3 py-2 text-gray-400">{i + 1}</td>
-                    <td className="px-3 py-2 font-medium text-gray-900">
-                      {r.name}
-                      {r.caution && (
-                        <AlertTriangle className="ml-1 inline h-3.5 w-3.5 text-amber-600" />
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{n0(r.acres)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{n1(s?.omPct)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{n0(s?.olsenPPpm)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{n0(s?.kPpm)}</td>
-                    <td className="px-3 py-2 text-gray-600">
-                      {r.input.lastManureYear == null ? (
-                        <span className="text-amber-700">never</span>
-                      ) : (
-                        <>
-                          {manuredWhen(r.input)}
-                          {r.input.acres &&
-                            r.input.lastManureAcres &&
-                            r.input.lastManureAcres < r.input.acres * 0.9 && (
-                              <span className="text-gray-400">
-                                {' '}
-                                ({n0(r.input.lastManureAcres)} of {n0(r.input.acres)} ac)
-                              </span>
-                            )}
-                        </>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="h-1.5 w-16 overflow-hidden rounded bg-gray-200">
-                          <span
-                            className="block h-full bg-amber-600"
-                            style={{ width: `${r.score}%` }}
-                          />
-                        </span>
-                        <span className="w-6 tabular-nums text-gray-700">{r.score}</span>
-                      </span>
+            {rows.map(({ r, i, s, expanded, toggle, name, lastManured, priority, detail }) => (
+              <Fragment key={r.fieldId}>
+                <tr
+                  onClick={toggle}
+                  className={cn(
+                    'cursor-pointer border-b border-gray-100 hover:bg-gray-50',
+                    expanded && 'bg-amber-50/50',
+                  )}
+                >
+                  <td className="px-3 py-2 text-gray-400">{i + 1}</td>
+                  <td className="px-3 py-2 font-medium text-gray-900">{name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{n0(r.acres)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{n1(s?.omPct)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{n0(s?.olsenPPpm)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{n0(s?.kPpm)}</td>
+                  <td className="px-3 py-2 text-gray-600">{lastManured}</td>
+                  <td className="px-3 py-2 text-right">{priority}</td>
+                </tr>
+                {detail && (
+                  <tr className="border-b border-gray-100 bg-amber-50/30">
+                    <td />
+                    <td colSpan={7} className="px-3 py-2 text-xs text-gray-700">
+                      {detail}
                     </td>
                   </tr>
-                  {expanded && (
-                    <tr className="border-b border-gray-100 bg-amber-50/30">
-                      <td />
-                      <td colSpan={7} className="px-3 py-2 text-xs text-gray-700">
-                        <ul className="list-disc space-y-0.5 pl-4">
-                          {r.reasons.map((why) => (
-                            <li key={why}>{why}</li>
-                          ))}
-                        </ul>
-                        {r.caution && (
-                          <p className="mt-1 font-medium text-amber-800">{r.caution}</p>
-                        )}
-                        {s?.testYear && (
-                          <p className="mt-1 text-gray-500">Soil test from {s.testYear}.</p>
-                        )}
-                        {zones.length > 0 ? (
-                          <p className="mt-1">
-                            Poorest ground first, from the {rx?.crop_year} fertility zones:{' '}
-                            {zones
-                              .slice(0, 3)
-                              .map(
-                                (z) =>
-                                  `zone ${z.zone} (${z.index ?? 'no band'}, ${n1(z.acres)} ac)`,
-                              )
-                              .join(', ')}
-                            .
-                          </p>
-                        ) : (
-                          <p className="mt-1 text-gray-500">
-                            No fertility zones mapped for this field, so there is nothing to say
-                            about where on it.
-                          </p>
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              )
-            })}
+                )}
+              </Fragment>
+            ))}
           </tbody>
         </table>
       </div>

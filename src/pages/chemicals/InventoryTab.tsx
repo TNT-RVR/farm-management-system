@@ -9,6 +9,7 @@ import { useAllBoundaries, useFields } from '@/lib/queries'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { L_PER_US_GAL, currentAcres, inPacks, shedStock, shownStock, type InvAdjustment, type InvOp, type InvPurchase, type StockLine } from '@/lib/chem-inventory'
 import { InfoPopover } from '@/components/InfoPopover'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 import { cn } from '@/lib/utils'
 import { askConfirm } from '@/components/askConfirm'
 import { TABLE_HEAD } from '@/lib/table-style'
@@ -152,6 +153,110 @@ export function InventoryTab() {
     `${v.toLocaleString('en-CA', { maximumFractionDigits: 1 })} ${unit === 'L' && gallons ? 'gal' : (unit ?? '')}`
   const perUnit = (unit: string | null) => (unit === 'L' && gallons ? L_PER_US_GAL : 1)
 
+  // The method behind On hand, shown on the table's header and over the phone's cards.
+  const method = (
+    <InfoPopover title="Bought, sprayed and counted">
+      <p>
+        Counting starts on the date chosen above: Deere has no spray records before mid-2024, so anything bought earlier cannot be
+        followed — count what is left of it and the count carries it forward. Bought is every {retailerName} invoice line linked to the product
+        (packs × pack size). Sprayed is what the sprayer measured putting out, or the
+        planned rate over the acres it covered where Deere has no measurement; hand-entered copies of a logged job are not counted twice.
+        A count sets the stock to what was on the shelf that day; everything after it runs on from there. Gallons are US.
+      </p>
+    </InfoPopover>
+  )
+
+  // Each product's cells once, for the phone card and the table row alike.
+  const rowsShaped = shown.map((l) => {
+    const isOpen = open === l.product.id
+    // Columns as printed; On hand is worked out from them so they subtract.
+    const s = shownStock(l, perUnit(l.product.unit))
+    return {
+      l,
+      isOpen,
+      name: (
+        <>
+          <button type="button" onClick={() => setOpen(isOpen ? null : l.product.id)} className="flex items-center gap-1 text-left font-medium text-gray-900">
+            {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+            {l.product.name}
+          </button>
+          <span className="ml-5 block text-xs font-normal text-gray-400">
+            {l.lastBought ? `last bought ${l.lastBought}` : 'no invoice on record'}
+            {l.countedOn && ` · counted ${l.countedOn}`}
+          </span>
+        </>
+      ),
+      onHandClass: !l.lastBought ? 'text-gray-400' : l.onHand < -0.05 ? 'text-red-700' : 'text-gray-900',
+      onHandText: !l.lastBought && !l.countedOn ? 'count it' : shownAs(s.onHand, l.product.unit),
+      packs: inPacks(l.onHand, l.packSize, l.packUnit),
+      adjusted: s.adjusted !== 0 ? shownAs(s.adjusted, l.product.unit) : null,
+      bought: shownAs(s.bought, l.product.unit),
+      used: shownAs(s.used, l.product.unit),
+    }
+  })
+
+  // A product's running history: invoices, sprays and counts, newest first.
+  const entriesOf = (l: StockLine) => (
+    <>
+      <ul className="max-h-72 space-y-0.5 overflow-auto text-xs">
+        {[...l.entries].reverse().map((e, i) => (
+          <li key={e.adjustment?.id ?? i} className="flex items-center gap-3 tabular-nums">
+            <span className="w-20 shrink-0 text-gray-500">{e.date}</span>
+            <span className={cn('w-20 shrink-0 text-right', e.kind === 'count' ? 'text-brand-700' : e.qty < 0 ? 'text-red-700' : 'text-green-700')}>
+              {e.kind === 'count' ? `= ${show(e.qty, l.product.unit)}` : `${e.qty > 0 ? '+' : ''}${show(e.qty, l.product.unit)}`}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-gray-700">
+              <span className="text-gray-400">{e.kind === 'bought' ? 'bought' : e.kind === 'used' ? 'sprayed' : e.kind === 'count' ? 'counted' : 'adjusted'} · </span>
+              {e.kind === 'used' && e.fieldId ? (
+                <Link to={`/fields/${e.fieldId}/history`} className="underline decoration-gray-300 hover:text-brand-700">
+                  {e.label}
+                </Link>
+              ) : (
+                e.label
+              )}
+            </span>
+            {/* Where the line came from (Sam, 7 Oct 2026): only the hand-made ones are edited here. */}
+            <span className="hidden w-32 shrink-0 truncate text-xs text-gray-400 sm:inline">
+              {e.kind === 'bought'
+                ? `${retailerName} invoice`
+                : e.kind === 'used'
+                  ? `John Deere ${e.measured ? '(measured)' : '(planned rate)'}`
+                  : 'by hand'}
+            </span>
+            <span className="w-24 shrink-0 text-right text-gray-500">{show(e.balance, l.product.unit)}</span>
+            {isMgr && (
+              <span className="flex w-16 shrink-0 justify-end gap-1">
+                {e.adjustment && (
+                  <>
+                    <button
+                      type="button"
+                      aria-label="Edit this count"
+                      onClick={() => setEditAdj({ adj: e.adjustment!, line: l })}
+                      className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Delete this count"
+                      onClick={async () => {
+                        if (await askConfirm(`Delete this ${e.kind === 'count' ? 'count' : 'adjustment'} of ${l.product.name} on ${e.date}?`)) delAdj.mutate(e.adjustment!.id)
+                      }}
+                      className="rounded p-0.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                )}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {delAdj.error && <p className="mt-1 text-xs text-red-700">{(delAdj.error as Error).message}</p>}
+    </>
+  )
+
   if (isLoading) return <p className="py-8 text-center text-sm text-gray-400">Adding up the invoices and the sprayer…</p>
   if (error) return <p className="text-sm text-red-700">{(error as Error).message}</p>
 
@@ -196,7 +301,62 @@ export function InventoryTab() {
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      {/* One product a card on a phone; tap the name for its history (design review, Nov 2026). */}
+      <CardList isEmpty={!shown.length} empty="Nothing matches." className="rounded-lg border border-gray-200 bg-white">
+        <li className="flex items-center gap-1 px-3 py-2 text-xs text-gray-500">
+          On hand = bought − sprayed ± counts
+          {method}
+        </li>
+        {rowsShaped.map((x) => (
+          <RowCard
+            key={x.l.product.id}
+            heading={x.name}
+            facts={[]}
+            summary={
+              <SummaryLine>
+                <span className={cn('font-semibold tabular-nums', x.onHandClass)}>
+                  {x.onHandText}
+                  {x.l.lastBought || x.l.countedOn ? ' on hand' : ''}
+                </span>
+                {x.packs && (
+                  <>
+                    <Dot />
+                    <span className="tabular-nums">{x.packs}</span>
+                  </>
+                )}
+                <Dot />
+                <span className="tabular-nums">bought {x.bought}</span>
+                <Dot />
+                <span className="tabular-nums">sprayed {x.used}</span>
+                {x.adjusted && (
+                  <>
+                    <Dot />
+                    <span className="tabular-nums">counted / fixed {x.adjusted}</span>
+                  </>
+                )}
+              </SummaryLine>
+            }
+          >
+            {isMgr || x.isOpen ? (
+              <>
+                {isMgr && (
+                  <div className="flex justify-end">
+                    <StockEdit line={x.l} />
+                  </div>
+                )}
+                {/* The history keeps its columns; it scrolls inside the card. */}
+                {x.isOpen && (
+                  <div className={cn('overflow-x-auto', isMgr && 'mt-2')}>
+                    <div className="min-w-[28rem]">{entriesOf(x.l)}</div>
+                  </div>
+                )}
+              </>
+            ) : null}
+          </RowCard>
+        ))}
+      </CardList>
+
+      <div className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white sm:block">
         <table className="w-full min-w-[480px] text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -206,15 +366,7 @@ export function InventoryTab() {
               <th className="px-3 py-2 text-right font-medium">
                 <span className="inline-flex items-center gap-1">
                   On hand
-                  <InfoPopover title="Bought, sprayed and counted">
-                    <p>
-                      Counting starts on the date chosen above: Deere has no spray records before mid-2024, so anything bought earlier cannot be
-                      followed — count what is left of it and the count carries it forward. Bought is every {retailerName} invoice line linked to the product
-                      (packs × pack size). Sprayed is what the sprayer measured putting out, or the
-                      planned rate over the acres it covered where Deere has no measurement; hand-entered copies of a logged job are not counted twice.
-                      A count sets the stock to what was on the shelf that day; everything after it runs on from there. Gallons are US.
-                    </p>
-                  </InfoPopover>
+                  {method}
                 </span>
               </th>
               <th className="px-3 py-2 text-right font-medium">In packs</th>
@@ -225,97 +377,26 @@ export function InventoryTab() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {shown.map((l) => {
-              const isOpen = open === l.product.id
-              // Columns as printed; On hand is worked out from them so they subtract.
-              const s = shownStock(l, perUnit(l.product.unit))
-              return (
-                <Fragment key={l.product.id}>
-                  <tr className="hover:bg-gray-50">
-                    <td className="px-3 py-2">
-                      <button type="button" onClick={() => setOpen(isOpen ? null : l.product.id)} className="flex items-center gap-1 text-left font-medium text-gray-900">
-                        {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
-                        {l.product.name}
-                      </button>
-                      <span className="ml-5 block text-xs text-gray-400">
-                        {l.lastBought ? `last bought ${l.lastBought}` : 'no invoice on record'}
-                        {l.countedOn && ` · counted ${l.countedOn}`}
-                      </span>
+            {rowsShaped.map(({ l, isOpen, name, onHandClass, onHandText, packs, adjusted, bought, used }) => (
+              <Fragment key={l.product.id}>
+                <tr className="hover:bg-gray-50">
+                  <td className="px-3 py-2">{name}</td>
+                  <td className={cn('px-3 py-2 text-right font-semibold tabular-nums', onHandClass)}>{onHandText}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-600">{packs ?? '—'}</td>
+                  <td className="hidden px-3 py-2 text-right tabular-nums text-gray-600 sm:table-cell">{bought}</td>
+                  <td className="hidden px-3 py-2 text-right tabular-nums text-gray-600 sm:table-cell">{used}</td>
+                  <td className="hidden px-3 py-2 text-right tabular-nums text-gray-600 md:table-cell">{adjusted ?? '—'}</td>
+                  <td className="px-3 py-2 text-right">{isMgr && <StockEdit line={l} />}</td>
+                </tr>
+                {isOpen && (
+                  <tr>
+                    <td colSpan={7} className="bg-gray-50 px-3 py-2">
+                      {entriesOf(l)}
                     </td>
-                    <td className={cn('px-3 py-2 text-right font-semibold tabular-nums', !l.lastBought ? 'text-gray-400' : l.onHand < -0.05 ? 'text-red-700' : 'text-gray-900')}>
-                      {!l.lastBought && !l.countedOn ? 'count it' : shownAs(s.onHand, l.product.unit)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-gray-600">{inPacks(l.onHand, l.packSize, l.packUnit) ?? '—'}</td>
-                    <td className="hidden px-3 py-2 text-right tabular-nums text-gray-600 sm:table-cell">{shownAs(s.bought, l.product.unit)}</td>
-                    <td className="hidden px-3 py-2 text-right tabular-nums text-gray-600 sm:table-cell">{shownAs(s.used, l.product.unit)}</td>
-                    <td className="hidden px-3 py-2 text-right tabular-nums text-gray-600 md:table-cell">{s.adjusted !== 0 ? shownAs(s.adjusted, l.product.unit) : '—'}</td>
-                    <td className="px-3 py-2 text-right">{isMgr && <StockEdit line={l} />}</td>
                   </tr>
-                  {isOpen && (
-                    <tr>
-                      <td colSpan={7} className="bg-gray-50 px-3 py-2">
-                        <ul className="max-h-72 space-y-0.5 overflow-auto text-xs">
-                          {[...l.entries].reverse().map((e, i) => (
-                            <li key={e.adjustment?.id ?? i} className="flex items-center gap-3 tabular-nums">
-                              <span className="w-20 shrink-0 text-gray-500">{e.date}</span>
-                              <span className={cn('w-20 shrink-0 text-right', e.kind === 'count' ? 'text-brand-700' : e.qty < 0 ? 'text-red-700' : 'text-green-700')}>
-                                {e.kind === 'count' ? `= ${show(e.qty, l.product.unit)}` : `${e.qty > 0 ? '+' : ''}${show(e.qty, l.product.unit)}`}
-                              </span>
-                              <span className="min-w-0 flex-1 truncate text-gray-700">
-                                <span className="text-gray-400">{e.kind === 'bought' ? 'bought' : e.kind === 'used' ? 'sprayed' : e.kind === 'count' ? 'counted' : 'adjusted'} · </span>
-                                {e.kind === 'used' && e.fieldId ? (
-                                  <Link to={`/fields/${e.fieldId}/history`} className="underline decoration-gray-300 hover:text-brand-700">
-                                    {e.label}
-                                  </Link>
-                                ) : (
-                                  e.label
-                                )}
-                              </span>
-                              {/* Where the line came from (Sam, 7 Oct 2026): only the hand-made ones are edited here. */}
-                              <span className="hidden w-32 shrink-0 truncate text-xs text-gray-400 sm:inline">
-                                {e.kind === 'bought'
-                                  ? `${retailerName} invoice`
-                                  : e.kind === 'used'
-                                    ? `John Deere ${e.measured ? '(measured)' : '(planned rate)'}`
-                                    : 'by hand'}
-                              </span>
-                              <span className="w-24 shrink-0 text-right text-gray-500">{show(e.balance, l.product.unit)}</span>
-                              {isMgr && (
-                                <span className="flex w-16 shrink-0 justify-end gap-1">
-                                  {e.adjustment && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        aria-label="Edit this count"
-                                        onClick={() => setEditAdj({ adj: e.adjustment!, line: l })}
-                                        className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                                      >
-                                        <Pencil className="h-3.5 w-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        aria-label="Delete this count"
-                                        onClick={async () => {
-                                          if (await askConfirm(`Delete this ${e.kind === 'count' ? 'count' : 'adjustment'} of ${l.product.name} on ${e.date}?`)) delAdj.mutate(e.adjustment!.id)
-                                        }}
-                                        className="rounded p-0.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                                      >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </button>
-                                    </>
-                                  )}
-                                </span>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                        {delAdj.error && <p className="mt-1 text-xs text-red-700">{(delAdj.error as Error).message}</p>}
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              )
-            })}
+                )}
+              </Fragment>
+            ))}
             {!shown.length && (
               <tr>
                 <td colSpan={7} className="px-3 py-8 text-center text-xs text-gray-500">

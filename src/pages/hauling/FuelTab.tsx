@@ -8,6 +8,8 @@ import { Card, SettingsGroup, type NumberField } from './ui'
 import { FieldLink, Sources, money, n0, n1 } from '../fertilizer/savings/ui'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
+import { HeadTip } from '@/components/HeadTip'
 
 const KIND_FIELDS = (unit: string): NumberField<OpKind>[] => OP_KINDS.map((k) => ({ key: k.key, label: k.label, unit, hint: k.machine }))
 
@@ -47,11 +49,17 @@ export function FuelTab({ year, isManager }: { year: number; isManager: boolean 
       .sort((a, b) => b.s.litres - a.s.litres)
   }, [ops, fields, m])
 
-  const farm = rows.reduce(
-    (t, r) => ({ inField: t.inField + r.s.inField, travel: t.travel + r.s.travel, km: t.km + r.s.travelKm, hours: t.hours + r.s.travelHours, logged: t.logged + r.s.logged }),
-    { inField: 0, travel: 0, km: 0, hours: 0, logged: 0 },
-  )
   const d = m.settings.dieselPerL
+  // The header adds up the rows as printed (whole litres, whole dollars), so
+  // it never sits a litre or a dollar off the column below it.
+  const farm = rows.reduce(
+    (t, r) => ({
+      litres: t.litres + Math.round(r.s.inField) + Math.round(r.s.travel),
+      dollars: t.dollars + Math.round(r.s.litres * d),
+      logged: t.logged + r.s.logged,
+    }),
+    { litres: 0, dollars: 0, logged: 0 },
+  )
 
   return (
     <div className="space-y-4">
@@ -59,7 +67,7 @@ export function FuelTab({ year, isManager }: { year: number; isManager: boolean 
         title={`Fuel by field, ${year}`}
         right={
           <span className="text-xs text-brand-100">
-            {n0(farm.inField + farm.travel)} L · {money((farm.inField + farm.travel) * d)} · {n0(farm.logged)} L of it logged by the machines
+            {n0(farm.litres)} L · {money(farm.dollars)} · {n0(farm.logged)} L of it logged by the machines
           </span>
         }
       >
@@ -73,19 +81,64 @@ export function FuelTab({ year, isManager }: { year: number; isManager: boolean 
         {isLoading ? (
           <p className="text-sm text-gray-500">Loading…</p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
+          <>
+          {/* One field a card on a phone (design review, Nov 2026). */}
+          <CardList className="rounded-lg border border-gray-200">
+            {rows.map(({ f, s, passes, logged, byKind, acres }) => (
+              <RowCard
+                key={f.id}
+                heading={<FieldLink id={f.id} name={f.name} to="work" />}
+                facts={[]}
+                summary={
+                  <SummaryLine>
+                    <span className="font-semibold text-gray-900">{money(s.litres * d)}</span>
+                    {acres > 0 && (
+                      <>
+                        <Dot />
+                        <span>{money((s.litres * d) / acres, 2)}/ac</span>
+                      </>
+                    )}
+                    <Dot />
+                    <span>
+                      {passes} passes ({logged} logged)
+                    </span>
+                    <Dot />
+                    <span>{n0(s.inField)} L in field</span>
+                    <Dot />
+                    <span>
+                      {n0(s.travel)} L road, {n0(s.travelKm)} km, {n1(s.travelHours)} h
+                    </span>
+                    {OP_KINDS.slice(0, 4)
+                      .filter((k) => byKind.get(k.key))
+                      .map((k) => (
+                        <span key={k.key} className="contents">
+                          <Dot />
+                          <span>
+                            {k.label.split(' ')[0]} {n0(byKind.get(k.key)!)} L
+                          </span>
+                        </span>
+                      ))}
+                  </SummaryLine>
+                }
+              />
+            ))}
+          </CardList>
+          <div className="hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
             <table className="w-full text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>
                   <th className={TABLE_TH}>Field</th>
                   <th className={cn(TABLE_TH, 'text-right')}>Passes</th>
-                  <th className={cn(TABLE_TH, 'text-right')}>In the field</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>
+                    In the field<HeadTip title="In the field">Working the field only. The road is the next column.</HeadTip>
+                  </th>
                   <th className={cn(TABLE_TH, 'text-right')}>Road</th>
                   <th className={cn(TABLE_TH, 'text-right')}>Road km</th>
                   <th className={cn(TABLE_TH, 'text-right')}>Road hours</th>
                   {OP_KINDS.slice(0, 4).map((k) => (
                     <th key={k.key} className={cn(TABLE_TH, 'text-right')}>
                       {k.label.split(' ')[0]}
+                      <HeadTip title={k.label.split(' ')[0]}>Includes the road there and back, so these add up to In the field plus Road.</HeadTip>
                     </th>
                   ))}
                   <th className={cn(TABLE_TH, 'text-right')}>Fuel $</th>
@@ -118,6 +171,7 @@ export function FuelTab({ year, isManager }: { year: number; isManager: boolean 
               </tbody>
             </table>
           </div>
+          </>
         )}
         <HelpNote
           className="mt-2"
@@ -133,7 +187,8 @@ export function FuelTab({ year, isManager }: { year: number; isManager: boolean 
 
       <Card title="Litres an acre">
         <div className="mb-3 max-w-xl overflow-x-auto rounded-lg border border-gray-200">
-        <table className="w-full text-xs">
+        {/* Five short rows: fits a phone once the cells are tightened (design review, Nov 2026). */}
+        <table className="w-full text-xs max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
           <thead className={TABLE_HEAD}>
             <tr>
               <th className={TABLE_TH}>Work</th>

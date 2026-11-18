@@ -4,6 +4,7 @@ import { AlertTriangle, ChevronDown, ChevronRight, RotateCw } from 'lucide-react
 import { DateField } from '@/components/DateField'
 import { InfoPopover } from '@/components/InfoPopover'
 import { HelpNote } from '@/components/HelpNote'
+import { CardList, RowCard } from '@/components/RowCards'
 import { Select } from '@/components/Select'
 import { supabase } from '@/lib/supabase'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
@@ -154,6 +155,89 @@ export function PivotDepthChecks() {
   if (error) return <p className="text-xs text-red-700">{(error as Error).message}</p>
   if (!data?.systems.length) return <p className="text-xs text-gray-500">No FieldNET pivot is linked to a field yet.</p>
 
+  // Each pivot's cells once, for the phone card and the table row alike.
+  const pivots = data.systems.map((s) => {
+    const panel = readPanel(s.raw)
+    const record = s.field_id ? data.pivots.get(s.field_id) : undefined
+    const a = assessPivot(panel, record ? { gpm: record.gpm, acres: record.acres_irrigated } : null)
+    const fnFlow = a.flows.find((f) => f.label === 'fieldnet')
+    const recFlow = a.flows.find((f) => f.label === 'record')
+    const checks = data.checks.filter((c) => c.fieldnet_id === s.fieldnet_id)
+    const latest = checks[0]
+    const corr = Number(s.depth_correction ?? 1)
+    const season = s.field_id ? (data.seasonMm.get(s.field_id) ?? 0) : 0
+    const effect = seasonEffectMm(season, corr)
+    const offline = panelOffline(panel.commStatus ?? s.comms_status, panel.lastUpdated ?? s.panel_last_seen, openedAt)
+    const isOpen = open === s.fieldnet_id
+    const toggle = () => setOpen(isOpen ? null : s.fieldnet_id)
+    return {
+      s,
+      isOpen,
+      toggle,
+      name: (
+        <>
+          {/* The table row opens on a click anywhere; on a phone the name is the
+              button, so a tap inside the open card's forms leaves it open. */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              toggle()
+            }}
+            className="flex items-center gap-1 text-left font-medium text-gray-900"
+            aria-expanded={isOpen}
+          >
+            {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+            {s.name ?? s.fieldnet_id}
+          </button>
+          <span className="ml-[18px] text-xs font-normal text-gray-500">{fieldName(s) ?? '—'}</span>
+          {offline && (
+            <span className="ml-1.5 inline-flex items-center gap-0.5 rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800">
+              <AlertTriangle className="h-3 w-3" /> panel offline
+            </span>
+          )}
+        </>
+      ),
+      panelCell: <Depth mm={a.panelMm} u={u} />,
+      fnCell: <FlowCell f={fnFlow} u={u} />,
+      recCell: recFlow ? (
+        <FlowCell f={recFlow} u={u} />
+      ) : (
+        <span className="text-gray-400">{record?.gpm ? 'same flow' : 'no gpm on record'}</span>
+      ),
+      latestCell: latest ? (
+        <>
+          {md(latest.checked_on)} · {METHOD_LABEL[latest.method]}
+          {latest.panel_mm ? (
+            <span className="text-gray-400"> · ×{(Number(latest.measured_mm) / Number(latest.panel_mm)).toFixed(2)}</span>
+          ) : null}
+        </>
+      ) : (
+        <span className="text-gray-400">never checked</span>
+      ),
+      corrCell: <span className={cn('font-medium tabular-nums', corr !== 1 ? 'text-brand-700' : 'text-gray-500')}>×{corr.toFixed(2)}</span>,
+      effectCell:
+        corr === 1 ? (
+          <span className="text-gray-400">none</span>
+        ) : (
+          <span title={`${conv.depth(season, u)} ${conv.depthUnit(u)} of FieldNET water in ${year}`}>{signedDepth(effect, u)}</span>
+        ),
+      detail: (
+        <PivotDetail
+          s={s}
+          a={a}
+          runTime100S={panel.runTime100S}
+          checks={checks}
+          corr={corr}
+          season={season}
+          year={year}
+          u={u}
+          isMgr={isMgr}
+        />
+      ),
+    }
+  })
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -173,7 +257,26 @@ export function PivotDepthChecks() {
           </p>
         </InfoPopover>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      {/* One pivot a card on a phone; tap its name for checks and the correction (design review, Nov 2026). */}
+      <CardList className="rounded-lg border border-gray-200 bg-white">
+        {pivots.map((p) => (
+          <RowCard
+            key={p.s.fieldnet_id}
+            heading={p.name}
+            facts={[
+              { label: 'Panel at 100%', node: p.panelCell },
+              { label: 'FieldNET flow', node: p.fnCell },
+              { label: 'Record flow', node: p.recCell },
+              { label: 'Latest check', node: p.latestCell },
+              { label: 'Correction', node: p.corrCell },
+              { label: 'Season effect', node: p.effectCell },
+            ]}
+          >
+            {p.isOpen ? p.detail : null}
+          </RowCard>
+        ))}
+      </CardList>
+      <div className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white sm:block">
         <table className="w-full min-w-[920px] text-xs">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -187,91 +290,29 @@ export function PivotDepthChecks() {
             </tr>
           </thead>
           <tbody>
-            {data.systems.map((s) => {
-              const panel = readPanel(s.raw)
-              const record = s.field_id ? data.pivots.get(s.field_id) : undefined
-              const a = assessPivot(panel, record ? { gpm: record.gpm, acres: record.acres_irrigated } : null)
-              const fnFlow = a.flows.find((f) => f.label === 'fieldnet')
-              const recFlow = a.flows.find((f) => f.label === 'record')
-              const checks = data.checks.filter((c) => c.fieldnet_id === s.fieldnet_id)
-              const latest = checks[0]
-              const corr = Number(s.depth_correction ?? 1)
-              const season = s.field_id ? (data.seasonMm.get(s.field_id) ?? 0) : 0
-              const effect = seasonEffectMm(season, corr)
-              const offline = panelOffline(panel.commStatus ?? s.comms_status, panel.lastUpdated ?? s.panel_last_seen, openedAt)
-              const isOpen = open === s.fieldnet_id
-              return (
-                <Fragment key={s.fieldnet_id}>
-                  <tr
-                    className={cn('cursor-pointer border-b border-gray-100 hover:bg-gray-50', isOpen && 'bg-gray-50')}
-                    onClick={() => setOpen(isOpen ? null : s.fieldnet_id)}
-                  >
-                    <td className="px-2 py-1.5">
-                      <span className="flex items-center gap-1 font-medium text-gray-900">
-                        {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
-                        {s.name ?? s.fieldnet_id}
-                      </span>
-                      <span className="ml-[18px] text-gray-500">{fieldName(s) ?? '—'}</span>
-                      {offline && (
-                        <span className="ml-1.5 inline-flex items-center gap-0.5 rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800">
-                          <AlertTriangle className="h-3 w-3" /> panel offline
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <Depth mm={a.panelMm} u={u} />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <FlowCell f={fnFlow} u={u} />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      {recFlow ? (
-                        <FlowCell f={recFlow} u={u} />
-                      ) : (
-                        <span className="text-gray-400">{record?.gpm ? 'same flow' : 'no gpm on record'}</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-1.5 text-gray-600">
-                      {latest ? (
-                        <>
-                          {md(latest.checked_on)} · {METHOD_LABEL[latest.method]}
-                          {latest.panel_mm ? (
-                            <span className="text-gray-400"> · ×{(Number(latest.measured_mm) / Number(latest.panel_mm)).toFixed(2)}</span>
-                          ) : null}
-                        </>
-                      ) : (
-                        <span className="text-gray-400">never checked</span>
-                      )}
-                    </td>
-                    <td className={cn('px-2 py-1.5 text-right font-medium tabular-nums', corr !== 1 ? 'text-brand-700' : 'text-gray-500')}>×{corr.toFixed(2)}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">
-                      {corr === 1 ? (
-                        <span className="text-gray-400">none</span>
-                      ) : (
-                        <span title={`${conv.depth(season, u)} ${conv.depthUnit(u)} of FieldNET water in ${year}`}>{signedDepth(effect, u)}</span>
-                      )}
+            {pivots.map((p) => (
+              <Fragment key={p.s.fieldnet_id}>
+                <tr
+                  className={cn('cursor-pointer border-b border-gray-100 hover:bg-gray-50', p.isOpen && 'bg-gray-50')}
+                  onClick={p.toggle}
+                >
+                  <td className="px-2 py-1.5">{p.name}</td>
+                  <td className="px-2 py-1.5">{p.panelCell}</td>
+                  <td className="px-2 py-1.5">{p.fnCell}</td>
+                  <td className="px-2 py-1.5">{p.recCell}</td>
+                  <td className="px-2 py-1.5 text-gray-600">{p.latestCell}</td>
+                  <td className="px-2 py-1.5 text-right">{p.corrCell}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{p.effectCell}</td>
+                </tr>
+                {p.isOpen && (
+                  <tr className="border-b border-gray-200 bg-gray-50/60">
+                    <td colSpan={7} className="px-3 py-3">
+                      {p.detail}
                     </td>
                   </tr>
-                  {isOpen && (
-                    <tr className="border-b border-gray-200 bg-gray-50/60">
-                      <td colSpan={7} className="px-3 py-3">
-                        <PivotDetail
-                          s={s}
-                          a={a}
-                          runTime100S={panel.runTime100S}
-                          checks={checks}
-                          corr={corr}
-                          season={season}
-                          year={year}
-                          u={u}
-                          isMgr={isMgr}
-                        />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              )
-            })}
+                )}
+              </Fragment>
+            ))}
           </tbody>
         </table>
       </div>
@@ -337,6 +378,18 @@ function PivotDetail({
   const latest = checks[0]
   const implied = latest ? impliedCorrection(Number(latest.measured_mm), latest.panel_mm != null ? Number(latest.panel_mm) : null) : null
   const proposed = implied != null ? clampCorrection(implied) : null
+  // Each check's cells once, for the phone card and the table row alike.
+  const pastChecks = checks.map((c) => {
+    const imp = impliedCorrection(Number(c.measured_mm), c.panel_mm != null ? Number(c.panel_mm) : null)
+    return {
+      c,
+      imp,
+      speed: c.speed_pct != null ? `${Number(c.speed_pct)}%` : '—',
+      panel: <Depth mm={c.panel_mm != null ? Number(c.panel_mm) : null} u={u} />,
+      measured: <Depth mm={Number(c.measured_mm)} u={u} />,
+      implied: imp != null ? `×${imp.toFixed(2)}` : '—',
+    }
+  })
 
   return (
     <div className="space-y-3 text-xs">
@@ -427,7 +480,29 @@ function PivotDetail({
         {checks.length === 0 ? (
           <p className="text-gray-400">No checks recorded for this pivot.</p>
         ) : (
-          <div className="max-w-2xl overflow-x-auto rounded-lg border border-gray-200">
+          <>
+          {/* One check a card on a phone (design review, Nov 2026). */}
+          <CardList className="rounded-lg border border-gray-200 bg-white">
+            {pastChecks.map((x) => (
+              <RowCard
+                key={x.c.id}
+                heading={
+                  <>
+                    {md(x.c.checked_on)} <span className="font-normal text-gray-600">· {METHOD_LABEL[x.c.method]}</span>
+                  </>
+                }
+                actions={isMgr ? <EditButton onClick={() => setEditing(x.c)} /> : undefined}
+                facts={[
+                  { label: 'Speed', node: x.c.speed_pct != null ? x.speed : null },
+                  { label: 'Panel', node: x.c.panel_mm != null ? x.panel : null },
+                  { label: 'Measured', node: x.measured },
+                  { label: 'Implied', node: x.imp != null ? x.implied : null },
+                  { label: 'Note', node: x.c.note },
+                ]}
+              />
+            ))}
+          </CardList>
+          <div className="hidden max-w-2xl overflow-x-auto rounded-lg border border-gray-200 sm:block">
           <table className="w-full">
             <thead className={TABLE_HEAD}>
               <tr>
@@ -442,32 +517,26 @@ function PivotDetail({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {checks.map((c) => {
-                const imp = impliedCorrection(Number(c.measured_mm), c.panel_mm != null ? Number(c.panel_mm) : null)
-                return (
-                  <tr key={c.id}>
-                    <td className="px-3 py-0.5 text-gray-700">{md(c.checked_on)}</td>
-                    <td className="px-3 py-0.5 text-gray-600">{METHOD_LABEL[c.method]}</td>
-                    <td className="px-3 py-0.5 text-right tabular-nums">{c.speed_pct != null ? `${Number(c.speed_pct)}%` : '—'}</td>
+              {pastChecks.map((x) => (
+                <tr key={x.c.id}>
+                  <td className="px-3 py-0.5 text-gray-700">{md(x.c.checked_on)}</td>
+                  <td className="px-3 py-0.5 text-gray-600">{METHOD_LABEL[x.c.method]}</td>
+                  <td className="px-3 py-0.5 text-right tabular-nums">{x.speed}</td>
+                  <td className="px-3 py-0.5 text-right">{x.panel}</td>
+                  <td className="px-3 py-0.5 text-right">{x.measured}</td>
+                  <td className="px-3 py-0.5 text-right tabular-nums">{x.implied}</td>
+                  <td className="px-3 py-0.5 text-gray-500">{x.c.note ?? ''}</td>
+                  {isMgr && (
                     <td className="px-3 py-0.5 text-right">
-                      <Depth mm={c.panel_mm != null ? Number(c.panel_mm) : null} u={u} />
+                      <EditButton onClick={() => setEditing(x.c)} />
                     </td>
-                    <td className="px-3 py-0.5 text-right">
-                      <Depth mm={Number(c.measured_mm)} u={u} />
-                    </td>
-                    <td className="px-3 py-0.5 text-right tabular-nums">{imp != null ? `×${imp.toFixed(2)}` : '—'}</td>
-                    <td className="px-3 py-0.5 text-gray-500">{c.note ?? ''}</td>
-                    {isMgr && (
-                      <td className="px-3 py-0.5 text-right">
-                        <EditButton onClick={() => setEditing(c)} />
-                      </td>
-                    )}
-                  </tr>
-                )
-              })}
+                  )}
+                </tr>
+              ))}
             </tbody>
           </table>
           </div>
+          </>
         )}
       </div>
       {editing && <EditCheck check={editing} panel100Mm={a.panelMm} u={u} onClose={() => setEditing(null)} />}

@@ -14,6 +14,7 @@ import { AddButton as AddBtn, DetailList, EditButton as EditBtn, RecordEditModal
 import { keepOpenOnError } from '@/lib/record-actions'
 import { NEW_SOURCE_KEY, waterSourceLabel, waterSourceOptions, withNewSource } from '@/lib/water-source-names'
 import { licenceDeleteConfirm, licenceVolumes, M3_PER_ACRE_FOOT, pumpDeleteConfirm } from '@/lib/irrigation-edits'
+import { pivotProblem, pumpProblem, refuse } from '@/lib/pivot-pump-checks'
 import { PumpDetails, PumpFlow } from '@/pages/irrigation/PumpDetails'
 import { usePumpContext } from '@/lib/pump-context'
 import { usePumpPins } from '@/lib/farm-layers'
@@ -38,6 +39,7 @@ import {
   useWaterLicences,
 } from '@/lib/irrigation'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { CardList, RowCard } from '@/components/RowCards'
 
 const numFmt = (v: number | null | undefined, d = 0) =>
   v == null ? '—' : Number(v).toLocaleString('en-CA', { maximumFractionDigits: d })
@@ -332,6 +334,203 @@ export function PivotTab({ isManager }: { isManager: boolean }) {
     ...editFields,
   ]
 
+  // Each pivot's cells and the record that opens under it, built once for its
+  // table row and its phone card.
+  const pivotRows = rows.map(({ p, field }) => {
+    const d = derived.get(p.id)
+    const sug = d?.eff
+    const stored = p.application_efficiency != null ? Number(p.application_efficiency) : null
+    const equipment = [
+      packageLabel(p.sprinkler_package),
+      p.drop_height_ft != null ? `drops at ${p.drop_height_ft} ft` : null,
+      p.end_gun === true ? 'end gun' : p.end_gun === false ? (p.end_treatment ? endLabel(p.end_treatment)?.toLowerCase() : 'no end gun') : null,
+      p.pressure_regulators === true ? `regulators${p.regulator_psi != null ? ` ${p.regulator_psi} psi` : ''}` : p.pressure_regulators === false ? 'no regulators' : null,
+      p.nozzles_replaced_year != null ? `nozzles ${p.nozzles_replaced_year}` : null,
+      p.vri ? 'VRI' : null,
+    ].filter(Boolean)
+    const isOpen = expanded.has(p.id)
+    const area = p.smrid_area == null ? null : areaByNumber.get(p.smrid_area)
+    // Everything that used to be a column of its own, for the row
+    // that opens under the pivot.
+    const more: [string, React.ReactNode][] = [
+      ['Licence', p.water_licence_id ? txt(licById.get(p.water_licence_id)?.licence_number) : '—'],
+      ['Brand', txt(p.brand)],
+      ['Sprinklers', equipment.length ? equipment.join(' · ') : <span className="text-gray-300">not set</span>],
+      ['Towers', numFmt(p.towers)],
+      ['Length (m)', numFmt(p.length_m)],
+      ['Capacity (L/s)', numFmt(p.system_capacity_ls, 1)],
+      ['Full circle (h)', numFmt(p.time_to_full_circle_h, 1)],
+      [
+        'Allotment (ac-ft)',
+        <span title={d?.share.note}>
+          {d?.share.af != null ? numFmt(d.share.af, 1) : '—'}
+          {d && d.share.how !== 'set' && (
+            <span className={`ml-1 text-xs ${d.share.how === 'derived' ? 'italic text-gray-400' : 'text-amber-700'}`}>{d.share.how}</span>
+          )}
+        </span>,
+      ],
+      ['Year', p.pivot_year ?? '—'],
+      ['Meter', txt(p.meter_name)],
+      [
+        'Grower contact',
+        <>
+          {txt(p.contact)}
+          {p.phone ? (
+            <a href={`tel:${p.phone}`} className="ml-1.5 text-brand-700 hover:underline">
+              {p.phone}
+            </a>
+          ) : null}
+        </>,
+      ],
+      [
+        'Water coordinator',
+        p.smrid_area == null ? (
+          <span className="text-gray-300">—</span>
+        ) : (
+          <>
+            {area?.coordinator_name ?? 'unknown'} <span className="text-gray-400">· {districtName} Area {p.smrid_area}</span>
+            {area?.coordinator_phone && (
+              <a href={`tel:${area.coordinator_phone}`} className="ml-1.5 text-brand-700 hover:underline">
+                {area.coordinator_phone}
+              </a>
+            )}
+          </>
+        ),
+      ],
+    ]
+    const flags = flagLines(p.equipment_flags)
+    const photos = pivotPhotos?.get(p.id)?.length ?? 0
+    return {
+      p,
+      field,
+      isOpen,
+      badges: (
+        <>
+          {p.on_river && (
+            <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-xs font-medium text-sky-700">
+              River
+            </span>
+          )}
+          {p.operated_by && (
+            <span className="ml-1.5 rounded bg-violet-50 px-1.5 py-0.5 text-xs font-medium text-violet-700">
+              Run by {p.operated_by}
+            </span>
+          )}
+          {p.not_used && (
+            <span title={p.not_used_note ?? undefined} className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+              Never run · dryland
+            </span>
+          )}
+          {flags.length > 0 && (
+            <button
+              type="button"
+              onClick={() => toggle(p.id)}
+              title={flags.join('\n')}
+              className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800"
+            >
+              Check
+            </button>
+          )}
+          {photos > 0 && (
+            <span className="ml-1.5 text-xs font-normal text-gray-400">{photos} photo{photos === 1 ? '' : 's'}</span>
+          )}
+        </>
+      ),
+      toggle: (
+        <button
+          type="button"
+          onClick={() => toggle(p.id)}
+          aria-expanded={isOpen}
+          aria-label={`${isOpen ? 'Hide' : 'Show'} the rest of ${field?.name ?? 'this pivot'}`}
+          className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+        >
+          <ChevronRight className={cn('h-4 w-4 transition-transform', isOpen && 'rotate-90')} />
+        </button>
+      ),
+      pump: p.pump_id ? txt(pumpById.get(p.pump_id)?.name) : '—',
+      acres: numFmt(p.acres_irrigated, 1),
+      gpmTitle: p.system_capacity_ls != null ? `Capacity ${numFmt(p.system_capacity_ls, 1)} L/s` : undefined,
+      gpm: (
+        <>
+          {numFmt(p.gpm)}
+          {p.gpm_source === 'fieldnet' && <span className="block text-xs text-gray-400">FieldNET</span>}
+          {p.gpm_source === 'confirmed' && <span className="block text-xs text-gray-400">confirmed</span>}
+        </>
+      ),
+      eff: (
+        <>
+          <span title={p.efficiency_basis ? `From: ${p.efficiency_basis}` : undefined}>{stored != null ? `${Math.round(stored * 100)}%` : '—'}</span>
+          {p.efficiency_basis === 'default' && <span className="block text-xs text-gray-400">default</span>}
+          {sug?.eff != null && Math.round(sug.eff * 100) !== Math.round((stored ?? 0) * 100) && (
+            <span className="block text-xs text-gray-500" title={[...sug.parts, sug.missing.length ? `Would sharpen it: ${sug.missing.join(', ')}` : ''].filter(Boolean).join('; ')}>
+              suggests {Math.round(sug.eff * 100)}%
+              {isManager && (
+                <button
+                  type="button"
+                  onClick={() => setPivot.mutate({ field_id: p.field_id, application_efficiency: sug.eff, efficiency_basis: 'suggested' })}
+                  className="ml-1 font-medium text-brand-700 underline"
+                >
+                  use
+                </button>
+              )}
+            </span>
+          )}
+        </>
+      ),
+      inches: (
+        <>
+          {d?.inches.inches != null ? numFmt(d.inches.inches, 1) : '—'}
+          {d?.inches.from && (
+            <span className={`block text-xs ${d.inches.from === 'override' ? 'font-medium text-amber-700' : 'text-gray-400'}`}>
+              {d.inches.from === 'override' ? 'override' : smrid.setFor === year ? 'smrid.com' : `smrid.com ${smrid.setFor}`}
+            </span>
+          )}
+        </>
+      ),
+      links: (
+        <>
+          {p.field_id && (
+            <Link
+              to={`/map?field=${p.field_id}&layer=fieldnet`}
+              className="mr-2 inline-flex items-center gap-0.5 text-xs font-medium text-brand-700 hover:underline"
+            >
+              <MapPin className="h-3.5 w-3.5" /> Map
+            </Link>
+          )}
+          <a
+            href={fieldnetAppUrl(p.field_id ? fnByField.get(p.field_id) : undefined)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-0.5 text-xs font-medium text-brand-700 hover:underline"
+          >
+            FieldNET <ExternalLink className="h-3 w-3" />
+          </a>
+        </>
+      ),
+      detail: (
+        <>
+          <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3">
+            {more.map(([k, v]) => (
+              <div key={k} className="flex gap-1.5">
+                <dt className="shrink-0 text-gray-400">{k}</dt>
+                <dd className="min-w-0 tabular-nums text-gray-700">{v}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="mt-2">
+            <PivotDetails
+              pivot={p}
+              fieldName={field?.name ?? 'This field'}
+              isManager={isManager}
+              pump={p.pump_id ? (pumpById.get(p.pump_id) ?? null) : null}
+              pivotsOnPump={p.pump_id ? (pivots ?? []).filter((x) => x.pump_id === p.pump_id).length : 0}
+            />
+          </div>
+        </>
+      ),
+    }
+  })
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -351,7 +550,37 @@ export function PivotTab({ isManager }: { isManager: boolean }) {
       {/* Seven columns a day-to-day reader wants; the rest of each pivot's
           record — licence, equipment, size, contacts — opens under its row
           with the chevron, and every field is in the Edit form. */}
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      {/* One pivot a card on a phone; the chevron opens the rest of its record (design review, Nov 2026). */}
+      <CardList className="rounded-lg border border-gray-200 bg-white" empty="No pivots loaded." isEmpty={pivotRows.length === 0}>
+        {pivotRows.map(({ p, field, isOpen, badges, toggle, pump, acres, gpm, eff, inches, links, detail }) => (
+          <RowCard
+            key={p.id}
+            heading={
+              <>
+                {field?.name ?? '—'}
+                {badges}
+              </>
+            }
+            actions={
+              <>
+                {isManager && <EditBtn onClick={() => setEditing(p.id)} />}
+                {toggle}
+              </>
+            }
+            facts={[
+              { label: 'Pump', node: pump },
+              { label: 'Acres', node: <span className="tabular-nums">{acres}</span> },
+              { label: 'GPM', node: <span className="tabular-nums">{gpm}</span> },
+              { label: 'Eff %', node: <span className="tabular-nums">{eff}</span> },
+              { label: 'Allot in', node: <span className="tabular-nums">{inches}</span> },
+              { label: 'Links', node: links },
+            ]}
+          >
+            {isOpen && detail}
+          </RowCard>
+        ))}
+      </CardList>
+      <div className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white sm:block">
         <table className="w-full min-w-[640px] text-sm">
           <thead className={TABLE_HEAD}>
             <tr>
@@ -387,164 +616,22 @@ export function PivotTab({ isManager }: { isManager: boolean }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ p, field }) => {
-              const d = derived.get(p.id)
-              const sug = d?.eff
-              const stored = p.application_efficiency != null ? Number(p.application_efficiency) : null
-              const equipment = [
-                packageLabel(p.sprinkler_package),
-                p.drop_height_ft != null ? `drops at ${p.drop_height_ft} ft` : null,
-                p.end_gun === true ? 'end gun' : p.end_gun === false ? (p.end_treatment ? endLabel(p.end_treatment)?.toLowerCase() : 'no end gun') : null,
-                p.pressure_regulators === true ? `regulators${p.regulator_psi != null ? ` ${p.regulator_psi} psi` : ''}` : p.pressure_regulators === false ? 'no regulators' : null,
-                p.nozzles_replaced_year != null ? `nozzles ${p.nozzles_replaced_year}` : null,
-                p.vri ? 'VRI' : null,
-              ].filter(Boolean)
-              const isOpen = expanded.has(p.id)
-              const area = p.smrid_area == null ? null : areaByNumber.get(p.smrid_area)
-              // Everything that used to be a column of its own, for the row
-              // that opens under the pivot.
-              const more: [string, React.ReactNode][] = [
-                ['Licence', p.water_licence_id ? txt(licById.get(p.water_licence_id)?.licence_number) : '—'],
-                ['Brand', txt(p.brand)],
-                ['Sprinklers', equipment.length ? equipment.join(' · ') : <span className="text-gray-300">not set</span>],
-                ['Towers', numFmt(p.towers)],
-                ['Length (m)', numFmt(p.length_m)],
-                ['Capacity (L/s)', numFmt(p.system_capacity_ls, 1)],
-                ['Full circle (h)', numFmt(p.time_to_full_circle_h, 1)],
-                [
-                  'Allotment (ac-ft)',
-                  <span title={d?.share.note}>
-                    {d?.share.af != null ? numFmt(d.share.af, 1) : '—'}
-                    {d && d.share.how !== 'set' && (
-                      <span className={`ml-1 text-xs ${d.share.how === 'derived' ? 'italic text-gray-400' : 'text-amber-700'}`}>{d.share.how}</span>
-                    )}
-                  </span>,
-                ],
-                ['Year', p.pivot_year ?? '—'],
-                ['Meter', txt(p.meter_name)],
-                [
-                  'Grower contact',
-                  <>
-                    {txt(p.contact)}
-                    {p.phone ? (
-                      <a href={`tel:${p.phone}`} className="ml-1.5 text-brand-700 hover:underline">
-                        {p.phone}
-                      </a>
-                    ) : null}
-                  </>,
-                ],
-                [
-                  'Water coordinator',
-                  p.smrid_area == null ? (
-                    <span className="text-gray-300">—</span>
-                  ) : (
-                    <>
-                      {area?.coordinator_name ?? 'unknown'} <span className="text-gray-400">· {districtName} Area {p.smrid_area}</span>
-                      {area?.coordinator_phone && (
-                        <a href={`tel:${area.coordinator_phone}`} className="ml-1.5 text-brand-700 hover:underline">
-                          {area.coordinator_phone}
-                        </a>
-                      )}
-                    </>
-                  ),
-                ],
-              ]
-              return (
+            {pivotRows.map(({ p, field, isOpen, badges, toggle, pump, acres, gpm, gpmTitle, eff, inches, links, detail }) => (
               <Fragment key={p.id}>
               <tr className={cn('align-top', !isOpen && 'border-b border-gray-100 last:border-0')}>
-                <td className="px-1 py-1.5">
-                  <button
-                    type="button"
-                    onClick={() => toggle(p.id)}
-                    aria-expanded={isOpen}
-                    aria-label={`${isOpen ? 'Hide' : 'Show'} the rest of ${field?.name ?? 'this pivot'}`}
-                    className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                  >
-                    <ChevronRight className={cn('h-4 w-4 transition-transform', isOpen && 'rotate-90')} />
-                  </button>
-                </td>
+                <td className="px-1 py-1.5">{toggle}</td>
                 <td className="px-2 py-1.5 font-medium text-gray-900">
                   {field?.name ?? '—'}
-                  {p.on_river && (
-                    <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-xs font-medium text-sky-700">
-                      River
-                    </span>
-                  )}
-                  {p.operated_by && (
-                    <span className="ml-1.5 rounded bg-violet-50 px-1.5 py-0.5 text-xs font-medium text-violet-700">
-                      Run by {p.operated_by}
-                    </span>
-                  )}
-                  {p.not_used && (
-                    <span title={p.not_used_note ?? undefined} className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
-                      Never run · dryland
-                    </span>
-                  )}
-                  {flagLines(p.equipment_flags).length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => toggle(p.id)}
-                      title={flagLines(p.equipment_flags).join('\n')}
-                      className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800"
-                    >
-                      Check
-                    </button>
-                  )}
-                  {(pivotPhotos?.get(p.id)?.length ?? 0) > 0 && (
-                    <span className="ml-1.5 text-xs font-normal text-gray-400">{pivotPhotos!.get(p.id)!.length} photo{pivotPhotos!.get(p.id)!.length === 1 ? '' : 's'}</span>
-                  )}
+                  {badges}
                 </td>
-                <td className="px-2 py-1.5 text-gray-600">{p.pump_id ? txt(pumpById.get(p.pump_id)?.name) : '—'}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{numFmt(p.acres_irrigated, 1)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums" title={p.system_capacity_ls != null ? `Capacity ${numFmt(p.system_capacity_ls, 1)} L/s` : undefined}>
-                  {numFmt(p.gpm)}
-                  {p.gpm_source === 'fieldnet' && <span className="block text-xs text-gray-400">FieldNET</span>}
-                  {p.gpm_source === 'confirmed' && <span className="block text-xs text-gray-400">confirmed</span>}
+                <td className="px-2 py-1.5 text-gray-600">{pump}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{acres}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums" title={gpmTitle}>
+                  {gpm}
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums">
-                  <span title={p.efficiency_basis ? `From: ${p.efficiency_basis}` : undefined}>{stored != null ? `${Math.round(stored * 100)}%` : '—'}</span>
-                  {p.efficiency_basis === 'default' && <span className="block text-xs text-gray-400">default</span>}
-                  {sug?.eff != null && Math.round(sug.eff * 100) !== Math.round((stored ?? 0) * 100) && (
-                    <span className="block text-xs text-gray-500" title={[...sug.parts, sug.missing.length ? `Would sharpen it: ${sug.missing.join(', ')}` : ''].filter(Boolean).join('; ')}>
-                      suggests {Math.round(sug.eff * 100)}%
-                      {isManager && (
-                        <button
-                          type="button"
-                          onClick={() => setPivot.mutate({ field_id: p.field_id, application_efficiency: sug.eff, efficiency_basis: 'suggested' })}
-                          className="ml-1 font-medium text-brand-700 underline"
-                        >
-                          use
-                        </button>
-                      )}
-                    </span>
-                  )}
-                </td>
-                <td className="px-2 py-1.5 text-right tabular-nums">
-                  {d?.inches.inches != null ? numFmt(d.inches.inches, 1) : '—'}
-                  {d?.inches.from && (
-                    <span className={`block text-xs ${d.inches.from === 'override' ? 'font-medium text-amber-700' : 'text-gray-400'}`}>
-                      {d.inches.from === 'override' ? 'override' : smrid.setFor === year ? 'smrid.com' : `smrid.com ${smrid.setFor}`}
-                    </span>
-                  )}
-                </td>
-                <td className="whitespace-nowrap px-2 py-1.5">
-                  {p.field_id && (
-                    <Link
-                      to={`/map?field=${p.field_id}&layer=fieldnet`}
-                      className="mr-2 inline-flex items-center gap-0.5 text-xs font-medium text-brand-700 hover:underline"
-                    >
-                      <MapPin className="h-3.5 w-3.5" /> Map
-                    </Link>
-                  )}
-                  <a
-                    href={fieldnetAppUrl(p.field_id ? fnByField.get(p.field_id) : undefined)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-0.5 text-xs font-medium text-brand-700 hover:underline"
-                  >
-                    FieldNET <ExternalLink className="h-3 w-3" />
-                  </a>
-                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{eff}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{inches}</td>
+                <td className="whitespace-nowrap px-2 py-1.5">{links}</td>
                 {isManager && (
                   <td className="px-2 py-1.5 text-right">
                     <EditBtn onClick={() => setEditing(p.id)} />
@@ -555,29 +642,12 @@ export function PivotTab({ isManager }: { isManager: boolean }) {
                 <tr className="border-b border-gray-100 bg-gray-50/60 last:border-0">
                   <td />
                   <td colSpan={isManager ? 8 : 7} className="px-2 pb-2 pt-0.5">
-                    <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3">
-                      {more.map(([k, v]) => (
-                        <div key={k} className="flex gap-1.5">
-                          <dt className="shrink-0 text-gray-400">{k}</dt>
-                          <dd className="min-w-0 tabular-nums text-gray-700">{v}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                    <div className="mt-2">
-                      <PivotDetails
-                        pivot={p}
-                        fieldName={field?.name ?? 'This field'}
-                        isManager={isManager}
-                        pump={p.pump_id ? (pumpById.get(p.pump_id) ?? null) : null}
-                        pivotsOnPump={p.pump_id ? (pivots ?? []).filter((x) => x.pump_id === p.pump_id).length : 0}
-                      />
-                    </div>
+                    {detail}
                   </td>
                 </tr>
               )}
               </Fragment>
-              )
-            })}
+            ))}
             {rows.length === 0 && (
               <tr>
                 <td colSpan={20} className="px-3 py-8 text-center text-gray-400">No pivots loaded.</td>
@@ -619,8 +689,17 @@ export function PivotTab({ isManager }: { isManager: boolean }) {
           fields={editFields}
           row={editingRow.p as unknown as Record<string, unknown>}
           onClose={() => setEditing(null)}
-          onSave={(patch) => setPivot.mutate({ field_id: editingRow.p.field_id!, ...withEfficiencyBasis(editingRow.p, withFlow(editingRow.p, { ...withNewSource(patch, 'water_source'), not_used: patch.not_used === 'true' })) })}
-          onDelete={() => delPivot.mutate(editingRow.p.id)}
+          // A returned promise keeps the form open with the reason when the
+          // check or the database refuses (batch 6 page walk).
+          onSave={(patch) => {
+            const problem = pivotProblem(patch)
+            if (problem) return refuse(problem)
+            return setPivot.mutateAsync({
+              field_id: editingRow.p.field_id!,
+              ...withEfficiencyBasis(editingRow.p, withFlow(editingRow.p, { ...withNewSource(patch, 'water_source'), not_used: patch.not_used === 'true' })),
+            })
+          }}
+          onDelete={() => delPivot.mutateAsync(editingRow.p.id)}
           deleteConfirm="Delete this pivot? This removes its record from the field."
         />
       )}
@@ -634,11 +713,11 @@ export function PivotTab({ isManager }: { isManager: boolean }) {
             // field_id is the primary key of the upsert — without it there is
             // nothing to attach the pivot to.
             const fieldId = patch.field_id
-            if (!fieldId || typeof fieldId !== 'string') {
-              window.alert('Choose a field for this pivot.')
-              return
-            }
-            setPivot.mutate({ ...withNewSource(patch, 'water_source'), field_id: fieldId })
+            if (!fieldId || typeof fieldId !== 'string') return refuse('Choose a field for this pivot.')
+            const problem = pivotProblem(patch)
+            if (problem) return refuse(problem)
+            // field_pivots.not_used is not null: a blank answer is "Yes, it is run", as on edit.
+            return setPivot.mutateAsync({ ...withNewSource(patch, 'water_source'), field_id: fieldId, not_used: patch.not_used === 'true' })
           }}
         />
       )}
@@ -672,7 +751,11 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
   const pumpsLoaded = Boolean(pumps)
   useEffect(() => {
     if (!focusPump || !pumpsLoaded) return
-    document.getElementById(`pump-${focusPump}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    // The table row on a wide screen, the card on a phone: whichever is shown.
+    const el = [`pump-${focusPump}`, `pump-card-${focusPump}`]
+      .map((id) => document.getElementById(id))
+      .find((e) => e != null && e.offsetParent !== null)
+    el?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }, [focusPump, pumpsLoaded])
 
   const fieldById = useMemo(() => new Map((fields ?? []).map((f) => [f.id, f])), [fields])
@@ -843,6 +926,110 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
     return m
   }, [pivots, fieldById])
 
+  // Each pump's and each licence's cells and the record that opens under it,
+  // built once for its table row and its phone card.
+  const pumpRows = (pumps ?? []).map((p) => ({
+    p,
+    isOpen: openPump === p.id,
+    toggle: () => setOpenPump(openPump === p.id ? null : p.id),
+    name: (
+      <>
+        <ChevronRight className={cn('h-3.5 w-3.5 text-gray-400 transition-transform', openPump === p.id && 'rotate-90')} />
+        {p.name}
+        <span className="text-xs font-normal capitalize text-gray-400">{p.kind}</span>
+        {(p.purpose ?? 'irrigation') !== 'irrigation' && (
+          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600 first-letter:uppercase">{p.purpose}</span>
+        )}
+      </>
+    ),
+    feeds: (fieldsByPump.get(p.id) ?? []).join(', ') || ((p.purpose ?? 'irrigation') !== 'irrigation' ? `${p.purpose} (not a pivot)` : '—'),
+    model: [p.brand, p.model].filter(Boolean).join(' ') || '—',
+    photos: photoIndex?.get(p.id)?.length ?? 0,
+    edit: <EditBtn onClick={() => { delPump.reset(); setEditPump(p.id) }} />,
+    detail: (
+      <PumpDetails
+        pump={p}
+        pivots={pivotsByPump.get(p.id) ?? []}
+        isManager={isManager}
+        meterShares={meterShares(p)}
+        actions={
+          pinOf.get(p.id)?.[0] && (
+            <Link to={mapLinkForPin(pinOf.get(p.id)![0])} className="flex shrink-0 items-center gap-1 text-xs font-medium text-brand-700 hover:underline">
+              <MapPin className="h-3.5 w-3.5" /> Show on map
+            </Link>
+          )
+        }
+      />
+    ),
+  }))
+  const licRows = (licences ?? []).map((l) => {
+    const isOpen = openLic === l.id
+    const vol = licenceVolumes(l)
+    const onIt = pivotsByLicence.get(l.id) ?? []
+    const acres = onIt.reduce((s, x) => s + (x.acres ?? 0), 0)
+    return {
+      l,
+      isOpen,
+      toggle: () => setOpenLic(isOpen ? null : l.id),
+      name: (
+        <>
+          <ChevronRight className={cn('h-3.5 w-3.5 text-gray-400 transition-transform', isOpen && 'rotate-90')} />
+          {l.licence_number}
+          {l.status && l.status !== 'issued' && (
+            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">{l.status === 'draft' ? 'draft' : l.status}</span>
+          )}
+        </>
+      ),
+      fields: (fieldsByLicence.get(l.id) ?? []).join(', ') || '—',
+      edit: <EditBtn onClick={() => { delLic.reset(); setEditLic(l.id) }} />,
+      detail: (
+        <DetailList
+          className="text-xs"
+          rows={[
+            ['Status', l.status === 'draft' ? 'Draft — not signed' : l.status ? l.status[0].toUpperCase() + l.status.slice(1) : null],
+            [
+              'Volume',
+              vol.af != null
+                ? `${numFmt(vol.af, 1)} acre-feet · ${numFmt(vol.m3, 0)} m³${l.volume_m3 == null || l.volume == null ? ' (worked out)' : ''}`
+                : null,
+            ],
+            ['Rate of diversion', l.rate_of_diversion != null ? `${l.rate_of_diversion} m³/s` : null],
+            ['Priority', [l.priority_number, l.priority_date].filter(Boolean).join(' · ') || null],
+            ['Expiry', l.expiry],
+            ['Water from', waterSourceLabel(l.source, '')],
+            ['Holder', l.holder],
+            ['Also known as', l.alt_numbers],
+            ['Points of diversion', l.points_of_diversion],
+            ['Lands', l.lands],
+            ['Conditions', l.conditions],
+            ['Notes', l.notes],
+            [
+              'Used by',
+              onIt.length ? (
+                <>
+                  {onIt.map((x, i) => (
+                    <Fragment key={x.fieldId}>
+                      {i > 0 && ', '}
+                      <Link to={`/fields/${x.fieldId}/work`} className="text-brand-700 hover:underline">
+                        {x.name}
+                      </Link>
+                      {x.acres != null && <span className="text-gray-400"> {numFmt(x.acres, 0)} ac</span>}
+                    </Fragment>
+                  ))}
+                  {onIt.length > 1 && <span className="text-gray-500"> · {numFmt(acres, 0)} ac in all</span>}
+                </>
+              ) : (
+                <span className="text-gray-400">no pivot is on this licence (set it on the Pivots tab)</span>
+              ),
+            ],
+          ]}
+        />
+      ),
+    }
+  })
+  // A click in the record a card opens is not a click on the card.
+  const keepOpen = (e: React.MouseEvent) => e.stopPropagation()
+
   return (
     <div className="space-y-6">
       <section>
@@ -852,7 +1039,33 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
           </h2>
           {isManager && <AddBtn label="Add pump" onClick={() => setAddPump(true)} />}
         </div>
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        {/* One pump a card on a phone; tap it for the rest (design review, Nov 2026). */}
+        <CardList className="rounded-lg border border-gray-200 bg-white" empty="No pumps loaded." isEmpty={pumpRows.length === 0}>
+          {pumpRows.map(({ p, isOpen, toggle, name, feeds, model, photos, edit, detail }) => (
+            <RowCard
+              key={p.id}
+              onClick={rowClick(toggle)}
+              heading={
+                <span id={`pump-card-${p.id}`} className={cn('flex scroll-mt-4 flex-wrap items-center gap-1', focusPump === p.id && 'text-sky-900')}>
+                  {name}
+                </span>
+              }
+              actions={isManager ? edit : undefined}
+              facts={[
+                { label: 'Feeds', node: feeds },
+                { label: 'HP', node: <span className="tabular-nums">{numFmt(p.horse_power)}</span> },
+                { label: 'Volts', node: <span className="tabular-nums">{numFmt(p.voltage)}</span> },
+                { label: 'GPM', node: <span onClick={keepOpen}><PumpFlow pump={p} /></span> },
+                { label: 'Pump model', node: model },
+                { label: 'Serial', node: txt(p.serial_number) },
+                { label: 'Photos', node: photos > 0 ? <span className="tabular-nums">{photos}</span> : null },
+              ]}
+            >
+              {isOpen && <div onClick={keepOpen}>{detail}</div>}
+            </RowCard>
+          ))}
+        </CardList>
+        <div className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white sm:block">
           <table className="w-full min-w-[820px] text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
@@ -863,52 +1076,31 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
               </tr>
             </thead>
             <tbody>
-              {(pumps ?? []).map((p) => (
+              {pumpRows.map(({ p, isOpen, toggle, name, feeds, model, photos, edit, detail }) => (
                 <Fragment key={p.id}>
                   <tr
                     id={`pump-${p.id}`}
                     className={cn('cursor-pointer scroll-mt-4 border-b border-gray-100 last:border-0 hover:bg-gray-50', focusPump === p.id && 'bg-sky-50/60')}
-                    onClick={() => setOpenPump(openPump === p.id ? null : p.id)}
+                    onClick={toggle}
                   >
                     <td className="px-2 py-1.5 font-medium text-gray-900">
-                      <span className="flex items-center gap-1">
-                        <ChevronRight className={cn('h-3.5 w-3.5 text-gray-400 transition-transform', openPump === p.id && 'rotate-90')} />
-                        {p.name}
-                        <span className="text-xs font-normal capitalize text-gray-400">{p.kind}</span>
-                        {(p.purpose ?? 'irrigation') !== 'irrigation' && (
-                          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600 first-letter:uppercase">{p.purpose}</span>
-                        )}
-                      </span>
+                      <span className="flex items-center gap-1">{name}</span>
                     </td>
-                    <td className="px-2 py-1.5 text-gray-600">
-                      {(fieldsByPump.get(p.id) ?? []).join(', ') || ((p.purpose ?? 'irrigation') !== 'irrigation' ? `${p.purpose} (not a pivot)` : '—')}
-                    </td>
+                    <td className="px-2 py-1.5 text-gray-600">{feeds}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{numFmt(p.horse_power)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{numFmt(p.voltage)}</td>
                     <td className="px-2 py-1.5 text-right" onClick={(e) => e.stopPropagation()}><PumpFlow pump={p} /></td>
-                    <td className="px-2 py-1.5 text-gray-600">{[p.brand, p.model].filter(Boolean).join(' ') || '—'}</td>
+                    <td className="px-2 py-1.5 text-gray-600">{model}</td>
                     <td className="px-2 py-1.5 text-gray-600">{txt(p.serial_number)}</td>
-                    <td className="px-2 py-1.5 text-gray-600 tabular-nums">{photoIndex?.get(p.id)?.length ?? 0}</td>
+                    <td className="px-2 py-1.5 text-gray-600 tabular-nums">{photos}</td>
                     {isManager && (
-                      <td className="px-2 py-1.5 text-right" onClick={(e) => e.stopPropagation()}><EditBtn onClick={() => { delPump.reset(); setEditPump(p.id) }} /></td>
+                      <td className="px-2 py-1.5 text-right" onClick={(e) => e.stopPropagation()}>{edit}</td>
                     )}
                   </tr>
-                  {openPump === p.id && (
+                  {isOpen && (
                     <tr className="border-b border-gray-100">
                       <td colSpan={isManager ? 9 : 8} className="p-0">
-                        <PumpDetails
-                          pump={p}
-                          pivots={pivotsByPump.get(p.id) ?? []}
-                          isManager={isManager}
-                          meterShares={meterShares(p)}
-                          actions={
-                            pinOf.get(p.id)?.[0] && (
-                              <Link to={mapLinkForPin(pinOf.get(p.id)![0])} className="flex shrink-0 items-center gap-1 text-xs font-medium text-brand-700 hover:underline">
-                                <MapPin className="h-3.5 w-3.5" /> Show on map
-                              </Link>
-                            )
-                          }
-                        />
+                        {detail}
                       </td>
                     </tr>
                   )}
@@ -929,7 +1121,26 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
           </h2>
           {isManager && <AddBtn label="Add licence" onClick={() => setAddLic(true)} />}
         </div>
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        {/* One licence a card on a phone; tap it for the whole record (design review, Nov 2026). */}
+        <CardList className="rounded-lg border border-gray-200 bg-white" empty="No licences loaded." isEmpty={licRows.length === 0}>
+          {licRows.map(({ l, isOpen, toggle, name, fields, edit, detail }) => (
+            <RowCard
+              key={l.id}
+              onClick={rowClick(toggle)}
+              heading={<span className="flex flex-wrap items-center gap-1">{name}</span>}
+              actions={isManager ? edit : undefined}
+              facts={[
+                { label: 'Volume', node: l.volume != null ? <span className="tabular-nums">{numFmt(l.volume, 1)} ac-ft</span> : null },
+                { label: 'Diversion', node: l.rate_of_diversion != null ? <span className="tabular-nums">{numFmt(l.rate_of_diversion, 2)} m³/s</span> : null },
+                { label: 'Priority #', node: l.priority_number },
+                { label: 'Fields', node: fields },
+              ]}
+            >
+              {isOpen && <div onClick={keepOpen}>{detail}</div>}
+            </RowCard>
+          ))}
+        </CardList>
+        <div className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white sm:block">
           <table className="w-full min-w-[680px] text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
@@ -940,80 +1151,30 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
               </tr>
             </thead>
             <tbody>
-              {(licences ?? []).map((l) => {
-                const isOpen = openLic === l.id
-                const vol = licenceVolumes(l)
-                const onIt = pivotsByLicence.get(l.id) ?? []
-                const acres = onIt.reduce((s, x) => s + (x.acres ?? 0), 0)
+              {licRows.map(({ l, isOpen, toggle, name, fields, edit, detail }) => {
                 return (
                   <Fragment key={l.id}>
                     <tr
                       className={cn('cursor-pointer hover:bg-gray-50', !isOpen && 'border-b border-gray-100 last:border-0', isOpen && 'bg-gray-50')}
-                      onClick={rowClick(() => setOpenLic(isOpen ? null : l.id))}
+                      onClick={rowClick(toggle)}
                     >
                       <td className="px-3 py-1.5 font-medium text-gray-900">
-                        <span className="flex items-center gap-1">
-                          <ChevronRight className={cn('h-3.5 w-3.5 text-gray-400 transition-transform', isOpen && 'rotate-90')} />
-                          {l.licence_number}
-                          {l.status && l.status !== 'issued' && (
-                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">{l.status === 'draft' ? 'draft' : l.status}</span>
-                          )}
-                        </span>
+                        <span className="flex items-center gap-1">{name}</span>
                       </td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{numFmt(l.volume, 1)}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums" title={l.rate_of_diversion != null ? `${l.rate_of_diversion} m³/s` : undefined}>
                         {numFmt(l.rate_of_diversion, 2)}
                       </td>
                       <td className="px-3 py-1.5 text-gray-600">{txt(l.priority_number)}</td>
-                      <td className="px-3 py-1.5 text-gray-600">{(fieldsByLicence.get(l.id) ?? []).join(', ') || '—'}</td>
+                      <td className="px-3 py-1.5 text-gray-600">{fields}</td>
                       {isManager && (
-                        <td className="px-3 py-1.5 text-right"><EditBtn onClick={() => { delLic.reset(); setEditLic(l.id) }} /></td>
+                        <td className="px-3 py-1.5 text-right">{edit}</td>
                       )}
                     </tr>
                     {isOpen && (
                       <tr className="border-b border-gray-100 bg-gray-50/60 last:border-0">
                         <td colSpan={isManager ? 6 : 5} className="px-3 pb-3 pt-1">
-                          <DetailList
-                            className="text-xs"
-                            rows={[
-                              ['Status', l.status === 'draft' ? 'Draft — not signed' : l.status ? l.status[0].toUpperCase() + l.status.slice(1) : null],
-                              [
-                                'Volume',
-                                vol.af != null
-                                  ? `${numFmt(vol.af, 1)} acre-feet · ${numFmt(vol.m3, 0)} m³${l.volume_m3 == null || l.volume == null ? ' (worked out)' : ''}`
-                                  : null,
-                              ],
-                              ['Rate of diversion', l.rate_of_diversion != null ? `${l.rate_of_diversion} m³/s` : null],
-                              ['Priority', [l.priority_number, l.priority_date].filter(Boolean).join(' · ') || null],
-                              ['Expiry', l.expiry],
-                              ['Water from', waterSourceLabel(l.source, '')],
-                              ['Holder', l.holder],
-                              ['Also known as', l.alt_numbers],
-                              ['Points of diversion', l.points_of_diversion],
-                              ['Lands', l.lands],
-                              ['Conditions', l.conditions],
-                              ['Notes', l.notes],
-                              [
-                                'Used by',
-                                onIt.length ? (
-                                  <>
-                                    {onIt.map((x, i) => (
-                                      <Fragment key={x.fieldId}>
-                                        {i > 0 && ', '}
-                                        <Link to={`/fields/${x.fieldId}/work`} className="text-brand-700 hover:underline">
-                                          {x.name}
-                                        </Link>
-                                        {x.acres != null && <span className="text-gray-400"> {numFmt(x.acres, 0)} ac</span>}
-                                      </Fragment>
-                                    ))}
-                                    {onIt.length > 1 && <span className="text-gray-500"> · {numFmt(acres, 0)} ac in all</span>}
-                                  </>
-                                ) : (
-                                  <span className="text-gray-400">no pivot is on this licence (set it on the Pivots tab)</span>
-                                ),
-                              ],
-                            ]}
-                          />
+                          {detail}
                         </td>
                       </tr>
                     )}
@@ -1034,7 +1195,10 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
           fields={pumpFields}
           row={editingPump as unknown as Record<string, unknown>}
           onClose={() => setEditPump(null)}
-          onSave={(patch) => setPump.mutate({ id: editingPump.id, patch })}
+          onSave={(patch) => {
+            const problem = pumpProblem(patch)
+            return problem ? refuse(problem) : setPump.mutateAsync({ id: editingPump.id, patch })
+          }}
           onDelete={() =>
             keepOpenOnError(
               delPump.mutateAsync(editingPump.id).then(() => {
@@ -1057,7 +1221,7 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
           fields={licFields}
           row={editingLic as unknown as Record<string, unknown>}
           onClose={() => setEditLic(null)}
-          onSave={(patch) => setLic.mutate({ id: editingLic.id, patch: withNewSource(patch, 'source') })}
+          onSave={(patch) => setLic.mutateAsync({ id: editingLic.id, patch: withNewSource(patch, 'source') })}
           onDelete={() => keepOpenOnError(delLic.mutateAsync(editingLic.id))}
           deleteConfirm={licenceDeleteConfirm(editingLic.licence_number, fieldsByLicence.get(editingLic.id) ?? [])}
           saving={delLic.isPending}
@@ -1070,13 +1234,15 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
           fields={pumpFields}
           row={{ kind: 'pump', purpose: 'irrigation' }}
           onClose={() => setAddPump(false)}
-          onSave={(patch) =>
-            createPump.mutate({
+          onSave={(patch) => {
+            const problem = pumpProblem(patch)
+            if (problem) return refuse(problem)
+            return createPump.mutateAsync({
               ...patch,
               // useCreatePump falls back to a placeholder if this is blank.
               name: typeof patch.name === 'string' ? patch.name : '',
             })
-          }
+          }}
         />
       )}
       {addLic && (
@@ -1085,7 +1251,7 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
           fields={licFields}
           row={{}}
           onClose={() => setAddLic(false)}
-          onSave={(patch) => createLic.mutate(withNewSource(patch, 'source') as Record<string, never>)}
+          onSave={(patch) => createLic.mutateAsync(withNewSource(patch, 'source') as Record<string, never>)}
         />
       )}
     </div>

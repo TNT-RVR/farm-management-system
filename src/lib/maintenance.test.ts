@@ -114,6 +114,23 @@ describe('dueLabel', () => {
   it('admits when it cannot tell', () => {
     expect(dueLabel(dueState(plan(), null, NOW))).toBe('cannot tell')
   })
+
+  // Page-walk batch 6: "18 h past due · in 10 months" read as if it could wait.
+  it('says only the past-due half once one half is past due', () => {
+    const both = plan({ interval_months: 12, last_done_on: '2026-06-01' })
+    expect(dueLabel(dueState(both, 2518, NOW))).toBe('18 h past due')
+    const late = plan({ interval_months: 12, last_done_on: '2025-01-01' })
+    expect(dueLabel(dueState(late, 2200, NOW))).toMatch(/^\d+ months past due$/)
+  })
+
+  it('says both halves while neither is past due', () => {
+    const both = plan({ interval_months: 12, last_done_on: '2026-06-01' })
+    expect(dueLabel(dueState(both, 2200, NOW))).toBe('in 300 h · in 10 months')
+  })
+
+  it('puts thousands separators in the hours', () => {
+    expect(dueLabel(dueState(plan({ interval_hours: 5000 }), 2200, NOW))).toBe('in 4,800 h')
+  })
 })
 
 describe('dueRank', () => {

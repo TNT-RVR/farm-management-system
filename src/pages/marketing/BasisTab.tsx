@@ -18,6 +18,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { cn } from '@/lib/utils'
 import { askConfirm } from '@/components/askConfirm'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 /**
  * The gap between what a buyer offers and what the board says.
@@ -91,7 +92,76 @@ export function BasisTab() {
           only says anything once it has a history to be compared against.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        <>
+        {/* One bid a card on a phone (design review, Nov 2026). */}
+        <CardList className="rounded-lg border border-gray-200 bg-white">
+          {rows.map((b) => {
+            const pct = percentileFor(b.crop_id, b.basis)
+            return (
+              <RowCard
+                key={b.id}
+                onClick={isManager ? rowClick(() => setEditingId(b.id)) : undefined}
+                heading={
+                  <>
+                    {b.crop_name} <span className="font-normal text-gray-700">· {b.buyer}</span>
+                    {b.location && <span className="block text-xs font-normal text-gray-400">{b.location}</span>}
+                  </>
+                }
+                actions={
+                  isManager && (
+                    <button
+                      onClick={async () => {
+                        if (await askConfirm(`Delete the ${b.bid_on} bid from ${b.buyer}?`)) del.mutate(b.id)
+                      }}
+                      title="Delete this bid"
+                      aria-label="Delete this bid"
+                      className="p-1 text-gray-300 hover:text-red-600"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )
+                }
+                facts={[]}
+                summary={
+                  <SummaryLine className="tabular-nums">
+                    <span>{b.bid_on}</span>
+                    <Dot />
+                    <span className="text-gray-900">
+                      {fmtMoney(b.price_per_unit)}/{b.unit}
+                    </span>
+                    {b.futures_value != null && (
+                      <>
+                        <Dot />
+                        <span>Board {fmtMoney(b.futures_value)}</span>
+                      </>
+                    )}
+                    {b.basis != null && (
+                      <>
+                        <Dot />
+                        <span className={cn('font-medium', b.basis >= 0 ? 'text-green-700' : 'text-gray-800')}>
+                          Basis {`${b.basis >= 0 ? '+' : ''}${fmtMoney(b.basis)}`}
+                        </span>
+                      </>
+                    )}
+                    {pct != null && (
+                      <>
+                        <Dot />
+                        <span className={cn(pct >= 0.75 && 'font-medium text-green-700')}>better than {Math.round(pct * 100)}% of our bids</span>
+                      </>
+                    )}
+                    {b.delivery_month && (
+                      <>
+                        <Dot />
+                        <span>Delivery {b.delivery_month}</span>
+                      </>
+                    )}
+                  </SummaryLine>
+                }
+              />
+            )
+          })}
+        </CardList>
+        <div className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white sm:block">
           <table className="w-full text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
@@ -179,6 +249,7 @@ export function BasisTab() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       <HelpNote className="mt-3" summary="Basis is the bid minus the futures price on the day it was quoted." title="How basis is worked out">

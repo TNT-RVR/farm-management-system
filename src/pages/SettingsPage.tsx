@@ -85,17 +85,19 @@ function Th({
   label,
   sort,
   onSort,
+  className,
 }: {
   k: SortKey
   label: string
   sort: { key: SortKey; dir: 1 | -1 }
   onSort: (k: SortKey) => void
+  className?: string
 }) {
   const arrow = sort.key === k ? (sort.dir === 1 ? ' ▲' : ' ▼') : ''
   return (
     <th
       onClick={() => onSort(k)}
-      className="cursor-pointer select-none px-3 py-2 font-medium hover:text-gray-700"
+      className={cn('cursor-pointer select-none px-3 py-2 font-medium hover:text-gray-700', className)}
     >
       {label}
       {arrow}
@@ -286,8 +288,10 @@ function UserRow({
         <td className="px-3 py-2 font-medium">
           {u.full_name}
           {isSelf && <span className="ml-1.5 text-xs font-normal text-gray-400">(you)</span>}
+          {/* On a phone the email folds under the name (design review, Nov 2026). */}
+          <span className="block break-all text-xs font-normal text-gray-500 sm:hidden">{u.email}</span>
         </td>
-        <td className="px-3 py-2 text-gray-600">{u.email}</td>
+        <td className="px-3 py-2 text-gray-600 max-sm:hidden">{u.email}</td>
         <td className="px-3 py-2">
           <span
             className={cn(
@@ -338,7 +342,7 @@ function UserRow({
           aria-label="Full name"
         />
       </td>
-      <td className="px-3 py-2 text-gray-500">{u.email}</td>
+      <td className="px-3 py-2 text-gray-500 max-sm:hidden">{u.email}</td>
       <td className="px-3 py-2">
         <Select
           value={role}
@@ -510,11 +514,13 @@ function UsersAdmin() {
       </div>
 
       <div className="max-w-3xl overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-        <table className="w-full min-w-[560px] text-sm">
+        {/* On a phone: no email column (it sits under the name) and tighter cells,
+            so the list fits without sideways scrolling (design review, Nov 2026). */}
+        <table className="w-full text-sm max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5 sm:min-w-[560px]">
           <thead className={TABLE_HEAD}>
             <tr>
               <Th k="name" label="Name" sort={sort} onSort={sortBy} />
-              <Th k="email" label="Email" sort={sort} onSort={sortBy} />
+              <Th k="email" label="Email" sort={sort} onSort={sortBy} className="max-sm:hidden" />
               <Th k="role" label="Role" sort={sort} onSort={sortBy} />
               <Th k="status" label="Status" sort={sort} onSort={sortBy} />
               <th className="px-3 py-2" />

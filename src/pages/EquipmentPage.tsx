@@ -26,7 +26,8 @@ const CATEGORY_LABEL: Record<string, string> = {
   machine: 'Machines',
   implement: 'Implements',
   technology: 'Technology',
-  other: 'Other',
+  // Not plain "Other": the kind filter has its own "Other" chip, counting something else.
+  other: 'Other equipment',
 }
 const CATEGORY_STYLE: Record<string, string> = {
   machine: 'bg-green-100 text-green-800',
@@ -177,6 +178,11 @@ export function EquipmentPage() {
 
   const total = all?.length ?? 0
   const withHours = (all ?? []).filter((e) => e.engine_hours != null).length
+  // Where the list came from, truthfully: the demo's fleet is all added by hand.
+  const byHand = (all ?? []).filter((e) => e.is_manual).length
+  const fromDeere = total - byHand
+  const source =
+    fromDeere === 0 ? '' : byHand === 0 ? ', from Deere' : ` · ${fromDeere} from Deere, ${byHand} added by hand`
   // Counted over the WHOLE fleet, not the filtered view: the point of the line
   // is to say there is something to deal with even while you are searching for
   // something else.
@@ -206,7 +212,7 @@ export function EquipmentPage() {
             <Tractor className="h-5 w-5 text-brand-700" /> Equipment service
           </h1>
           <p className="text-xs text-gray-500">
-            {total} machines and implements, from Deere
+            {total} machines and implements{source}
             {withHours > 0 && ` · ${withHours} reporting engine hours`}
             {endingSoon > 0 && (
               <span className="font-medium text-amber-700">

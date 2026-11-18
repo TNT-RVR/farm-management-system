@@ -350,8 +350,9 @@ export function TissueTests({ cropYear, canEdit }: { cropYear: number; canEdit: 
                   </p>
                 )}
 
+                {/* Four short columns: tighter cells keep them on a phone screen (design review, Nov 2026). */}
                 <div className="overflow-x-auto rounded-lg border border-gray-200">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm max-sm:text-xs max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
                     <thead className={TABLE_HEAD}>
                       <tr>
                         <th className={TABLE_TH}>Nutrient</th>

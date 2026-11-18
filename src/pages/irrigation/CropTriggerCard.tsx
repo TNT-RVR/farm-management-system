@@ -235,7 +235,8 @@ function SheetDetail({ sheets }: { sheets: CropSheet[] }) {
           {s.establish_note && <p className="mt-0.5 text-xs text-gray-500">{s.establish_note}</p>}
 
           <div className="mt-1.5 overflow-x-auto">
-            <table className="w-full min-w-[420px] text-xs">
+            {/* Four short columns fit a phone without the desktop's minimum width (design review, Nov 2026). */}
+            <table className="w-full text-xs sm:min-w-[420px]">
               <thead className={TABLE_HEAD}>
                 <tr>
                   <th className={TABLE_TH}>Stage</th>
@@ -267,10 +268,11 @@ function SheetDetail({ sheets }: { sheets: CropSheet[] }) {
               bodyClassName="p-0"
             >
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[420px] text-xs">
+                {/* Squeezed on a phone: texture pinned, cells tightened (design review, Nov 2026). */}
+                <table className="w-full text-xs max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5 sm:min-w-[420px]">
                   <thead className={TABLE_HEAD}>
                     <tr>
-                      <th className={TABLE_TH}>Texture</th>
+                      <th className={cn(TABLE_TH, 'sticky left-0 z-10 bg-brand-700')}>Texture</th>
                       {[...new Set(s.refill.map((r) => r.depth_cm))]
                         .sort((a, b) => a - b)
                         .map((d) => {
@@ -289,7 +291,7 @@ function SheetDetail({ sheets }: { sheets: CropSheet[] }) {
                   <tbody className="divide-y divide-gray-100">
                     {[...new Set(s.refill.map((r) => r.texture))].map((tex) => (
                       <tr key={tex}>
-                        <td className="px-2 py-1">{tex}</td>
+                        <td className="sticky left-0 z-10 bg-white px-2 py-1">{tex}</td>
                         {[...new Set(s.refill.map((r) => r.depth_cm))]
                           .sort((a, b) => a - b)
                           .map((d) => {

@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { Card, SettingsGroup, input, type NumberField } from './ui'
 import { FieldLink, Sources, money, n0, n1 } from '../fertilizer/savings/ui'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 const FIELDS: NumberField<keyof SilageHaulInputs>[] = [
   { key: 'payloadT', label: 'Silage truck carries', unit: 't as fed' },
@@ -204,7 +205,57 @@ export function SilageTab({ year, isManager }: { year: number; isManager: boolea
             { label: 'Distances: the Distances tab', to: '/fuel?tab=distances' },
           ]}
         />
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
+        {/* One field a card on a phone (design review, Nov 2026). */}
+        <CardList className="rounded-lg border border-gray-200">
+          {rows.map(({ f, sf, t, c }) => {
+            const ok = c ? c.perT.total <= limit : null
+            return (
+              <RowCard
+                key={f.id}
+                heading={
+                  <span className="flex flex-wrap items-center gap-2">
+                    <FieldLink id={f.id} name={f.name} to="work" />
+                    <span className={cn('text-xs font-medium', ok == null ? 'text-gray-400' : ok ? 'text-green-800' : 'text-red-700')}>
+                      {ok == null ? 'no distance' : ok ? 'pays' : 'does not pay'}
+                    </span>
+                  </span>
+                }
+                facts={[]}
+                summary={
+                  <SummaryLine>
+                    {onlySilage && sf?.tonnes != null && (
+                      <>
+                        <span className="tabular-nums">{n0(sf.tonnes)} t</span>
+                        <Dot />
+                      </>
+                    )}
+                    <span className="tabular-nums">
+                      {t ? `${n1(t.km)} km one way` : 'no distance'}
+                      {t?.note && <span className="ml-1 text-amber-700">estimate</span>}
+                    </span>
+                    {c && (
+                      <>
+                        <Dot />
+                        <span className={cn('tabular-nums', c.chopperWaits && 'text-amber-700')}>
+                          {c.trucksNeeded} truck{c.trucksNeeded === 1 ? '' : 's'}
+                        </span>
+                        <Dot />
+                        <span className="font-semibold tabular-nums text-gray-900">{money(c.perT.total, 2)}/t as fed</span>
+                        {onlySilage && sf?.tonnes != null && (
+                          <>
+                            <Dot />
+                            <span className="tabular-nums">{money(c.perT.total * sf.tonnes)} haul</span>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </SummaryLine>
+                }
+              />
+            )
+          })}
+        </CardList>
+        <div className="hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
           <table className="w-full min-w-[700px] text-xs">
             <thead className={TABLE_HEAD}>
               <tr>

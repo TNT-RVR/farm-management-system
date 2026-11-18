@@ -137,6 +137,18 @@ export function useSetSitePump() {
   })
 }
 
+/** Mark a site's bills as not a pump (the shop, the aeration fans), or put them back. */
+export function useSetSiteNotPump() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ siteIds, notPump }: { siteIds: string[]; notPump: boolean }) => {
+      const { error } = await db.from('power_bill_sites').update({ not_pump: notPump }).in('id', siteIds)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['power-bill-sites'] }),
+  })
+}
+
 /** "Yes, that guess is right": the pump's guessed sites become confirmed. */
 export function useConfirmSitePump() {
   const qc = useQueryClient()

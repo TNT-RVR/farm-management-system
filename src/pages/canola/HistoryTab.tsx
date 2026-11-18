@@ -13,6 +13,7 @@ import { downloadBlob, tableReportToCsv, tableReportToPdf } from '@/lib/table-re
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { ExportButton } from '@/components/ExportButton'
+import { CardList, RowCard } from '@/components/RowCards'
 
 /** A field as the screen shows it: the report's, plus what's needed to set a year's trait. */
 type ShownField = Omit<HistoryField, 'years'> & { id: string; years: (HistoryField['years'][number] & { row: FieldYear | null })[] }
@@ -67,6 +68,15 @@ export function HistoryTab() {
       }
     })
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
+  // One year's crop, for the table cell and the phone card alike.
+  const yearClass = (crop: string | null) => (isCanolaCrop(crop) ? 'font-semibold text-amber-700' : crop ? 'text-gray-800' : 'text-gray-300')
+  const yearCell = (y: ShownField['years'][number]) => (
+    <>
+      {y.crop ?? '—'}
+      {y.from === 'plan' && <span className="block text-xs font-normal text-gray-400">planned</span>}
+      {canEdit && y.row && <TraitPicker row={y.row} onSet={(trait) => setTrait.mutate({ table: y.row!.record!.table, id: y.row!.record!.id, trait })} />}
+    </>
+  )
 
   const exportAs = async (kind: 'pdf' | 'csv') => {
     setBusy(kind)
@@ -147,7 +157,26 @@ export function HistoryTab() {
         {!history.length ? (
           <p className="mt-6 px-3 pb-3 text-center text-sm text-gray-400">Tick one or more fields on the left.</p>
         ) : (
-          <div className="mt-3 overflow-x-auto">
+          <>
+          {/* One field a card on a phone, its years down the card (design review, Nov 2026). */}
+          <CardList className="mt-3">
+            {history.map((h) => (
+              <RowCard
+                key={h.id}
+                heading={
+                  <>
+                    {h.name}
+                    {h.acres != null && <span className="ml-1.5 text-xs font-normal text-gray-500">{Math.round(h.acres)} ac</span>}
+                    <span className="block text-xs font-normal text-amber-800">
+                      Last seed canola: {h.lastSeedCanola ? `${h.lastSeedCanola.year}, ${h.lastSeedCanola.label}` : 'none on record'}
+                    </span>
+                  </>
+                }
+                facts={h.years.map((y) => ({ label: String(y.year), node: <span className={yearClass(y.crop)}>{yearCell(y)}</span> }))}
+              />
+            ))}
+          </CardList>
+          <div className="mt-3 hidden overflow-x-auto sm:block">
             <table className="w-full min-w-[560px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
@@ -170,10 +199,8 @@ export function HistoryTab() {
                       </span>
                     </td>
                     {h.years.map((y) => (
-                      <td key={y.year} className={cn('px-3 py-1.5 align-top', isCanolaCrop(y.crop) ? 'font-semibold text-amber-700' : y.crop ? 'text-gray-800' : 'text-gray-300')}>
-                        {y.crop ?? '—'}
-                        {y.from === 'plan' && <span className="block text-xs font-normal text-gray-400">planned</span>}
-                        {canEdit && y.row && <TraitPicker row={y.row} onSet={(trait) => setTrait.mutate({ table: y.row!.record!.table, id: y.row!.record!.id, trait })} />}
+                      <td key={y.year} className={cn('px-3 py-1.5 align-top', yearClass(y.crop))}>
+                        {yearCell(y)}
                       </td>
                     ))}
                   </tr>
@@ -181,6 +208,7 @@ export function HistoryTab() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </section>
     </div>

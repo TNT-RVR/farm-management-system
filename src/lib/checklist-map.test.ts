@@ -8,6 +8,14 @@ describe('placeStatus', () => {
     expect(placeStatus([{ checked: false }])).toBe('todo')
     expect(placeStatus([])).toBe('todo')
   })
+
+  it('counts a place with no jobs as done once it has a note', () => {
+    expect(placeStatus([], 'Drained, valve left open')).toBe('done')
+    expect(placeStatus([], '  ')).toBe('todo')
+    expect(placeStatus([], null)).toBe('todo')
+    // With jobs, a note does not stand in for ticking them.
+    expect(placeStatus([{ checked: false }], 'Looked at it')).toBe('todo')
+  })
 })
 
 describe('anchorOf', () => {
