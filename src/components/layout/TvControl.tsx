@@ -1,3 +1,4 @@
+import { IS_DEMO } from '@/lib/demo'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Cast, Check, Loader2, Power, Tv, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -84,6 +85,12 @@ function useTvCommand() {
   }, [id, terminal, userId])
 
   const send = useCallback(async (command: Command) => {
+    // The demo has no TV and no shop server; the database's own refusal named
+    // the generic stand-in address, which read as a fault.
+    if (IS_DEMO) {
+      setTracked({ id: null, command, status: 'failed', error: 'The conference-room TV is not in the demo.', stale: false })
+      return
+    }
     setTracked({ id: null, command, status: 'sending', error: null, stale: false })
     const { origin, pathname, search, hash } = window.location
     const url = command === 'show_app' ? `${origin}${pathname}${search}${hash}` : null

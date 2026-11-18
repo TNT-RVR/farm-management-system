@@ -314,18 +314,20 @@ export function ContactCandidatesPage() {
         subtitle={`${counts.pending} to decide · ${counts.approved} added · ${counts.rejected} turned down`}
         info={
           <InfoPopover title="Where these came from">
+            {/* Said in general terms: the one sweep's dates and counts were
+                this farm's own and shipped in the public copy. */}
             <p className="text-sm text-gray-700">
-              Eight years of Sam's email and the whole QuickBooks vendor and customer list, read
-              on 2 November 2026 and narrowed to the businesses the farm actually deals with.
+              A sweep of the farm's email and its books' vendor and customer lists, narrowed to the
+              businesses the farm actually deals with.
             </p>
             <p className="mt-2 text-sm text-gray-700">
               <b>Add</b> writes the row onto the Contacts page. <b>No</b> keeps it here so a later
               sweep does not offer the same name again. Either can be undone.
             </p>
             <p className="mt-2 text-sm text-gray-700">
-              The mail supplied the names and phone numbers; the books supplied the ranking — only
-              8 of 1,977 QuickBooks vendors carry an email or phone, so a row found only in the
-              books often has a reason but no number yet.
+              The mail supplies the names and phone numbers; the books supply the ranking. Few
+              vendors in the books carry an email or phone, so a row found only there often has a
+              reason but no number yet.
             </p>
           </InfoPopover>
         }

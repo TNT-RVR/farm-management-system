@@ -69,20 +69,20 @@ export async function runSearch(supabase: SupabaseClient, q: string): Promise<Re
   ])
 
   fields.data?.forEach((f) => hits.push({ group: 'Fields', label: f.name, sub: f.legal_land_description ?? undefined, to: `/fields/${f.id}` }))
-  contacts.data?.forEach((c) => hits.push({ group: 'Contacts', label: c.company || c.contact_name || 'Contact', sub: c.email ?? undefined, to: '/contacts' }))
+  contacts.data?.forEach((c) => hits.push({ group: 'Contacts', label: c.company || c.contact_name || 'Contact', sub: c.email ?? undefined, to: `/contacts?open=${c.id}` }))
   tasks.data?.forEach((t) => hits.push({ group: 'Tasks', label: t.title, to: `/tasks/${t.id}` }))
   cattle.data?.forEach((c) =>
     hits.push({ group: 'Cattle', label: `${c.tag ? `#${c.tag} ` : ''}${c.name ?? ''}`.trim() || 'Animal', sub: c.breed ?? undefined, to: `/cattle/${c.id}` }),
   )
   templates.data?.forEach((t) => hits.push({ group: 'Checklists', label: t.name, to: '/checklists' }))
   crops.data?.forEach((c) => hits.push({ group: 'Crops', label: c.name, to: `/crops/${c.id}` }))
-  events.data?.forEach((e) => hits.push({ group: 'Calendar', label: e.title, to: '/calendar' }))
+  events.data?.forEach((e) => hits.push({ group: 'Calendar', label: e.title, to: `/calendar?event=${e.id}` }))
   equipment.data?.forEach((e) =>
     hits.push({ group: 'Equipment', label: e.name, sub: [e.year, e.make, e.model].filter(Boolean).join(' ') || undefined, to: `/equipment/${e.id}` }),
   )
   bins.data?.forEach((b) => hits.push({ group: 'Bins', label: b.name, sub: b.site ?? undefined, to: '/harvest?tab=bins' }))
   contracts.data?.forEach((c) => hits.push({ group: 'Contracts', label: c.contract_number || 'Contract', sub: c.crop_year ? String(c.crop_year) : undefined, to: '/contracts' }))
-  grants.data?.forEach((g) => hits.push({ group: 'Grants', label: g.title, sub: g.funder ?? undefined, to: '/grants' }))
+  grants.data?.forEach((g) => hits.push({ group: 'Grants', label: g.title, sub: g.funder ?? undefined, to: `/grants?open=${g.id}` }))
 
   return hits
 }

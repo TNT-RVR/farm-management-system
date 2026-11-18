@@ -160,6 +160,8 @@ type Base = {
   managerOnly?: boolean
   /** The owners and whoever they gave finance access (the CPA) only: canSeeFinances. */
   financeOnly?: boolean
+  /** Left out of the public demo, which lacks what it needs (an insurer's blank forms). */
+  notInDemo?: boolean
 }
 
 export type BuiltReport = Base & {
@@ -588,6 +590,7 @@ export const REPORTS: ReportEntry[] = [
     from: { label: 'Pasture insurance', to: '/cattle-markets?tab=insurance' },
     formats: ['PDF', 'CSV'],
     managerOnly: true,
+    notInDemo: true,
     // One subscription per ranch; left unpicked it is the farm's main one.
     params: [year, { key: 'ranch', kind: 'ranch', label: 'Ranch' }],
   },
@@ -600,6 +603,7 @@ export const REPORTS: ReportEntry[] = [
     from: { label: 'Pasture insurance', to: '/cattle-markets?tab=insurance' },
     formats: ['PDF', 'CSV'],
     managerOnly: true,
+    notInDemo: true,
     // One subscription per ranch; left unpicked it is the farm's main one.
     params: [year, { key: 'ranch', kind: 'ranch', label: 'Ranch' }],
   },
@@ -612,6 +616,7 @@ export const REPORTS: ReportEntry[] = [
     from: { label: 'Pasture insurance', to: '/cattle-markets?tab=insurance' },
     formats: ['PDF', 'CSV'],
     managerOnly: true,
+    notInDemo: true,
     // One subscription per ranch; left unpicked it is the farm's main one.
     params: [year, { key: 'ranch', kind: 'ranch', label: 'Ranch' }],
   },
@@ -624,6 +629,7 @@ export const REPORTS: ReportEntry[] = [
     from: { label: 'Pasture insurance', to: '/cattle-markets?tab=insurance' },
     formats: ['PDF', 'CSV'],
     managerOnly: true,
+    notInDemo: true,
     // One subscription per ranch; left unpicked it is the farm's main one.
     params: [year, { key: 'ranch', kind: 'ranch', label: 'Ranch' }],
   },

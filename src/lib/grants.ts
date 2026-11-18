@@ -276,7 +276,11 @@ export function useGrantDetailsLookup() {
         headers: { Authorization: await bearer(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
       })
-      if (res.status >= 400) throw new Error('Could not start the lookup')
+      if (res.status >= 400) {
+        // The server's own reason when it gives one ("not in the demo", say).
+        const body = (await res.json().catch(() => null)) as { error?: string } | null
+        throw new Error(body?.error || 'Could not start the lookup')
+      }
     },
     onSuccess: () => {
       for (const ms of [30_000, 60_000, 100_000, 150_000]) setTimeout(() => qc.invalidateQueries({ queryKey: ['grants'] }), ms)

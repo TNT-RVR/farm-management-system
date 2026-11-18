@@ -4327,6 +4327,7 @@ declare
   open_alert record;
   last_dismissed timestamptz;
   fname text;
+  bname text;
 begin
   if p_field is null or p_crop_year is null then return; end if;
 
@@ -4380,10 +4381,14 @@ begin
   on conflict do nothing;
 
   select name into fname from fields where id = p_field;
+  if t.bin_id is not null then
+    select name into bname from bins where id = t.bin_id;
+  end if;
   perform fn_notify_managers(
     'bin_needs_air',
     coalesce(fname, 'A field') || ' went in ' || t.grade,
-    'It tested ' || round(t.moisture_pct, 1) || '% moisture. Put air on the bin.',
+    'It tested ' || round(t.moisture_pct, 1) || '% moisture. Put air on '
+      || coalesce(nullif(btrim(bname), ''), 'the bin') || '.',
     '/harvest'
   );
 end; $$;
@@ -11299,7 +11304,8 @@ CREATE TABLE IF NOT EXISTS "public"."contacts" (
     "tags" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
     "active" boolean DEFAULT true NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "address" "text"
+    "address" "text",
+    CONSTRAINT "contacts_has_a_name" CHECK (((COALESCE("btrim"("company"), ''::"text") <> ''::"text") OR (COALESCE("btrim"("contact_name"), ''::"text") <> ''::"text")))
 );
 
 
@@ -12327,6 +12333,8 @@ CREATE TABLE IF NOT EXISTS "public"."events" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "series_key" "text",
     "recurrence" "text" DEFAULT 'annual'::"text" NOT NULL,
+    CONSTRAINT "events_cost_not_negative" CHECK (((("cost" IS NULL) OR ("cost" >= (0)::numeric)) AND (("early_bird_cost" IS NULL) OR ("early_bird_cost" >= (0)::numeric)))),
+    CONSTRAINT "events_dates_order" CHECK ((("starts_on" IS NULL) OR ("ends_on" IS NULL) OR ("ends_on" >= "starts_on"))),
     CONSTRAINT "events_recurrence_check" CHECK (("recurrence" = ANY (ARRAY['annual'::"text", 'biennial'::"text", 'none'::"text"]))),
     CONSTRAINT "events_relevance_check" CHECK ((("relevance" >= 0) AND ("relevance" <= 100))),
     CONSTRAINT "events_status_check" CHECK (("status" = ANY (ARRAY['watching'::"text", 'interested'::"text", 'registered'::"text", 'attending'::"text", 'attended'::"text", 'skipped'::"text"])))
@@ -14687,6 +14695,8 @@ CREATE TABLE IF NOT EXISTS "public"."grants" (
     "project_md" "text",
     "details_checked_at" timestamp with time zone,
     "meeting_email_sent_at" timestamp with time zone,
+    CONSTRAINT "grants_amount_not_negative" CHECK (((("amount_min" IS NULL) OR ("amount_min" >= (0)::numeric)) AND (("amount_max" IS NULL) OR ("amount_max" >= (0)::numeric)))),
+    CONSTRAINT "grants_amount_order" CHECK ((("amount_min" IS NULL) OR ("amount_max" IS NULL) OR ("amount_min" <= "amount_max"))),
     CONSTRAINT "grants_cost_share_pct_check" CHECK ((("cost_share_pct" IS NULL) OR (("cost_share_pct" > (0)::numeric) AND ("cost_share_pct" <= (100)::numeric))))
 );
 

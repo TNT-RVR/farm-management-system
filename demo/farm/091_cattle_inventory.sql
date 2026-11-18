@@ -128,7 +128,11 @@ begin
           ('Check stored grain temperatures', 6, 'done', null, '0de30000-0000-4000-8000-0000000000a3', 26),
           ('Check stored grain temperatures', 7, 'skipped', 'Bins empty until harvest.', '0de30000-0000-4000-8000-0000000000a3', 2),
           ('Check stored grain temperatures', 8, 'skipped', 'Bins empty until harvest.', '0de30000-0000-4000-8000-0000000000a3', 2),
-          ('Check stored grain temperatures', 9, 'done', null, '0de30000-0000-4000-8000-0000000000a3', 28)
+          ('Check stored grain temperatures', 9, 'done', null, '0de30000-0000-4000-8000-0000000000a3', 28),
+          -- October: the soil sampling (a Sep–Oct job) and the grain check are
+          -- done; winterizing the pivots is left to do, so To do carries it.
+          ('Fall soil sampling', 9, 'done', null, '0de30000-0000-4000-8000-0000000000a2', 24),
+          ('Check stored grain temperatures', 10, 'done', null, '0de30000-0000-4000-8000-0000000000a3', 27)
         ) as v(title, m, state, note, who, day)
         join public.monthly_task_templates t on t.title = v.title
        where v.m < $2

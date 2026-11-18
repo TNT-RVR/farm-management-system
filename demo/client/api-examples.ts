@@ -572,6 +572,7 @@ const ROUTES: Record<string, Handler> = {
   'google-drive-connect': offline('Google Drive'), // start the Google sign-in for the report backup
   'google-drive-callback': offline('Google Drive'), // Google sign-in return
   'google-drive-token': offline('Google Drive'), // a short-lived Drive token for the backup
+  'grant-details-background': offline('the AI, which reads the program\'s own pages'), // fill a grant's deadline, share and contact
   'app-changes-run': offline('the AI, which writes the week from your app\'s changes'), // write a What's new week (an example week is seeded)
 }
 

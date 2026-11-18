@@ -6,9 +6,9 @@
 
 -- Two more contacts the season needs.
 insert into public.contacts (id, company, contact_name, email, phone, type, notes_md, tags, active, address) values
-  ('0de30000-0000-4000-8000-000000000315', 'Clearwater Apiaries', 'Noah Reimer', 'user-5fdb@clearwaterapiaries.example', '403-555-0285', 'other',
+  ('0de30000-0000-4000-8000-000000000315', 'Clearwater Apiaries', 'Noah Reimer', 'hives@clearwaterapiaries.example', '403-555-0285', 'other',
    'Brings hives onto the canola in July and takes them off before desiccation. Wants a text the day before any spray.', '{pollinators}', true, 'Prairie Creek, AB'),
-  ('0de30000-0000-4000-8000-000000000316', 'Ridgeline Genetics', 'Alex Fenwick', 'user-b094@ridgelinegenetics.example', '403-555-0296', 'buyer',
+  ('0de30000-0000-4000-8000-000000000316', 'Ridgeline Genetics', 'Alex Fenwick', 'contracts@ridgelinegenetics.example', '403-555-0296', 'buyer',
    'Hybrid canola seed contract on Correction Line. Supplies the leafcutter shelters and the bees in them.', '{seed}', true, null);
 
 -- ── How the app reads a yellow field (Canola → Bloom → Settings) ──────────

@@ -123,7 +123,7 @@ export async function gatherInvoiceCopies(p: ParamValues, ctx: GatherContext): P
   let missing = new Set<string>()
   let files: { name: string; data: Uint8Array }[] = []
   if (ctx.format === 'ZIP') {
-    if (!copies.some((c) => c.fileName)) throw new Error('None of these invoices has its PDF uploaded yet (scripts/upload-invoices.mjs files them).')
+    if (!copies.some((c) => c.fileName)) throw new Error('None of these invoices has its PDF filed yet, so there is nothing to put in the ZIP. The list as a PDF or CSV still works.')
     ;({ files, missing } = await fetchFiles(copies))
     if (!files.length) throw new Error('The invoice PDFs could not be read. Try again, or open one from Fertilizer → Pricing.')
   }

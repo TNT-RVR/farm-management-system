@@ -72,8 +72,11 @@ function useLookup(key: LookupKey) {
 type PickProps = { value: string; onChange: (v: string) => void }
 type Opt = { value: string; label: string }
 
+/** "Choose a field": a picker's own label repeated as its placeholder read as "Field / Field". */
+const choose = (label: string) => `Choose ${/^[aeiou]/i.test(label) ? 'an' : 'a'} ${label.toLowerCase()}`
+
 function Sel({ value, onChange, options, label, placeholder }: PickProps & { options: Opt[]; label: string; placeholder?: string }) {
-  return <Select value={value} onChange={onChange} className="w-full" ariaLabel={label} placeholder={placeholder ?? label} options={options} />
+  return <Select value={value} onChange={onChange} className="w-full" ariaLabel={label} placeholder={placeholder ?? choose(label)} options={options} />
 }
 const allOf = (allLabel?: string): Opt[] => (allLabel ? [{ value: '', label: allLabel }] : [])
 
@@ -98,7 +101,7 @@ function labelOf(spec: ParamSpec): string {
 // One component per list, so a dialog only loads the lists it asks for.
 function FieldPick({ spec, ...p }: PickProps & { spec: Extract<ParamSpec, { kind: 'field' }> }) {
   const { data } = useFields()
-  return <Sel {...p} label={labelOf(spec)} placeholder={data ? 'Field' : 'Loading…'} options={[...allOf(spec.allLabel), ...(data ?? []).map((f) => ({ value: f.id, label: f.name }))]} />
+  return <Sel {...p} label={labelOf(spec)} placeholder={data ? choose(labelOf(spec)) : 'Loading…'} options={[...allOf(spec.allLabel), ...(data ?? []).map((f) => ({ value: f.id, label: f.name }))]} />
 }
 function CropPick({ spec, ...p }: PickProps & { spec: Extract<ParamSpec, { kind: 'crop' }> }) {
   const { data } = useCrops()
@@ -138,7 +141,7 @@ function LookupPick({ spec, value, onChange }: PickProps & { spec: Extract<Param
       value={value}
       onChange={onChange}
       label={spec.label}
-      placeholder={!lookup.data ? 'Loading…' : lookup.data.length ? spec.label : `No ${spec.label.toLowerCase()}s yet`}
+      placeholder={!lookup.data ? 'Loading…' : lookup.data.length ? choose(spec.label) : `No ${spec.label.toLowerCase()}s yet`}
       options={[...allOf(spec.allLabel), ...(lookup.data ?? [])]}
     />
   )

@@ -253,6 +253,10 @@ export function TaskForm({
           onChange={(e) => setForm((f) => ({ ...f, reminder_at: e.target.value }))}
           className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
         />
+        {/* Allowed (a follow-up nudge), but rarely meant: said, not refused. */}
+        {form.due_at && form.reminder_at && form.reminder_at.slice(0, 10) > form.due_at && (
+          <span className="mt-0.5 block text-amber-700">This reminder comes after the due date.</span>
+        )}
       </label>
 
       <fieldset className="text-xs text-gray-500 sm:col-span-2">

@@ -96,7 +96,7 @@ select v.id::uuid, v.title, v.descr, v.field::uuid, coalesce(v.creator, (select 
        v.parent::uuid, 'manual', v.eq::uuid,
        now() - make_interval(days => coalesce(v.done, 0) + 6)
 from (values
-  ('0de30000-0000-4000-8000-000000000601', 'Finish combining Correction Line canola', 'About half done. Bins #1 and #2. Watch the moisture in the mornings.', '0de30000-0000-4000-8000-000000000110', null, 2, 'open', null, null, null, null),
+  ('0de30000-0000-4000-8000-000000000601', 'Watch the Correction Line canola in bins #1 and #2', 'It came off tough. Run the fans and check the cables on both bins in the mornings.', '0de30000-0000-4000-8000-000000000110', null, 2, 'open', null, null, null, null),
   ('0de30000-0000-4000-8000-000000000602', 'Straight-cut Creek Flat canola once the pods are dry', 'Sample on the creek side first; it was 12.9% last test. Goes to bin #19.', '0de30000-0000-4000-8000-000000000115', null, 6, 'open', null, null, null, null),
   ('0de30000-0000-4000-8000-000000000603', 'Book preg checking with Ridgeview Vet', 'Both herds, last week of October. Need the chute and the alley panels set up.', null, null, 4, 'open', null, null, null, null),
   ('0de30000-0000-4000-8000-000000000604', 'Winterize the creek pump station', 'Before the first hard frost. See the pivot winterizing checklist too.', '0de30000-0000-4000-8000-000000000113', null, 12, 'open', null, null, null, null),
@@ -237,16 +237,16 @@ join public.checklist_template_items i on i.template_id = r.template_id
 where r.id in ('0de30000-0000-4000-8000-000000000711', '0de30000-0000-4000-8000-000000000712');
 
 -- Jobs that come round every year.
-insert into public.monthly_task_templates (title, start_month, end_month, recurrence, checklist_template_id, default_assignee, notes_md, sort_order, active) values
-  ('Book fall fertilizer and lock in prepay', 8, 9, 'annual', null, null, 'Prairie Ag Supply prepay discount.', 1, true),
-  ('Fall soil sampling', 9, 10, 'annual', null, null, 'Next year''s canola and wheat fields first.', 2, true),
-  ('Winterize pivots and the pump station', 10, 10, 'annual', '0de30000-0000-4000-8000-000000000702', '0de30000-0000-4000-8000-0000000000a1', null, 3, true),
-  ('Preg check and wean', 10, 11, 'annual', null, '0de30000-0000-4000-8000-0000000000a1', null, 4, true),
-  ('Pay land rent', 11, 11, 'annual', null, null, 'Miller Half, 1 November.', 5, true),
-  ('Calving barn ready', 2, 2, 'annual', '0de30000-0000-4000-8000-000000000704', '0de30000-0000-4000-8000-0000000000a3', null, 6, true),
-  ('Sprayer start-up and calibration', 4, 4, 'annual', '0de30000-0000-4000-8000-000000000703', '0de30000-0000-4000-8000-0000000000a2', null, 7, true),
-  ('Brand and vaccinate calves', 6, 6, 'annual', null, null, null, 8, true),
-  ('Check stored grain temperatures', 1, 12, 'multi_per_year', null, '0de30000-0000-4000-8000-0000000000a3', 'Every two weeks while there is grain in the bins.', 9, true);
+insert into public.monthly_task_templates (title, start_month, end_month, recurrence, checklist_template_id, default_assignee, notes_md, sort_order, active, created_at) values
+  ('Book fall fertilizer and lock in prepay', 8, 9, 'annual', null, null, 'Prairie Ag Supply prepay discount.', 1, true, now() - interval '2 years'),
+  ('Fall soil sampling', 9, 10, 'annual', null, null, 'Next year''s canola and wheat fields first.', 2, true, now() - interval '2 years'),
+  ('Winterize pivots and the pump station', 10, 10, 'annual', '0de30000-0000-4000-8000-000000000702', '0de30000-0000-4000-8000-0000000000a1', null, 3, true, now() - interval '2 years'),
+  ('Preg check and wean', 10, 11, 'annual', null, '0de30000-0000-4000-8000-0000000000a1', null, 4, true, now() - interval '2 years'),
+  ('Pay land rent', 11, 11, 'annual', null, null, 'Miller Half, 1 November.', 5, true, now() - interval '2 years'),
+  ('Calving barn ready', 2, 2, 'annual', '0de30000-0000-4000-8000-000000000704', '0de30000-0000-4000-8000-0000000000a3', null, 6, true, now() - interval '2 years'),
+  ('Sprayer start-up and calibration', 4, 4, 'annual', '0de30000-0000-4000-8000-000000000703', '0de30000-0000-4000-8000-0000000000a2', null, 7, true, now() - interval '2 years'),
+  ('Brand and vaccinate calves', 6, 6, 'annual', null, null, null, 8, true, now() - interval '2 years'),
+  ('Check stored grain temperatures', 1, 12, 'multi_per_year', null, '0de30000-0000-4000-8000-0000000000a3', 'Every two weeks while there is grain in the bins.', 9, true, now() - interval '2 years');
 
 -- The owner's notifications (other kinds are made by the task triggers above).
 insert into public.notifications (user_id, kind, title, body, link, read_at, created_at, details)

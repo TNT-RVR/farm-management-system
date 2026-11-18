@@ -20,6 +20,8 @@ import {
 import { supabase } from '@/lib/supabase'
 import { withDisplay } from '@/lib/reports/columns'
 import { contactListColumns, contactListRows } from '@/lib/reports/lists'
+import { contactProblem } from '@/lib/contact-check'
+import { useOpenParam } from '@/lib/useOpenParam'
 
 // Some linked tables (pumps, mineral programs) are newer than the generated types.
 const db = supabase as unknown as SupabaseClient
@@ -68,6 +70,7 @@ export function ContactsPage() {
   const [typeFilter, setTypeFilter] = useState<ContactType | 'all'>('all')
   // Sam, 7 Oct 2026: a row opens to the whole contact, with edit and delete.
   const [openId, setOpenId] = useState<string | null>(null)
+  useOpenParam(setOpenId)
   const [editing, setEditing] = useState<ContactRow | 'new' | null>(null)
   const [deleting, setDeleting] = useState<ContactRow | null>(null)
 
@@ -148,7 +151,12 @@ export function ContactsPage() {
     <div className="p-4 md:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-lg font-semibold text-gray-900">
-          Contacts{contacts ? ` (${contacts.length})` : ''}
+          Contacts
+          {contacts
+            ? rows.length === contacts.length
+              ? ` (${contacts.length})`
+              : ` (${rows.length} of ${contacts.length})`
+            : ''}
         </h1>
         {isManager && (
           <div className="flex flex-wrap items-center gap-2">
@@ -196,6 +204,20 @@ export function ContactsPage() {
 
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading…</p>
+      ) : rows.length === 0 && (search.trim() || typeFilter !== 'all') ? (
+        <p className="rounded-lg border border-gray-200 bg-white px-3 py-8 text-center text-sm text-gray-500">
+          No contact matches{search.trim() ? ` “${search.trim()}”` : ''}
+          {typeFilter !== 'all' ? ` among ${typeFilter.replaceAll('_', ' ')}s` : ''}.{' '}
+          <button
+            onClick={() => {
+              setSearch('')
+              setTypeFilter('all')
+            }}
+            className="text-brand-700 hover:underline"
+          >
+            Clear
+          </button>
+        </p>
       ) : (
         <DataTable
           rows={rows}
@@ -228,11 +250,14 @@ export function ContactsPage() {
           saving={create.isPending || update.isPending}
           error={saveError}
           onClose={() => setEditing(null)}
-          onSave={(p) =>
-            editing === 'new'
+          onSave={(p) => {
+            // Refused in the form, which stays open and says why.
+            const problem = contactProblem(toPatch(p))
+            if (problem) return Promise.reject(new Error(problem))
+            return editing === 'new'
               ? create.mutateAsync(toPatch(p)).then((id) => setOpenId(id))
               : update.mutateAsync({ id: editing.id, patch: toPatch(p) })
-          }
+          }}
         />
       )}
 
@@ -307,7 +332,7 @@ function ContactDetail({
           ['Notes', c.notes_md],
           ['Status', c.active ? null : 'Inactive'],
           ['Used by', links],
-          ['Added', new Date(c.created_at).toLocaleDateString()],
+          ['Added', new Date(c.created_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })],
         ]}
       />
       {canEdit && (

@@ -1,6 +1,7 @@
 import { DateField } from '@/components/DateField'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTab } from '@/lib/useTab'
+import { useOpenParam } from '@/lib/useOpenParam'
 import { usePartnerView } from '@/lib/partner-view'
 import {
   Archive,
@@ -265,9 +266,27 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
   const set = (patch: Parameters<typeof update.mutate>[0]['patch']) =>
     update.mutate({ id: grant.id, patch })
 
+  // Escape closes the panel, unless a dialog opened from it is on top.
+  const panel = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const dialogs = document.querySelectorAll('[role="dialog"]')
+      if (dialogs[dialogs.length - 1] === panel.current) onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-0 sm:items-center sm:p-4">
-      <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-xl bg-white shadow-xl sm:rounded-xl">
+      <div
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-label={grant.title}
+        className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-xl bg-white shadow-xl sm:rounded-xl"
+      >
         <div className="flex items-start justify-between gap-2 border-b border-gray-200 p-4">
           <div className="min-w-0">
             <input
@@ -291,7 +310,7 @@ function GrantDetail({ grant, onClose }: { grant: GrantRow; onClose: () => void 
               className="mt-0.5 w-full rounded border border-transparent text-xs text-gray-500 hover:border-gray-200 focus:border-gray-300 focus:outline-none"
             />
           </div>
-          <button onClick={onClose} className="rounded-md p-1 text-gray-400 hover:bg-gray-100">
+          <button onClick={onClose} aria-label="Close" className="rounded-md p-1 text-gray-400 hover:bg-gray-100">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -549,6 +568,7 @@ export function GrantsPage() {
   const { data: dupes } = useGrantDuplicateCount()
   const dedupe = useGrantDedupe()
   const [openId, setOpenId] = useState<string | null>(null)
+  useOpenParam(setOpenId)
   const [tab, setTab] = useTab('grants', ['active', 'archived'] as const)
   const [statusFilter, setStatusFilter] = useState<'all' | GrantStatus>('all')
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'closes', dir: 'asc' })
@@ -803,7 +823,7 @@ export function GrantsPage() {
                     {closesLabel(g.closes_on)}
                   </td>
                   <td className="px-3 py-2">
-                    {websiteLink(g) ?? <span className="text-gray-300">\u2014</span>}
+                    {websiteLink(g) ?? <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-2 py-2 text-right">{archiveButton(g)}</td>
                 </tr>

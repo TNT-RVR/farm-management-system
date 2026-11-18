@@ -69,8 +69,8 @@ export function TasksPage() {
         <span className={cn(t.status === 'done' && 'text-gray-400 line-through')}>
           {t.title}
           {subtaskCount(t.id) > 0 && (
-            <span className="ml-2 rounded-full bg-gray-100 px-1.5 text-xs text-gray-500">
-              {subtaskCount(t.id)}
+            <span className="ml-2 whitespace-nowrap rounded-full bg-gray-100 px-1.5 text-xs font-normal text-gray-500">
+              {subtaskCount(t.id)} {subtaskCount(t.id) === 1 ? 'subtask' : 'subtasks'}
             </span>
           )}
         </span>

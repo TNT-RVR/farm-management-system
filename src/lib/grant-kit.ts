@@ -13,6 +13,26 @@ export function coverLabel(pct: number | null | undefined): string | null {
   return `${Number(pct).toLocaleString('en-CA', { maximumFractionDigits: 1 })}% of eligible costs`
 }
 
+/**
+ * Why one of a grant's figures cannot be saved, or null when it can. Read
+ * against the other end of the range as it stands, so "from" over "up to" is
+ * caught whichever box was changed.
+ */
+export function grantFigureProblem(
+  grant: Pick<GrantRow, 'amount_min' | 'amount_max'>,
+  key: 'amount_min' | 'amount_max' | 'cost_share_pct',
+  v: number | null,
+): string | null {
+  if (v == null) return null
+  if (key === 'cost_share_pct') return v > 0 && v <= 100 ? null : 'the share covered has to be more than 0 and at most 100%.'
+  if (v < 0) return 'an amount cannot be negative.'
+  if (key === 'amount_min' && grant.amount_max != null && v > grant.amount_max)
+    return `"from" is more than "up to" (${grant.amount_max.toLocaleString('en-CA')}).`
+  if (key === 'amount_max' && grant.amount_min != null && v < grant.amount_min)
+    return `"up to" is less than "from" (${grant.amount_min.toLocaleString('en-CA')}).`
+  return null
+}
+
 const longDate = (d: string) =>
   new Date(`${d}T12:00:00`).toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })
 

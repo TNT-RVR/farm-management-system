@@ -26,7 +26,7 @@ insert into public.farm_setup (
     jsonb_build_object('name', 'Willow Ridge pasture', 'lat', 52.385, 'lng', -113.66, 'note', 'Summer pasture')
   ),
   'Prairie Ag Supply', 'Prairie Creek water licence', 'Prairieline C780',
-  11, 575, 'Black Angus cross', 'user-106a@prairiecreek.example',
+  11, 575, 'Black Angus cross', 'help@prairiecreek.example',
   (select id from public.users limit 1)
 );
 
@@ -52,11 +52,11 @@ on conflict (user_id) do nothing;
 -- Staff. The sign-up trigger (handle_new_user) makes their public.users rows.
 insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data, invited_at, email_confirmed_at, created_at)
 values
-  ('0de30000-0000-4000-8000-0000000000a1', 'user-8432@prairiecreek.example',
+  ('0de30000-0000-4000-8000-0000000000a1', 'alex.rivers@prairiecreek.example',
    '{"full_name":"Alex Rivers","role":"manager"}', '{"provider":"email","providers":["email"]}', now() - interval '700 days', now() - interval '700 days', now() - interval '700 days'),
-  ('0de30000-0000-4000-8000-0000000000a2', 'user-d850@prairiecreek.example',
+  ('0de30000-0000-4000-8000-0000000000a2', 'jordan.pike@prairiecreek.example',
    '{"full_name":"Jordan Pike","role":"user"}', '{"provider":"email","providers":["email"]}', now() - interval '420 days', now() - interval '420 days', now() - interval '420 days'),
-  ('0de30000-0000-4000-8000-0000000000a3', 'user-c82b@prairiecreek.example',
+  ('0de30000-0000-4000-8000-0000000000a3', 'casey.moore@prairiecreek.example',
    '{"full_name":"Casey Moore","role":"user"}', '{"provider":"email","providers":["email"]}', now() - interval '150 days', now() - interval '150 days', now() - interval '150 days');
 
 update public.users set active = true, phone = '403-555-0111', can_control_pivots = true

@@ -7,7 +7,7 @@ insert into public.grazing_dispositions (ranch_id, disposition_no, holder_name, 
 values ('0de30000-0000-4000-8000-000000000402', 'GRL 990123', 'Prairie Creek Farm Ltd.', 'Box 41, Prairie Creek, AB', make_date(extract(year from current_date)::int + 6, 12, 31),
         'N-8-41-26-W4', 118, 130, 'Rangeland district office (example)', '403-555-0299', 'Willow Ridge',
         array['0de30000-0000-4000-8000-000000000411'::uuid, '0de30000-0000-4000-8000-000000000414'::uuid], 'March–April', 'Sam Demo', '403-555-0100',
-        'user-2a97@prairiecreek.example', 'Made-up lease for the demo. North Paddock and Bush Quarter are the leased native grass.', true, 1);
+        'demo@prairiecreek.example', 'Made-up lease for the demo. North Paddock and Bush Quarter are the leased native grass.', true, 1);
 
 insert into public.grazing_disposition_returns (disposition_id, year, grazed, owned, hay_cut, feed_supplied, other_fenced, had_losses, declared, signed_on, status, filed_on, notes, updated_by)
 select d.id, extract(year from current_date)::int - 1, true, true, false, false, false, false, true,

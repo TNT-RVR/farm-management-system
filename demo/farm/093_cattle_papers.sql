@@ -82,7 +82,7 @@ insert into public.afsc_mdi_year (crop_year, ranch_id, identification_number, bu
   contact_person, contact_phone, contact_email, home_part, home_section, home_township, home_range, home_meridian,
   station_1, station_2, station_3, coverage_option, price_per_lb, insure_native, insure_improved, insure_bush, insure_community, notes)
 select extract(year from current_date)::int + y.ahead, '0de30000-0000-4000-8000-000000000401', '00-123456', 'Prairie Creek Farm Ltd.',
-   'Box 41, Prairie Creek, AB  T0A 1A0', '00-123456 RT0001', 'Sam Demo', '403-555-0100', 'user-2a97@prairiecreek.example',
+   'Box 41, Prairie Creek, AB  T0A 1A0', '00-123456 RT0001', 'Sam Demo', '403-555-0100', 'demo@prairiecreek.example',
    'SE', '14', '42', '25', 'W4', 'Prairie Creek East (example)', 'Willow Ridge (example)', 'Correction Line (example)',
    'B', case when y.ahead = 0 then 0.092 else 0.095 end, true, true, false, false,
    case when y.ahead = 0

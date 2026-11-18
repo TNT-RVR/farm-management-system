@@ -27,6 +27,10 @@ type Week = {
   written_at: string | null
 }
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+/** The demo's week opens with an "Example" card that is not a change to the app. */
+const changeCount = (items: Item[]) => items.filter((i) => i.area !== 'Example').length
+
 const day = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 
 async function authed(path: string, body: unknown) {
@@ -101,7 +105,11 @@ function WeekCard({ week, repo, open = false, manager, onRewrite, busy }: { week
           {day(week.week_start)} – {day(week.week_end)}
         </span>
         <span className="text-xs text-gray-500">
-          {week.status === 'pending' ? 'being written…' : week.status === 'error' ? 'could not be written' : `${week.items.length} changes · ${week.commits.length} commits`}
+          {week.status === 'pending'
+            ? 'being written…'
+            : week.status === 'error'
+              ? 'could not be written'
+              : `${plural(changeCount(week.items), 'change')} · ${plural(week.commits.length, 'commit')}`}
         </span>
       </button>
       {shown && (

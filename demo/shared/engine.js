@@ -27,7 +27,7 @@ export const EXTENSIONS = { postgis, pgcrypto, uuid_ossp, pg_trgm, citext, ltree
 export const DEMO_JWT_SECRET = 'rvr-farm-demo-not-a-secret-this-runs-in-your-own-browser'
 
 /** The demo's sign-in. Shown to visitors; the demo signs them in with it. */
-export const DEMO_USER = { email: 'user-2a97@prairiecreek.example', password: 'prairie-creek-demo' }
+export const DEMO_USER = { email: 'demo@prairiecreek.example', password: 'prairie-creek-demo' }
 
 /** Open PGlite with the demo's extensions. `options` go to PGlite as they are. */
 export async function openPglite(options = {}) {

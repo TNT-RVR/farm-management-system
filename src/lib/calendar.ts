@@ -14,6 +14,16 @@ export const EVENT_KINDS: EventKind[] = [
   'other',
 ]
 
+/** How each kind reads on screen ("Field work", not "field_work"). */
+export const EVENT_KIND_LABEL: Record<EventKind, string> = {
+  general: 'General',
+  field_work: 'Field work',
+  meeting: 'Meeting',
+  maintenance: 'Maintenance',
+  delivery: 'Delivery',
+  other: 'Other',
+}
+
 export function useCalendarEvents() {
   return useQuery({
     queryKey: ['calendar_events'],

@@ -59,6 +59,55 @@ export const EVENT_CATEGORIES = [
   'pulse',
 ] as const
 
+/** How each subject reads on screen ("Alfalfa seed", not "alfalfa-seed"). */
+export const EVENT_CATEGORY_LABEL: Record<(typeof EVENT_CATEGORIES)[number], string> = {
+  irrigation: 'Irrigation',
+  crop: 'Crops',
+  agronomy: 'Agronomy',
+  cattle: 'Cattle',
+  leafcutter: 'Leafcutter bees',
+  'alfalfa-seed': 'Alfalfa seed',
+  'ag-tech': 'Ag tech',
+  equipment: 'Equipment',
+  business: 'Business',
+  soil: 'Soil',
+  potato: 'Potatoes',
+  pulse: 'Pulses',
+}
+
+/** A subject's label, or the slug itself for one outside the list. */
+export function categoryLabel(c: string): string {
+  return (EVENT_CATEGORY_LABEL as Record<string, string>)[c] ?? c
+}
+
+/**
+ * What is wrong with an event form, or null when it can be saved. Dates are
+ * yyyy-mm-dd strings and money is as typed; blanks are allowed.
+ */
+export function eventFormProblem(f: {
+  name: string
+  startsOn: string
+  endsOn: string
+  cost: string
+  earlyCost?: string
+  earlyBy?: string
+}): string | null {
+  if (!f.name.trim()) return 'Type a name to save.'
+  if (f.startsOn && f.endsOn && f.endsOn < f.startsOn) return 'It ends before it starts. Check the dates.'
+  const money = (v: string | undefined) => (v ?? '').trim()
+  for (const [label, v] of [
+    ['The registration cost', money(f.cost)],
+    ['The early-bird cost', money(f.earlyCost)],
+  ] as const) {
+    if (v === '') continue
+    const n = Number(v)
+    if (!Number.isFinite(n)) return `${label} has to be a number.`
+    if (n < 0) return `${label} cannot be negative.`
+  }
+  if (f.earlyBy && f.startsOn && f.earlyBy > f.startsOn) return 'The early bird has to end by the day it starts.'
+  return null
+}
+
 /**
  * Where the operation is, for judging how far a trip is.
  *

@@ -7,7 +7,9 @@ import {
   bySeries,
   dateRange,
   daysUntil,
+  categoryLabel,
   EVENT_CATEGORIES,
+  eventFormProblem,
   isUpcoming,
   nextDeadline,
   priceToday,
@@ -31,6 +33,7 @@ import { fmtMoney } from '@/lib/applied'
 import { cn } from '@/lib/utils'
 import { rowClick } from '@/components/RecordEditor'
 import { askConfirm } from '@/components/askConfirm'
+import { dbErrorMessage } from '@/lib/db-error'
 
 const STATUSES: { key: EventStatus; label: string }[] = [
   { key: 'watching', label: 'Watching' },
@@ -40,6 +43,14 @@ const STATUSES: { key: EventStatus; label: string }[] = [
   { key: 'attended', label: 'Been' },
   { key: 'skipped', label: 'Skipped' },
 ]
+
+/** A status that was about the last edition, said as such on the next one's card. */
+const PAST_STATUS_LABEL: Partial<Record<EventStatus, string>> = {
+  registered: 'Signed up last time',
+  attending: 'Signed up last time',
+  attended: 'Went last time',
+  skipped: 'Skipped last time',
+}
 
 const STATUS_STYLE: Record<EventStatus, string> = {
   watching: 'bg-gray-100 text-gray-600',
@@ -110,7 +121,11 @@ function EventCard({
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h3 className="font-medium text-gray-900">{e.name}</h3>
         <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', STATUS_STYLE[e.status])}>
-          {STATUSES.find((s) => s.key === e.status)?.label ?? e.status}
+          {/* Beside next year's expected date, "Been" read as if that one had
+              happened: a status about the last edition says so. */}
+          {projected && PAST_STATUS_LABEL[e.status]
+            ? PAST_STATUS_LABEL[e.status]
+            : (STATUSES.find((s) => s.key === e.status)?.label ?? e.status)}
         </span>
       </div>
 
@@ -156,7 +171,7 @@ function EventCard({
         <p className="mt-1.5 flex flex-wrap gap-1">
           {e.categories.map((c) => (
             <span key={c} className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
-              {c}
+              {categoryLabel(c)}
             </span>
           ))}
         </p>
@@ -345,6 +360,11 @@ export function EventsPage() {
         </p>
       )}
 
+      {/* A status change or Remove from a card, refused: said here, since the card has no room. */}
+      {!editing && (update.error || del.error) && (
+        <p className="mb-2 text-xs text-red-600">{dbErrorMessage(update.error ?? del.error)}</p>
+      )}
+
       <PillTabs
         tabs={[
           { key: 'upcoming', label: 'Upcoming' },
@@ -363,7 +383,7 @@ export function EventsPage() {
           onChange={setCategory}
           options={[
             { value: '', label: 'Any subject' },
-            ...EVENT_CATEGORIES.map((c) => ({ value: c, label: c })),
+            ...EVENT_CATEGORIES.map((c) => ({ value: c, label: categoryLabel(c) })),
           ]}
         />
         <Select
@@ -481,6 +501,8 @@ function AddEventDialog({
 
   const toggle = (c: string) =>
     setCategories((list) => (list.includes(c) ? list.filter((x) => x !== c) : [...list, c]))
+  // Why Save is greyed: no name, dates the wrong way round, or a cost below nothing.
+  const problem = eventFormProblem({ name, startsOn, endsOn, cost, earlyCost, earlyBy })
 
   return (
     <Modal title={existing ? existing.name : 'Add an event'} onClose={onClose}>
@@ -605,7 +627,7 @@ function AddEventDialog({
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
                 )}
               >
-                {c}
+                {categoryLabel(c)}
               </button>
             ))}
           </div>
@@ -620,9 +642,12 @@ function AddEventDialog({
           />
         </label>
 
-        {error && <p className="text-xs text-red-600">{error.message}</p>}
+        {problem && (name.trim() || startsOn || endsOn || cost) && (
+          <p className="text-xs text-amber-700">{problem}</p>
+        )}
+        {error && <p className="text-xs text-red-600">{dbErrorMessage(error)}</p>}
 
-        <div className="flex justify-end gap-2 pt-1">
+        <div className="flex items-center justify-end gap-2 pt-1">
           {onDelete && (
             <button
               type="button"
@@ -638,8 +663,11 @@ function AddEventDialog({
           <button onClick={onClose} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm">
             Cancel
           </button>
+          {!name.trim() && !(startsOn || endsOn || cost) && (
+            <span className="text-xs text-gray-400">Type a name to save.</span>
+          )}
           <button
-            disabled={!name.trim() || busy}
+            disabled={!!problem || busy}
             onClick={() =>
               onSave({
                 ...(existing

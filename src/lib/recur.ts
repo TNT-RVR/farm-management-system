@@ -40,6 +40,25 @@ export function parseRRule(rrule: string | null | undefined): ParsedRule | null 
   }
 }
 
+/**
+ * The rule cut short so its last occurrence is the one before `occurrence`:
+ * "delete this one and the ones after". UNTIL is a date read as 23:59:59 UTC
+ * (here and in the calendar feed's copy of the parser), so it is set to the
+ * UTC day before the occurrence: always after the previous one, which is at
+ * least a day earlier, and before this one. Any COUNT goes, since UNTIL now
+ * ends it. Returns null when the occurrence is the first, as nothing is left.
+ */
+export function endSeriesBefore(rrule: string, seriesStart: Date, occurrence: Date): string | null {
+  if (occurrence.getTime() <= seriesStart.getTime()) return null
+  const day = new Date(Date.UTC(occurrence.getUTCFullYear(), occurrence.getUTCMonth(), occurrence.getUTCDate() - 1))
+  const until = `${day.getUTCFullYear()}${String(day.getUTCMonth() + 1).padStart(2, '0')}${String(day.getUTCDate()).padStart(2, '0')}`
+  const kept = rrule
+    .replace(/^RRULE:/i, '')
+    .split(';')
+    .filter((kv) => kv && !/^(UNTIL|COUNT)=/i.test(kv))
+  return [...kept, `UNTIL=${until}`].join(';')
+}
+
 function advance(d: Date, rule: ParsedRule): Date {
   const n = new Date(d)
   switch (rule.freq) {

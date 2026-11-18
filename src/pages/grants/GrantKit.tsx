@@ -13,7 +13,10 @@ import {
   useUploadGrantPdf,
   type GrantRow,
 } from '@/lib/grants'
-import { applyPrompt, coverLabel, gmailComposeUrl, meetingEmail, type Sender } from '@/lib/grant-kit'
+import { applyPrompt, coverLabel, gmailComposeUrl, grantFigureProblem, meetingEmail, type Sender } from '@/lib/grant-kit'
+import { dbErrorMessage } from '@/lib/db-error'
+import { IS_DEMO } from '@/lib/demo'
+import { cn } from '@/lib/utils'
 
 /**
  * Acting on a grant (Sam, 2 Nov 2026): its facts at a glance, who to call,
@@ -93,12 +96,15 @@ export function GrantActions({ grant }: { grant: GrantRow }) {
     mutate(grant.id)
   }, [mutate, grant.id, grant.details_checked_at])
 
-  // Never looked up: do it now, once.
+  // Never looked up: do it now, once — but only once there is something to
+  // look up. A grant just added is "New grant" with no link, and a run on it
+  // reads nothing. The demo has no AI behind it, so it waits for the button.
+  const lookable = !!grant.url?.trim() || (!!grant.title?.trim() && grant.title.trim() !== 'New grant')
   useEffect(() => {
-    if (partner || grant.details_checked_at || started.current) return
+    if (IS_DEMO || partner || !lookable || grant.details_checked_at || started.current) return
     started.current = true
     findDetails()
-  }, [partner, grant.details_checked_at, findDetails])
+  }, [partner, lookable, grant.details_checked_at, findDetails])
 
   return (
     <div className="rounded-lg border border-brand-100 bg-brand-50/40 p-3">
@@ -349,14 +355,27 @@ function ApplyDialog({ grant, onClose }: { grant: GrantRow; onClose: () => void 
  */
 export function GrantDetailsEditor({ grant }: { grant: GrantRow }) {
   const { update } = useGrantMutations()
-  const set = (patch: Parameters<typeof update.mutate>[0]['patch']) => update.mutate({ id: grant.id, patch })
+  // A box refused (by the check below or the database): its name and why.
+  // The box keeps what was typed so it can be corrected.
+  const [refused, setRefused] = useState<{ key: string; why: string } | null>(null)
+  const set = async (patch: Parameters<typeof update.mutate>[0]['patch']) => {
+    const key = Object.keys(patch)[0]
+    try {
+      await update.mutateAsync({ id: grant.id, patch })
+      setRefused((r) => (r?.key === key ? null : r))
+    } catch (e) {
+      setRefused({ key, why: `Not saved: ${dbErrorMessage(e)}` })
+    }
+  }
   const text = (key: 'contact_name' | 'contact_email' | 'contact_phone' | 'application_url' | 'eligible_costs', label: string, placeholder = '') => (
     <label className="block">
       <span className="text-xs text-gray-500">{label}</span>
       <input
         defaultValue={grant[key] ?? ''}
         placeholder={placeholder}
-        onBlur={(e) => e.target.value.trim() !== (grant[key] ?? '') && set({ [key]: e.target.value.trim() || null })}
+        onBlur={(e) => {
+          if (e.target.value.trim() !== (grant[key] ?? '')) void set({ [key]: e.target.value.trim() || null })
+        }}
         className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
       />
     </label>
@@ -369,10 +388,18 @@ export function GrantDetailsEditor({ grant }: { grant: GrantRow }) {
         min={0}
         defaultValue={grant[key] ?? ''}
         onBlur={(e) => {
-          const v = e.target.value === '' ? null : Number(e.target.value)
-          if (v !== grant[key] && (v == null || Number.isFinite(v))) set({ [key]: v })
+          const v = e.target.value.trim() === '' ? null : Number(e.target.value)
+          if (v != null && !Number.isFinite(v)) return setRefused({ key, why: 'Not saved: that is not a number.' })
+          const problem = grantFigureProblem(grant, key, v)
+          if (problem) return setRefused({ key, why: `Not saved: ${problem}` })
+          if (v !== grant[key]) void set({ [key]: v })
+          else setRefused((r) => (r?.key === key ? null : r))
         }}
-        className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+        aria-invalid={refused?.key === key || undefined}
+        className={cn(
+          'mt-0.5 w-full rounded-md border px-2 py-1 text-sm',
+          refused?.key === key ? 'border-red-400' : 'border-gray-300',
+        )}
       />
     </label>
   )
@@ -383,6 +410,7 @@ export function GrantDetailsEditor({ grant }: { grant: GrantRow }) {
         {money('amount_max', 'Amount up to ($)')}
         {money('cost_share_pct', 'Covers (% of costs)')}
       </div>
+      {refused && <p className="mt-1 text-xs text-red-600">{refused.why}</p>}
       <div className="mt-2 grid gap-2 sm:grid-cols-3">
         {text('contact_name', 'Contact name')}
         {text('contact_email', 'Contact email')}

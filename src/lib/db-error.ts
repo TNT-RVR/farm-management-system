@@ -38,6 +38,14 @@ const BY_CONSTRAINT: Record<string, string> = {
   // Hail
   field_hail_events_loss_pct_check: 'Hail loss has to be between 0 and 100%.',
 
+  // Events, grants and contacts
+  events_dates_order: 'It ends before it starts. Check the dates.',
+  events_cost_not_negative: 'A cost cannot be negative.',
+  grants_cost_share_pct_check: 'The share covered has to be more than 0 and at most 100%.',
+  grants_amount_order: 'The "from" amount has to be no more than the "up to" amount.',
+  grants_amount_not_negative: 'An amount cannot be negative.',
+  contacts_has_a_name: 'A contact needs a company or a name.',
+
   // Fertilizer
   fert_bookings_tonnes_check: 'Tonnes booked has to be more than zero.',
   fert_bookings_price_per_tonne_check: 'The price per tonne cannot be negative.',

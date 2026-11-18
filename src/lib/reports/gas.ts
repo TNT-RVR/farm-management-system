@@ -24,6 +24,11 @@ export const GAS_COLUMNS = [
 ]
 
 const n = (v: unknown) => num(v) ?? 0
+/** To the cent, and never -0. */
+export const cents = (v: number) => {
+  const r = Math.round(v * 100) / 100
+  return r === 0 ? 0 : r
+}
 
 type Sum = { gj: number; gas: number; admin: number; delivery: number; riders: number; carbon: number; other: number; cost: number; gst: number; total: number }
 const zero = (): Sum => ({ gj: 0, gas: 0, admin: 0, delivery: 0, riders: 0, carbon: 0, other: 0, cost: 0, gst: 0, total: 0 })
@@ -35,7 +40,9 @@ const of = (s: GasSiteRow, gj: number): Sum => ({
   riders: n(s.riders),
   carbon: n(s.carbon_levy),
   // Whatever else is in the cost: other charges, anything cancelled from an earlier bill.
-  other: gasSiteCost(s) - n(s.energy_charge) - n(s.admin_fee) - n(s.delivery_fixed) - n(s.delivery_variable) - n(s.riders) - n(s.carbon_levy),
+  // Rounded to the cent: the subtraction leaves a speck like -0.0000001,
+  // which printed as "-$0.00" on months with nothing else.
+  other: cents(gasSiteCost(s) - n(s.energy_charge) - n(s.admin_fee) - n(s.delivery_fixed) - n(s.delivery_variable) - n(s.riders) - n(s.carbon_levy)),
   cost: gasSiteCost(s),
   gst: n(s.gst),
   total: n(s.total),

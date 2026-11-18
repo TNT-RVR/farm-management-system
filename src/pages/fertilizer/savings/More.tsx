@@ -5,7 +5,7 @@ import { Select } from '@/components/Select'
 import { DateField } from '@/components/DateField'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
 import { InvoiceViewer } from '@/components/InvoiceViewer'
-import { useGrants, isArchivedGrant, moneyRange } from '@/lib/grants'
+import { GRANT_STATUS_LABEL, useGrants, isArchivedGrant, moneyRange } from '@/lib/grants'
 import { useRanches } from '@/lib/ranches'
 import { farmMainRanchId } from '@/lib/farm-context'
 import { fromToday, forecastLabel, useRanchWeather } from '@/lib/ranchWeather'
@@ -138,6 +138,7 @@ export function PriceCheckCard() {
 export function GrantsCard() {
   const { inputs } = useSavings()
   const { data: grants } = useGrants()
+  const retailerName = useRetailerName()
   // Zero is a real answer — ICI tests for free — so a missing figure is $0, not $215.
   const perField = Number(inputs.settings.get('soil_test_per_field') ?? 0) || 0
   const relevant = (grants ?? []).filter((g) => isNutrientGrant(g) && !isArchivedGrant(g.status))
@@ -169,9 +170,21 @@ export function GrantsCard() {
     >
       <div className="mb-3 grid gap-2 sm:grid-cols-3">
         <Stat label="Fields in this season's plan" value={n0(planned.length)} />
-        <Stat label={`Soil testing at ${money(perField)} a field`} value={money(planned.length * perField)} />
+        {/* Free soil tests are a real answer, but "$0 a field … $0" read
+            like a price nobody had set: say it. */}
+        {perField > 0 ? (
+          <Stat label={`Soil testing at ${money(perField)} a field`} value={money(planned.length * perField)} />
+        ) : (
+          <Stat label={`Soil testing, free from ${retailerName}`} value="No cost" />
+        )}
         <Stat label={`OFCAF share (${Math.round(OFCAF.share * 100)}%, capped)`} value={money(est.grant)} strong />
       </div>
+      {est.grant === 0 && (
+        <p className="mb-1 text-xs text-gray-500">
+          Nothing to claim this season: {perField > 0 ? '' : 'the soil tests cost nothing and '}
+          {zoneAcres > 0 ? 'the grant pays nothing more here.' : 'no field has a variable-rate prescription.'}
+        </p>
+      )}
       {/* The intake pause is the state of the programme, not method: it stays
           on the card. The how-it-is-counted is behind the ⓘ. */}
       <p className="mb-1 text-xs text-amber-800">OFCAF intake has been paused since May 2026 — check the linked article before counting on it.</p>
@@ -190,7 +203,7 @@ export function GrantsCard() {
               </td>
               <td className={tdNum}>{moneyRange(g.amount_min == null ? null : Number(g.amount_min), g.amount_max == null ? null : Number(g.amount_max))}</td>
               <td className={td}>{g.closes_on ?? 'open'}</td>
-              <td className={td}>{g.status}</td>
+              <td className={td}>{GRANT_STATUS_LABEL[g.status] ?? g.status}</td>
               <td className={td}>
                 {g.url && (
                   <a href={g.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-brand-700">

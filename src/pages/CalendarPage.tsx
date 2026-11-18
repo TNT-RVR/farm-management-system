@@ -25,6 +25,7 @@ import { daysOff, timeOffLabel, useSyncTimeOff, useTimeOff } from '@/lib/timeoff
 import { useFeature } from '@/lib/farm-setup'
 import {
   EVENT_KINDS,
+  EVENT_KIND_LABEL,
   feedUrlFor,
   googleSubscribeUrl,
   useCalendarEvents,
@@ -34,7 +35,10 @@ import {
   type CalendarEventRow,
   type EventKind,
 } from '@/lib/calendar'
-import { expandOccurrences } from '@/lib/recur'
+import { endSeriesBefore, expandOccurrences } from '@/lib/recur'
+import { dbErrorMessage } from '@/lib/db-error'
+import { IS_DEMO } from '@/lib/demo'
+import { useOpenParam } from '@/lib/useOpenParam'
 import { useHarvestEstimates } from '@/lib/harvest-estimate-data'
 import { cn } from '@/lib/utils'
 import { askConfirm } from '@/components/askConfirm'
@@ -73,6 +77,11 @@ type DayItem = {
   /** Hover text when it says more than the label. */
   title?: string
   onClick?: () => void
+}
+
+/** Below Tailwind's `sm`, where the month grid's chips are too narrow to read. */
+function isPhone(): boolean {
+  return typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(max-width: 639px)').matches
 }
 
 /** Remembered on this device; storage can be blocked (private window), so never trust it. */
@@ -120,21 +129,75 @@ function EventDialog({
     }
   })
 
-  const save = () => {
+  // A refused save or delete is said in the dialog, which stays open.
+  const [error, setError] = useState<string | null>(null)
+  // Delete on a repeating event asks which ones go.
+  const [askingDelete, setAskingDelete] = useState(false)
+  const busy = create.isPending || update.isPending || remove.isPending
+  const repeats = !!editing?.rrule
+  const seriesStart = editing ? new Date(editing.starts_at) : null
+  const fmtDay = (d: Date) => d.toLocaleDateString('en-CA', { weekday: 'short', month: 'short', day: 'numeric' })
+  // The occurrence clicked, when it is not the series' first.
+  const laterOccurrence =
+    repeats && seriesStart && initialDate.getTime() > startOfDay(seriesStart).getTime() ? initialDate : null
+
+  const save = async () => {
     const starts = form.all_day
       ? new Date(`${form.date}T00:00:00`)
       : new Date(`${form.date}T${form.time}:00`)
     const payload = {
-      title: form.title,
+      title: form.title.trim(),
       kind: form.kind,
       all_day: form.all_day,
       starts_at: starts.toISOString(),
       rrule: form.rrule,
       field_id: form.field_id || null,
-      notes_md: form.notes_md || null,
+      notes_md: form.notes_md.trim() || null,
     }
-    if (editing) update.mutate({ id: editing.id, patch: payload }, { onSuccess: onClose })
-    else create.mutate(payload, { onSuccess: onClose })
+    setError(null)
+    try {
+      if (editing) await update.mutateAsync({ id: editing.id, patch: payload })
+      else await create.mutateAsync(payload)
+      onClose()
+    } catch (e) {
+      setError(dbErrorMessage(e))
+    }
+  }
+
+  const deleteAll = async () => {
+    if (!editing) return
+    setError(null)
+    try {
+      await remove.mutateAsync(editing.id)
+      onClose()
+    } catch (e) {
+      setError(dbErrorMessage(e, 'That could not be deleted.'))
+    }
+  }
+
+  // "This one and the ones after": the series stops the day before.
+  const deleteFromHere = async () => {
+    if (!editing?.rrule || !seriesStart || !laterOccurrence) return
+    const occ = new Date(laterOccurrence)
+    occ.setHours(seriesStart.getHours(), seriesStart.getMinutes(), 0, 0)
+    const rrule = endSeriesBefore(editing.rrule, seriesStart, occ)
+    if (!rrule) return deleteAll()
+    setError(null)
+    try {
+      await update.mutateAsync({ id: editing.id, patch: { rrule } })
+      onClose()
+    } catch (e) {
+      setError(dbErrorMessage(e, 'That could not be deleted.'))
+    }
+  }
+
+  const onDelete = async () => {
+    if (!editing) return
+    if (repeats) {
+      setAskingDelete(true)
+      return
+    }
+    if (await askConfirm(`Delete “${editing.title}”?`)) await deleteAll()
   }
 
   return (
@@ -144,10 +207,16 @@ function EventDialog({
           <h2 className="text-base font-semibold text-gray-900">
             {editing ? 'Edit event' : 'New event'}
           </h2>
-          <button onClick={onClose} className="rounded-md p-1 text-gray-400 hover:bg-gray-100">
+          <button onClick={onClose} aria-label="Close" className="rounded-md p-1 text-gray-400 hover:bg-gray-100">
             <X className="h-4 w-4" />
           </button>
         </div>
+        {repeats && seriesStart && (
+          <p className="mt-1 text-xs text-gray-500">
+            {laterOccurrence ? `You opened ${fmtDay(laterOccurrence)}. ` : ''}
+            This repeats from {fmtDay(seriesStart)}; changes apply to every one.
+          </p>
+        )}
         <div className="mt-3 space-y-3">
           <input
             autoFocus
@@ -158,7 +227,7 @@ function EventDialog({
           />
           <div className="grid grid-cols-2 gap-3">
             <label className="text-xs text-gray-500">
-              Date
+              {form.rrule ? 'Starts' : 'Date'}
               <DateField
                 value={form.date}
                 onChange={(v) => setForm((f) => ({ ...f, date: v }))}
@@ -203,7 +272,7 @@ function EventDialog({
                 ariaLabel="Kind"
                 className="mt-1"
                 onChange={(v) => setForm((f) => ({ ...f, kind: v as EventKind }))}
-                options={EVENT_KINDS.map((k) => ({ value: k, label: k.replace('_', ' ') }))}
+                options={EVENT_KINDS.map((k) => ({ value: k, label: EVENT_KIND_LABEL[k] }))}
               />
             </label>
             <label className="text-xs text-gray-500">
@@ -230,22 +299,65 @@ function EventDialog({
               ]}
             />
           </label>
+          <label className="block text-xs text-gray-500">
+            Notes (optional)
+            <textarea
+              value={form.notes_md}
+              rows={2}
+              onChange={(e) => setForm((f) => ({ ...f, notes_md: e.target.value }))}
+              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
+            />
+          </label>
         </div>
 
-        <div className="mt-4 flex items-center justify-between">
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+
+        {askingDelete && editing && (
+          <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm">
+            <p className="text-gray-800">“{editing.title}” repeats. Which ones go?</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {laterOccurrence && (
+                <button
+                  onClick={deleteFromHere}
+                  disabled={busy}
+                  className="rounded-md border border-red-300 bg-white px-3 py-1.5 font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+                >
+                  {fmtDay(laterOccurrence)} and later
+                </button>
+              )}
+              <button
+                onClick={deleteAll}
+                disabled={busy}
+                className="rounded-md bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                Every one
+              </button>
+              <button
+                onClick={() => setAskingDelete(false)}
+                className="rounded-md px-3 py-1.5 text-gray-600 hover:bg-white"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 flex items-center justify-between gap-3">
           {editing ? (
             <button
-              onClick={() => remove.mutate(editing.id, { onSuccess: onClose })}
-              className="rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
+              onClick={onDelete}
+              disabled={busy}
+              className="rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
             >
               Delete
             </button>
           ) : (
             <span />
           )}
+          {!form.title.trim() && <span className="text-xs text-gray-400">Type a title to save.</span>}
           <button
             onClick={save}
-            disabled={!form.title || create.isPending || update.isPending}
+            disabled={!form.title.trim() || busy}
             className="rounded-md bg-brand-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
           >
             {editing ? 'Save' : 'Create'}
@@ -269,6 +381,17 @@ function CalendarSubscribe({ token }: { token: string }) {
   const regenerate = useRegenerateFeedToken()
   const [copied, setCopied] = useState(false)
   const url = feedUrlFor(token)
+
+  // The demo has no server to answer the feed, so it says so instead of
+  // handing out an address that fails.
+  if (IS_DEMO) {
+    return (
+      <div className="mb-3 rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-600">
+        Calendar sync is not in the demo. In your own copy this gives each person a private
+        address to add the farm calendar to Google, Apple or Outlook.
+      </div>
+    )
+  }
 
   return (
     <div className="mb-3 rounded-lg border border-gray-200 bg-white p-3 text-sm">
@@ -347,6 +470,14 @@ export function CalendarPage() {
   const { cropYear } = useCropYear()
   const [cursor, setCursor] = useState(() => startOfDay(new Date()))
   const [kindFilter, setKindFilter] = useState<EventKind | 'all'>('all')
+  // The day listed in full under the month: today to start with on a phone;
+  // on a wider screen only once "+N more" is pressed.
+  const [picked, setPickedDay] = useState<string | null>(() => ymd(new Date()))
+  const [morePicked, setMorePicked] = useState(false)
+  const setPicked = (day: string) => {
+    setPickedDay(day)
+    setMorePicked(!isPhone())
+  }
   // Who is away, from the time-off calendar. Its own switch rather than a kind, because it is
   // read alongside everything else, not instead of it.
   const { data: timeOff } = useTimeOff()
@@ -375,6 +506,21 @@ export function CalendarPage() {
   const { data: equipment } = useEquipment()
 
   const fieldName = (id: string | null) => fields?.find((f) => f.id === id)?.name
+
+  // ?event=<id> (from the app search): open that event at its month once the
+  // events have loaded.
+  const [wantEvent, setWantEvent] = useState<string | null>(null)
+  useOpenParam(setWantEvent, 'event')
+  // Settled during render (React's "adjust state when a prop changes"), once.
+  if (wantEvent && events) {
+    const e = events.find((x) => x.id === wantEvent)
+    setWantEvent(null)
+    if (e) {
+      const start = startOfDay(new Date(e.starts_at))
+      setCursor(start)
+      setDialog({ date: start, editing: e })
+    }
+  }
 
   // Build the 6-week grid starting on the Sunday on/before the 1st.
   const gridStart = useMemo(() => {
@@ -508,6 +654,7 @@ export function CalendarPage() {
 
   const monthLabel = cursor.toLocaleDateString('en-CA', { month: 'long', year: 'numeric' })
   const today = ymd(new Date())
+  const pickedItems = picked ? (byDay.get(picked) ?? []) : []
 
   return (
     <div className="p-4 md:p-6">
@@ -515,6 +662,7 @@ export function CalendarPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
+            aria-label="Previous month"
             className="rounded-md border border-gray-200 p-1.5 hover:bg-gray-50"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -522,6 +670,7 @@ export function CalendarPage() {
           <h1 className="min-w-40 text-center text-lg font-semibold text-gray-900">{monthLabel}</h1>
           <button
             onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
+            aria-label="Next month"
             className="rounded-md border border-gray-200 p-1.5 hover:bg-gray-50"
           >
             <ChevronRight className="h-4 w-4" />
@@ -541,7 +690,7 @@ export function CalendarPage() {
             onChange={(v) => setKindFilter(v as EventKind | 'all')}
             options={[
               { value: 'all', label: 'All items' },
-              ...EVENT_KINDS.map((k) => ({ value: k, label: k.replace('_', ' ') })),
+              ...EVENT_KINDS.map((k) => ({ value: k, label: EVENT_KIND_LABEL[k] })),
             ]}
           />
           {timeOffOn && (
@@ -616,14 +765,29 @@ export function CalendarPage() {
           return (
             <div
               key={ymd(d)}
-              className={cn('min-h-20 bg-white p-1', !inMonth && 'bg-gray-50 text-gray-400')}
+              onClick={() => {
+                if (isPhone()) setPicked(ymd(d))
+              }}
+              className={cn(
+                'min-h-20 bg-white p-1 max-sm:min-h-14',
+                !inMonth && 'bg-gray-50 text-gray-400',
+                picked === ymd(d) && 'max-sm:bg-brand-50',
+              )}
             >
               <div className="flex items-center justify-between">
                 <button
-                  onClick={() => setDialog({ date: startOfDay(d), editing: null })}
+                  // On a phone the chips are too narrow to read, so a tap
+                  // lists the day's items under the month instead.
+                  onClick={() =>
+                    isPhone()
+                      ? setPicked(ymd(d))
+                      : setDialog({ date: startOfDay(d), editing: null })
+                  }
+                  aria-label={d.toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric' })}
                   className={cn(
                     'flex h-5 w-5 items-center justify-center rounded-full text-xs hover:bg-brand-100',
                     isToday && 'bg-brand-700 font-semibold text-white hover:bg-brand-800',
+                    picked === ymd(d) && !isToday && 'ring-1 ring-brand-600 sm:ring-0',
                   )}
                 >
                   {d.getDate()}
@@ -633,10 +797,13 @@ export function CalendarPage() {
                 {items.slice(0, 4).map((it) => (
                   <button
                     key={it.key}
-                    onClick={it.onClick}
+                    // A phone shows each item as a coloured bar; a tap lists
+                    // the day in full below rather than opening a chip that
+                    // could not be read.
+                    onClick={() => (isPhone() ? setPicked(ymd(d)) : it.onClick?.())}
                     title={it.title ?? it.label}
                     className={cn(
-                      'block w-full truncate rounded px-1 py-0.5 text-left text-xs leading-tight',
+                      'block w-full truncate rounded px-1 py-0.5 text-left text-xs leading-tight max-sm:h-1.5 max-sm:py-0 max-sm:text-[0px]',
                       it.color,
                     )}
                   >
@@ -644,13 +811,56 @@ export function CalendarPage() {
                   </button>
                 ))}
                 {items.length > 4 && (
-                  <span className="px-1 text-xs text-gray-400">+{items.length - 4} more</span>
+                  <button
+                    onClick={() => setPicked(ymd(d))}
+                    className="px-1 text-xs text-gray-400 hover:text-gray-600"
+                  >
+                    +{items.length - 4} more
+                  </button>
                 )}
               </div>
             </div>
           )
         })}
       </div>
+
+      {/* The picked day in full: on a phone always, elsewhere after "+N more". */}
+      {picked && (
+        <div className={cn('mt-3 rounded-lg border border-gray-200 bg-white p-3', !morePicked && 'sm:hidden')}>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-gray-900">
+              {new Date(`${picked}T00:00:00`).toLocaleDateString('en-CA', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+              })}
+            </h2>
+            <button
+              onClick={() => setDialog({ date: new Date(`${picked}T00:00:00`), editing: null })}
+              className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <Plus className="h-3.5 w-3.5" /> Event this day
+            </button>
+          </div>
+          {pickedItems.length === 0 ? (
+            <p className="mt-2 text-sm text-gray-500">Nothing on this day.</p>
+          ) : (
+            <ul className="mt-2 space-y-1">
+              {pickedItems.map((it) => (
+                <li key={it.key}>
+                  <button
+                    onClick={it.onClick}
+                    disabled={!it.onClick}
+                    className={cn('block w-full rounded px-2 py-1.5 text-left text-sm', it.color)}
+                  >
+                    {it.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-500">
         <span className="flex items-center gap-1">

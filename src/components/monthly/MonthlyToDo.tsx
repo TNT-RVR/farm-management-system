@@ -77,7 +77,9 @@ export function MonthlyToDo({ now, withNext, compact = false }: { now: number; w
   return (
     <div className="space-y-4">
       {sections.map((s) => {
-        const done = s.items.filter((i) => i.copy.state !== 'todo').length
+        // A skipped job is dealt with but not done, so it is counted apart.
+        const done = s.items.filter((i) => i.copy.state !== 'todo' && i.copy.state !== 'skipped').length
+        const skipped = s.items.filter((i) => i.copy.state === 'skipped').length
         return (
           <div key={s.key}>
             <div className={cn('mb-1 flex items-baseline gap-2', s.leftover && 'text-amber-800')}>
@@ -85,6 +87,7 @@ export function MonthlyToDo({ now, withNext, compact = false }: { now: number; w
               {!s.leftover && s.items.length > 0 && (
                 <span className="text-xs text-gray-400">
                   {done} of {s.items.length} done
+                  {skipped > 0 ? `, ${skipped} skipped` : ''}
                 </span>
               )}
             </div>

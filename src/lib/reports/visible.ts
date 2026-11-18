@@ -4,6 +4,7 @@ import { isViewDenied } from '@/lib/nav'
 import { isPathOff, useDisabledPaths } from '@/lib/farm-setup'
 import { isPartner, isPartnerPath } from '@/lib/partner'
 import { REPORTS } from './catalogue'
+import { IS_DEMO } from '@/lib/demo'
 
 const bare = (to: string) => to.split('?')[0]
 
@@ -27,7 +28,7 @@ export function useVisibleReports() {
     [disabled, profile, partner],
   )
   const reports = useMemo(
-    () => REPORTS.filter((r) => !viewOff(r.from.to) && (!r.adminOnly || isAdmin) && (!r.managerOnly || isManager) && (!r.financeOnly || finances)),
+    () => REPORTS.filter((r) => !viewOff(r.from.to) && (!r.adminOnly || isAdmin) && (!r.managerOnly || isManager) && (!r.financeOnly || finances) && !(IS_DEMO && r.notInDemo)),
     [viewOff, isAdmin, isManager, finances],
   )
   return { viewOff, reports, isAdmin, isManager }

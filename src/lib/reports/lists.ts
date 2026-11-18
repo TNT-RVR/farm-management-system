@@ -188,10 +188,13 @@ export function taskListColumns(names: ReturnType<typeof taskLookups>): ExportCo
 /* ── Contacts ───────────────────────────────────────────────────────────── */
 
 export function contactListRows(contacts: ContactRow[], o: { search: string; type: ContactType | 'all' }): ContactRow[] {
-  const q = o.search.toLowerCase()
+  const q = o.search.trim().toLowerCase()
   return contacts
     .filter((c) => (o.type === 'all' ? true : c.type === o.type))
+    // No search keeps every contact, even one with nothing to search on, so
+    // it can still be opened and fixed.
     .filter((c) =>
+      !q ||
       [c.company, c.contact_name, c.email, c.phone, ...(c.tags ?? [])]
         .filter(Boolean)
         .some((v) => v!.toLowerCase().includes(q)),
