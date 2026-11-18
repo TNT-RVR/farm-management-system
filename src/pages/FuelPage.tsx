@@ -393,7 +393,7 @@ function FuelPricesTab({ hauling }: { hauling: boolean }) {
                 {perL(l?.perL)}
                 <span className="text-sm font-normal text-gray-500">/L</span>
               </p>
-              <p className="text-[11px] text-gray-500">
+              <p className="text-xs text-gray-500">
                 {l
                   ? [
                       l.on,
@@ -405,7 +405,7 @@ function FuelPricesTab({ hauling }: { hauling: boolean }) {
                   : 'No priced invoice yet'}
               </p>
               {unpriced && (
-                <p className="mt-1 text-[11px] text-amber-700">
+                <p className="mt-1 text-xs text-amber-700">
                   Newer bill {unpriced.on}: {money(unpriced.amount)}, no litres in QuickBooks
                   {finance && unpriced.attachableId && (
                     <>
@@ -461,9 +461,9 @@ function FuelPricesTab({ hauling }: { hauling: boolean }) {
             const p = latestPoint(t.code)
             return (
               <div key={t.code}>
-                <p className="text-[11px] text-gray-500">{t.label}</p>
+                <p className="text-xs text-gray-500">{t.label}</p>
                 <p className="font-semibold tabular-nums">{perL(p?.value)}/L</p>
-                <p className="text-[10px] text-gray-400">
+                <p className="text-xs text-gray-400">
                   {p ? `week to ${p.observed_on}` : 'not read yet'}
                 </p>
               </div>
@@ -564,7 +564,7 @@ function CostingCard({
         {perL(basics.dieselPerL, 2)}
         <span className="text-sm font-normal text-gray-500">/L</span>
       </p>
-      <p className={cn('text-[11px]', basics.dieselSet ? 'text-brand-700' : 'text-gray-500')}>
+      <p className={cn('text-xs', basics.dieselSet ? 'text-brand-700' : 'text-gray-500')}>
         {basics.dieselSource}
       </p>
       {basics.dieselSet && (
@@ -691,10 +691,10 @@ function QbBills({ bills, finance }: { bills: QbFuelBill[]; finance: boolean }) 
                   <td className="px-3 py-1" title={b.description ?? undefined}>
                     {kindLabel(b.kind)}
                     {b.assumedDyed && (
-                      <span className="ml-1 text-[10px] text-amber-700">taken as dyed</span>
+                      <span className="ml-1 text-xs text-amber-700">taken as dyed</span>
                     )}
                     {b.fromInvoice && (
-                      <span className="ml-1 text-[10px] text-gray-400">from the PDF</span>
+                      <span className="ml-1 text-xs text-gray-400">from the PDF</span>
                     )}
                   </td>
                   <td className="px-3 py-1 text-right tabular-nums">{money(b.amount)}</td>
@@ -807,7 +807,7 @@ function PurchaseDetail({ p }: { p: FuelPurchase }) {
         ]}
       />
       {p.source === 'invoice' && (
-        <p className="mt-1 text-[11px] text-gray-400">
+        <p className="mt-1 text-xs text-gray-400">
           Read from the invoice, so it is not edited here.
         </p>
       )}
@@ -870,7 +870,7 @@ function PurchaseHistory({
                       <span className="font-normal text-gray-500">
                         {FUEL_PRODUCT_LABEL[p.product]}
                       </span>
-                      {!p.checked && <span className="ml-1 text-[10px] text-amber-700">check</span>}
+                      {!p.checked && <span className="ml-1 text-xs text-amber-700">check</span>}
                     </span>
                   }
                   actions={
@@ -939,7 +939,7 @@ function PurchaseHistory({
                         <td className="px-3 py-1" title={p.description ?? undefined}>
                           {FUEL_PRODUCT_LABEL[p.product]}
                           {!p.checked && (
-                            <span className="ml-1 text-[10px] text-amber-700">check</span>
+                            <span className="ml-1 text-xs text-amber-700">check</span>
                           )}
                         </td>
                         <td className="px-3 py-1 text-right tabular-nums">
@@ -988,7 +988,7 @@ function PurchaseHistory({
 
       {isManager && (
         <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-gray-100 pt-3 text-sm">
-          <label className="flex flex-col text-[11px] text-gray-500">
+          <label className="flex flex-col text-xs text-gray-500">
             Date
             <DateField
               value={form.on}
@@ -996,7 +996,7 @@ function PurchaseHistory({
               ariaLabel="Purchase date"
             />
           </label>
-          <label className="flex flex-col text-[11px] text-gray-500">
+          <label className="flex flex-col text-xs text-gray-500">
             Product
             <Select
               value={form.product}
@@ -1007,7 +1007,7 @@ function PurchaseHistory({
               ).map((p) => ({ value: p, label: FUEL_PRODUCT_LABEL[p] }))}
             />
           </label>
-          <label className="flex flex-col text-[11px] text-gray-500">
+          <label className="flex flex-col text-xs text-gray-500">
             Litres
             <input
               inputMode="decimal"
@@ -1016,7 +1016,7 @@ function PurchaseHistory({
               className={cn(input, 'w-24 text-right')}
             />
           </label>
-          <label className="flex flex-col text-[11px] text-gray-500">
+          <label className="flex flex-col text-xs text-gray-500">
             $/L before GST
             <input
               inputMode="decimal"
@@ -1025,7 +1025,7 @@ function PurchaseHistory({
               className={cn(input, 'w-24 text-right')}
             />
           </label>
-          <label className="flex flex-col text-[11px] text-gray-500">
+          <label className="flex flex-col text-xs text-gray-500">
             Invoice (optional)
             <input
               value={form.invoice}

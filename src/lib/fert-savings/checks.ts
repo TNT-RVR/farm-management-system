@@ -8,6 +8,8 @@
 
 /* ------------------------------------------------------------------ units */
 
+import { goalOffScale } from '../yield-goal'
+
 export type YieldUnit = 'bu' | 'lbs' | 'cwt' | 'ton' | 'MT'
 
 /** Convert a yield between mass units. Bushels only convert with a test weight. */
@@ -38,7 +40,8 @@ export function ratioMoved(before: number | null | undefined, now: number | null
  * Where a yield goal stops being believable. The fixed bands are from the
  * research report's crop reports (potatoes 300–550 cwt, dry beans 2,000–3,500
  * lb, corn 100–200 bu, irrigated canola 50–80 bu, alfalfa 4–7 t); the farm's
- * own history beats them wherever three or more years exist.
+ * own history beats them wherever three or more years exist. They are not
+ * worked out from the farm's location, so the wording does not claim a region.
  */
 export const YIELD_BANDS: { match: RegExp; unit: YieldUnit; low: number; high: number; irrigatedOnly?: boolean }[] = [
   { match: /potato/i, unit: 'cwt', low: 300, high: 550 },
@@ -48,7 +51,8 @@ export const YIELD_BANDS: { match: RegExp; unit: YieldUnit; low: number; high: n
   { match: /alfalfa/i, unit: 'ton', low: 4, high: 7 },
 ]
 
-export type GoalCheck = { verdict: 'ok' | 'high' | 'low' | 'unknown'; why: string; median: number | null }
+/** 'unit': nowhere near the crop's scale — a 3 t hay goal stored as 3 lbs (batch 4). */
+export type GoalCheck = { verdict: 'ok' | 'high' | 'low' | 'unknown' | 'unit'; why: string; median: number | null }
 
 export function yieldGoalCheck(args: {
   crop: string | null | undefined
@@ -58,11 +62,20 @@ export function yieldGoalCheck(args: {
   irrigated: boolean
   /** This field's own past yields for the crop, in the crop's unit. */
   history: number[]
+  /** The crop's normal yield, in the crop's unit: the scale a goal is checked against. */
+  normal?: number | null
 }): GoalCheck {
   const { goal, unit } = args
   if (goal == null || !(goal > 0) || !unit) return { verdict: 'unknown', why: 'no yield goal', median: null }
   const past = args.history.filter((x) => x > 0).sort((a, b) => a - b)
   const median = past.length ? past[Math.floor((past.length - 1) / 2)] + (past.length % 2 ? 0 : (past[past.length / 2] - past[(past.length - 1) / 2]) / 2) : null
+  // A goal ten times off the crop's own scale was typed in another unit; judging
+  // it as high or low against a band would grade the unit, not the goal.
+  const scale = args.normal ?? (past.length >= 3 ? median : null)
+  if (goalOffScale(goal, scale)) {
+    const of = `${Math.round(scale!).toLocaleString('en-CA')} ${unit}`
+    return { verdict: 'unit', why: `nowhere near this crop's ${args.normal != null ? 'normal' : 'median'} of ${of} — likely typed in another unit`, median }
+  }
   if (median != null && past.length >= 3) {
     if (goal > median * 1.25) return { verdict: 'high', why: `more than 25% over this field's ${past.length}-year median of ${Math.round(median)}`, median }
     if (goal < median * 0.7) return { verdict: 'low', why: `under 70% of this field's ${past.length}-year median of ${Math.round(median)}`, median }
@@ -73,8 +86,11 @@ export function yieldGoalCheck(args: {
   const g = convertYield(goal, unit, band.unit, args.lbPerBu)
   if (g == null) return { verdict: 'unknown', why: `goal is in ${unit}, the band in ${band.unit}`, median }
   const range = `${band.low.toLocaleString('en-CA')}–${band.high.toLocaleString('en-CA')} ${band.unit}`
-  if (g > band.high) return { verdict: 'high', why: `above the ${range} that southern Alberta grows`, median }
-  if (g < band.low) return { verdict: 'low', why: `below the ${range} that southern Alberta grows`, median }
+  if (goalOffScale(g, (band.low + band.high) / 2)) {
+    return { verdict: 'unit', why: `nowhere near the usual ${range} — likely typed in another unit`, median }
+  }
+  if (g > band.high) return { verdict: 'high', why: `above the usual ${range} for this crop`, median }
+  if (g < band.low) return { verdict: 'low', why: `below the usual ${range} for this crop`, median }
   return { verdict: 'ok', why: `inside ${range}`, median }
 }
 

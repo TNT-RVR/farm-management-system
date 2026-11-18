@@ -189,10 +189,10 @@ export function CopyPrompt({ text }: { text: string }) {
           {copied ? 'Copied' : 'Copy prompt'}
         </button>
       </div>
-      <pre className="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 p-2.5 text-[11px] leading-relaxed text-gray-700">
+      <pre className="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 p-2.5 text-xs leading-relaxed text-gray-700">
         {text}
       </pre>
-      <p className="mt-1 text-[11px] text-gray-500">
+      <p className="mt-1 text-xs text-gray-500">
         Fill in the parts in &lt;angle brackets&gt;, then paste it into Claude, ChatGPT or another assistant with
         this app&apos;s code open.
       </p>

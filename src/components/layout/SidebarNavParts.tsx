@@ -274,7 +274,7 @@ export function NavFrame({
     <div className="flex min-h-full flex-col gap-1" onPointerEnter={onWake} onFocus={onWake}>
       {variant === 'sheet' && (
         <div className="flex items-center justify-between gap-2 px-2 pb-1">
-          <span className="text-[11px] text-gray-400">{editing ? 'Hold and drag to reorder · tap the eye to hide' : ''}</span>
+          <span className="text-xs text-gray-400">{editing ? 'Hold and drag to reorder · tap the eye to hide' : ''}</span>
           <button
             type="button"
             onClick={() => setEditing((e) => !e)}
@@ -291,7 +291,7 @@ export function NavFrame({
 
       {variant === 'sheet' ? (
         <>
-          <div className="mt-2 flex items-center gap-1.5 px-2 pt-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+          <div className="mt-2 flex items-center gap-1.5 px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
             <MoreHorizontal className="h-3.5 w-3.5" /> More
           </div>
           {hiddenList}

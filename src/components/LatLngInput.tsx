@@ -31,7 +31,7 @@ export function LatLngInput({
         aria-label={ariaLabel}
         className={cn('w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm', className)}
       />
-      {problem && <span className="mt-0.5 block text-[11px] font-normal text-amber-700">{problem}</span>}
+      {problem && <span className="mt-0.5 block text-xs font-normal text-amber-700">{problem}</span>}
     </>
   )
 }

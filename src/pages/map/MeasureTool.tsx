@@ -375,8 +375,8 @@ export function MeasureTool({
         </p>
       ) : (
         <dl className="mt-2 space-y-1.5">
-          {done && <p className="text-[11px] text-gray-500">Drag a corner to move it, or tap it to remove it.</p>}
-          {closing && !done && <p className="text-[11px] font-medium text-blue-600">Click to close the shape.</p>}
+          {done && <p className="text-xs text-gray-500">Drag a corner to move it, or tap it to remove it.</p>}
+          {closing && !done && <p className="text-xs font-medium text-blue-600">Click to close the shape.</p>}
           <div className="flex items-baseline justify-between gap-2">
             <dt className="text-xs text-gray-500">{shut ? 'Perimeter' : 'Distance'}</dt>
             <dd className="font-semibold tabular-nums text-gray-900">
@@ -404,7 +404,7 @@ export function MeasureTool({
       )}
 
       <div className="mt-2 grid grid-cols-2 gap-1.5">
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           Distance in
           <select
             value={units.distance}
@@ -420,7 +420,7 @@ export function MeasureTool({
             ))}
           </select>
         </label>
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           Area in
           <select
             value={units.area}
@@ -445,7 +445,7 @@ export function MeasureTool({
             setClosing(false)
           }}
           disabled={!points.length}
-          className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+          className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40"
         >
           <Undo2 className="h-3 w-3" /> back
         </button>
@@ -458,7 +458,7 @@ export function MeasureTool({
             setClosing(false)
           }}
           disabled={!points.length}
-          className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+          className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-40"
         >
           <Trash2 className="h-3 w-3" /> clear
         </button>
@@ -469,14 +469,14 @@ export function MeasureTool({
               setHover(null)
             }}
             className={cn(
-              'ml-auto rounded-md bg-amber-500 px-2 py-1 text-[11px] font-semibold text-white',
+              'ml-auto rounded-md bg-amber-500 px-2 py-1 text-xs font-semibold text-white',
               'hover:bg-amber-600',
             )}
           >
             finish
           </button>
         )}
-        {done && <span className={cn('ml-auto text-[11px]', closed ? 'font-medium text-blue-600' : 'text-gray-400')}>{closed ? 'shape closed' : 'finished'}</span>}
+        {done && <span className={cn('ml-auto text-xs', closed ? 'font-medium text-blue-600' : 'text-gray-400')}>{closed ? 'shape closed' : 'finished'}</span>}
       </div>
     </div>
   )

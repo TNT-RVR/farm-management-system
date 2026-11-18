@@ -284,6 +284,34 @@ export function tissueFormOf(t: Record<string, unknown>): Record<string, string>
   return m
 }
 
+/**
+ * What a verdict can honestly claim. A reading with no band was never judged,
+ * so "everything is in band" over 4 judged readings and 7 unjudged ones said
+ * more than the test did (batch 4 page walk, 18 Nov 2026).
+ */
+export function tissueCoverage(readings: Reading[]): { measured: number; judged: number; high: Reading[] } {
+  const measured = readings.filter((r) => r.value != null)
+  const judged = measured.filter((r) => r.band)
+  return { measured: measured.length, judged: judged.length, high: judged.filter((r) => r.verdict === 'high') }
+}
+
+/** The one line under a test that is not short of anything. */
+export function inBandSentence(c: { measured: number; judged: number; high: Reading[] }): string {
+  if (c.measured === 0) return 'Nothing measured on this test.'
+  if (c.judged === 0) return 'None of these readings has a band at this stage, so none is judged.'
+  const high = c.high.length ? ` Above band: ${c.high.map((r) => r.nutrient.label).join(', ')}.` : ''
+  const inBand = c.judged - c.high.length
+  const head =
+    c.judged === c.measured
+      ? c.high.length
+        ? `Nothing short.`
+        : c.judged === 1
+          ? 'The one reading is within its sufficiency band.'
+          : `All ${c.judged} readings are within their sufficiency bands.`
+      : `${c.judged} of ${c.measured} readings have a band: ${inBand} within it${c.high.length ? '' : ', none short'}. The other ${c.measured - c.judged} are not judged.`
+  return head + high
+}
+
 /** The short version: what is actually short, worst first. */
 export function shortages(readings: Reading[]): Reading[] {
   return readings

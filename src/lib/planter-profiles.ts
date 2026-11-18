@@ -65,6 +65,26 @@ export function populationText(
   return f((lo ?? hi)!)
 }
 
+/**
+ * A worked-out population outside the crop's own target, in a sentence; null
+ * when it is inside or there is no target. Canola's sheet carried a seed
+ * spacing that came to 83,635 seeds/ac against its own 400,000–450,000, and
+ * nothing said so (batch 4 page walk). A single figure is taken as ±10%.
+ */
+export function populationOffTarget(
+  population: number | null,
+  p: Pick<PlanterProfile, 'seeds_per_acre_min' | 'seeds_per_acre_max'> | null,
+): string | null {
+  if (!p || population == null || !(population > 0)) return null
+  const lo = p.seeds_per_acre_min ?? p.seeds_per_acre_max
+  const hi = p.seeds_per_acre_max ?? p.seeds_per_acre_min
+  if (lo == null || hi == null) return null
+  const [min, max] = lo === hi ? [lo * 0.9, hi * 1.1] : [lo, hi]
+  const side = population < min ? 'under' : population > max ? 'over' : null
+  if (!side) return null
+  return `${Math.round(population).toLocaleString('en-CA')} seeds/ac is ${side} this crop’s ${populationText(p)} target — check the seed and row spacing.`
+}
+
 /** Whether a profile carries enough to be worth filling the calculator from. */
 export function hasSettings(p: PlanterProfile | null | undefined): boolean {
   if (!p) return false

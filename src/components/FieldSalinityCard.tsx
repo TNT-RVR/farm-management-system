@@ -132,7 +132,7 @@ export function FieldSalinityCard({
             })}
           </ul>
 
-          <p className="px-3 pb-3 text-[11px] leading-relaxed text-gray-500">
+          <p className="px-3 pb-3 text-xs leading-relaxed text-gray-500">
             Estimated from the measured average and worst sample, laid across the zones — not a
             reading per zone.{' '}
             <Link to="/map" className="inline-flex items-center gap-1 text-brand-700 hover:underline">

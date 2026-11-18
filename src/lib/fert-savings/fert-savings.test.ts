@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  blendListPrices,
   cheapestPerLb,
   costPerLbPrimary,
   nutrientCosts,
@@ -154,6 +155,18 @@ describe('tools', () => {
     const text = quoteRequestText('Prairie Creek Farm', 2027, pos)
     expect(text).toContain('46-0-0 urea')
     expect(text).toContain('15.0 t')
+    expect(pos[0].over).toBe(0)
+  })
+
+  it('says how far a booking runs past the need instead of reading it as nothing to book', () => {
+    const [p] = productPositions({
+      needs: [{ key: '46-0-0', label: '46-0-0 urea', tonnes: 87.1 }],
+      onHand: [],
+      booked: [{ product: '46-0-0', tonnes: 210 }],
+      invoiced: [],
+    })
+    expect(p.toBook).toBe(0)
+    expect(p.over).toBeCloseTo(122.9, 6)
   })
 
   it('finds the custom application and delivery lines on ICI invoices', () => {
@@ -202,6 +215,10 @@ describe('tools', () => {
     expect(suggestedRate('low', 40, 27, { olsenPpm: 7, texture: 'sand' })).toEqual({ rate: 27 + 40, rule: 'build' })
     expect(suggestedRate('ok', 40, 27.4)).toEqual({ rate: 27, rule: 'maintain' })
     expect(suggestedRate('low', 40, 27)).toEqual({ rate: 40, rule: 'build' })
+    // Olsen 16 rates marginal, but the build target is 15: the rate is removal
+    // only, so it is labelled maintain rather than build (batch 4).
+    expect(suggestedRate('marginal', 40, 27, { olsenPpm: 16 })).toEqual({ rate: 27, rule: 'maintain' })
+    expect(suggestedRate('marginal', 40, 27, { olsenPpm: 12 }).rule).toBe('build')
     expect(cropRemoval('Canola', 60, 'bu/ac')!.p2o5).toBeCloseTo(40.2)
     // Alfalfa is recorded in lbs and removal is per ton: this used to come back empty.
     expect(cropRemoval('Alfalfa', 10000, 'lbs')!.k2o).toBeCloseTo(300)
@@ -247,10 +264,38 @@ describe('tools', () => {
     expect(b.k).toBe(-5)
   })
 
+  it('runs the balance on the whole pounds each season prints', () => {
+    // −45.4, −45.4 and −14.4 print −45, −45 and −14; the running total must
+    // read −104, not the −105 the unrounded −105.2 would print.
+    const b = nutrientBalance([
+      { year: 2024, applied: { p2o5: 0, k2o: 0 }, removed: { p2o5: 45.4, k2o: 0.4 } },
+      { year: 2025, applied: { p2o5: 0, k2o: 0 }, removed: { p2o5: 45.4, k2o: 0 } },
+      { year: 2026, applied: { p2o5: 0.6, k2o: 0 }, removed: { p2o5: 15, k2o: 0 } },
+    ])
+    expect(b.rows.map((r) => r.netP)).toEqual([-45, -45, -14])
+    expect(b.p).toBe(-104)
+    expect(Object.is(b.rows[0].netK, -0)).toBe(false)
+  })
+
   it('says whether the fertilizer on a check strip paid', () => {
     const r = stripResult({ field_rate: 120, strip_rate: 80, field_yield: 62, strip_yield: 60 }, 0.9, 17.97)!
     expect(r.cost).toBeCloseTo(36)
     expect(r.value).toBeCloseTo(35.94)
     expect(r.paid! < 0).toBe(true)
+  })
+})
+
+describe('the Blends price list as a last resort', () => {
+  it('prices the straights Blends prices, so potash is not a dash on Savings', () => {
+    const got = blendListPrices([
+      { name: '0-0-60 (potash)', price_per_tonne: 695.11, active: true, updated_at: '2026-07-31T12:00:00Z' },
+      { name: '0-0-60 Potash', price_per_tonne: 640, active: true },
+      { name: '46-0-0 Urea', price_per_tonne: null, active: true },
+      { name: '11-52-0 MAP', price_per_tonne: 1080, active: false },
+      { name: '12-40-0-10S-1Zn', price_per_tonne: 1160, active: true },
+    ])
+    expect(got).toEqual([{ key: '0-0-60', perTonne: 695.11, source: 'Blends price list', on: '2026-07-31' }])
+    const k = cheapestPerLb(nutrientCosts(got)).k2o
+    expect(k?.perLb).toBeGreaterThan(0)
   })
 })

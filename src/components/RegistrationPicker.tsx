@@ -89,11 +89,11 @@ export function RegistrationPicker({
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm text-gray-900">{c.name}</span>
-                    <span className="block truncate text-[11px] text-gray-500">
+                    <span className="block truncate text-xs text-gray-500">
                       {c.registrant ?? '—'} · {c.active_ingredients ?? 'no ingredients listed'}
                     </span>
                   </span>
-                  <span className="shrink-0 text-[11px] tabular-nums text-gray-400">
+                  <span className="shrink-0 text-xs tabular-nums text-gray-400">
                     {c.registration_number}
                     {c.registration_number === current && (
                       <span className="ml-1 font-medium text-brand-700">current</span>

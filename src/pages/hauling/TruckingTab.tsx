@@ -82,7 +82,7 @@ export function TruckingTab({ year, isManager }: { year: number; isManager: bool
       crop: (
         <>
           {c.cropName ?? '—'}
-          <span className="block text-[10px] text-gray-400">
+          <span className="block text-xs text-gray-400">
             {c.quantity != null ? `${n0(c.quantity)} ${c.unit ?? ''} · ${c.quantitySource === 'scale' ? 'off the scale' : 'plan yield'}` : 'no yield'}
           </span>
         </>
@@ -152,10 +152,10 @@ export function TruckingTab({ year, isManager }: { year: number; isManager: bool
               {t.site ? ` — ${t.site.name}` : ''}
             </span>
           )}
-          {mode && <span className="block text-[10px] text-gray-400">{mode.hint}</span>}
-          {plan?.notes && <span className="block text-[10px] text-gray-600">{plan.notes}</span>}
-          {t.why && plan && <span className="block text-[10px] text-amber-700">{t.why}</span>}
-          {cost?.legs.some((l) => l.note) && <span className="block text-[10px] text-amber-700">Distance is the straight line × 1.3 — see Distances.</span>}
+          {mode && <span className="block text-xs text-gray-400">{mode.hint}</span>}
+          {plan?.notes && <span className="block text-xs text-gray-600">{plan.notes}</span>}
+          {t.why && plan && <span className="block text-xs text-amber-700">{t.why}</span>}
+          {cost?.legs.some((l) => l.note) && <span className="block text-xs text-amber-700">Distance is the straight line × 1.3 — see Distances.</span>}
         </>
       ),
       loads: cost?.legs.length ? n0(cost.legs.reduce((s, l) => s + l.loads, 0)) : null,
@@ -184,7 +184,7 @@ export function TruckingTab({ year, isManager }: { year: number; isManager: bool
         <td className={cn('px-3 py-1.5 text-right font-semibold tabular-nums', !c.total && 'font-normal text-gray-300')}>
           {c.total ?? '—'}
           {c.total ? (
-            <span className="block whitespace-nowrap text-[10px] font-normal text-gray-500 md:hidden">
+            <span className="block whitespace-nowrap text-xs font-normal text-gray-500 md:hidden">
               {c.km} km · {c.hours} h · diesel {c.diesel} · driver {c.driver}
             </span>
           ) : null}

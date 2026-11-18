@@ -196,8 +196,10 @@ export type GrassBalance = {
   /** Every class's AUDs required. */
   need: number
   surplus: number
-  /** AUDs every class but the cows needs. */
+  /** AUDs every class but the cows and their calves needs. */
   others: number
+  /** The other classes alone need more than the grass: no number of cows fits. */
+  othersOverGrass: boolean
   /** AUDs one cow and her calf at side need; null with no cows on grass. */
   perCow: number | null
   /** Days the cows are counted on grass. */
@@ -210,13 +212,21 @@ const isCowClass = (h: HerdCalc) => h.feed_class === 'cow' || (!h.feed_class && 
 
 /**
  * Surplus and the cows the grass carries, from the same rows: the cows over
- * the grass (cows − capacityCows) is the shortfall ÷ what one cow needs.
+ * the grass (cows − capacityCows) is the shortfall ÷ what one cow and her calf
+ * need.
+ *
+ * Every cow added brings a calf. When the calves ride at side they are already
+ * in the cows' row; when they are a class with their own grazing dates, their
+ * AUDs are shared over the cows here. Until 18 Nov 2026 that second case left
+ * the calf out, and "14 cows of room" (and "keep 14 heifers") was really 9.
  */
 export function grassBalance(supply: number, herd: HerdCalc[]): GrassBalance {
   const need = herd.reduce((a, h) => a + h.audsRequired, 0)
   const cows = herd.filter(isCowClass)
   const cowHead = cows.reduce((a, h) => a + h.head_count, 0)
-  const cowNeed = cows.reduce((a, h) => a + h.audsRequired, 0)
+  const calves = cowHead > 0 ? (calvesRow(herd) as HerdCalc | undefined) : undefined
+  const calfNeed = calves && !isCowClass(calves) ? calves.audsRequired : 0
+  const cowNeed = cows.reduce((a, h) => a + h.audsRequired, 0) + calfNeed
   const perCow = cowHead > 0 && cowNeed > 0 ? cowNeed / cowHead : null
   const others = need - cowNeed
   return {
@@ -224,10 +234,70 @@ export function grassBalance(supply: number, herd: HerdCalc[]): GrassBalance {
     need,
     surplus: supply - need,
     others,
+    othersOverGrass: others > supply,
     perCow,
     cowDays: cows[0]?.days ?? 0,
     capacityCows: perCow == null ? null : Math.max(0, (supply - others) / perCow),
   }
+}
+
+/**
+ * Column totals that equal the sum of the figures shown above them: each row
+ * is rounded the way it is printed (`dp` places, whole numbers by default)
+ * before it is added. Three 151.6-ac paddocks print 152 each, so the total
+ * must read 456, not 455 (batch 5, 18 Nov 2026).
+ */
+export function sumAsShown<T>(rows: readonly T[], value: (row: T) => number, dp = 0): number {
+  const f = 10 ** dp
+  return Math.round(rows.reduce((a, r) => a + Math.round(value(r) * f), 0)) / f
+}
+
+/** Cattle on a paddock now: a grazing event turned in and not moved out. */
+export type OnNow = { pasture_id: string; head_count: number | null; turned_in_on: string }
+
+/**
+ * Paddocks with cattle on them now that the Grazing tab counts as no feed
+ * (0 AUDs): a herd standing on ground the sums say holds nothing. The Spray
+ * tab had 225 head in Hay Flat aftermath while this tab gave it 0 grazeable
+ * acres, and nothing joined the two (batch 5, 18 Nov 2026). Head is summed
+ * over the open events; null when none of them says.
+ */
+export function occupiedWithNoFeed(
+  pastures: readonly { id: string; name: string; pasture_id: string | null; auds: number }[],
+  onNow: readonly OnNow[],
+): { id: string; name: string; head: number | null; since: string }[] {
+  const out: { id: string; name: string; head: number | null; since: string }[] = []
+  for (const p of pastures) {
+    if (!p.pasture_id || Math.round(p.auds) > 0) continue
+    const here = onNow.filter((e) => e.pasture_id === p.pasture_id)
+    if (!here.length) continue
+    const heads = here.map((e) => e.head_count).filter((h): h is number => h != null)
+    out.push({
+      id: p.id,
+      name: p.name,
+      head: heads.length ? heads.reduce((a, h) => a + h, 0) : null,
+      since: here.map((e) => e.turned_in_on).sort()[0],
+    })
+  }
+  return out
+}
+
+/** Grazing events open today: who is on which paddock now. */
+export function useCattleOnNow() {
+  return useQuery({
+    queryKey: ['grazing_events', 'on-now'],
+    queryFn: async (): Promise<OnNow[]> => {
+      const today = new Date().toISOString().slice(0, 10)
+      const { data, error } = await supabase
+        .from('grazing_events')
+        .select('pasture_id, head_count, turned_in_on')
+        .is('moved_out_on', null)
+        .lte('turned_in_on', today)
+      if (error) throw error
+      return (data ?? []) as OnNow[]
+    },
+    staleTime: 5 * 60_000,
+  })
 }
 
 // ---- data hooks (all scoped to one ranch) ----

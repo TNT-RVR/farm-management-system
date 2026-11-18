@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 import { useFields } from '@/lib/queries'
 import { cn } from '@/lib/utils'
+import { dbErrorMessage } from '@/lib/db-error'
 import { petioleNitrateBand } from '@/lib/fert-savings/alberta'
 import { petioleFertigation } from '@/lib/fert-savings/checks'
 import {
@@ -18,6 +19,8 @@ import {
   nutrientsFor,
   readTissue,
   shortages,
+  tissueCoverage,
+  inBandSentence,
   tissueFormOf,
   type NutrientKey,
   type Verdict,
@@ -207,6 +210,8 @@ export function TissueTests({ cropYear, canEdit }: { cropYear: number; canEdit: 
             t.growth_stage,
           )
           const short = shortages(readings)
+          const coverage = tissueCoverage(readings)
+          const allJudged = coverage.judged === coverage.measured && coverage.measured > 0
           const stages = SUFFICIENCY[cropKey(t.crop) ?? ''] ?? []
           const isOpen = !folded[t.id]
 
@@ -237,11 +242,17 @@ export function TissueTests({ cropYear, canEdit }: { cropYear: number; canEdit: 
                 {!isOpen && ranges && (
                   <span
                     className={cn(
-                      'rounded px-1.5 py-0.5 text-[11px] font-semibold',
-                      short.length ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-800',
+                      'rounded px-1.5 py-0.5 text-xs font-semibold',
+                      short.length ? 'bg-red-50 text-red-800' : allJudged && !coverage.high.length ? 'bg-green-50 text-green-800' : 'bg-gray-100 text-gray-700',
                     )}
                   >
-                    {short.length ? `Short: ${short.map((r) => r.nutrient.label).join(', ')}` : 'All in band'}
+                    {short.length
+                      ? `Short: ${short.map((r) => r.nutrient.label).join(', ')}`
+                      : coverage.high.length
+                        ? `Above band: ${coverage.high.map((r) => r.nutrient.label).join(', ')}`
+                        : allJudged
+                          ? 'All in band'
+                          : `${coverage.judged} of ${coverage.measured} judged, none short`}
                   </span>
                 )}
                 <span className="text-sm text-gray-600">
@@ -313,8 +324,13 @@ export function TissueTests({ cropYear, canEdit }: { cropYear: number; canEdit: 
                     .
                   </p>
                 ) : (
-                  <p className="mb-2 rounded-md bg-green-50 px-2.5 py-2 text-xs text-green-900">
-                    Everything measured is within its sufficiency band.
+                  <p
+                    className={cn(
+                      'mb-2 rounded-md px-2.5 py-2 text-xs',
+                      allJudged && !coverage.high.length ? 'bg-green-50 text-green-900' : 'bg-gray-50 text-gray-700',
+                    )}
+                  >
+                    {inBandSentence(coverage)}
                   </p>
                 )}
 
@@ -328,7 +344,7 @@ export function TissueTests({ cropYear, canEdit }: { cropYear: number; canEdit: 
                 )}
 
                 {ranges?.assumed && (
-                  <p className="mb-2 text-[11px] text-amber-800">
+                  <p className="mb-2 text-xs text-amber-800">
                     Judged against <strong>{ranges.stage}</strong> ({ranges.part}), the one band held
                     for this crop. A sample taken at another stage reads differently.
                   </p>
@@ -350,7 +366,7 @@ export function TissueTests({ cropYear, canEdit }: { cropYear: number; canEdit: 
                           <td className="px-3 py-1">
                             {r.nutrient.label}
                             {r.nutrient.group === 'micro' && (
-                              <span className="ml-1 text-[10px] uppercase text-gray-400">
+                              <span className="ml-1 text-xs uppercase text-gray-400">
                                 micro
                               </span>
                             )}
@@ -362,7 +378,7 @@ export function TissueTests({ cropYear, canEdit }: { cropYear: number; canEdit: 
                             )}
                           >
                             {n(r.value, r.nutrient.unit)}
-                            <span className="ml-0.5 text-[10px] text-gray-400">
+                            <span className="ml-0.5 text-xs text-gray-400">
                               {r.nutrient.unit}
                             </span>
                           </td>
@@ -448,6 +464,12 @@ function TissueTestForm({ cropYear, existing, onClose }: { cropYear: number; exi
     [form],
   )
   const short = shortages(preview.readings)
+  // A test with no field and no readings saved as "Field not recorded" with every box a dash.
+  const missing = !form.field_id
+    ? 'Pick the field the sample came from.'
+    : !NUTRIENTS.some((x) => num(x.key) != null)
+      ? 'Enter at least one reading.'
+      : null
 
   return (
     <Modal title={existing ? `Edit tissue test — ${existing.crop_year}` : `Add a tissue test — ${cropYear}`} onClose={onClose}>
@@ -545,12 +567,13 @@ function TissueTestForm({ cropYear, existing, onClose }: { cropYear: number; exi
           />
         </label>
 
-        {short.length > 0 && (
+        {short.length > 0 && !missing && (
           <p className="rounded-md bg-red-50 px-2.5 py-2 text-xs text-red-900">
             As typed, short of {short.map((r) => r.nutrient.label).join(', ')}.
           </p>
         )}
 
+        {missing && <p className="text-xs text-amber-800">{missing}</p>}
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
@@ -559,7 +582,7 @@ function TissueTestForm({ cropYear, existing, onClose }: { cropYear: number; exi
             Cancel
           </button>
           <button
-            disabled={busy.isPending}
+            disabled={busy.isPending || !!missing}
             onClick={() => {
               const values = {
                 field_id: form.field_id || null,
@@ -580,7 +603,7 @@ function TissueTestForm({ cropYear, existing, onClose }: { cropYear: number; exi
             {busy.isPending ? 'Saving…' : 'Save test'}
           </button>
         </div>
-        {busy.error && <p className="text-xs text-red-700">{(busy.error as Error).message}</p>}
+        {busy.error && <p className="text-xs text-red-700">{dbErrorMessage(busy.error)}</p>}
       </div>
     </Modal>
   )

@@ -260,7 +260,7 @@ export function VoiceCapture({ onClose, onSaved }: { onClose: () => void; onSave
         </>
       ) : (
         <div className="mt-3 text-sm">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
             {got.kind === 'task' ? 'A task' : 'A field note'}
           </p>
           <p className="mt-0.5 font-semibold text-gray-900">{got.title}</p>

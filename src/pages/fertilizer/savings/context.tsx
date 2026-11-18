@@ -82,6 +82,8 @@ function useInputs(cropYear: number) {
     plans: plans ?? [],
     cropPrices: cropPrices ?? new Map<string, number>(),
     manure: manure ?? [],
+    /** False until the spreads have loaded, so an empty list is not read as "none". */
+    manureLoaded: !!manure,
     rx: rx ?? [],
     tissue: tissue ?? [],
     ops: ops ?? [],

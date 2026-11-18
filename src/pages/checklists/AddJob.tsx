@@ -35,7 +35,7 @@ export function AddJob({ runId, templateId, runLocationId, keeps }: { runId: str
           <Plus className="h-4 w-4" /> Add
         </button>
       </div>
-      <p className="mt-0.5 text-[11px] text-gray-400">{keeps ? 'Kept for every year after this one too.' : 'For this year only: this place is not on the template.'}</p>
+      <p className="mt-0.5 text-xs text-gray-400">{keeps ? 'Kept for every year after this one too.' : 'For this year only: this place is not on the template.'}</p>
       {add.isError && <p className="mt-0.5 text-xs text-red-600">{(add.error as Error).message}</p>}
     </form>
   )

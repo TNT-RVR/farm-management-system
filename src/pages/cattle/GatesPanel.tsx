@@ -54,8 +54,8 @@ export function GatesPanel({ ranchId, canEdit }: { ranchId?: string; canEdit: bo
 
   return (
     <div className="min-w-[12rem]">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Gates</p>
-      <p className="mt-1 text-[11px] text-gray-500">
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Gates</p>
+      <p className="mt-1 text-xs text-gray-500">
         {open} of {mine.length} open. An open gate lets the water next door count.
       </p>
       {canEdit && (
@@ -63,20 +63,20 @@ export function GatesPanel({ ranchId, canEdit }: { ranchId?: string; canEdit: bo
           <button
             onClick={() => all(true)}
             disabled={busy}
-            className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             Open all
           </button>
           <button
             onClick={() => all(false)}
             disabled={busy}
-            className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             Shut all
           </button>
         </div>
       )}
-      {note && <p className="mt-1 text-[11px] font-medium text-brand-700">{note}</p>}
+      {note && <p className="mt-1 text-xs font-medium text-brand-700">{note}</p>}
       <Fold title={`Each gate (${mine.length})`} storageKey="cattle-gates-list">
         <ul className="mt-1 space-y-0.5">
           {mine.map((g) => (
@@ -90,7 +90,7 @@ export function GatesPanel({ ranchId, canEdit }: { ranchId?: string; canEdit: bo
                     : 'No place marked for this gate, so it cannot carry water through. Mark it on the grazing planner.'
                 }
                 className={cn(
-                  'flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[11px]',
+                  'flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs',
                   canEdit && 'hover:bg-gray-50',
                   g.is_open ? 'text-brand-700' : 'text-gray-600',
                 )}

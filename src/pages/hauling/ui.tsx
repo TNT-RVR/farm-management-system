@@ -45,7 +45,7 @@ export function SettingsGroup<K extends string>({
             <label key={f.key} className="flex items-center gap-2 text-xs text-gray-600">
               <span className="min-w-0 flex-1">
                 {f.label}
-                {f.hint && <span className="block text-[10px] text-gray-400">{f.hint}</span>}
+                {f.hint && <span className="block text-xs text-gray-400">{f.hint}</span>}
               </span>
               {isManager ? (
                 <input
@@ -57,8 +57,8 @@ export function SettingsGroup<K extends string>({
               ) : (
                 <span className={cn('tabular-nums', !isSet && 'text-gray-400')}>{values[f.key]}</span>
               )}
-              <span className="w-12 text-[10px] text-gray-400">{f.unit}</span>
-              <span className={cn('w-12 text-[10px]', isSet ? 'font-medium text-brand-700' : 'text-gray-400')} title={`Default ${defaults[f.key]}`}>
+              <span className="w-12 text-xs text-gray-400">{f.unit}</span>
+              <span className={cn('w-12 text-xs', isSet ? 'font-medium text-brand-700' : 'text-gray-400')} title={`Default ${defaults[f.key]}`}>
                 {isSet ? 'ours' : 'default'}
               </span>
             </label>
@@ -143,12 +143,12 @@ export function PricesBar({ isManager }: { isManager: boolean }) {
           </button>
         )}
         {isSet && draft == null && isManager && (
-          <button type="button" onClick={() => reset.mutate(key)} className="text-[11px] text-gray-500 underline">
+          <button type="button" onClick={() => reset.mutate(key)} className="text-xs text-gray-500 underline">
             use the default
           </button>
         )}
       </div>
-      <p className={cn('text-[11px]', isSet ? 'text-brand-700' : 'text-gray-400')}>{source}</p>
+      <p className={cn('text-xs', isSet ? 'text-brand-700' : 'text-gray-400')}>{source}</p>
     </div>
   )
   return (

@@ -145,7 +145,7 @@ export const TILES: Tile[] = [
   // ── Work ─────────────────────────────────────────────────────────────────
   {
     key: 'tasks',
-    label: 'To-do list',
+    label: 'Tasks',
     hint: 'What is open and what is late',
     to: '/tasks',
     icon: CheckSquare,
@@ -287,7 +287,7 @@ export const TILES: Tile[] = [
   },
   {
     key: 'cropmarkets',
-    label: 'Crop prices',
+    label: 'Markets',
     hint: 'What grain and cattle are worth',
     to: '/markets',
     icon: LineChart,
@@ -296,7 +296,7 @@ export const TILES: Tile[] = [
   },
   {
     key: 'cropsettings',
-    label: 'Crop settings',
+    label: 'Crops & varieties',
     hint: 'Varieties, coefficients and the crop list',
     to: '/crops',
     icon: Wheat,
@@ -636,7 +636,7 @@ export const TILES: Tile[] = [
   },
   {
     key: 'cattlemarket',
-    label: 'Prices',
+    label: 'Cattle markets',
     hint: 'Calf prices and break-even; manifests, leases and insurance',
     to: '/cattle-markets?tab=markets',
     icon: LineChart,

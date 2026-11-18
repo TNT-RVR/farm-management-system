@@ -163,6 +163,7 @@ export type ProductTotal = {
  */
 export function totalsByProduct(reqs: FieldRequirement[]): ProductTotal[] {
   const byProduct = new Map<string, ProductTotal>()
+  const productFields = new Map<string, Set<string>>()
   for (const req of reqs) {
     if (!req.lines) continue
     for (const line of req.lines) {
@@ -182,13 +183,18 @@ export function totalsByProduct(reqs: FieldRequirement[]): ProductTotal[] {
         })
       }
       const t = byProduct.get(key)!
-      t.fields++
+      // A field with two lines of one product (a top-dress) is still one field.
+      const seen = productFields.get(key) ?? new Set<string>()
+      if (!seen.has(req.fieldId)) t.fields++
+      productFields.set(key, seen.add(req.fieldId))
       if (line.productLbPerAc == null) {
         t.missingRate.push(req.fieldName)
       } else if (req.acres == null) {
         t.missingAcres.push(req.fieldName)
       } else {
-        t.totalLb = (t.totalLb ?? 0) + line.productLbPerAc * req.acres
+        // The per-field lines are printed whole, so the total adds those same
+        // whole pounds and matches the lines it sits over.
+        t.totalLb = (t.totalLb ?? 0) + (line.productLbTotal ?? Math.round(line.productLbPerAc * req.acres))
       }
     }
   }
@@ -233,6 +239,7 @@ export function microTotals(reqs: FieldRequirement[]) {
 /** Farm-wide totals per NUTRIENT, which is how agronomy is discussed. */
 export function totalsByNutrient(reqs: FieldRequirement[]) {
   const byNutrient = new Map<string, { nutrient: string; totalLb: number; fields: number }>()
+  const nutrientFields = new Map<string, Set<string>>()
   for (const req of reqs) {
     if (!req.lines || req.acres == null) continue
     for (const line of req.lines) {
@@ -240,7 +247,9 @@ export function totalsByNutrient(reqs: FieldRequirement[]) {
       if (!byNutrient.has(key)) byNutrient.set(key, { nutrient: line.nutrient, totalLb: 0, fields: 0 })
       const t = byNutrient.get(key)!
       t.totalLb += line.lbPerAc * req.acres
-      t.fields++
+      const seen = nutrientFields.get(key) ?? new Set<string>()
+      if (!seen.has(req.fieldId)) t.fields++
+      nutrientFields.set(key, seen.add(req.fieldId))
     }
   }
   return [...byNutrient.values()]

@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { FileText, Minus, Pencil, Plus, X } from 'lucide-react'
 import { useCrops } from '@/lib/queries'
 import { supabase } from '@/lib/supabase'
-import { GRADE_ADVICE, bandSegments, chartPdfUrl, gradeLabel, chartSummary, hasBands, type Grade, type MoistureBands } from '@/lib/moisture'
+import { CHART_CREDIT, GRADE_ADVICE, bandSegments, chartPdfUrl, gradeLabel, chartSummary, hasBands, type Grade, type MoistureBands } from '@/lib/moisture'
 import { cropColour } from '@/lib/crop-colour'
 import { Modal } from '@/components/Modal'
 import { cn } from '@/lib/utils'
@@ -49,7 +49,7 @@ export function MoistureRanges() {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-600">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
         {LEGEND.map((g) => (
           <span key={g} className="flex items-center gap-1" title={GRADE_ADVICE[g]}>
             <span className={cn('h-2 w-2 rounded-full', DOT[g])} />
@@ -94,7 +94,7 @@ function CropCard({ crop, onEdit }: { crop: CropRow; onEdit: () => void }) {
             href={chartPdfUrl(chart.key)}
             target="_blank"
             rel="noreferrer"
-            title={`Model 919 chart ${chart.table_no} — ${chart.crop}, ${chart.sample_weight_g} g sample`}
+            title={`Model 919 chart ${chart.table_no} — ${chart.crop}, ${chart.sample_weight_g} g sample. ${CHART_CREDIT}`}
             className="rounded p-1 text-gray-400 hover:bg-gray-50 hover:text-brand-700"
           >
             <FileText className="h-3.5 w-3.5" />
@@ -116,7 +116,7 @@ function CropCard({ crop, onEdit }: { crop: CropRow; onEdit: () => void }) {
 
       <SlimBar bands={b} />
 
-      <div className="flex flex-wrap gap-1.5 text-[11px]">
+      <div className="flex flex-wrap gap-1.5 text-xs">
         {b.dry_min != null && <Tag grade="too_dry">Too dry under {pct(b.dry_min)}</Tag>}
         {b.tough_max != null && b.dry_max != null && b.tough_max > b.dry_max && <Tag grade="tough">Air on to {pct(b.tough_max)}</Tag>}
         {dryAbove != null && <Tag grade="wet">Wet over {pct(dryAbove)}</Tag>}
@@ -169,7 +169,7 @@ function SlimBar({ bands }: { bands: MoistureBands }) {
       {labels.map((l) => (
         <span
           key={l.e}
-          className={cn('absolute -translate-x-1/2 text-[10px] font-medium tabular-nums text-gray-600', l.low ? 'top-6' : 'top-2.5')}
+          className={cn('absolute -translate-x-1/2 text-xs font-medium tabular-nums text-gray-600', l.low ? 'top-6' : 'top-2.5')}
           style={{ left: `${l.x}%` }}
         >
           <span className="mx-auto mb-px block h-1 w-px bg-gray-300" />
@@ -247,7 +247,7 @@ function EditLevels({ crop, onDone }: { crop: CropRow; onDone: () => void }) {
                 <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', DOT[l.grade], v == null && 'opacity-30')} />
                 <span className="min-w-0 flex-1">
                   <span className={cn('block text-sm', v == null ? 'text-gray-400' : 'font-medium text-gray-800')}>{l.label}</span>
-                  <span className="block text-[11px] text-gray-500">{l.hint}</span>
+                  <span className="block text-xs text-gray-500">{l.hint}</span>
                 </span>
                 {v == null ? (
                   <button
@@ -358,7 +358,7 @@ function DragBar({ bands, scale, onMove }: { bands: MoistureBands; scale: { min:
               className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 touch-none"
               style={{ left: `${at(v)}%` }}
             >
-              <span className={cn('absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-1 text-[11px] font-semibold tabular-nums', dragging === l.key ? 'bg-gray-900 text-white' : 'text-gray-700')}>
+              <span className={cn('absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-1 text-xs font-semibold tabular-nums', dragging === l.key ? 'bg-gray-900 text-white' : 'text-gray-700')}>
                 {pct(v)}
               </span>
               <span className={cn('block h-9 w-4 cursor-ew-resize rounded-full border-2 border-white shadow ring-1 ring-gray-300', DOT[l.grade], dragging === l.key && 'scale-110 ring-gray-500')} />
@@ -366,7 +366,7 @@ function DragBar({ bands, scale, onMove }: { bands: MoistureBands; scale: { min:
           )
         })}
       </div>
-      <p className="mt-2 text-center text-[11px] text-gray-400">Drag a handle, or use − and + below.</p>
+      <p className="mt-2 text-center text-xs text-gray-400">Drag a handle, or use − and + below.</p>
     </div>
   )
 }

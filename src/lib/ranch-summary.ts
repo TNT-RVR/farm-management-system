@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { Ranch } from './ranches'
 import { useHerdCounts } from './cattle'
+import { auFor } from './animal-units'
 import { computePastures, useGrazingPastures, useGrazingHerd, useRanchPrecip, grazingRain, usePastureFieldContext, usePastureSeasonFactors } from './grazing'
 import { useFeedPlan } from './feed'
 import { useFeedOnHand } from './feed-inventory'
@@ -61,7 +62,9 @@ export function useGrassDays(ranch: Ranch | undefined) {
     for (const f of factors ?? []) if (f.factor != null) factorFor.set(f.grazing_pasture_id, f.factor)
     const auds = computePastures(pastures ?? [], rain, utilization, ctx, factorFor, null, ranch.grazing_count_waste ?? true)
       .reduce((s, p) => s + p.auds, 0)
-    const herdAu = (herd ?? []).reduce((s, h) => s + h.au_equivalent * h.head_count, 0)
+    // AU from weight, as the Grazing tab counts it. The stored au_equivalent
+    // still held the old linear values: 181 AU here against 225.8 there.
+    const herdAu = (herd ?? []).reduce((s, h) => s + auFor(h) * h.head_count, 0)
     return {
       loading: pLoading || hLoading,
       pastures: (pastures ?? []).length,

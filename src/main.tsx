@@ -7,6 +7,7 @@ import App from './App'
 import { AuthProvider } from '@/lib/auth'
 import { CropYearProvider } from '@/lib/crop-year'
 import { installAppUpdateHandling } from '@/lib/appUpdate'
+import { initTheme } from '@/lib/theme'
 import { OFFLINE_MAX_AGE, UNKEPT_GC_MS, UNKEPT_HEADS, idbPersister, shouldPersistQuery } from '@/lib/offline'
 import './index.css'
 import { installIssueReporting } from './lib/app-issues'
@@ -61,6 +62,7 @@ if (import.meta.env.DEV) {
 // A deploy can land under an open tab and take its chunks away; this reloads
 // once when that happens, instead of leaving a white screen behind.
 installAppUpdateHandling()
+initTheme()
 // Errors nothing caught go to app_issues, for Claude to fix (lib/app-issues.ts).
 installIssueReporting()
 // Field work saved with no signal goes when the signal comes back (lib/field-work-data.ts).

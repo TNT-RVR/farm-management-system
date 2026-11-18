@@ -116,7 +116,8 @@ function Body({ year, setYear, isManager }: { year: number; setYear: (y: number)
             From {counted} of the {allIds.length} tools, each an estimate from this farm&apos;s soil tests, invoices, Deere
             passes and yields. They overlap in places — a pound not applied is only saved once — so read
             this as where to look, not a promise. N {perLbFmt(inputs.perLb.n)}, P₂O₅ {perLbFmt(inputs.perLb.p2o5)}, K₂O{' '}
-            {perLbFmt(inputs.perLb.k2o)} at today&apos;s cheapest source.
+            {perLbFmt(inputs.perLb.k2o)} at today&apos;s cheapest source: an invoice, a live quote, DTN, or failing those the
+            Blends price list. A dash means none of the four prices it.
           </HelpNote>
         </div>
         <div className="flex items-center gap-2">
@@ -198,7 +199,7 @@ function WhereTheSavingsLive({
           return (
             <li key={h.n} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-3 py-1.5">
               <Link to={savingsToolHref(h.n)!} className="text-gray-800 hover:text-brand-800 hover:underline">
-                <span className="mr-1.5 text-[11px] text-gray-400">{h.n}</span>
+                <span className="mr-1.5 text-xs text-gray-400">{h.n}</span>
                 {h.title}
               </Link>
               <span className="flex items-center gap-2 text-xs">
@@ -246,17 +247,17 @@ function SettingsPanel() {
     <div className="grid gap-3 rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-600 sm:grid-cols-3">
       <label>
         Alberta over US retail, $/tonne
-        <span className="block text-[11px] text-gray-400">Leave blank to work it out per product from {retailerName} invoices and Alberta's survey; a number here overrides it for every product. It can be negative: Alberta running below US retail.</span>
+        <span className="block text-xs text-gray-400">Leave blank to work it out per product from {retailerName} invoices and Alberta's survey; a number here overrides it for every product. It can be negative: Alberta running below US retail.</span>
         <input value={adder} onChange={(e) => setAdder(e.target.value)} inputMode="decimal" placeholder="auto" className={`${input} mt-1 w-24 text-right`} />
       </label>
       <label>
         Nitrogen at seeding on irrigated fields, %
-        <span className="block text-[11px] text-gray-400">For crops not listed below; each field can differ on the split tool.</span>
+        <span className="block text-xs text-gray-400">For crops not listed below; each field can differ on the split tool.</span>
         <input value={split} onChange={(e) => setSplit(e.target.value)} inputMode="decimal" className={`${input} mt-1 w-20 text-right`} />
       </label>
       <div className="sm:col-span-2">
         At seeding, by crop, %
-        <span className="block text-[11px] text-gray-400">
+        <span className="block text-xs text-gray-400">
           Canola and cereals take most of their N before stem elongation, so 75% up front; corn 70; potatoes 60, with the rest by petiole test.
         </span>
         <div className="mt-1 flex flex-wrap gap-2">
@@ -276,7 +277,7 @@ function SettingsPanel() {
       </div>
       <label>
         Soil zone
-        <span className="block text-[11px] text-gray-400">Sets Alberta's dryland P rates and the AOPA nitrate limit. Southern Alberta's dryland is Brown.</span>
+        <span className="block text-xs text-gray-400">Sets Alberta's dryland P rates and the AOPA nitrate limit. Southern Alberta's dryland is Brown.</span>
         <Select
           value={zone}
           onChange={setZone}
@@ -291,7 +292,7 @@ function SettingsPanel() {
       </label>
       <label>
         Irrigation water
-        <span className="block text-[11px] text-gray-400">
+        <span className="block text-xs text-gray-400">
           Sulphur it carries, from the province's water sampling (pulled monthly; River tab): the May–Sep median of the last five seasons.
         </span>
         <Select
@@ -308,7 +309,7 @@ function SettingsPanel() {
       </label>
       <label>
         Irrigation in a season, inches
-        <span className="block text-[11px] text-gray-400">For the sulphur the water brings.</span>
+        <span className="block text-xs text-gray-400">For the sulphur the water brings.</span>
         <input value={inches} onChange={(e) => setInches(e.target.value)} inputMode="decimal" className={`${input} mt-1 w-20 text-right`} />
       </label>
       <label>
@@ -317,17 +318,17 @@ function SettingsPanel() {
       </label>
       <label>
         Operating-line interest, %/yr
-        <span className="block text-[11px] text-gray-400">For prepay against interest and buy low and store.</span>
+        <span className="block text-xs text-gray-400">For prepay against interest and buy low and store.</span>
         <input value={rate} onChange={(e) => setRate(e.target.value)} inputMode="decimal" className={`${input} mt-1 w-20 text-right`} />
       </label>
       <label>
         Urea lost over winter in the bin, %
-        <span className="block text-[11px] text-gray-400">Caking, fines and handling (buy low and store).</span>
+        <span className="block text-xs text-gray-400">Caking, fines and handling (buy low and store).</span>
         <input value={shrink} onChange={(e) => setShrink(e.target.value)} inputMode="decimal" className={`${input} mt-1 w-20 text-right`} />
       </label>
       <label>
         One field's soil test, $
-        <span className="block text-[11px] text-gray-400">Free: {retailerName} tests at no charge since Oct 2026 (was $215 a field in 2023). Used by the grants and did-the-soil-test-pay checks.</span>
+        <span className="block text-xs text-gray-400">Free: {retailerName} tests at no charge since Oct 2026 (was $215 a field in 2023). Used by the grants and did-the-soil-test-pay checks.</span>
         <input value={soilCost} onChange={(e) => setSoilCost(e.target.value)} inputMode="decimal" className={`${input} mt-1 w-24 text-right`} />
       </label>
       <div className="sm:col-span-3">

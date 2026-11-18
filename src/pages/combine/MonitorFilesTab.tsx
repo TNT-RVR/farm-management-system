@@ -602,16 +602,16 @@ function BoundariesCard({
                 </td>
                 <td className="px-3 py-1 text-gray-700">
                   {f.monitor.farm}
-                  {f.monitor.farmSet && <span className="ml-1 rounded bg-gray-100 px-1 text-[10px] text-gray-600">set</span>}
+                  {f.monitor.farmSet && <span className="ml-1 rounded bg-gray-100 px-1 text-xs text-gray-600">set</span>}
                 </td>
                 <td className="px-3 py-1">
                   <span className="font-medium">{f.monitor.name}</span>
-                  {f.monitor.source === 'override' && <span className="ml-1 rounded bg-gray-100 px-1 text-[10px] text-gray-600">set</span>}
-                  {f.monitor.shortened && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] text-amber-800">shortened</span>}
-                  {f.monitor.quarterDropped && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] text-amber-800">quarter dropped</span>}
-                  {f.monitor.fileName !== f.monitor.name && <div className="text-[11px] text-gray-500">file: {f.monitor.fileName}</div>}
+                  {f.monitor.source === 'override' && <span className="ml-1 rounded bg-gray-100 px-1 text-xs text-gray-600">set</span>}
+                  {f.monitor.shortened && <span className="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">shortened</span>}
+                  {f.monitor.quarterDropped && <span className="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800">quarter dropped</span>}
+                  {f.monitor.fileName !== f.monitor.name && <div className="text-xs text-gray-500">file: {f.monitor.fileName}</div>}
                   {f.lines.map((l) => (
-                    <div key={l.id} className="text-[11px] text-gray-500">
+                    <div key={l.id} className="text-xs text-gray-500">
                       ↳ {l.name} · {lineTypeNote(l.lineType)}
                       {l.fileName !== l.name && ` · file: ${l.fileName}`}
                     </div>

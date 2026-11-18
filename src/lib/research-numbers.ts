@@ -7,6 +7,7 @@
  * standing between "a model typed a number" and a figure the farm might act
  * on, so it is the part that has to be provable.
  */
+import { isBookkeepingCrop } from './crop-label'
 
 /** The figures worth having. Must match the check constraint on the table. */
 export const MEASURES = [
@@ -103,7 +104,7 @@ const NOT_A_CROP_WORD = new Set([
 export function cropNeedles(name: string): string[] {
   // 'Potato (kind not chosen)', 'Custom Crop bu/ac', 'Summer Fallow' and
   // 'Not farmed by us' are bookkeeping, not crops a paper writes about.
-  if (/\(|custom crop|not farmed|fallow/i.test(name)) return []
+  if (isBookkeepingCrop(name)) return []
   const flat = flatten(name)
   const out = new Set<string>([flat])
   for (const part of flat.split(/[-\s]+/)) {

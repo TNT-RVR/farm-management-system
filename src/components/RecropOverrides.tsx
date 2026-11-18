@@ -178,7 +178,7 @@ export function RecropOverrides({ isManager }: { isManager: boolean }) {
                   </span>
                 </p>
                 <p className="mt-0.5 text-xs text-gray-500">{o.reason}</p>
-                <p className="text-[11px] text-gray-400">
+                <p className="text-xs text-gray-400">
                   {o.told_by ?? 'nobody recorded'} · {o.set_on}
                 </p>
               </div>

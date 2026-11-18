@@ -524,13 +524,13 @@ function ProfitLossField({
               </p>
             )}
             {mode === 'vigour' && (
-              <p className="mt-2 text-[11px] leading-snug text-amber-700">
+              <p className="mt-2 text-xs leading-snug text-amber-700">
                 Estimated yield: the scale total, spread by satellite vigour on {image?.sensed_on}. The field total is
                 exact; where it came from within the field is an estimate.
               </p>
             )}
             {mode === 'file' && (contour?.estimatedShare ?? 0) > 0 && (
-              <div className="mt-2 text-[11px] leading-snug text-gray-600">
+              <div className="mt-2 text-xs leading-snug text-gray-600">
                 <p>
                   {Math.round((contour?.estimatedShare ?? 0) * 100)}% of the field had no yield reading, so it carries the
                   field average. Treat it as unknown, not as average ground.
@@ -542,12 +542,12 @@ function ProfitLossField({
               </div>
             )}
             {mode === 'even' && (
-              <p className="mt-2 text-[11px] leading-snug text-gray-500">
+              <p className="mt-2 text-xs leading-snug text-gray-500">
                 Yield spread evenly, so the differences on the map are all cost.
               </p>
             )}
             {money4map.unpriced > 0 && (
-              <p className="mt-2 flex items-start gap-1 text-[11px] leading-snug text-amber-700">
+              <p className="mt-2 flex items-start gap-1 text-xs leading-snug text-amber-700">
                 <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 {money4map.unpriced} row{money4map.unpriced === 1 ? ' is' : 's are'} missing a cost or amount and left
                 out of the totals. Click the dash to type one in.
@@ -592,7 +592,7 @@ function ProfitLossField({
           )}
 
           {isManager && field && (
-            <div className="flex items-center justify-between gap-2 text-[11px] text-gray-500">
+            <div className="flex items-center justify-between gap-2 text-xs text-gray-500">
               <span>
                 {ungridded > 0
                   ? `${ungridded} Deere pass${ungridded === 1 ? '' : 'es'} not on the map yet — pulled automatically each hour.`
@@ -762,10 +762,10 @@ function YieldFileSection({
         <div className="mt-1.5 flex items-start justify-between gap-2 text-xs">
           <div className="min-w-0">
             <p className="truncate text-gray-800">{imported.product_name}</p>
-            <p className="text-[10px] text-gray-500">
+            <p className="text-xs text-gray-500">
               Imported {imported.built_at.slice(0, 10)} · the map uses its pattern, scaled to the scale total
             </p>
-            {imported.note && <p className="mt-0.5 text-[10px] leading-snug text-gray-600">{imported.note}</p>}
+            {imported.note && <p className="mt-0.5 text-xs leading-snug text-gray-600">{imported.note}</p>}
           </div>
           {canEdit && (
             <button
@@ -781,7 +781,7 @@ function YieldFileSection({
           )}
         </div>
       ) : (
-        <p className="mt-1 text-[11px] text-gray-500">
+        <p className="mt-1 text-xs text-gray-500">
           None. Without one, yield is the scale total spread by satellite vigour or evenly.
         </p>
       )}

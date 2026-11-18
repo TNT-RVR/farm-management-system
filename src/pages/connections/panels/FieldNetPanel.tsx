@@ -43,7 +43,7 @@ function FieldNetControlProbe({ systems }: { systems: FieldnetSystem[] }) {
   return (
     <div className="mt-3 rounded-md border border-amber-200 bg-amber-50/60 p-3">
       <p className="text-xs font-medium text-amber-900">Test control capability</p>
-      <p className="mt-0.5 text-[11px] text-amber-800">
+      <p className="mt-0.5 text-xs text-amber-800">
         Checks whether FieldNET will accept direction, speed and auto-stop angle on a panel. It
         sends deliberately invalid values, so it cannot move a pivot — it only reads back how the
         API objects. Pick a stopped pivot if you have one.
@@ -71,7 +71,7 @@ function FieldNetControlProbe({ systems }: { systems: FieldnetSystem[] }) {
       )}
 
       {probe.data && (
-        <div className="mt-2 text-[11px] text-amber-900">
+        <div className="mt-2 text-xs text-amber-900">
           <p className="font-medium">
             {writable.length > 0
               ? `${writable.length} field(s) look writable — control may be possible.`
@@ -106,7 +106,7 @@ function FieldNetCapabilities() {
   if (isLoading) return null
   if (error) {
     return (
-      <p className="mt-3 border-t border-gray-100 pt-2 text-[11px] text-gray-400">
+      <p className="mt-3 border-t border-gray-100 pt-2 text-xs text-gray-400">
         Could not read FieldNET permissions: {(error as Error).message}
       </p>
     )
@@ -119,7 +119,7 @@ function FieldNetCapabilities() {
   ].filter(Boolean) as string[]
 
   return (
-    <div className="mt-3 border-t border-gray-100 pt-2 text-[11px] text-gray-500">
+    <div className="mt-3 border-t border-gray-100 pt-2 text-xs text-gray-500">
       <button
         onClick={() => setOpen((v) => !v)}
         className="font-medium text-gray-600 hover:text-gray-900"

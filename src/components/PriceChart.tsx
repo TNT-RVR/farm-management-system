@@ -307,13 +307,13 @@ export function PriceChart({
           <button
             type="button"
             onClick={() => setWin([0, 1])}
-            className="absolute right-2 top-1 rounded border border-gray-200 bg-white/90 px-1.5 py-0.5 text-[10px] text-gray-600 hover:bg-white"
+            className="absolute right-2 top-1 rounded border border-gray-200 bg-white/90 px-1.5 py-0.5 text-xs text-gray-600 hover:bg-white"
           >
             reset zoom
           </button>
         )}
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-600">
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-600">
         {legend &&
           keys.map((s, i) => {
             const off = hidden.has(s.id)
@@ -350,7 +350,7 @@ export function PriceChart({
         )}
         {rows.length >= 6 && (
           <span className="ml-auto flex items-center gap-1">
-            <span className="hidden text-[10px] text-gray-400 sm:inline">
+            <span className="hidden text-xs text-gray-400 sm:inline">
               {zoomed ? 'drag to move · ' : ''}scroll or pinch to zoom
             </span>
             <button

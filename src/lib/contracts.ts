@@ -28,6 +28,45 @@ const num = (v: number | string | null | undefined): number | null => {
   return typeof n === 'number' && Number.isFinite(n) ? n : null
 }
 
+/** A contract as a form has it, before anything is saved. */
+export type ContractDraft = {
+  cropId: string | null
+  bushels: number | null
+  pricePerUnit: number | null
+  /** Left out where the scale tickets own it. */
+  deliveredBu?: number | null
+  deliveryStart: string | null
+  deliveryEnd: string | null
+}
+
+/**
+ * What is wrong with a contract as typed. An empty list means it can be saved.
+ *
+ * Both contract forms used to save whatever they were given. An entirely blank
+ * one saved as a row of em-dashes that still counted in "Contracts 5" and
+ * still read as `open`; minus a hundred bushels at minus five dollars saved as
+ * a contract worth a positive $500, because the value column multiplies the
+ * two and two negatives make a positive. A figure that walks into the
+ * headline is worth refusing at the door.
+ *
+ * The crop is required because every figure downstream groups by it: a
+ * contract without one is counted in the headline and then missing from the
+ * position table, which is the worst of both. The price is not required —
+ * grain is contracted unpriced often enough — but a negative one is never
+ * anything but a typo.
+ */
+export function contractProblems(d: ContractDraft): string[] {
+  const out: string[] = []
+  if (!d.cropId) out.push('Pick the crop.')
+  if (d.bushels == null) out.push('Put in how much is contracted.')
+  else if (d.bushels <= 0) out.push('The amount has to be more than zero.')
+  if (d.pricePerUnit != null && d.pricePerUnit < 0) out.push('The price cannot be negative.')
+  if (d.deliveredBu != null && d.deliveredBu < 0) out.push('Delivered so far cannot be negative.')
+  if (d.deliveryStart && d.deliveryEnd && d.deliveryEnd < d.deliveryStart)
+    out.push('The delivery window ends before it starts.')
+  return out
+}
+
 export function useContracts(cropYear: number) {
   return useQuery({
     queryKey: ['contracts', cropYear],

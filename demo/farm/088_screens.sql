@@ -128,6 +128,20 @@ from public.fertility_rx r
 join public.field_yield_zones z on z.field_id = r.field_id
 where r.crop_year = extract(year from current_date)::int and r.source_file = 'example-rx-demo.pdf';
 
+-- A prescription's average rate is its zones' rates weighted by their acres,
+-- as on the farm's own prescriptions; the zone multipliers above don't average
+-- to one, so the averages are worked back from the zones.
+update public.fertility_rx r
+   set products = jsonb_build_array(
+         (r.products -> 0) || jsonb_build_object('avgRate', w.urea, 'totalLbs', round(w.urea * r.total_acres)),
+         (r.products -> 1) || jsonb_build_object('avgRate', w.map, 'totalLbs', round(w.map * r.total_acres)))
+  from (select z.rx_id,
+               round(sum((z.products ->> '46-0-0')::numeric * z.acres) / nullif(sum(z.acres), 0)) as urea,
+               round(sum((z.products ->> '11-52-0')::numeric * z.acres) / nullif(sum(z.acres), 0)) as map
+          from public.fertility_rx_zones z
+         group by z.rx_id) w
+ where w.rx_id = r.id and r.source_file = 'example-rx-demo.pdf' and w.urea is not null;
+
 insert into public.fertility_rx_map (field_id, crop_year, product, target_rate, geom, source_file)
 select r.field_id, r.crop_year, p.label || ' ' || p.analysis, (z.products ->> p.analysis)::numeric, y.geom, 'example-rx-demo-shapes.zip'
 from public.fertility_rx r

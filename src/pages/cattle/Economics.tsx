@@ -115,7 +115,7 @@ export function CattleEconomics({
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
             <Calculator className="h-4 w-4 text-gray-400" /> Break-even · {ranch} {year}
             {costs?.carriedFrom != null && (
-              <span className="text-[11px] font-normal text-amber-700">
+              <span className="text-xs font-normal text-amber-700">
                 costs carried from {costs.carriedFrom} — review
               </span>
             )}
@@ -280,8 +280,8 @@ export function CattleEconomics({
                   {s.netPerHead != null ? money(s.netPerHead, 0) : '—'}
                   <span className="ml-1 text-xs font-normal text-gray-500">a head</span>
                 </p>
-                <p className="mt-0.5 text-[11px] text-gray-500">{s.detail}</p>
-                <p className="mt-1.5 border-t border-gray-100 pt-1.5 text-[11px] text-gray-500">
+                <p className="mt-0.5 text-xs text-gray-500">{s.detail}</p>
+                <p className="mt-1.5 border-t border-gray-100 pt-1.5 text-xs text-gray-500">
                   {s.risk}
                 </p>
               </div>
@@ -308,7 +308,7 @@ function SignalRow({ signal }: { signal: LockInSignal }) {
       <Icon className={cn('h-3.5 w-3.5 shrink-0 self-center', tone)} />
       <span className="text-sm font-medium text-gray-800">{signal.label}</span>
       <span className={cn('text-sm font-semibold tabular-nums', tone)}>{signal.reading}</span>
-      <span className="w-full text-[11px] text-gray-500 sm:ml-6 sm:w-auto sm:flex-1">
+      <span className="w-full text-xs text-gray-500 sm:ml-6 sm:w-auto sm:flex-1">
         {signal.why}
       </span>
     </li>
@@ -328,7 +328,7 @@ function Fig({
 }) {
   return (
     <div>
-      <p className="text-[11px] uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
       <p
         className={cn(
           'text-lg font-bold tabular-nums',
@@ -337,7 +337,7 @@ function Fig({
       >
         {value}
       </p>
-      {sub && <p className="text-[11px] text-gray-400">{sub}</p>}
+      {sub && <p className="text-xs text-gray-400">{sub}</p>}
     </div>
   )
 }

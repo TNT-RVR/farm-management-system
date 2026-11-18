@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { NUTRIENTS, cropKey, judge, needsStage, rangesFor, readTissue, shortages, tissueFormOf } from './tissue'
+import { NUTRIENTS, cropKey, judge, needsStage, rangesFor, readTissue, shortages, tissueFormOf, tissueCoverage, inBandSentence, type Reading } from './tissue'
 
 describe('tissueFormOf', () => {
   it('fills the edit form from a saved test, leaving unmeasured nutrients blank', () => {
@@ -149,5 +149,26 @@ describe('shortages', () => {
   it('says nothing when everything is in band', () => {
     const { readings } = readTissue({ n_pct: 3, p_pct: 0.3 }, 'Corn', 'tasselling / early silk')
     expect(shortages(readings)).toEqual([])
+  })
+})
+
+describe('inBandSentence', () => {
+  const r = (i: number, value: number | null, band?: [number, number]): Reading => ({ nutrient: NUTRIENTS[i], value, band, verdict: judge(value, band) })
+
+  it('does not call a test all in band when most readings had no band to judge', () => {
+    const readings = [r(0, 3, [2.7, 3.5]), r(1, 0.3, [0.25, 0.5]), r(2, 2), r(3, 0.2), r(4, 0.5), r(5, null)]
+    const c = tissueCoverage(readings)
+    expect(c).toMatchObject({ measured: 5, judged: 2 })
+    expect(inBandSentence(c)).toBe('2 of 5 readings have a band: 2 within it, none short. The other 3 are not judged.')
+  })
+
+  it('names a reading above band rather than folding it into "in band"', () => {
+    const c = tissueCoverage([r(0, 4.5, [2.7, 3.5]), r(1, 0.3, [0.25, 0.5])])
+    expect(inBandSentence(c)).toBe('Nothing short. Above band: Nitrogen.')
+  })
+
+  it('says all in band only when every reading was judged', () => {
+    expect(inBandSentence(tissueCoverage([r(0, 3, [2.7, 3.5])]))).toBe('The one reading is within its sufficiency band.')
+    expect(inBandSentence(tissueCoverage([r(0, null)]))).toBe('Nothing measured on this test.')
   })
 })

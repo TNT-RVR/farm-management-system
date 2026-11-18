@@ -18,12 +18,16 @@ export function ScenarioPanel({
   defaultYield,
   yieldUnit,
   todayBidPerBushel,
+  priceFrom = "today's bid",
 }: {
   cropName: string
   costPerAcre: number | null
   defaultYield: number | null
   yieldUnit: string | null
+  /** The price the sliders start from, $/bu: the elevator bid, else the board. */
   todayBidPerBushel: number | null
+  /** What that price is, in words, so the page never calls a board price a bid. */
+  priceFrom?: string
 }) {
   const [yieldPerAcre, setYield] = useState(defaultYield ?? 0)
   const [price, setPrice] = useState(todayBidPerBushel ?? 0)
@@ -60,8 +64,9 @@ export function ScenarioPanel({
       </h3>
       <div className="p-4">
       <p className="mt-0.5 text-xs text-gray-500">
-        Starting from this year&rsquo;s budget and today&rsquo;s bid. Move any of the three and the
-        rest follow.
+        {todayBidPerBushel != null
+          ? `Starting from this year’s budget and ${priceFrom}. Move any of the three and the rest follow.`
+          : 'Starting from this year’s budget. No price is quoted, so set one with the slider.'}
       </p>
 
       <div className="mt-3 grid gap-4 sm:grid-cols-3">
@@ -110,8 +115,8 @@ export function ScenarioPanel({
           sub={
             breakEvenPrice != null && todayBidPerBushel != null
               ? todayBidPerBushel >= breakEvenPrice
-                ? `today's bid clears it by $${(todayBidPerBushel - breakEvenPrice).toFixed(2)}`
-                : `today's bid is $${(breakEvenPrice - todayBidPerBushel).toFixed(2)} short`
+                ? `${priceFrom} clears it by $${(todayBidPerBushel - breakEvenPrice).toFixed(2)}`
+                : `${priceFrom} is $${(breakEvenPrice - todayBidPerBushel).toFixed(2)} short`
               : undefined
           }
         />
@@ -151,7 +156,7 @@ function Slider({
   return (
     <div>
       <div className="flex items-baseline justify-between">
-        <span className="text-[11px] uppercase tracking-wide text-gray-500">{label}</span>
+        <span className="text-xs uppercase tracking-wide text-gray-500">{label}</span>
         <span className="text-sm font-semibold tabular-nums text-gray-900">{format(value)}</span>
       </div>
       <input
@@ -169,7 +174,7 @@ function Slider({
         <button
           onClick={() => onChange(baseline)}
           className={cn(
-            'text-[11px]',
+            'text-xs',
             moved ? 'text-brand-700 hover:underline' : 'text-gray-400',
           )}
         >
@@ -193,7 +198,7 @@ function Fig({
 }) {
   return (
     <div>
-      <p className="text-[11px] uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
       <p
         className={cn(
           'text-lg font-bold tabular-nums',
@@ -202,7 +207,7 @@ function Fig({
       >
         {value}
       </p>
-      {sub && <p className="text-[11px] text-gray-400">{sub}</p>}
+      {sub && <p className="text-xs text-gray-400">{sub}</p>}
     </div>
   )
 }

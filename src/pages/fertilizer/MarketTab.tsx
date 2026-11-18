@@ -223,7 +223,7 @@ export function MarketTab({ isManager }: { isManager: boolean }) {
                     on ? 'bg-white' : 'bg-gray-50 opacity-60 hover:opacity-90',
                   )}
                 >
-                  <p className="flex items-center gap-1 truncate text-[10px] font-medium text-gray-500" title={r.series.name}>
+                  <p className="flex items-center gap-1 truncate text-xs font-medium text-gray-500" title={r.series.name}>
                     <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: colour }} />
                     {r.series.commodity}
                   </p>
@@ -231,9 +231,9 @@ export function MarketTab({ isManager }: { isManager: boolean }) {
                     {r.now ? `US$${r.now.value.toLocaleString('en-CA', { maximumFractionDigits: 0 })}` : '—'}
                   </p>
                   {r.cadTonne != null && (
-                    <p className="text-[10px] tabular-nums leading-tight text-gray-600">≈ {money(r.cadTonne)}/t</p>
+                    <p className="text-xs tabular-nums leading-tight text-gray-600">≈ {money(r.cadTonne)}/t</p>
                   )}
-                  <p className="text-[9px] leading-tight text-gray-500">
+                  <p className="text-xs leading-tight text-gray-500">
                     {r.weekChange != null && (
                       // Up is bad on this tab.
                       <span className={cn('font-semibold', r.weekChange > 0 ? 'text-red-700' : r.weekChange < 0 ? 'text-green-700' : 'text-gray-500')}>
@@ -251,7 +251,7 @@ export function MarketTab({ isManager }: { isManager: boolean }) {
               badges that were on these tiles — is the Buy-window alert on
               Savings, with the chart and the dollars for what is left to
               book. One line here says whether it is worth going to look. */}
-          <p className="mt-1.5 text-[11px] text-gray-500">
+          <p className="mt-1.5 text-xs text-gray-500">
             {[
               cheapNow.length ? `${cheapNow.join(', ')} in the cheapest third of ${cheapNow.length === 1 ? 'its' : 'their'} range` : null,
               dearNow.length ? `${dearNow.join(', ')} in the dearest third` : null,
@@ -335,7 +335,7 @@ export function MarketTab({ isManager }: { isManager: boolean }) {
           <div className="mt-2 grid gap-2 sm:grid-cols-3">
             {indexRead.map((r) => (
               <div key={r.series.id} className="rounded-md bg-gray-50 px-2.5 py-2">
-                <p className="truncate text-[11px] font-medium text-gray-500" title={r.series.name}>
+                <p className="truncate text-xs font-medium text-gray-500" title={r.series.name}>
                   {r.series.commodity}
                   {r.series.region && (
                     <span className="ml-1 font-normal text-gray-400">{r.series.region}</span>
@@ -346,7 +346,7 @@ export function MarketTab({ isManager }: { isManager: boolean }) {
                   {r.yoy != null && (
                     <span
                       className={cn(
-                        'ml-1.5 text-[11px] font-semibold',
+                        'ml-1.5 text-xs font-semibold',
                         // Rising is bad news on this tab, the reverse of crops
                         // and cattle. Worth saying, because the same colour
                         // means the opposite two tabs over.
@@ -358,7 +358,7 @@ export function MarketTab({ isManager }: { isManager: boolean }) {
                   )}
                 </p>
                 {r.percentile != null && (
-                  <p className="text-[10px] text-gray-500">
+                  <p className="text-xs text-gray-500">
                     Dearer than {Math.round(r.percentile)}% of the last ten years
                     {r.lo != null && r.hi != null && (
                       <span className="text-gray-400">
@@ -368,7 +368,7 @@ export function MarketTab({ isManager }: { isManager: boolean }) {
                     )}
                   </p>
                 )}
-                {r.now && <p className="text-[10px] text-gray-400">to {r.now.on}</p>}
+                {r.now && <p className="text-xs text-gray-400">to {r.now.on}</p>}
               </div>
             ))}
           </div>
@@ -387,6 +387,13 @@ export function MarketTab({ isManager }: { isManager: boolean }) {
           )}
 
         </section>
+      )}
+
+      {/* Neither section has anything to draw: say so, rather than an empty tab. */}
+      {everySeries && dtnSeries.length === 0 && indexSeries.length === 0 && (
+        <p className="rounded-lg border border-gray-200 bg-white py-8 text-center text-sm text-gray-400">
+          No market prices yet — the price sync has not run.
+        </p>
       )}
 
       {/* What the retailer charges lives on the Pricing view now, beside the full

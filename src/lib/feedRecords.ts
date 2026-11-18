@@ -81,6 +81,52 @@ export function summarise(
   return { feedLb, beddingLb, incompleteLines, days, lbPerHeadPerDay }
 }
 
+/** "1 day", "31 days". */
+export function describeDays(days: number): string {
+  return `${days.toLocaleString('en-CA')} day${days === 1 ? '' : 's'}`
+}
+
+/**
+ * What is wrong with a record before it goes near the database, in words — or
+ * null when it can be saved. The table refuses the same things (a negative
+ * amount, a bale of zero, no head, a period that ends before it starts), but
+ * its refusal arrives after the header of an edit may already be written, and
+ * a preview of "-650,000 lb fed" should never be on screen in the meantime.
+ *
+ * `headCount` is what was typed: blank is allowed (the head is unknown), but a
+ * number typed in has to be a whole head or more.
+ */
+export function feedRecordProblem(record: {
+  periodStart: string
+  periodEnd: string
+  headCount: string
+  lines: { quantity: string; unit: FeedUnit; lbPerBale: string }[]
+}): string | null {
+  if (record.periodStart && record.periodEnd && record.periodEnd < record.periodStart) {
+    return 'The last day fed has to be on or after the first.'
+  }
+  const head = record.headCount.trim()
+  if (head !== '') {
+    const n = Number(head)
+    if (!Number.isFinite(n)) return 'Head fed is not a number.'
+    if (Math.round(n) < 1) return 'Head fed has to be more than zero.'
+  }
+  for (const l of record.lines) {
+    const q = l.quantity.trim()
+    if (q === '') continue
+    const n = Number(q)
+    if (!Number.isFinite(n)) return 'An amount is not a number.'
+    if (n < 0) return 'The amount fed cannot be negative.'
+    const per = l.lbPerBale.trim()
+    if (l.unit !== 'lb' && per !== '') {
+      const w = Number(per)
+      if (!Number.isFinite(w)) return 'A bale weight is not a number.'
+      if (w <= 0) return 'A bale has to weigh more than zero.'
+    }
+  }
+  return null
+}
+
 /** "8 Big Square", "3 Round", "233,100 lb" — the way the sheets say it. */
 export function describeQuantity(line: Pick<FeedLine, 'quantity' | 'unit'>): string {
   const n = line.quantity.toLocaleString('en-CA', { maximumFractionDigits: 2 })

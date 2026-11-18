@@ -199,7 +199,30 @@ export function SprayCheck({ fieldId }: { fieldId?: string }) {
                   <span className="font-semibold text-green-700">fine</span>
                 )}
                 {(red ?? amber) && <span className="block text-xs text-gray-600">{(red ?? amber)!.message}</span>}
-                {(red ?? amber)?.quote && <span className="block text-[11px] italic text-gray-400">&ldquo;{(red ?? amber)!.quote}&rdquo;</span>}
+                {/* Named as the line the verdict was read from. On its own it
+                    read as a second opinion, and a label's own words beat
+                    ours every time — which is how a quote saying barley may
+                    follow came to sit under "label rules it out". */}
+                {(red ?? amber)?.quote && (
+                  <span
+                    className={cn(
+                      'block text-xs',
+                      (red ?? amber)!.quoteFits === false ? 'text-amber-800' : 'text-gray-500',
+                    )}
+                  >
+                    Read off the label:{' '}
+                    <span className="italic">&ldquo;{(red ?? amber)!.quote}&rdquo;</span>
+                  </span>
+                )}
+                {/* The label's own words carry more weight than our reading of
+                    them, so where the two disagree the screen says so rather
+                    than printing the quote as if it backed the verdict. */}
+                {(red ?? amber)?.quoteFits === false && (
+                  <span className="block text-xs font-medium text-amber-800">
+                    This rule and the line it was read from do not plainly agree — check the label
+                    itself before you decide.
+                  </span>
+                )}
               </li>
             )
           })}

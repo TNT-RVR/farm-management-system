@@ -15,10 +15,22 @@ import {
 } from '@/lib/marketing-data'
 import { breakeven, evaluateTarget, isMarketable, summarise, totalCostPerAcre } from '@/lib/marketing'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
-import { fmtMoney } from '@/lib/applied'
-import { fmtUnitPrice } from '@/lib/board-price'
+import { boardPriceIn, fmtUnitPrice } from '@/lib/board-price'
 import { cn } from '@/lib/utils'
 import { askConfirm } from '@/components/askConfirm'
+
+/** A price with its unit on it: "$15.21/bu", never a bare $15.21. */
+const unitPrice = (v: number, unit: string | null | undefined) =>
+  `${fmtUnitPrice(v, unit ?? null)}/${unit ?? 'bu'}`
+
+/**
+ * A threshold far above the board price, which is what a tonne price typed
+ * into a per-bushel box looks like: canola's $660/t against a $15.21/bu board
+ * is 43 times it. Targets set before the box took a unit are still stored that
+ * way, and the card is where somebody will see it.
+ */
+const looksLikeTonnes = (threshold: number | null, board: number | undefined) =>
+  threshold != null && board != null && board > 0 && threshold > board * 3
 
 /**
  * The price you would sell at.
@@ -110,11 +122,11 @@ export function TargetsTab({ year }: { year: number }) {
                   <span className="font-medium text-gray-900">{p?.cropName ?? 'Crop'}</span>
                   <span className="text-sm text-gray-600">
                     {t.mode === 'absolute'
-                      ? `sell at ${fmtMoney(t.value)}`
-                      : `sell at ${fmtMoney(t.value)} over breakeven`}
+                      ? `sell at ${unitPrice(t.value, p?.unit)}`
+                      : `sell at ${unitPrice(t.value, p?.unit)} over breakeven`}
                   </span>
                   {state.hit && (
-                    <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-green-600 px-2 py-0.5 text-[11px] font-medium text-white">
+                    <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-green-600 px-2 py-0.5 text-xs font-medium text-white">
                       <Check className="h-3 w-3" /> Target met
                     </span>
                   )}
@@ -132,7 +144,7 @@ export function TargetsTab({ year }: { year: number }) {
                       </span>
                     ) : (
                       <span className="font-medium tabular-nums text-gray-900">
-                        {fmtUnitPrice(state.threshold, p?.unit ?? null)}
+                        {unitPrice(state.threshold, p?.unit)}
                       </span>
                     )}
                   </span>
@@ -153,7 +165,7 @@ export function TargetsTab({ year }: { year: number }) {
                       <span className="tabular-nums">{fmtUnitPrice(Math.abs(state.distance), p?.unit ?? null)}</span>
                     </span>
                   )}
-                  {be != null && <span>Breakeven {fmtUnitPrice(be, p?.unit ?? null)}</span>}
+                  {be != null && <span>Breakeven {unitPrice(be, p?.unit)}</span>}
                   {open != null && p && (
                     <span>
                       Would price{' '}
@@ -164,6 +176,13 @@ export function TargetsTab({ year }: { year: number }) {
                   )}
                 </div>
 
+                {state.threshold != null && board && looksLikeTonnes(state.threshold, board.value) && (
+                  <p className="mt-1 text-xs text-amber-700">
+                    {unitPrice(state.threshold, p?.unit)} is {Math.round(state.threshold / board.value)}× the
+                    board price. If this was read off a quote in dollars a tonne, open it and set
+                    it again — the box now takes either unit.
+                  </p>
+                )}
                 {t.note && <p className="mt-1 text-xs text-gray-500">{t.note}</p>}
 
                 {isManager && (
@@ -194,7 +213,13 @@ export function TargetsTab({ year }: { year: number }) {
         <AddTargetDialog
           year={year}
           existing={editing}
-          crops={[{ value: editing.cropId, label: cropsForYear.find((c) => c.cropId === editing.cropId)?.cropName ?? 'Crop' }]}
+          crops={[
+            {
+              value: editing.cropId,
+              label: cropsForYear.find((c) => c.cropId === editing.cropId)?.cropName ?? 'Crop',
+              unit: cropsForYear.find((c) => c.cropId === editing.cropId)?.unit,
+            },
+          ]}
           busy={update.isPending || remove.isPending}
           error={(update.error ?? remove.error) as Error | null}
           onClose={() => setEditingId(null)}
@@ -211,7 +236,7 @@ export function TargetsTab({ year }: { year: number }) {
       {adding && (
         <AddTargetDialog
           year={year}
-          crops={cropsForYear.map((c) => ({ value: c.cropId, label: c.cropName }))}
+          crops={cropsForYear.map((c) => ({ value: c.cropId, label: c.cropName, unit: c.unit }))}
           busy={save.isPending}
           error={save.error as Error | null}
           onClose={() => setAdding(false)}
@@ -236,7 +261,7 @@ function AddTargetDialog({
   year: number
   existing?: { cropId: string; mode: 'absolute' | 'over_breakeven'; value: number; quantity: number | null; note: string | null }
   onDelete?: () => void
-  crops: { value: string; label: string }[]
+  crops: { value: string; label: string; unit?: string }[]
   busy: boolean
   error: Error | null
   onClose: () => void
@@ -254,9 +279,27 @@ function AddTargetDialog({
   const [value, setValue] = useState(existing ? String(existing.value) : '')
   const [quantity, setQuantity] = useState(existing?.quantity != null ? String(existing.quantity) : '')
   const [note, setNote] = useState(existing?.note ?? '')
+  /**
+   * The unit the number being typed is in.
+   *
+   * A target is stored in the crop's own unit, because that is what it is
+   * compared against. Canola and wheat are quoted in dollars a tonne
+   * everywhere a price is read — including the line under the threshold on
+   * the card — so a target typed from a quote is a tonne price, and it used
+   * to be stored and compared as a bushel one. $660/t against a board of
+   * $15.21/bu then read "Short by $644.79" on a target that had been met.
+   */
+  const [per, setPer] = useState<'crop' | 'tonne'>('crop')
 
-  const v = Number(value)
+  const crop = crops.find((c) => c.value === cropId)
+  const unit = crop?.unit ?? 'bu'
+  const fromTonne = (n: number) =>
+    boardPriceIn(n, '$/tonne', { name: crop?.label ?? '', unit })?.value ?? null
+  const typed = Number(value)
+  /** What goes in the row: the crop's own unit, whichever was typed. */
+  const v = !Number.isFinite(typed) ? NaN : per === 'tonne' ? (fromTonne(typed) ?? NaN) : typed
   const valid = cropId && Number.isFinite(v) && v > 0
+  const tonnesPossible = unit !== 'MT' && unit !== 'ton' && fromTonne(1) != null
 
   return (
     <Modal title={existing ? `Target for ${year}` : `Set a target for ${year}`} onClose={onClose}>
@@ -281,15 +324,36 @@ function AddTargetDialog({
           <span className="text-xs text-gray-500">
             {mode === 'absolute' ? 'Sell at this price' : 'This much over breakeven'}
           </span>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            inputMode="decimal"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-right tabular-nums"
-          />
+          <div className="flex gap-2">
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              inputMode="decimal"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-right tabular-nums"
+            />
+            {tonnesPossible ? (
+              <Select
+                value={per}
+                ariaLabel="The unit this price is in"
+                className="w-28 shrink-0"
+                onChange={(u) => setPer(u as 'crop' | 'tonne')}
+                options={[
+                  { value: 'crop', label: `$/${unit}` },
+                  { value: 'tonne', label: '$/tonne' },
+                ]}
+              />
+            ) : (
+              <span className="self-center text-xs text-gray-500">${`/${unit}`}</span>
+            )}
+          </div>
+          {per === 'tonne' && Number.isFinite(v) && (
+            <span className="text-xs text-gray-500">
+              {fmtUnitPrice(v, unit)}/{unit}, which is what it is compared against
+            </span>
+          )}
         </label>
         <label className="block">
           <span className="text-xs text-gray-500">How much to price (blank means the rest)</span>

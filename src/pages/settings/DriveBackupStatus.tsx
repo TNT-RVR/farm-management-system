@@ -63,11 +63,11 @@ export function DriveBackupStatus() {
       </HelpNote>
       {last && (last.errors.length > 0 || last.skipped.length > 0) && (
         <details className="mt-1">
-          <summary className="cursor-pointer text-[11px] text-gray-500">
+          <summary className="cursor-pointer text-xs text-gray-500">
             {last.errors.length > 0 && <span className="text-red-700">{last.errors.length} failed · </span>}
             {last.skipped.length} not backed up
           </summary>
-          <ul className="mt-1 space-y-0.5 text-[11px]">
+          <ul className="mt-1 space-y-0.5 text-xs">
             {last.errors.map((e, i) => (
               <li key={`e${i}`} className="text-red-700">
                 {e.report}: {e.why}

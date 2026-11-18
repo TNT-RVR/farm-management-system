@@ -11,6 +11,7 @@ import {
   abCowCostLines,
   abCowCostPerYear,
   benchmarkTotalPerCow,
+  costLinesFarBelowBenchmark,
   ownGrass,
   type CattleCosts,
 } from './cattleEconomics'
@@ -55,6 +56,26 @@ describe('breakEven', () => {
     // The ranch's own cull % and other revenue.
     const own = breakEven(costs({ cull_pct: 15 }), 450, { cullCheque: 2800, otherRevenuePerCow: 50 })!
     expect(own.costPerCalf).toBeCloseTo((1300 - 420 - 50) / 0.92, 6)
+    // The screen says when the 12% is a stand-in, not the ranch's own.
+    expect(b.cullPctAssumed).toBe(true)
+    expect(own.cullPctAssumed).toBe(false)
+  })
+
+  it('points out typed cost lines under half their Alberta benchmark line, and nothing else', () => {
+    const bench = abCowCostLines(2026)
+    const low = costLinesFarBelowBenchmark(
+      {
+        cow_cost_per_head: bench.cow_cost_per_head, // at the benchmark
+        feed_cost_per_head: Math.floor(bench.feed_cost_per_head / 2) - 1, // just under half
+        pasture_cost_per_head: null, // blank: missing, not low
+        vet_cost_per_head: '', // cleared box: missing, not low
+        other_cost_per_head: '95',
+      },
+      2026,
+    )
+    expect(low.map((l) => l.key)).toEqual(['feed_cost_per_head', 'other_cost_per_head'])
+    expect(low[1]).toMatchObject({ label: 'Everything else', typed: 95, benchmark: bench.other_cost_per_head })
+    expect(costLinesFarBelowBenchmark(bench, 2026)).toEqual([])
   })
 
   it('falls back on calf loss when no weaning rate is entered', () => {

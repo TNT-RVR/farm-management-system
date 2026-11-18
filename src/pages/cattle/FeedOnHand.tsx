@@ -28,6 +28,7 @@ import { Num } from '@/pages/cattle/feed/bits'
 import { cn } from '@/lib/utils'
 import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 import { Modal } from '@/components/Modal'
+import { HeadTip } from '@/components/HeadTip'
 
 const KINDS: FeedInventoryKind[] = [
   'harvested',
@@ -310,8 +311,8 @@ export function FeedOnHandPanel({
           <thead className={TABLE_HEAD}>
             <tr>
               <th className="px-3 py-1.5 font-medium">Feed</th>
-              <th className="px-3 py-1.5 text-right font-medium" title="Put up, minus what the feed sheets say was fed.">
-                Left (lb)
+              <th className="px-3 py-1.5 text-right font-medium">
+                Left (lb)<HeadTip title="Left (lb)">Put up, minus what the feed sheets say was fed.</HeadTip>
               </th>
             </tr>
           </thead>
@@ -329,13 +330,13 @@ export function FeedOnHandPanel({
                     <ChevronRight className={cn('mr-1 inline h-3.5 w-3.5 text-gray-400 transition-transform', openFeed === f.feed_type_id && 'rotate-90')} />
                     {f.feed_name}
                     {f.is_bedding && (
-                      <span className="ml-1.5 rounded bg-gray-100 px-1 text-[10px] text-gray-500">
+                      <span className="ml-1.5 rounded bg-gray-100 px-1 text-xs text-gray-500">
                         bedding
                       </span>
                     )}
                     {f.unweighed_lines > 0 && (
                       <span
-                        className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] text-amber-700"
+                        className="ml-1.5 inline-flex items-center gap-0.5 text-xs text-amber-700"
                         title={`${f.unweighed_lines} entries are in bales with no weight recorded, so they are not in these pounds`}
                       >
                         <TriangleAlert className="h-3 w-3" />
@@ -360,13 +361,13 @@ export function FeedOnHandPanel({
                       {Math.round(f.remaining_lb).toLocaleString('en-CA')}
                     </button>
                     {openFeed === f.feed_type_id && (
-                      <span className="block text-[10px] font-normal text-gray-500">
+                      <span className="block text-xs font-normal text-gray-500">
                         put up {Math.round(f.put_up_lb).toLocaleString('en-CA')} · fed{' '}
                         {Math.round(f.fed_lb).toLocaleString('en-CA')}
                       </span>
                     )}
                     {natural && (
-                      <span className="block text-[10px] font-normal text-gray-400">{natural}</span>
+                      <span className="block text-xs font-normal text-gray-400">{natural}</span>
                     )}
                   </td>
                 </tr>

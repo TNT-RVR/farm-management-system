@@ -41,7 +41,7 @@ export function DryDownCard({
         </h4>
         {/* A swath dries faster than a standing crop, so the model needs to know (9 Oct 2026). */}
         {data.planId && (
-          <span className="flex overflow-hidden rounded-md border border-gray-300 text-[11px]" role="group" aria-label="Harvest method">
+          <span className="flex overflow-hidden rounded-md border border-gray-300 text-xs" role="group" aria-label="Harvest method">
             {(['swathed', 'straight'] as const).map((m) => (
               <button
                 key={m}
@@ -90,7 +90,7 @@ export function DryDownCard({
             {data.testerNotes.map((n) => ` ${n}`).join('')}
           </HelpNote>
           {score && (
-            <p className="mt-1.5 rounded bg-white px-2 py-1 text-[11px] text-gray-700">
+            <p className="mt-1.5 rounded bg-white px-2 py-1 text-xs text-gray-700">
               <strong>Record:</strong> predicting each {data.cropName ?? ''} reading from the one before, it has been off by{' '}
               <strong>±{score.mae.toFixed(1)} pts</strong> on average over {score.n} reading{score.n === 1 ? '' : 's'}
               {score.n > 1 ? ` (the starting guess alone: ±${score.maeStart.toFixed(1)})` : ''}
@@ -242,8 +242,8 @@ function Chart({ data }: { data: DryDown }) {
   return (
     <div className="mt-2">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[11px] text-gray-500">{data.desiccatedOn ? `Reglone sprayed ${fmt(data.desiccatedOn)}` : ''}</span>
-        <span className="flex overflow-hidden rounded-md border border-gray-300 text-[11px]" role="group" aria-label="Show by">
+        <span className="text-xs text-gray-500">{data.desiccatedOn ? `Reglone sprayed ${fmt(data.desiccatedOn)}` : ''}</span>
+        <span className="flex overflow-hidden rounded-md border border-gray-300 text-xs" role="group" aria-label="Show by">
           {(['day', 'hour'] as const).map((v) => (
             <button
               key={v}
@@ -284,7 +284,7 @@ function Chart({ data }: { data: DryDown }) {
               y={f.dryMax}
               stroke="#15803d"
               strokeDasharray="4 3"
-              label={{ value: `dry ≤${f.dryMax}%`, position: 'insideBottomLeft', fontSize: 10, fill: '#15803d' }}
+              label={{ value: `dry ≤${f.dryMax}%`, position: 'insideBottomLeft', fontSize: 11, fill: '#15803d' }}
             />
             {/* Where we are: today on the day chart, this hour on the hour chart. */}
             <ReferenceLine
@@ -292,7 +292,7 @@ function Chart({ data }: { data: DryDown }) {
               stroke="#dc2626"
               strokeWidth={1.5}
               ifOverflow="hidden"
-              label={{ value: hourly ? 'now' : 'today', position: 'insideTopRight', fontSize: 10, fill: '#dc2626' }}
+              label={{ value: hourly ? 'now' : 'today', position: 'insideTopRight', fontSize: 11, fill: '#dc2626' }}
             />
             <Area dataKey="range" name="Likely range" stroke="none" fill="#2563eb" fillOpacity={0.12} isAnimationActive={false} connectNulls />
             <Line
@@ -309,7 +309,7 @@ function Chart({ data }: { data: DryDown }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-gray-600">
+      <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-600">
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-full bg-gray-900" /> Tested
         </span>

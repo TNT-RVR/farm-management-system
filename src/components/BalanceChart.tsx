@@ -84,7 +84,7 @@ export function BalanceChart({ rows }: { rows: WaterBalanceRow[] }) {
         {ticks.map((t) => (
           <g key={t}>
             <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} stroke="#f1f5f9" />
-            <text x={4} y={y(t) + 3} className="fill-gray-400 text-[9px]">
+            <text x={4} y={y(t) + 3} className="fill-gray-400 text-xs">
               {Math.round(t)}
             </text>
           </g>
@@ -117,7 +117,7 @@ export function BalanceChart({ rows }: { rows: WaterBalanceRow[] }) {
               stroke="#94a3b8"
               strokeWidth={1}
             />
-            <text x={x(firstForecast) + 3} y={PAD.t + 8} className="fill-gray-400 text-[9px]">
+            <text x={x(firstForecast) + 3} y={PAD.t + 8} className="fill-gray-400 text-xs">
               today
             </text>
           </g>
@@ -129,7 +129,7 @@ export function BalanceChart({ rows }: { rows: WaterBalanceRow[] }) {
             <text
               x={Math.min(x(crossing) + 5, W - 70)}
               y={y(pts[crossing].dr) - 5}
-              className="fill-red-600 text-[9px] font-medium"
+              className="fill-red-600 text-xs font-medium"
             >
               needs water {pts[crossing].date.slice(5)}
             </text>
@@ -138,13 +138,13 @@ export function BalanceChart({ rows }: { rows: WaterBalanceRow[] }) {
 
         {pts.map((p, i) =>
           i % labelEvery === 0 ? (
-            <text key={p.date} x={x(i)} y={H - 12} textAnchor="middle" className="fill-gray-400 text-[9px]">
+            <text key={p.date} x={x(i)} y={H - 12} textAnchor="middle" className="fill-gray-400 text-xs">
               {p.date.slice(5)}
             </text>
           ) : null,
         )}
       </svg>
-      <figcaption className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-500">
+      <figcaption className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
         <span className="flex items-center gap-1">
           <span className="inline-block h-0.5 w-4 bg-sky-600" /> Depletion (mm)
         </span>

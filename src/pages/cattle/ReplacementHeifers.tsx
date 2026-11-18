@@ -94,7 +94,11 @@ function pricePerLb(quotes: Quote[], lb: number): number | null {
     const xa = (above.lo + above.hi) / 2
     return cwtToLb(below.perCwt + ((above.perCwt - below.perCwt) * (lb - xb)) / (xa - xb))
   }
-  const slide = weightSlide(quotes)
+  // Past either end: slide with the two classes at THAT end. It used the two
+  // lightest classes for both, so a heavy heifer took a light calf's slope.
+  if (avg.length < 2) return null
+  const pair = lb < avg[0].lo ? avg.slice(0, 2) : avg.slice(-2)
+  const slide = weightSlide(pair)
   if (!slide) return null
   const nearest = lb < avg[0].lo ? avg[0] : avg[avg.length - 1]
   return cwtToLb(derivePrice(lb, nearest, slide))
@@ -137,7 +141,7 @@ function Num({
         />
         {suffix && <span className="shrink-0 text-gray-400">{suffix}</span>}
       </span>
-      {hint && <span className="block text-[10px] text-gray-400">{hint}</span>}
+      {hint && <span className="block text-xs text-gray-400">{hint}</span>}
     </label>
   )
 }
@@ -172,7 +176,7 @@ function Given({ label, value, hint }: { label: string; value: string; hint: str
     <div className="text-xs text-gray-600">
       <span>{label}</span>
       <span className="mt-0.5 block text-sm font-medium tabular-nums text-gray-900">{value}</span>
-      <span className="block text-[10px] text-gray-400">{hint}</span>
+      <span className="block text-xs text-gray-400">{hint}</span>
     </div>
   )
 }
@@ -232,7 +236,9 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
       .reduce((a, p) => a + p.auds, 0)
     const calving = feedPlan ? { month: feedPlan.calving_month, day: feedPlan.calving_day } : null
     const b = grassBalance(supply, computeHerds(herd, calving, ranch.weaning_date))
-    return b.perCow != null && b.capacityCows != null ? { capacity: b.capacityCows, supply, others: b.others, perCow: b.perCow, days: b.cowDays } : null
+    return b.perCow != null && b.capacityCows != null
+      ? { capacity: b.capacityCows, supply, others: b.others, othersOverGrass: b.othersOverGrass, perCow: b.perCow, days: b.cowDays }
+      : null
   }, [pastures, herd, measured, factors, ranch, feedPlan, fieldCtx])
   const capacity = grass?.capacity ?? null
 
@@ -369,9 +375,11 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
           <p className="text-5xl font-black tabular-nums text-brand-900">{plan.recommended}</p>
           <p className="text-sm text-gray-700">of {inputs.heiferCalves} heifer calves</p>
           <p className="mt-2 text-xs leading-snug text-gray-700">{plan.reason}</p>
-          <p className="mt-2 text-[11px] text-gray-500">
+          <p className="mt-2 text-xs text-gray-500">
             {plan.maintain} holds the herd at {n0(inputs.cows)} cows
-            {inputs.capacityCows != null && ` · the grass carries about ${n0(inputs.capacityCows)}`}.
+            {grass?.othersOverGrass && !('capacity' in o)
+              ? ' · the bulls, heifers and other classes alone need more than the grass'
+              : inputs.capacityCows != null && ` · the grass carries about ${n0(inputs.capacityCows)} cows with their calves`}.
           </p>
           {grass && !('capacity' in o) && (
             <HelpNote className="mt-1" summary={`Grass: ${n0(grass.supply)} animal-unit days this season.`} title="How the grass is counted">
@@ -382,7 +390,7 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
             </HelpNote>
           )}
           {inputs.cullCowValue === 0 && (
-            <p className="mt-2 rounded-md bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-900">
+            <p className="mt-2 rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900">
               Set the cull cow price in Cattle settings — at $0 it undervalues every heifer kept and can flip this answer.
             </p>
           )}
@@ -396,13 +404,19 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
               <li key={s.key} className={cn('flex flex-wrap items-baseline gap-2 rounded-md px-2 py-1 text-sm', s.key === bestKey ? 'bg-green-50 ring-1 ring-green-300' : '')}>
                 <span className="w-full shrink-0 font-medium text-gray-900 sm:w-36">
                   {s.label}
-                  <span className="block text-[11px] font-normal text-gray-500">
+                  <span className="block text-xs font-normal text-gray-500">
                     {s.when} · {n0(s.weightLb)} lb{s.pricePerLb != null && ` @ $${s.pricePerLb.toFixed(2)}/lb`}
                   </span>
                 </span>
                 <span className="ml-auto text-right tabular-nums">
                   <span className={cn('block font-semibold', s.key === bestKey ? 'text-green-800' : 'text-gray-900')}>{money(s.netPerHead)}/hd</span>
-                  {s.costPerHead > 0 && <span className="block text-[11px] text-gray-500">after {money(s.costPerHead)} of gain cost</span>}
+                  {(s.costPerHead > 0 || (s.survive ?? 1) < 1) && (
+                    <span className="block text-xs text-gray-500">
+                      after{s.costPerHead > 0 && ` ${money(s.costPerHead)} of gain cost`}
+                      {s.costPerHead > 0 && (s.survive ?? 1) < 1 && ' and'}
+                      {(s.survive ?? 1) < 1 && ` ${(100 * (1 - s.survive!)).toFixed(1)}% death loss`}
+                    </span>
+                  )}
                 </span>
               </li>
             ))}
@@ -421,14 +435,21 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
         <div className="rounded-xl border border-gray-200 bg-white p-3">
           <p className="text-xs text-gray-500">A heifer kept</p>
           <p className="text-xl font-bold tabular-nums text-gray-900">{money(plan.valueKept)}</p>
-          <p className="text-[11px] text-gray-500">
-            {inputs.pregPct}% bred × a cow&apos;s {inputs.productiveYears} years ({money(plan.pvCow)} today), less {money(inputs.devCostPerHeifer)} to develop
+          <p className="text-xs text-gray-500">
+            {inputs.pregPct}% bred × a cow&apos;s {inputs.productiveYears} years ({money(plan.pvCow)} today)
+            {plan.openSoldAs?.netPerHead != null && inputs.pregPct < 100 && (
+              <>
+                , plus {n0(100 - inputs.pregPct)}% open sold {plan.openSoldAs.key === 'yearling' ? 'as yearlings' : plan.openSoldAs.label.toLowerCase()} (
+                {money(plan.openSoldAs.netPerHead)})
+              </>
+            )}
+            , less {money(inputs.devCostPerHeifer)} to develop
           </p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-3">
           <p className="text-xs text-gray-500">A heifer sold ({plan.best?.label.toLowerCase()})</p>
           <p className="text-xl font-bold tabular-nums text-gray-900">{money(plan.valueSold)}</p>
-          <p className="text-[11px] text-gray-500">a cow nets {money(plan.marginPerCow)} a year at these prices</p>
+          <p className="text-xs text-gray-500">a cow nets {money(plan.marginPerCow)} a year at these prices</p>
         </div>
         <div className={cn('rounded-xl border p-3', plan.gainPerHeiferKept >= 0 ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50')}>
           <p className="text-xs text-gray-500">Each extra heifer kept</p>
@@ -436,7 +457,7 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
             {plan.gainPerHeiferKept >= 0 ? '+' : ''}
             {money(plan.gainPerHeiferKept)}
           </p>
-          <p className="text-[11px] text-gray-500">{plan.gainPerHeiferKept >= 0 ? 'keeping pays, while the grass has room' : 'selling pays more than keeping'}</p>
+          <p className="text-xs text-gray-500">{plan.gainPerHeiferKept >= 0 ? 'keeping pays, while the grass has room' : 'selling pays more than keeping'}</p>
         </div>
       </div>
 
@@ -466,8 +487,8 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
               <tr key={r.keep} className={cn(r.keep === plan.recommended ? 'bg-brand-50 font-semibold' : r.keep === plan.maintain ? 'bg-gray-50' : '')}>
                 <td className="px-3 py-1.5 tabular-nums">
                   {r.keep}
-                  {r.keep === plan.recommended && <span className="ml-1.5 rounded bg-brand-600 px-1.5 text-[10px] font-semibold text-white">recommended</span>}
-                  {r.keep === plan.maintain && r.keep !== plan.recommended && <span className="ml-1.5 text-[10px] text-gray-500">holds herd</span>}
+                  {r.keep === plan.recommended && <span className="ml-1.5 rounded bg-brand-600 px-1.5 text-xs font-semibold text-white">recommended</span>}
+                  {r.keep === plan.maintain && r.keep !== plan.recommended && <span className="ml-1.5 text-xs text-gray-500">holds herd</span>}
                 </td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{n0(r.cowsNextYear)}</td>
                 <td className={cn('px-3 py-1.5 text-xs', r.overCapacity > 0 ? 'text-red-700' : 'text-gray-500')}>
@@ -583,12 +604,12 @@ export function ReplacementHeifers({ ranch }: { ranch: Ranch }) {
           </HelpNote>
         )}
         {costs?.carriedFrom != null && (
-          <p className="mt-2 text-[11px] text-amber-700">
+          <p className="mt-2 text-xs text-amber-700">
             No Cattle settings saved for {year} yet, so the {costs.carriedFrom} figures are used — review them in Settings.{' '}
             <SetupLink managerOnly to={SETUP_LINKS.cattleCosts(ranch.id)}>Review costs</SetupLink>
           </p>
         )}
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500">
           <span>
             {changed > 0
               ? `${changed} figure${changed === 1 ? '' : 's'} changed here, saved in this browser for ${ranch.name}.`

@@ -101,7 +101,7 @@ export function Verdict({ report }: { report: ScoutReport }) {
         <Grade rating={report.rating} />
         <PassLine report={report} />
       </p>
-      <p className="mt-0.5 text-[11px] opacity-90">{passReason(report)}</p>
+      <p className="mt-0.5 text-xs opacity-90">{passReason(report)}</p>
     </div>
   )
 }

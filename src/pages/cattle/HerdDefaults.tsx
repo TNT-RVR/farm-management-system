@@ -58,7 +58,7 @@ export function HerdDefaults() {
               className="w-full rounded-md border border-gray-200 px-1.5 py-1 text-sm disabled:border-transparent disabled:bg-transparent"
             />
           </span>
-          <span className="mt-0.5 block text-[11px] text-gray-400">
+          <span className="mt-0.5 block text-xs text-gray-400">
             Sets the gestation length the due dates are counted on.
           </span>
         </label>

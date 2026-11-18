@@ -95,7 +95,7 @@ export function BuyWindowDetail({
             </p>
           </div>
           {bw && (
-            <span className={cn('ml-2 rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase', stateColour)}>
+            <span className={cn('ml-2 rounded px-1.5 py-0.5 text-xs font-semibold uppercase', stateColour)}>
               {bw.state === 'cheap' ? 'cheap third' : bw.state === 'dear' ? 'dear third' : 'middle third'}
             </span>
           )}
@@ -168,7 +168,7 @@ export function BuyWindowDetail({
             ) : (
               <p className="text-gray-500">Needs eight weeks of prices and an exchange rate.</p>
             )}
-            <p className="mt-2 text-[11px] text-gray-400">
+            <p className="mt-2 text-xs text-gray-400">
               In Canadian dollars a tonne, converted at {fx ? fx.toFixed(3) : '—'} with the {adderText(adderUsed)}.
               The adder is what Alberta ran over (or under) US Midwest; the movement is what carries across.
             </p>
@@ -215,10 +215,10 @@ export function BuyWindowDetail({
 function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'up' | 'down' | null }) {
   return (
     <div className="rounded-md bg-gray-50 px-2.5 py-2">
-      <p className="text-[11px] font-medium text-gray-500">{label}</p>
+      <p className="text-xs font-medium text-gray-500">{label}</p>
       {/* Rising is bad news for a buyer: red up, green down. */}
       <p className={cn('text-sm font-bold tabular-nums', tone === 'up' ? 'text-red-700' : tone === 'down' ? 'text-green-700' : 'text-gray-900')}>{value}</p>
-      {sub && <p className="text-[10px] text-gray-500">{sub}</p>}
+      {sub && <p className="text-xs text-gray-500">{sub}</p>}
     </div>
   )
 }

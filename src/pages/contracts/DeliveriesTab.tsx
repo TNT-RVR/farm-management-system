@@ -12,7 +12,23 @@ import { useTruckSettings } from '@/lib/hauling-data'
 import { cn } from '@/lib/utils'
 import { n0 } from '@/lib/format'
 
-const fmt = (d: string | null) => (d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) : '—')
+/**
+ * A delivery date, with its year whenever that is not the year we are in.
+ *
+ * Without it a 2027 window printed as "Sep 13 – Dec 12" and read as one that
+ * opened in September and is still running; the only hint that it was next
+ * year's was the 390 in "390 days left".
+ */
+const fmt = (d: string | null, thisYear = new Date().getUTCFullYear()) => {
+  if (!d) return '—'
+  const when = new Date(`${d}T12:00:00Z`)
+  const showYear = when.getUTCFullYear() !== thisYear
+  return when.toLocaleDateString('en-CA', {
+    month: 'short',
+    day: 'numeric',
+    ...(showYear ? { year: 'numeric' } : {}),
+  })
+}
 
 /**
  * Every open contract in the order it comes due, what is left to haul, and
@@ -43,6 +59,7 @@ export function DeliveriesTab({ cropYear }: { cropYear: number }) {
       remainingBu: Math.max(0, Number(c.bushels ?? 0) - Number(c.delivered_bu ?? 0)),
       deliveryStart: c.delivery_start,
       deliveryEnd: c.delivery_end,
+      cropYear: c.crop_year,
     }))
     const nameOf = new Map((bins ?? []).map((b) => [b.id, b.name]))
     const bs: PlanBin[] = (onHand ?? [])
@@ -79,11 +96,20 @@ export function DeliveriesTab({ cropYear }: { cropYear: number }) {
               <Truck className="h-4 w-4 text-gray-500" />
               <span className="font-semibold text-gray-900">{p.contract.label}</span>
               <span className="text-gray-600">{crop?.name ?? 'crop not set'}</span>
+              {/* Grain in the bins today can be hauled against a contract
+                  written under another crop year, so this list is every open
+                  one — but the page is headed with a year, and a row from a
+                  different one has to say so. */}
+              {p.contract.cropYear != null && p.contract.cropYear !== cropYear && (
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-700">
+                  {p.contract.cropYear} contract
+                </span>
+              )}
               <span className="text-gray-500">
                 window {fmt(p.contract.deliveryStart)} – {fmt(p.contract.deliveryEnd)}
               </span>
               {daysLeft != null && (
-                <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold', late ? 'bg-red-100 text-red-800' : daysLeft <= 14 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700')}>
+                <span className={cn('rounded px-1.5 py-0.5 text-xs font-semibold', late ? 'bg-red-100 text-red-800' : daysLeft <= 14 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700')}>
                   {late ? `${-daysLeft} days past the window` : `${daysLeft} days left`}
                 </span>
               )}

@@ -55,7 +55,7 @@ export function PlanTimeline({
   if (!shown.length) return <p className="px-3 py-6 text-center text-sm text-gray-400">Nothing planned for {year} yet.</p>
 
   return (
-    <div className="text-[11px]">
+    <div className="text-xs">
       <div className="flex">
         <div className="w-14 shrink-0 sm:w-20" />
         <div className="relative flex flex-1">

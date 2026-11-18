@@ -3,6 +3,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { dbErrorMessage } from '@/lib/db-error'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 
 /**
@@ -60,7 +61,25 @@ export function CropProgressExemptions({ canEdit }: { canEdit: boolean }) {
     },
   })
 
-  const exempt = (crops ?? []).filter((c) => !c.counts_for_seeding || !c.counts_for_harvest)
+  /**
+   * The shut line says which target, not just how many. "11 exempt" counted a
+   * crop that is only out of one of the two, so the figure never matched either
+   * percentage on the screen above it — alfalfa is cut by us and read as exempt.
+   */
+  const notSeeded = (crops ?? []).filter((c) => !c.counts_for_seeding)
+  const notHarvested = (crops ?? []).filter((c) => !c.counts_for_harvest)
+  const shut = [
+    notSeeded.length ? `${notSeeded.length} not seeded` : null,
+    notHarvested.length ? `${notHarvested.length} not harvested` : null,
+  ].filter(Boolean) as string[]
+  const names = [
+    notSeeded.length ? `Not seeded by us: ${notSeeded.map((c) => c.name).join(', ')}.` : null,
+    notHarvested.length
+      ? `Not harvested by us: ${notHarvested.map((c) => c.name).join(', ')}.`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white">
@@ -72,10 +91,8 @@ export function CropProgressExemptions({ canEdit }: { canEdit: boolean }) {
           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           Which crops count
         </span>
-        <span className="text-xs text-gray-500">
-          {exempt.length
-            ? `${exempt.length} exempt: ${exempt.map((c) => c.name).join(', ')}`
-            : 'every crop counted'}
+        <span className="text-xs text-gray-500" title={names || undefined}>
+          {shut.length ? shut.join(' · ') : 'every crop counted'}
         </span>
       </button>
 
@@ -154,7 +171,7 @@ export function CropProgressExemptions({ canEdit }: { canEdit: boolean }) {
           )}
 
           {save.isError && (
-            <p className="mt-2 text-xs text-red-600">{(save.error as Error).message}</p>
+            <p className="mt-2 text-xs text-red-600">{dbErrorMessage(save.error)}</p>
           )}
           {!canEdit && (
             <p className="mt-2 text-xs text-gray-400">Only a manager can change these.</p>

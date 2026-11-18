@@ -114,13 +114,13 @@ export function MergeProductDialog({
                 >
                   <span className="min-w-0 flex-1 truncate text-gray-900">{p.name}</span>
                   {why && (
-                    <span className="shrink-0 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-green-800">
+                    <span className="shrink-0 rounded bg-green-100 px-1.5 py-0.5 text-xs font-semibold uppercase text-green-800">
                       {why}
                     </span>
                   )}
                   {warn && (
                     <span
-                      className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800"
+                      className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold uppercase text-amber-800"
                       title={`Registered separately: ${p.pmra_registration} against ${reg}`}
                     >
                       reg {p.pmra_registration}

@@ -54,7 +54,7 @@ export function LossSnapshotCard({ s }: { s: LossSnapshotState }) {
       <label className="flex items-center justify-between gap-2 text-xs text-gray-500">
         <span>
           Grain moisture
-          <span className="block text-[11px] text-gray-400">{s.auto ? `${s.auto.pct.toFixed(1)}% from the ${s.auto.from}` : 'No test near this time and no dry-down estimate.'}</span>
+          <span className="block text-xs text-gray-400">{s.auto ? `${s.auto.pct.toFixed(1)}% from the ${s.auto.from}` : 'No test near this time and no dry-down estimate.'}</span>
         </span>
         <input
           type="number"

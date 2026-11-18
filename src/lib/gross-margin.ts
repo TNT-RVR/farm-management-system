@@ -220,11 +220,13 @@ export function switchGain(
   fromKey: string,
   toKey: string,
   acres: number,
-): { gain: number; from: number; to: number } | null {
+): { gain: number; from: number; to: number; acres: number; capped: boolean } | null {
   const find = (k: string) => r.ranked.find((x) => x.key === k)
   const from = find(fromKey)
   const to = find(toKey)
   if (!from || !to) return null
+  // No more than the use has; `acres` and `capped` say what was really moved,
+  // so the sentence never prints the typed figure beside a capped gain.
   const a = Math.max(0, Math.min(n(acres), from.acres))
-  return { gain: (to.perAcre - from.perAcre) * a, from: from.perAcre, to: to.perAcre }
+  return { gain: (to.perAcre - from.perAcre) * a, from: from.perAcre, to: to.perAcre, acres: a, capped: n(acres) > from.acres }
 }

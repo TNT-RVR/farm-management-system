@@ -180,7 +180,7 @@ export function OfflinePanel() {
               style={{ width: `${(progress.done / progress.total) * 100}%` }}
             />
           </div>
-          <p className="mt-1 text-[11px] text-gray-500">
+          <p className="mt-1 text-xs text-gray-500">
             {progress.done} of {progress.total}
             {progress.label && ` · ${progress.label}`}
           </p>
@@ -188,14 +188,14 @@ export function OfflinePanel() {
       )}
 
       {!running && progress?.failed.length ? (
-        <p className="mt-2 text-[11px] text-red-700">
+        <p className="mt-2 text-xs text-red-700">
           Saved {progress.total - progress.failed.length} of {progress.total}. Could not get:{' '}
           {progress.failed.join(', ')}. Try again on better signal.
         </p>
       ) : null}
 
       {!running && last && (
-        <p className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-500">
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
           <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
           Last saved {new Date(last).toLocaleString('en-CA')}
         </p>
@@ -232,7 +232,7 @@ export function OfflinePanel() {
               onClick={() => setZoom(z)}
               disabled={mapRunning}
               className={cn(
-                'rounded-md border px-2 py-1 text-left text-[11px] disabled:opacity-40',
+                'rounded-md border px-2 py-1 text-left text-xs disabled:opacity-40',
                 zoom.max === z.max
                   ? 'border-brand-700 bg-brand-50 text-brand-900'
                   : 'border-gray-200 text-gray-600 hover:bg-gray-50',
@@ -245,7 +245,7 @@ export function OfflinePanel() {
         </div>
 
         {plan && (
-          <p className="mt-1.5 text-[11px] text-gray-500">
+          <p className="mt-1.5 text-xs text-gray-500">
             {plan.tiles.length.toLocaleString('en-CA')} tiles, about{' '}
             <b>{mb(estimateBytes(plan.tiles.length))}</b>, plus {plan.files.length} file
             {plan.files.length === 1 ? '' : 's'}.
@@ -282,7 +282,7 @@ export function OfflinePanel() {
                 style={{ width: `${(mapProgress.done / Math.max(1, mapProgress.total)) * 100}%` }}
               />
             </div>
-            <p className="mt-1 text-[11px] text-gray-500">
+            <p className="mt-1 text-xs text-gray-500">
               {mapProgress.done.toLocaleString('en-CA')} of{' '}
               {mapProgress.total.toLocaleString('en-CA')} — this one takes a few minutes and can be
               left running.
@@ -291,7 +291,7 @@ export function OfflinePanel() {
         )}
 
         {!mapRunning && saved && (saved.tiles > 0 || saved.files > 0) && (
-          <p className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-500">
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
             <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
             {saved.tiles.toLocaleString('en-CA')} tiles and {saved.files} file
             {saved.files === 1 ? '' : 's'} on this device

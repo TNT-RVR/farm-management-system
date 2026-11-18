@@ -91,11 +91,11 @@ export function AppIssuesBanner() {
               <button type="button" onClick={() => setOpen(open === i.id ? null : i.id)} className="flex w-full items-center gap-2 text-left text-sm" aria-expanded={open === i.id}>
                 <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform', open === i.id && 'rotate-90')} />
                 <span className="min-w-0 flex-1 truncate text-gray-900">{i.title}</span>
-                {i.occurrences > 1 && <span className="text-[11px] tabular-nums text-gray-400">×{i.occurrences}</span>}
+                {i.occurrences > 1 && <span className="text-xs tabular-nums text-gray-400">×{i.occurrences}</span>}
                 {stuck.get(i.id) && (
-                  <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-800">stuck since {when(stuck.get(i.id)!)}</span>
+                  <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-800">stuck since {when(stuck.get(i.id)!)}</span>
                 )}
-                <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', STATUS[i.status].cls)}>{STATUS[i.status].label}</span>
+                <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-xs font-medium', STATUS[i.status].cls)}>{STATUS[i.status].label}</span>
               </button>
               {open === i.id && (
                 <div className="mt-1 space-y-1 pl-5 text-xs text-gray-600">

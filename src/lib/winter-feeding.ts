@@ -400,6 +400,12 @@ export type SeasonResult = {
   dmLb: number
   /** Cow-days of stubble grazed, and the stored feed (as fed, waste included) it replaced. */
   stubbleCowDays: number
+  /**
+   * Cow-days still standing at turnout: a field nobody is set to graze, one
+   * under an ice crust, or more stalks than the season has days for. Grazed
+   * plus left is what the fields carry, the sum of the Corn stubble lines.
+   */
+  stubbleLeftCowDays: number
   stubbleSavedLb: Map<string, number>
   /** When each feed runs out at this rate, if it does before turnout. */
   runsOut: Map<string, string>
@@ -472,7 +478,11 @@ export function seasonPlan(o: {
       const r = solveRation(free ? { ...g.group, bcs: Math.max(1, Math.min(5, g.group.bcs + sofar)) } : g.group, cond, g.lines)
       // On stalks today? A field in use, started, with grazing left and not crusted.
       const st = o.stubble.find((s) => s.groupId === g.id && (!s.start || s.start <= iso(d)) && (left.get(s.id) ?? 0) > 0 && s.state !== 'crust')
-      const grazeShare = st ? (st.state === 'snow' ? 0.5 : 1) : 0
+      // The last day on a field grazes only what is left of it and feeds the
+      // rest. Taking a whole day off it overran the field by up to a day of
+      // the group, so the season said "stalks carry 4,888 cow-days" under
+      // fields of 3,548 + 1,272.
+      const grazeShare = st ? Math.min(st.state === 'snow' ? 0.5 : 1, (left.get(st.id) ?? 0) / g.group.head) : 0
       if (st) {
         const used = g.group.head * grazeShare
         left.set(st.id, (left.get(st.id) ?? 0) - used)
@@ -538,7 +548,8 @@ export function seasonPlan(o: {
       bindingFeed = id
     }
   }
-  return { days, needLb, extraGrainLb, dmLb, stubbleCowDays, stubbleSavedLb: saved, runsOut, bindingDays, bindingFeed, groups }
+  const stubbleLeftCowDays = [...left.values()].reduce((s, x) => s + Math.max(0, x), 0)
+  return { days, needLb, extraGrainLb, dmLb, stubbleCowDays, stubbleLeftCowDays, stubbleSavedLb: saved, runsOut, bindingDays, bindingFeed, groups }
 }
 
 /**
@@ -603,6 +614,19 @@ export function usableInYard(onHand: { feed_type_id: string; put_up_lb: number; 
     m.set(f.feed_type_id, Math.max(0, f.remaining_lb) * (1 - loss / 100))
   }
   return m
+}
+
+/**
+ * "stalks carry 4,820 cow-days" — the fields' own total, so it is the sum of
+ * the Corn stubble lines, with what is still standing at turnout said aloud
+ * rather than left as a gap. Null with no stalks in the plan.
+ */
+export function stalksNote(s: Pick<SeasonResult, 'stubbleCowDays' | 'stubbleLeftCowDays'>): string | null {
+  const carry = s.stubbleCowDays + s.stubbleLeftCowDays
+  if (!(carry >= 0.5)) return null
+  const f = (n: number) => Math.round(n).toLocaleString('en-CA')
+  const left = s.stubbleLeftCowDays >= 0.5 ? `, ${f(s.stubbleLeftCowDays)} not grazed by turnout` : ''
+  return `stalks carry ${f(carry)} cow-days${left}`
 }
 
 /**

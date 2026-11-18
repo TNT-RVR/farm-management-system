@@ -3,6 +3,7 @@ import {
   INDICATORS,
   computeIndicators,
   consistencyWarnings,
+  impossibleFigures,
   inputsEntered,
   liveCalvesBorn,
   totalCalvesBorn,
@@ -181,13 +182,27 @@ describe('consistencyWarnings', () => {
     const w = consistencyWarnings({ ...farm, calvesBorn1_21: 250 })
     expect(w[0]).toMatch(/calving distribution adds to 368/)
   })
-  it('catches weaning more calves than were left alive', () => {
-    const w = consistencyWarnings({ ...farm, calvesWeaned: 400 })
+})
+
+describe('impossibleFigures', () => {
+  it('passes a set of figures that hang together', () => {
+    expect(impossibleFigures(farm)).toEqual([])
+  })
+  it('refuses weaning more calves than were left alive', () => {
+    const w = impossibleFigures({ ...farm, calvesWeaned: 400 })
     expect(w.some((x) => /more than the 296 live calves/.test(x))).toBe(true)
   })
-  it('catches breeding more females than were exposed', () => {
-    const w = consistencyWarnings({ ...farm, femalesBred: 400 })
+  it('refuses breeding more females than were exposed', () => {
+    const w = impossibleFigures({ ...farm, femalesBred: 400 })
     expect(w.some((x) => /more than the 375 exposed/.test(x))).toBe(true)
+  })
+  it('refuses a negative loss, which would add calves', () => {
+    expect(impossibleFigures({ ...farm, calvesDead24h: -4 })).toContain('Calves lost in the first 24 h cannot be negative.')
+  })
+  it('refuses a last calf before the first, and weaning before the last calf', () => {
+    const w = impossibleFigures({ ...farm, firstCalvingOn: '2026-03-01', lastCalvingOn: '2026-02-01', weaningOn: '2026-01-15' })
+    expect(w).toContain('The last calf has to be born on or after the first.')
+    expect(w).toContain('Weaning has to come after the last calf is born.')
   })
 })
 

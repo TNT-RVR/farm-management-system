@@ -65,7 +65,7 @@ export function ManageRanches({ isManager }: { isManager: boolean }) {
             <div onClick={rowClick(() => setOpen(open === r.id ? null : r.id))} className="flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-gray-50">
               <ChevronRight className={cn('h-3.5 w-3.5 text-gray-400 transition-transform', open === r.id && 'rotate-90')} />
               <span className="min-w-0 flex-1 truncate font-medium text-gray-800">{r.name}</span>
-              {main?.id === r.id && <span className="text-[11px] text-gray-400">main ranch</span>}
+              {main?.id === r.id && <span className="text-xs text-gray-400">main ranch</span>}
               {isManager && (
                 <span className="flex items-center gap-1">
                   <EditButton label="Rename" onClick={() => setEditing(r)} />

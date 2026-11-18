@@ -113,7 +113,7 @@ function Converter({
 
   return (
     <Card title={title ?? 'Convert'} icon={ArrowRightLeft}>
-      {note && <p className="mb-2 text-[11px] text-gray-500">{note}</p>}
+      {note && <p className="mb-2 text-xs text-gray-500">{note}</p>}
       {withFields && active === 'area' && (
         <div className="mb-2">
           <label className="mb-0.5 block text-xs text-gray-500">From a field</label>
@@ -189,7 +189,7 @@ function Converter({
       </div>
 
       {active === 'volume' && (
-        <p className="mt-2 text-[11px] text-gray-500">
+        <p className="mt-2 text-xs text-gray-500">
           Imperial gallons are about 20% larger than US gallons. Alberta water licences are usually
           written in dam³ (1 dam³ = 1000 m³).
         </p>
@@ -311,7 +311,7 @@ function ApplicationCalculator() {
             options={opts(VOLUME)}
           />
         </div>
-        <p className="mt-1 text-[11px] text-brand-900/60">
+        <p className="mt-1 text-xs text-brand-900/60">
           {fmt(convert(litres ?? 0, 'volume', 'l', 'm3'), 1)} m³ ·{' '}
           {fmt(convert(litres ?? 0, 'volume', 'l', 'usgal'), 0)} US gal ·{' '}
           {fmt(convert(litres ?? 0, 'volume', 'l', 'acreft'), 3)} acre-ft
@@ -476,7 +476,7 @@ function RunTimeCalculator() {
           {hours == null ? '—' : formatHours(hours)}
         </span>
         {hours != null && (
-          <span className="ml-auto text-[11px] text-gray-400">{fmt(hours, 2)} hours</span>
+          <span className="ml-auto text-xs text-gray-400">{fmt(hours, 2)} hours</span>
         )}
       </div>
     </Card>

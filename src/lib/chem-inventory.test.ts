@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inPacks, purchasedQty, stockLine, usesFromOps, type InvOp } from './chem-inventory'
+import { inPacks, purchasedQty, shownStock, stockLine, usesFromOps, type InvOp } from './chem-inventory'
 
 const roundup = { id: 'ru', name: 'Roundup Transorb HC', unit: 'L', category: 'chemical' }
 
@@ -121,5 +121,29 @@ describe('a Deere field bigger than ours', () => {
     }
     const { uses } = usesFromOps([op], () => 'cen', () => 'L', () => 31.4)
     expect(uses[0].qty).toBeCloseTo(25.05 * (31.4 / 167), 3)
+  })
+})
+
+describe('the Inventory columns as printed', () => {
+  it('works On hand out from the printed figures, so the columns subtract', () => {
+    // Clethodim: 80 bought, 70.1 sprayed. Printed separately that was 80 − 70 = 9.9.
+    expect(shownStock({ bought: 80, used: 70.1, adjusted: 0 })).toEqual({ bought: 80, used: 70, adjusted: 0, onHand: 10 })
+    expect(shownStock({ bought: 2070, used: 1815.4, adjusted: 55.2 })).toEqual({ bought: 2070, used: 1815, adjusted: 55, onHand: 310 })
+  })
+  it('keeps a decimal under ten, and rounds in the unit shown', () => {
+    expect(shownStock({ bought: 5.24, used: 3.16, adjusted: 0 })).toEqual({ bought: 5.2, used: 3.2, adjusted: 0, onHand: 2 })
+    expect(shownStock({ bought: 37.854, used: 0, adjusted: 0 }, 3.785411784).bought).toBe(10)
+  })
+  it('never prints minus nothing', () => {
+    expect(Object.is(shownStock({ bought: 0, used: 0.01, adjusted: 0 }).onHand, -0)).toBe(false)
+  })
+})
+
+describe('packs', () => {
+  it('says one jug when the printed figure is one', () => {
+    expect(inPacks(10, 10, 'Jug')).toBe('1 jug')
+    expect(inPacks(9.8, 10, 'Jug')).toBe('1 jug')
+    expect(inPacks(25, 10, 'Jug')).toBe('2.5 jugs')
+    expect(inPacks(1000, 1000, 'Metric')).toBe('1 tonne')
   })
 })

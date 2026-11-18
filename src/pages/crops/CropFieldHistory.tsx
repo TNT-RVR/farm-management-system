@@ -123,7 +123,7 @@ export function CropFieldHistory({ cropId, cropName }: { cropId: string; cropNam
               <span className="w-20 shrink-0 pt-0.5">
                 <span className="font-semibold tabular-nums text-gray-900">{y.year}</span>
                 {y.planned && (
-                  <span className="ml-1 rounded bg-brand-50 px-1 py-0.5 text-[10px] font-medium uppercase text-brand-700">
+                  <span className="ml-1 rounded bg-brand-50 px-1 py-0.5 text-xs font-medium uppercase text-brand-700">
                     plan
                   </span>
                 )}

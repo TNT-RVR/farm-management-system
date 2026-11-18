@@ -81,10 +81,33 @@ export type PricedStraight = {
   key: string
   /** CAD per metric tonne of product. */
   perTonne: number
-  source: 'ICI invoice' | 'Quote' | 'DTN US retail'
+  source: 'ICI invoice' | 'Quote' | 'DTN US retail' | 'Blends price list'
   on: string | null
   /** For DTN prices: the adder applied for getting it to Alberta. */
   adder?: number
+}
+
+/**
+ * The straights the Blends tab prices, as a last resort for Savings.
+ *
+ * Savings prices from invoices, live quotes and DTN; a straight none of those
+ * covers (potash, often: no invoice, and no DTN series on some farms) would
+ * read "K₂O —" while Blends priced it a tab away. The first active, priced
+ * row for each straight wins.
+ */
+export function blendListPrices(
+  rows: { name: string; price_per_tonne: number | string | null; active?: boolean | null; updated_at?: string | null }[],
+): PricedStraight[] {
+  const out = new Map<string, PricedStraight>()
+  for (const r of rows) {
+    if (r.active === false) continue
+    const perTonne = Number(r.price_per_tonne)
+    if (r.price_per_tonne == null || !(perTonne > 0)) continue
+    const key = straightKeyOf(r.name)
+    if (!key || out.has(key)) continue
+    out.set(key, { key, perTonne, source: 'Blends price list', on: r.updated_at ? r.updated_at.slice(0, 10) : null })
+  }
+  return [...out.values()]
 }
 
 /**

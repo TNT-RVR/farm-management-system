@@ -139,7 +139,7 @@ function CellAdvice({
           ? 'text-green-700'
           : 'text-gray-700'
   return (
-    <div className="space-y-2 text-[11px]">
+    <div className="space-y-2 text-xs">
       {advice.picked.length === 0 ? (
         <p className="text-gray-500">No crop picked for this field yet.</p>
       ) : (
@@ -213,7 +213,7 @@ function Answer({
 
   if (done)
     return (
-      <p className="mt-1 text-[11px] text-gray-500">
+      <p className="mt-1 text-xs text-gray-500">
         {done === 'yes' ? 'Taken' : 'Noted'} — the reason is kept for next time.
       </p>
     )
@@ -228,7 +228,7 @@ function Answer({
           onChange={(e) => setReason(e.target.value)}
           placeholder={asking === 'yes' ? 'Why this one?' : 'Why not?'}
           aria-label={asking === 'yes' ? 'Why this one' : 'Why not'}
-          className="w-full rounded border border-gray-300 px-1.5 py-1 text-[11px] text-gray-900"
+          className="w-full rounded border border-gray-300 px-1.5 py-1 text-xs text-gray-900"
         />
         <div className="flex gap-1.5">
           <button
@@ -239,7 +239,7 @@ function Answer({
               else onNo(r)
               setDone(asking)
             }}
-            className="rounded bg-brand-700 px-1.5 py-0.5 text-[11px] font-semibold text-white hover:bg-brand-800"
+            className="rounded bg-brand-700 px-1.5 py-0.5 text-xs font-semibold text-white hover:bg-brand-800"
           >
             Save
           </button>
@@ -249,7 +249,7 @@ function Answer({
               setAsking(null)
               setReason('')
             }}
-            className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50"
+            className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-700 hover:bg-gray-50"
           >
             Cancel
           </button>
@@ -263,14 +263,14 @@ function Answer({
         key={`${cropId}-yes`}
         type="button"
         onClick={() => setAsking('yes')}
-        className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[11px] font-medium text-brand-700 hover:bg-brand-50"
+        className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-50"
       >
         {yesLabel}
       </button>
       <button
         type="button"
         onClick={() => setAsking('no')}
-        className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[11px] text-gray-600 hover:bg-gray-50"
+        className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
       >
         No — say why
       </button>
@@ -360,7 +360,7 @@ function RepeatAnyway({
           </button>
         </div>
         {canEditRules && ruleLine && (
-          <p className="text-[11px] text-gray-500">Changing the rule: {ruleLine}</p>
+          <p className="text-xs text-gray-500">Changing the rule: {ruleLine}</p>
         )}
       </div>
     </Modal>
@@ -401,7 +401,7 @@ function ColumnEdit({
         onClick={onEdit}
         disabled={blocked}
         title={blocked ? 'Finish the year you have open first' : `Edit ${year}`}
-        className="mt-0.5 flex w-full items-center justify-center gap-1 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-gray-600 hover:bg-gray-50 disabled:opacity-30"
+        className="mt-0.5 flex w-full items-center justify-center gap-1 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium normal-case tracking-normal text-gray-600 hover:bg-gray-50 disabled:opacity-30"
       >
         <Pencil className="h-3 w-3" /> Edit
       </button>
@@ -417,7 +417,7 @@ function ColumnEdit({
             ? `Save ${changes} field${changes === 1 ? '' : 's'} and close ${year}`
             : `Close ${year}`
         }
-        className="flex items-center gap-1 rounded bg-brand-700 px-1.5 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-white hover:bg-brand-800 disabled:opacity-50"
+        className="flex items-center gap-1 rounded bg-brand-700 px-1.5 py-0.5 text-xs font-semibold normal-case tracking-normal text-white hover:bg-brand-800 disabled:opacity-50"
       >
         <Check className="h-3 w-3" /> {busy ? 'Saving\u2026' : changes ? `Save ${changes}` : 'Done'}
       </button>
@@ -430,7 +430,7 @@ function ColumnEdit({
             ? `Throw away ${changes} change${changes === 1 ? '' : 's'}`
             : 'Close without changing anything'
         }
-        className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-gray-600 hover:bg-gray-50"
+        className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs font-medium normal-case tracking-normal text-gray-600 hover:bg-gray-50"
       >
         Cancel
       </button>
@@ -792,6 +792,16 @@ export function RotationPlanner({
     return byYear
   }, [fields, timelines, fieldAcres, allYears, zonesByFieldYear, fieldYears])
 
+  // A column of acres has to add up to the figure under it. Each crop row is
+  // shown to the nearest acre, so adding the raw figures and rounding once at
+  // the end gave a total two acres off the column above it — nothing was wrong,
+  // but a total that does not match what is beside it reads as a bug and sends
+  // somebody looking for missing acres. So the total is the sum of the figures
+  // actually on screen. Safe because crop_plans.crop_id is a foreign key, so
+  // every crop with acres has a row to be counted in.
+  const shownAc = (y: number, ids: string[]) =>
+    ids.reduce((s, id) => s + Math.round(totals.get(y)?.get(id) ?? 0), 0)
+
   // Every crop with acres against it, retired ones included: a crop taken off
   // the list while a plan still names it must keep its row, or the acres go
   // missing from the forecast with nothing said.
@@ -916,7 +926,7 @@ export function RotationPlanner({
 
       {view === 'plan' && (
         <>
-          <p className="flex flex-wrap gap-x-4 text-[11px] text-gray-500">
+          <p className="flex flex-wrap gap-x-4 text-xs text-gray-500">
             <span>
               <span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-red-50 ring-2 ring-red-400" />
               breaks a rule — rotation, crop after crop, or herbicide carryover (hover for the
@@ -939,7 +949,7 @@ export function RotationPlanner({
             <div className="flex flex-wrap items-center gap-1.5 sm:hidden">
               {editYear == null ? (
                 <>
-                  <span className="text-[11px] text-gray-500">Edit a year:</span>
+                  <span className="text-xs text-gray-500">Edit a year:</span>
                   {planYears.map((y) => (
                     <button
                       key={y}
@@ -998,11 +1008,11 @@ export function RotationPlanner({
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">
                       {f.name}
                     </span>
-                    <span className="shrink-0 text-[11px] tabular-nums text-gray-400">
+                    <span className="shrink-0 text-xs tabular-nums text-gray-400">
                       {n0(fieldAcres.get(f.id) ?? 0)} ac
                     </span>
                   </div>
-                  <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500">
+                  <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
                     {histYears.map((y) => {
                       const cid = tl.get(y)
                       const zones = zonesByFieldYear.get(`${f.id}:${y}`)
@@ -1199,7 +1209,7 @@ export function RotationPlanner({
                           return (
                             <td key={y} className="px-2 py-1.5 text-center">
                               <span
-                                className="inline-flex items-center gap-1 rounded bg-gray-50 px-1.5 py-0.5 text-[11px] text-gray-400"
+                                className="inline-flex items-center gap-1 rounded bg-gray-50 px-1.5 py-0.5 text-xs text-gray-400"
                                 title={[
                                   fy?.rented_to
                                     ? `${fy.rented_to} has it in ${y}`
@@ -1261,7 +1271,7 @@ export function RotationPlanner({
                               2026) — "split · 2" said how many but never which. */}
                               <span
                                 className={cn(
-                                  'inline-flex items-start gap-1 rounded px-1.5 py-0.5 text-[11px] text-gray-600',
+                                  'inline-flex items-start gap-1 rounded px-1.5 py-0.5 text-xs text-gray-600',
                                   zBad
                                     ? 'bg-red-50 ring-2 ring-red-400'
                                     : zWarn && 'ring-1 ring-amber-400',
@@ -1613,7 +1623,7 @@ export function RotationPlanner({
                                 type="button"
                                 onClick={() => openField(f.id, y)}
                                 title={`Open ${f.name} in ${y}`}
-                                className="flex w-full items-center px-1 pb-0.5 text-left text-[10px] text-gray-400 hover:text-brand-700"
+                                className="flex w-full items-center px-1 pb-0.5 text-left text-xs text-gray-400 hover:text-brand-700"
                               >
                                 open the field
                               </button>
@@ -1633,11 +1643,13 @@ export function RotationPlanner({
             <h3 className="mb-2 text-sm font-semibold text-gray-900">
               Total acres by crop &amp; year
             </h3>
+            {/* A crop-by-year grid stays a grid on a phone, with the crop
+                pinned so the years scroll under it (design review, Nov 2026). */}
             <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
               <table className="w-full min-w-[720px] text-sm">
                 <thead className={TABLE_HEAD}>
                   <tr>
-                    <th className="px-3 py-2 font-medium">Crop</th>
+                    <th className="sticky left-0 z-[2] bg-brand-700 px-3 py-2 font-medium">Crop</th>
                     <th className="px-2 py-2 text-right font-medium">Max / yr</th>
                     {allYears.map((y) => (
                       <th
@@ -1655,7 +1667,7 @@ export function RotationPlanner({
                 <tbody>
                   {cropsInPlan.map((c) => (
                     <tr key={c.id} className="border-b border-gray-100 last:border-0">
-                      <td className="px-3 py-1.5">{c.name}</td>
+                      <td className="sticky left-0 z-[1] bg-white px-3 py-1.5 shadow-[1px_0_0_#f3f4f6]">{c.name}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">
                         {ctx.ready && ctx.maxFor(c.id, planFrom) != null
                           ? n0(ctx.maxFor(c.id, planFrom)!)
@@ -1694,14 +1706,14 @@ export function RotationPlanner({
                       const cap = ctx.groupMaxFor(planFrom).get(g.group)!
                       return (
                         <tr key={g.group} className="border-t border-gray-200 bg-gray-50/60">
-                          <td className="px-3 py-1.5 font-medium text-gray-700">{g.label}</td>
+                          <td className="sticky left-0 z-[1] bg-gray-50 px-3 py-1.5 font-medium text-gray-700 shadow-[1px_0_0_#e5e7eb]">{g.label}</td>
                           <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">
                             {n0(cap)}
                           </td>
                           {allYears.map((y) => {
-                            const a = inGroup.reduce(
-                              (sum, c) => sum + (totals.get(y)?.get(c.id) ?? 0),
-                              0,
+                            const a = shownAc(
+                              y,
+                              inGroup.map((c) => c.id),
                             )
                             const max = y >= planFrom ? ctx.groupMaxFor(y).get(g.group) : undefined
                             const over = max != null && a > max + 0.5
@@ -1730,10 +1742,13 @@ export function RotationPlanner({
                       )
                     })}
                   <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-                    <td className="px-3 py-2">Total planned</td>
+                    <td className="sticky left-0 z-[1] bg-gray-50 px-3 py-2 shadow-[1px_0_0_#e5e7eb]">Total planned</td>
                     <td />
                     {allYears.map((y) => {
-                      const sum = [...(totals.get(y)?.values() ?? [])].reduce((s, v) => s + v, 0)
+                      const sum = shownAc(
+                        y,
+                        cropsInPlan.map((c) => c.id),
+                      )
                       return (
                         <td key={y} className="px-2 py-2 text-right tabular-nums">
                           {sum > 0 ? n0(sum) : '—'}
@@ -1958,7 +1973,7 @@ function PlanChoices({
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-gray-900">{nameOf(id)}</span>
-                      <span className="block text-[11px] text-gray-500">
+                      <span className="block text-xs text-gray-500">
                         {i === 0 ? 'First choice — this is the plan' : 'Could go here instead'}
                         {v.length > 0 &&
                           ` · ${v.length} ${v.length === 1 ? 'warning' : 'warnings'}`}
@@ -1968,7 +1983,7 @@ function PlanChoices({
                       <button
                         type="button"
                         onClick={() => first(id)}
-                        className="shrink-0 rounded border border-gray-300 px-1.5 py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                        className="shrink-0 rounded border border-gray-300 px-1.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
                       >
                         Make first
                       </button>
@@ -2169,7 +2184,7 @@ function RuleBreaks({
           </li>
         ))}
       </ul>
-      <p className="mt-3 text-[11px] text-gray-400">
+      <p className="mt-3 text-xs text-gray-400">
         Labels open from Health Canada&apos;s pesticide registry, the current version at the moment
         you click.
       </p>

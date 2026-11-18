@@ -186,7 +186,7 @@ export function RiverMap() {
                 <p className="text-sm font-semibold text-gray-900">
                   {chosenMeta?.short ?? chosen.name}
                 </p>
-                <p className="text-[11px] uppercase tracking-wide text-gray-500">
+                <p className="text-xs uppercase tracking-wide text-gray-500">
                   {chosen.station} · {chosen.name}
                 </p>
               </div>
@@ -202,21 +202,21 @@ export function RiverMap() {
 
             <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
               <div>
-                <dt className="text-[11px] uppercase tracking-wide text-gray-500">Discharge</dt>
+                <dt className="text-xs uppercase tracking-wide text-gray-500">Discharge</dt>
                 <dd className="font-semibold text-gray-900">
                   {fmt(chosen.discharge, chosen.discharge != null && chosen.discharge < 10 ? 2 : 1)}{' '}
                   <span className="text-xs font-normal text-gray-500">m³/s</span>
                 </dd>
               </div>
               <div>
-                <dt className="text-[11px] uppercase tracking-wide text-gray-500">Level</dt>
+                <dt className="text-xs uppercase tracking-wide text-gray-500">Level</dt>
                 <dd className="font-semibold text-gray-900">
                   {fmt(chosen.level, 2)} <span className="text-xs font-normal text-gray-500">m</span>
                 </dd>
               </div>
             </dl>
 
-            <p className="mt-1.5 text-[11px] text-gray-500">
+            <p className="mt-1.5 text-xs text-gray-500">
               Read {ago(chosen.at)}
               {chosenMeta?.note ? ` · ${chosenMeta.note}` : ''}
             </p>
@@ -235,7 +235,7 @@ export function RiverMap() {
         )}
       </div>
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-gray-600">
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-600">
         {MAP_STATIONS.map((s) => (
           <button
             key={s.station}
@@ -274,7 +274,7 @@ function GaugeCamera({ camera }: { camera: Camera | undefined }) {
 
   if (!camera) {
     return (
-      <p className="mt-2 rounded bg-gray-50 px-2 py-1.5 text-[11px] text-gray-500">
+      <p className="mt-2 rounded bg-gray-50 px-2 py-1.5 text-xs text-gray-500">
         No camera on this gauge. Attach one on the Cameras page to see the river here.{' '}
         <SetupLink managerOnly to={SETUP_LINKS.cameras()}>Cameras</SetupLink>
       </p>
@@ -285,7 +285,7 @@ function GaugeCamera({ camera }: { camera: Camera | undefined }) {
   const url = camera.stream_url ?? ''
   if (problem || !url) {
     return (
-      <p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+      <p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
         {camera.name}: {problem ?? 'no address set'}
       </p>
     )
@@ -313,7 +313,7 @@ function GaugeCamera({ camera }: { camera: Camera | undefined }) {
           className="h-36 w-full rounded border border-gray-200 object-cover"
         />
       )}
-      <figcaption className="mt-1 text-[11px] text-gray-500">{camera.name}</figcaption>
+      <figcaption className="mt-1 text-xs text-gray-500">{camera.name}</figcaption>
     </figure>
   )
 }

@@ -31,6 +31,12 @@ export type FieldSoil = {
   lastManureYear: number | null
   /** Acres of it covered that year — a corner is not the field. */
   lastManureAcres: number | null
+  /**
+   * The date that spread went on, when recorded. Said instead of the crop
+   * year: a 4 Nov 2026 spread is filed under 2027's crop, and "last manured
+   * 2027" read as a date in the future.
+   */
+  lastManureOn?: string | null
   /** Soil nitrate-N 0–24 in, lb/ac, for the AOPA limit. */
   no3nLbAc?: number | null
   /** Topsoil EC, dS/m (= mS/cm). */
@@ -104,6 +110,19 @@ export function sinceManure(field: FieldSoil, year: number): number {
   return elapsed * covered + (1 - covered)
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/**
+ * When the field was last manured, as a person would say it: the spread's own
+ * month and year ("Nov 2026") where its date is recorded, else the crop year it
+ * was filed under. Null when it never was.
+ */
+export function manuredWhen(field: Pick<FieldSoil, 'lastManureYear' | 'lastManureOn'>): string | null {
+  const m = /^(\d{4})-(\d{2})/.exec(field.lastManureOn ?? '')
+  if (m && Number(m[2]) >= 1 && Number(m[2]) <= 12) return `${MONTHS[Number(m[2]) - 1]} ${m[1]}`
+  return field.lastManureYear == null ? null : String(field.lastManureYear)
+}
+
 const WEIGHTS = { om: 0.4, p: 0.3, k: 0.1, since: 0.2 }
 
 /**
@@ -170,9 +189,9 @@ export function rankField(field: FieldSoil, year: number, opts: { zone?: SoilZon
   if (field.lastManureYear == null) {
     reasons.push('No manure recorded on this field.')
   } else if (year - field.lastManureYear >= 4) {
-    reasons.push(`Last manured in ${field.lastManureYear}.`)
+    reasons.push(`Last manured in ${manuredWhen(field)}.`)
   } else if (since < 0.5) {
-    reasons.push(`Manured in ${field.lastManureYear} — still carrying credit.`)
+    reasons.push(`Manured in ${manuredWhen(field)} — still carrying credit.`)
   }
 
   const unrated = om == null && p == null && k == null

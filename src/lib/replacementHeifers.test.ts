@@ -77,6 +77,18 @@ describe('replacement heifers', () => {
     expect(p.gainPerHeiferKept).toBeLessThan(0)
     expect(p.recommended).toBe(p.maintain)
   })
+  it('says what share survives, so a label can name the death loss in the price', () => {
+    expect(sale[0].survive).toBe(1)
+    expect(sale[1].survive).toBeCloseTo(Math.pow(0.98, 4 / 12), 9)
+    expect(sale[2].survive).toBeCloseTo(Math.pow(0.98, 9 / 12), 9)
+  })
+  it('splits a kept heifer into its parts, opens sold as yearlings included', () => {
+    const p = planHeifers(base)
+    expect(p.openSoldAs?.key).toBe('yearling')
+    expect(p.openSoldPerHeifer).toBeCloseTo(0.12 * sale[2].netPerHead!, 6)
+    // The sentence under "A heifer kept" adds exactly these three.
+    expect(p.valueKept).toBeCloseTo(0.88 * p.pvCow + p.openSoldPerHeifer - base.devCostPerHeifer, 6)
+  })
 })
 
 describe('stored assumptions', () => {

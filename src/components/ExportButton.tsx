@@ -93,7 +93,7 @@ export function ExportButton({
       )}
 
       {failed && (
-        <p className="absolute right-0 top-full z-30 mt-1 whitespace-nowrap rounded-md border border-red-200 bg-white px-2 py-1 text-[11px] text-red-600 shadow">
+        <p className="absolute right-0 top-full z-30 mt-1 whitespace-nowrap rounded-md border border-red-200 bg-white px-2 py-1 text-xs text-red-600 shadow">
           {failed}
         </p>
       )}

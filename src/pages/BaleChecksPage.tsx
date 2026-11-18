@@ -14,6 +14,7 @@ import {
   formOf,
   moistureRisk,
   readingRisk,
+  riskReason,
   tempRisk,
   useBaleChecks,
   useBaleFeeds,
@@ -27,6 +28,7 @@ import {
 import { diffReadings } from '@/lib/bale-check-edit'
 import { useRanches } from '@/lib/ranches'
 import { supabase } from '@/lib/supabase'
+import { dbErrorMessage } from '@/lib/db-error'
 import { useUsers } from '@/lib/queries'
 import { localDateKey } from '@/lib/ranchWeather'
 import { cn } from '@/lib/utils'
@@ -211,12 +213,12 @@ function CheckForm({ onDone, existing }: { onDone: () => void; existing?: BaleCh
               />
               <input className={cn(input, 'col-span-2 sm:col-span-1')} inputMode="decimal" placeholder="Moist %" value={r.moisture_pct ?? ''} onChange={(e) => setRow(i, { moisture_pct: n(e.target.value) })} />
               <input className={cn(input, 'col-span-3 sm:col-span-2')} placeholder="Note" value={r.notes ?? ''} onChange={(e) => setRow(i, { notes: e.target.value || null })} />
-              <span className={cn('col-span-1 rounded px-1.5 py-1 text-center text-[11px] font-semibold', risk ? RISK_STYLE[risk] : 'text-gray-300')}>{risk ? RISK_WORD[risk] : '—'}</span>
+              <span className={cn('col-span-1 rounded px-1.5 py-1 text-center text-xs font-semibold', risk ? RISK_STYLE[risk] : 'text-gray-300')}>{risk ? RISK_WORD[risk] : '—'}</span>
               <button onClick={() => setRows(list.filter((_, j) => j !== i))} className="justify-self-end rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label="Remove bale">
                 <Trash2 className="h-4 w-4" />
               </button>
               {risk && risk !== 'ok' && (
-                <p className="col-span-6 text-[11px] text-gray-600 sm:col-span-12">
+                <p className="col-span-6 text-xs text-gray-600 sm:col-span-12">
                   {tempRisk(r.temp_c)?.level !== 'ok' && tempRisk(r.temp_c)?.label}
                   {moistureRisk(r.moisture_pct, r.bale_form)?.level === 'watch' && ` Moisture over ${moistureRisk(r.moisture_pct, r.bale_form)!.limit}% for this bale.`}
                 </p>
@@ -232,7 +234,7 @@ function CheckForm({ onDone, existing }: { onDone: () => void; existing?: BaleCh
         Notes
         <textarea className={input} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Anything done about a hot bale, smell, steam…" />
       </label>
-      {save.isError && <p className="mt-1 text-xs text-red-600">{(save.error as Error).message}</p>}
+      {save.isError && <p className="mt-1 text-xs text-red-600">{dbErrorMessage(save.error)}</p>}
       <div className="mt-3 flex items-center justify-end gap-2">
         <span className="text-xs text-gray-500">{filled.length} bales with readings</span>
         <button
@@ -266,6 +268,9 @@ function CheckRow({ check }: { check: BaleCheck }) {
     return order.indexOf(k) > order.indexOf(w) ? k : w
   }, 'ok')
   const hottest = rs.reduce<number | null>((m, r) => (r.temp_c == null ? m : m == null ? r.temp_c : Math.max(m, r.temp_c)), null)
+  // The verdict weighs moisture as well as heat; say which, or a cool bale
+  // marked Watch beside a hotter one marked OK looks like a mistake.
+  const worstWhy = worst === 'ok' ? null : riskReason(rs.find((r) => readingRisk(r) === worst) ?? rs[0])
   const who = users?.find((u) => u.id === check.checked_by)?.full_name ?? '—'
   const ranch = ranches?.find((r) => r.id === check.ranch_id)?.name
   const canDelete = hasManagerAccess(profile?.role) || check.checked_by === profile?.id
@@ -285,7 +290,10 @@ function CheckRow({ check }: { check: BaleCheck }) {
         <span className="ml-auto text-xs text-gray-500">
           {rs.length} bales{hottest != null ? ` · hottest ${hottest.toFixed(0)} °C` : ''}
         </span>
-        <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold', RISK_STYLE[worst])}>{RISK_WORD[worst]}</span>
+        <span className={cn('rounded px-1.5 py-0.5 text-xs font-semibold', RISK_STYLE[worst])}>
+          {RISK_WORD[worst]}
+          {worstWhy && <span className="font-normal"> · {worstWhy}</span>}
+        </span>
       </button>
       {open && (
         <div className="border-t border-gray-100 pb-2 text-xs">
@@ -296,7 +304,10 @@ function CheckRow({ check }: { check: BaleCheck }) {
                 heading={
                   <span>
                     {r.feed_name}{' '}
-                    <span className={cn('ml-1 rounded px-1 py-0.5 text-[10px] font-semibold', RISK_STYLE[readingRisk(r)])}>{RISK_WORD[readingRisk(r)]}</span>
+                    <span className={cn('ml-1 rounded px-1 py-0.5 text-xs font-semibold', RISK_STYLE[readingRisk(r)])}>
+                      {RISK_WORD[readingRisk(r)]}
+                      {riskReason(r) && <span className="font-normal"> · {riskReason(r)}</span>}
+                    </span>
                   </span>
                 }
                 facts={[
@@ -327,7 +338,10 @@ function CheckRow({ check }: { check: BaleCheck }) {
                     <td className="px-3 py-1 text-right tabular-nums">{r.temp_c == null ? '—' : `${r.temp_c.toFixed(1)} °C / ${cToF(r.temp_c).toFixed(0)} °F`}</td>
                     <td className="px-3 py-1 text-right tabular-nums">{r.moisture_pct == null ? '—' : `${r.moisture_pct}%`}</td>
                     <td className="px-3 py-1">
-                      <span className={cn('mr-1 rounded px-1 py-0.5 text-[10px] font-semibold', RISK_STYLE[readingRisk(r)])}>{RISK_WORD[readingRisk(r)]}</span>
+                      <span className={cn('mr-1 rounded px-1 py-0.5 text-xs font-semibold', RISK_STYLE[readingRisk(r)])}>
+                        {RISK_WORD[readingRisk(r)]}
+                        {riskReason(r) && <span className="font-normal"> · {riskReason(r)}</span>}
+                      </span>
                       {r.notes}
                     </td>
                   </tr>

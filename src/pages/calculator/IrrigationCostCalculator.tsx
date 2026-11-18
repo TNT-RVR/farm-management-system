@@ -189,7 +189,7 @@ export function IrrigationCostCalculator() {
                 {c.hours.toFixed(1)} h pumping · {c.kwh != null ? `${Math.round(c.kwh).toLocaleString('en-CA')} kWh` : '— kWh'}
               </span>
             </div>
-            <p className="mt-1 text-[11px] text-gray-500">
+            <p className="mt-1 text-xs text-gray-500">
               {c.inches.toFixed(2)} in · {Math.round(c.mm)} mm · {c.acreFeet.toFixed(1)} acre-ft over {acres} ac
               {c.intoSoilIn != null && ` · about ${c.intoSoilIn.toFixed(2)} in into the soil at ${Math.round(eff * 100)}%`}
             </p>
@@ -199,7 +199,7 @@ export function IrrigationCostCalculator() {
                 <tr className="border-b border-gray-100 align-top">
                   <td className="py-1.5 pr-2">
                     <div className="font-medium text-gray-800">Power</div>
-                    <div className="text-[11px] text-gray-500">
+                    <div className="text-xs text-gray-500">
                       {Math.round(flow.gpm!).toLocaleString('en-CA')} gpm ({flow.from}); {Math.round(share.hp!)} hp{share.note ? ` — ${share.note}` : ''}, 90% motor efficiency; $
                       {price}/kWh ({prices.basis === 'sell' ? 'solar sell price' : 'grid price'})
                       <Link to="/utilities?tab=power" className="ml-1 inline-flex align-middle text-gray-400 hover:text-brand-700" aria-label="Power prices">
@@ -212,7 +212,7 @@ export function IrrigationCostCalculator() {
                 <tr className="border-b border-gray-100 align-top">
                   <td className="py-1.5 pr-2">
                     <div className="font-medium text-gray-800">Labour</div>
-                    <div className="text-[11px] text-gray-500">
+                    <div className="text-xs text-gray-500">
                       {c.labour != null ? `${hrs} h × $${basics.wage.toFixed(2)}/h (${basics.wageSource})` : 'add labour hours to count it'}
                       <Link to="/fuel?tab=trucking" className="ml-1 inline-flex align-middle text-gray-400 hover:text-brand-700" aria-label="Wage">
                         <ExternalLink className="h-3 w-3" />
@@ -226,7 +226,7 @@ export function IrrigationCostCalculator() {
                   <tr className="border-b border-gray-100 align-top">
                     <td className="py-1.5 pr-2">
                       <div className="font-medium text-gray-400">{districtName} rate</div>
-                      <div className="text-[11px] text-gray-400">
+                      <div className="text-xs text-gray-400">
                         not added — a flat {rate ? `$${rate.ratePerAcre.toFixed(2)}` : ''} an assessed acre a year, not by the inch
                       </div>
                     </td>
@@ -237,7 +237,7 @@ export function IrrigationCostCalculator() {
                   <tr className="align-top">
                     <td className="py-1.5 pr-2">
                       <div className="font-medium text-gray-400">Water value</div>
-                      <div className="text-[11px] text-gray-400">not added — not cash; ${prices.waterValueAf}/acre-ft</div>
+                      <div className="text-xs text-gray-400">not added — not cash; ${prices.waterValueAf}/acre-ft</div>
                     </td>
                     <td className="py-1.5 text-right tabular-nums text-gray-400">{money(c.waterValue)}</td>
                   </tr>
@@ -270,7 +270,7 @@ export function IrrigationCostCalculator() {
                 </p>
               ) : null}
               {!c.allotment && !c.licence && <p className="text-gray-400">No allotment or licence share on file for this pivot.</p>}
-              <Link to={`/fields/${fieldId}/irrigation`} className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-brand-700">
+              <Link to={`/fields/${fieldId}/irrigation`} className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-brand-700">
                 Water rights <ExternalLink className="h-3 w-3" />
               </Link>
             </div>

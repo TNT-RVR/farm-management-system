@@ -40,7 +40,7 @@ function Stat({
   const blank = missing || value == null || value === '' || value === '—'
   return (
     <div title={title}>
-      <dt className="text-[11px] text-gray-400">{label}</dt>
+      <dt className="text-xs text-gray-400">{label}</dt>
       <dd
         className={cn(
           'font-medium tabular-nums',
@@ -122,7 +122,7 @@ export function PivotStatusPanel({
         >
           {FN_STATUS_LABEL[status]}
         </span>
-        <span className="text-[11px] text-gray-400">
+        <span className="text-xs text-gray-400">
           {synced ? `synced ${synced} ago` : 'not synced yet'}
         </span>
       </div>
@@ -130,7 +130,7 @@ export function PivotStatusPanel({
       <p className="mt-1.5 text-xs font-medium uppercase tracking-wide text-gray-700">
         {s.operational_status?.replace(/-/g, ' ') ?? 'unknown'}
       </p>
-      <p className="text-[11px] text-gray-500">
+      <p className="text-xs text-gray-500">
         {s.device_updated_at
           ? `since ${new Date(s.device_updated_at).toLocaleString('en-CA', {
               month: 'short',
@@ -140,7 +140,7 @@ export function PivotStatusPanel({
             })}${since ? ` (${since})` : ''}`
           : 'no report time'}
       </p>
-      <p className="mt-0.5 text-[11px] text-gray-400">{fieldnetMotion(s)}</p>
+      <p className="mt-0.5 text-xs text-gray-400">{fieldnetMotion(s)}</p>
 
       {/* Headline numbers — the three the panel puts front and centre */}
       <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm sm:grid-cols-3">
@@ -210,7 +210,7 @@ export function PivotStatusPanel({
         <>
           {/* Ancillary controls (endguns deliberately excluded) */}
           <div className="mt-2.5 border-t border-gray-100 pt-2">
-            <p className="mb-0.5 text-[11px] uppercase tracking-wide text-gray-400">
+            <p className="mb-0.5 text-xs uppercase tracking-wide text-gray-400">
               Ancillary controls
             </p>
             <Toggle label="Accessory 1" on={fnBool(s, 'is_accessory_1_on')} />
@@ -221,7 +221,7 @@ export function PivotStatusPanel({
 
           {/* Panel note */}
           <div className="mt-2.5 border-t border-gray-100 pt-2">
-            <p className="text-[11px] uppercase tracking-wide text-gray-400">Note</p>
+            <p className="text-xs uppercase tracking-wide text-gray-400">Note</p>
             <p className={cn('text-xs', note ? 'text-gray-700' : 'text-gray-300 italic')}>
               {note || 'no note set'}
             </p>

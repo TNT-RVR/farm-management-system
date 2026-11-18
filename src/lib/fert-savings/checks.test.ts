@@ -39,7 +39,17 @@ describe('yield goals', () => {
     expect(r.verdict).toBe('high')
     expect(r.median).toBe(64)
   })
-  it('falls back to the southern Alberta bands, in the right unit', () => {
+  it('names a goal typed in the wrong unit rather than grading it', () => {
+    // Hay Flat: a 3 t alfalfa goal stored as 3 under a lbs crop.
+    const r = yieldGoalCheck({ crop: 'Alfalfa', goal: 3, unit: 'lbs', irrigated: true, history: [], normal: 8000 })
+    expect(r.verdict).toBe('unit')
+    expect(r.why).toMatch(/normal of 8,000 lbs — likely typed in another unit/)
+    // With no normal on the crop, the usual range still gives it away.
+    expect(yieldGoalCheck({ crop: 'Alfalfa', goal: 3, unit: 'lbs', irrigated: true, history: [] }).verdict).toBe('unit')
+    // And the wording claims no region the farm's location did not give.
+    expect(yieldGoalCheck({ crop: 'Potato', goal: 250, unit: 'cwt', irrigated: true, history: [] }).why).toBe('below the usual 300–550 cwt for this crop')
+  })
+  it('falls back to the usual bands, in the right unit', () => {
     expect(yieldGoalCheck({ crop: 'Beans-Pinto', goal: 4200, unit: 'lbs', irrigated: true, history: [] }).verdict).toBe('high')
     expect(yieldGoalCheck({ crop: 'Alfalfa', goal: 12000, unit: 'lbs', irrigated: true, history: [] }).verdict).toBe('ok')
     expect(yieldGoalCheck({ crop: 'Potato', goal: 250, unit: 'cwt', irrigated: true, history: [] }).verdict).toBe('low')

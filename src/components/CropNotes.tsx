@@ -91,7 +91,7 @@ export function CropNotes({ crop, readonly }: { crop: CropRow; readonly: boolean
         {SECTIONS.map((s) => (
           <label key={s.key} className={'wide' in s && s.wide ? 'flex flex-col lg:col-span-2' : 'flex flex-col'}>
             <span className="text-xs font-medium text-gray-700">{s.label}</span>
-            <span className="mt-0.5 text-[11px] text-gray-400">{s.hint}</span>
+            <span className="mt-0.5 text-xs text-gray-400">{s.hint}</span>
             <textarea
               value={draft[s.key] ?? ''}
               onChange={(e) => setDraft((d) => ({ ...d, [s.key]: e.target.value }))}

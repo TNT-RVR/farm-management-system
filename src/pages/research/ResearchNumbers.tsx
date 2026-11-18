@@ -50,7 +50,7 @@ function Sureness({ n }: { n: number }) {
   return (
     <span
       className={cn(
-        'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium',
+        'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium',
         n === 3 ? 'bg-green-50 text-green-700' : n === 2 ? 'bg-gray-100 text-gray-600' : 'bg-amber-50 text-amber-700',
       )}
     >
@@ -69,7 +69,7 @@ function Figure({ row }: { row: ResearchNumber }) {
         <span className="text-base font-semibold text-gray-900">{sayFigure(row)}</span>
         <span className="text-sm text-gray-700">{row.subject}</span>
         {row.qualifier ? <span className="text-sm text-gray-500">({row.qualifier})</span> : null}
-        <span className="rounded bg-brand-50 px-1.5 py-0.5 text-[11px] font-medium text-brand-700">
+        <span className="rounded bg-brand-50 px-1.5 py-0.5 text-xs font-medium text-brand-700">
           {row.measure}
         </span>
         <Sureness n={row.confidence} />
@@ -99,7 +99,7 @@ function Figure({ row }: { row: ResearchNumber }) {
         {row.year ? <span>{row.year}</span> : null}
         {row.page ? <span>p{row.page}</span> : null}
         {where ? (
-          <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-medium', REGION_COLOR[row.region!] ?? REGION_COLOR.other)}>
+          <span className={cn('rounded px-1.5 py-0.5 text-xs font-medium', REGION_COLOR[row.region!] ?? REGION_COLOR.other)}>
             {where}
           </span>
         ) : null}

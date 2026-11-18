@@ -132,7 +132,7 @@ export function AddToBin({
               </button>
             ))}
           </span>
-          <p className="mt-1 text-[11px] text-gray-500">{pick.hint}</p>
+          <p className="mt-1 text-xs text-gray-500">{pick.hint}</p>
         </div>
 
         <div>

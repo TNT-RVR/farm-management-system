@@ -227,7 +227,7 @@ export function TopographyPage() {
                 <span>{legend[legend.length - 1].value.toFixed(mode === 'rem' ? 1 : 0)}</span>
               </div>
               {mode === 'rem' && (
-                <p className="mt-1.5 max-w-44 text-[11px] leading-snug text-gray-500">
+                <p className="mt-1.5 max-w-44 text-xs leading-snug text-gray-500">
                   Blue sits lower than the ground around it — that is where water collects.
                 </p>
               )}
@@ -258,7 +258,7 @@ export function TopographyPage() {
                   </div>
                 </dl>
                 {!surface.antenna_corrected && (
-                  <p className="mt-2 flex items-start gap-1 text-[11px] leading-snug text-amber-700">
+                  <p className="mt-2 flex items-start gap-1 text-xs leading-snug text-amber-700">
                     <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     Antenna height not subtracted — a machine on this pass has never been measured.
                     The shape is right; every height is high by one mast.

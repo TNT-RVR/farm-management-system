@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom'
 import { Ban, CircleHelp, FileText } from 'lucide-react'
+import { Fold } from '@/components/Fold'
 import { openChemicalLabel } from '@/lib/chemicals'
-import { activeRestrictions, blocking, fmtDay, headlineFor, restrictionText, untilWord, type Restriction } from '@/lib/grazing-restrictions'
+import { activeRestrictions, blocking, conditionNote, fmtDay, headlineFor, restrictionText, untilWord, type Restriction } from '@/lib/grazing-restrictions'
 import { useGrazingPicture } from '@/lib/grazing-restrictions-hooks'
 
 /**
@@ -35,7 +36,7 @@ export function RestrictionLines({ restrictions }: { restrictions: Restriction[]
               {rs.map((r) => (
                 <li key={r.kind}>
                   {restrictionText(r)}
-                  {r.condition && <span className="opacity-70"> · when {r.condition}</span>}
+                  {conditionNote(r) && <span className="opacity-70"> ({conditionNote(r)})</span>}
                 </li>
               ))}
             </ul>
@@ -72,11 +73,8 @@ export function FieldGrazingRestriction({ fieldId }: { fieldId: string }) {
           <p className="flex items-start gap-2 text-sm font-semibold">
             <Ban className="mt-0.5 h-4 w-4 shrink-0 text-red-600" /> Grazing / feeding restricted — {head}
           </p>
-          {(place.eaten.length > 0 || place.inPastures.length > 0) && (
-            <p className="mt-0.5 pl-6 text-xs">
-              Livestock reach it: {[...place.eaten, ...place.inPastures.map((p) => `inside ${p.name}'s fence`)].join('; ')}.
-            </p>
-          )}
+          {/* Cattle actually inside the restriction stay in view: that is an
+              alarm, not detail. */}
           {clashes.map((c) => (
             <p key={c.key} className="mt-0.5 pl-6 text-xs font-semibold">
               {c.grazing.kind === 'stubble'
@@ -84,16 +82,31 @@ export function FieldGrazingRestriction({ fieldId }: { fieldId: string }) {
                 : `Cattle in ${c.grazing.name} from ${fmtDay(c.grazing.start)}${c.grazing.end ? ` to ${fmtDay(c.grazing.end)}` : ' (still there)'} — inside the restriction.`}
             </p>
           ))}
-          <div className="mt-2 pl-6">
+          {/* Everything else folds (design review, Nov 2026): open, this was
+              82 words and a third of a phone screen before the field itself
+              appeared. The headline above is the warning; the label's own
+              words are one tap away and stay open once opened. */}
+          <Fold
+            title={<span className="text-red-900">What the label says</span>}
+            summary={<span className="text-red-800">{[...new Set(active.map((r) => r.product))].join(', ')}</span>}
+            storageKey="field-restriction-detail"
+            className="-mx-3 -mb-2.5 mt-1 rounded-none border-0 border-t border-red-200 bg-transparent"
+            bodyClassName="border-red-200 pl-9"
+          >
+            {(place.eaten.length > 0 || place.inPastures.length > 0) && (
+              <p className="mb-2 text-xs">
+                Livestock reach it: {[...place.eaten, ...place.inPastures.map((p) => `inside ${p.name}'s fence`)].join('; ')}.
+              </p>
+            )}
             <RestrictionLines restrictions={active} />
-          </div>
-          <p className="mt-1 pl-6 text-[11px] opacity-70">
-            Read off each label by the app; the label is the law. All fields and pastures:{' '}
-            <Link to="/cattle?tab=restrictions" className="underline">
-              Spray restrictions
-            </Link>
-            .
-          </p>
+            <p className="mt-2 text-xs opacity-70">
+              Read off each label by the app; the label is the law. All fields and pastures:{' '}
+              <Link to="/cattle?tab=restrictions" className="underline">
+                Spray restrictions
+              </Link>
+              .
+            </p>
+          </Fold>
         </>
       ) : null}
       {unread.length > 0 && (

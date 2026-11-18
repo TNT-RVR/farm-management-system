@@ -305,7 +305,7 @@ function RotationCard({
         <div className="flex items-baseline gap-2">
           <span className="text-xs font-semibold tabular-nums text-gray-400">{rank}</span>
           <span className="font-medium text-gray-900">{row.name}</span>
-          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${tone}`}>{label}</span>
+          <span className={`rounded px-1.5 py-0.5 text-xs font-medium uppercase ${tone}`}>{label}</span>
         </div>
         <span className="text-xs text-gray-500">
           {row.area_acres != null ? `${Math.round(row.area_acres).toLocaleString('en-CA')} ac` : '—'}
@@ -321,7 +321,7 @@ function RotationCard({
             {cover ? (
               <>
                 <span className="tabular-nums">{cover.value}</span>
-                <span className="block text-[11px] font-normal text-gray-500">{cover.note}</span>
+                <span className="block text-xs font-normal text-gray-500">{cover.note}</span>
               </>
             ) : (
               'no clear look yet'
@@ -340,8 +340,8 @@ function RotationCard({
         </div>
       </dl>
 
-      {row.caveat && <p className="mt-1.5 text-[11px] text-amber-700">{row.caveat}</p>}
-      {sprayed && <p className="mt-1.5 text-[11px] font-semibold text-red-700">Spray restriction: {sprayed}.</p>}
+      {row.caveat && <p className="mt-1.5 text-xs text-amber-700">{row.caveat}</p>}
+      {sprayed && <p className="mt-1.5 text-xs font-semibold text-red-700">Spray restriction: {sprayed}.</p>}
     </li>
   )
 }

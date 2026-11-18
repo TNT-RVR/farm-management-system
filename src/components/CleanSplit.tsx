@@ -98,7 +98,7 @@ export function CleanSplit({
       </div>
       <table className="mt-1 w-full text-xs">
         <thead>
-          <tr className="text-[11px] uppercase tracking-wide text-gray-400">
+          <tr className="text-xs uppercase tracking-wide text-gray-400">
             <th className="px-2 py-0.5 text-left font-medium">Where</th>
             <th className="px-2 py-0.5 text-right font-medium">Loads</th>
             <th className="px-2 py-0.5 text-right font-medium">Field-run</th>

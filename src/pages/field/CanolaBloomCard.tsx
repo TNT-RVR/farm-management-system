@@ -137,8 +137,8 @@ export function CanolaBloomCard({ fieldId, cropYear }: { fieldId: string; cropYe
                 )}
               >
                 <img src={p.photo!} alt="" className="h-16 w-16 rounded-sm object-cover" />
-                <div className="text-[11px] leading-tight text-gray-700">{day(p.sensedOn)}</div>
-                <div className="text-[11px] font-medium leading-tight">{share(p.yellow)}</div>
+                <div className="text-xs leading-tight text-gray-700">{day(p.sensedOn)}</div>
+                <div className="text-xs font-medium leading-tight">{share(p.yellow)}</div>
               </button>
             ))}
           </div>

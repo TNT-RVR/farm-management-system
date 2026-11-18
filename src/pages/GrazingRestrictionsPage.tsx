@@ -243,7 +243,7 @@ function PastureSprays({ pastures, isManager }: { pastures: { id: string; name: 
         </button>
         {m.add.isError && <span className="text-red-600">{(m.add.error as Error).message}</span>}
       </div>
-      {f.product && !f.reg && <p className="px-3 pb-2 text-[11px] text-amber-700">Without a registration number the app cannot read the label for this spray.</p>}
+      {f.product && !f.reg && <p className="px-3 pb-2 text-xs text-amber-700">Without a registration number the app cannot read the label for this spray.</p>}
       {(rows ?? []).length > 0 && (
         <ul className="divide-y divide-gray-100 border-t border-gray-200 text-xs">
           {(rows ?? []).map((r) => (

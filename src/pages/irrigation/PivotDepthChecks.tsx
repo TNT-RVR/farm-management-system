@@ -66,7 +66,7 @@ const VERDICT_STYLE: Record<Verdict, string> = {
 }
 
 function VerdictChip({ v }: { v: Verdict }) {
-  return <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', VERDICT_STYLE[v])}>{VERDICT_LABEL[v]}</span>
+  return <span className={cn('rounded px-1.5 py-0.5 text-xs font-medium', VERDICT_STYLE[v])}>{VERDICT_LABEL[v]}</span>
 }
 
 const pct = (ratio: number) => `${ratio >= 1 ? '+' : '−'}${Math.abs((ratio - 1) * 100).toFixed(0)}%`
@@ -213,7 +213,7 @@ export function PivotDepthChecks() {
                       </span>
                       <span className="ml-[18px] text-gray-500">{fieldName(s) ?? '—'}</span>
                       {offline && (
-                        <span className="ml-1.5 inline-flex items-center gap-0.5 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800">
+                        <span className="ml-1.5 inline-flex items-center gap-0.5 rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800">
                           <AlertTriangle className="h-3 w-3" /> panel offline
                         </span>
                       )}

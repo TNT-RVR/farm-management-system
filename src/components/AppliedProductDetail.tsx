@@ -58,18 +58,18 @@ function PassRow({ e, acres }: { e: AppliedEvent; acres: number }) {
 
       <dl className="mt-2 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
         <div>
-          <dt className="text-[11px] uppercase tracking-wide text-gray-500">Rate</dt>
+          <dt className="text-xs uppercase tracking-wide text-gray-500">Rate</dt>
           {/* Deere's own figure first: that is what was set on the machine, and
               it is the only number that can be checked against a spray ticket. */}
           <dd className="font-semibold tabular-nums text-gray-900">{formatRate(e.rawRate ?? undefined)}</dd>
           {e.rate != null && e.unit && (
-            <dd className="text-[11px] tabular-nums text-gray-400">
+            <dd className="text-xs tabular-nums text-gray-400">
               = {fmtQty(e.rate, e.unit)}/ac
             </dd>
           )}
         </div>
         <div>
-          <dt className="text-[11px] uppercase tracking-wide text-gray-500">
+          <dt className="text-xs uppercase tracking-wide text-gray-500">
             On {acres.toFixed(0)} ac
           </dt>
           <dd className="font-semibold tabular-nums text-gray-900">
@@ -81,7 +81,7 @@ function PassRow({ e, acres }: { e: AppliedEvent; acres: number }) {
           </dd>
         </div>
         <div>
-          <dt className="text-[11px] uppercase tracking-wide text-gray-500">Cost</dt>
+          <dt className="text-xs uppercase tracking-wide text-gray-500">Cost</dt>
           <dd className="font-semibold tabular-nums text-gray-900">
             {e.cost == null ? <span className="text-gray-300">—</span> : fmtMoney(e.cost)}
           </dd>
@@ -130,7 +130,7 @@ function PassRow({ e, acres }: { e: AppliedEvent; acres: number }) {
             )}
           </div>
           {e.conditionsSource === 'ecmwf' && (
-            <p className="mt-0.5 text-[10px] text-gray-500">
+            <p className="mt-0.5 text-xs text-gray-500">
               ECMWF over the field — modelled, not a reading off the sprayer.
               {/* When Deere rolled days of spraying into one operation, the
                   weather is one hour out of that span and saying so is the
@@ -189,7 +189,7 @@ function PassRow({ e, acres }: { e: AppliedEvent; acres: number }) {
         </div>
       )}
 
-      <p className="mt-2 text-[11px] text-gray-400">
+      <p className="mt-2 text-xs text-gray-400">
         {e.typedAs !== e.mixName && <>Recorded in Deere as “{e.typedAs}” · </>}
         {e.jdId ? `Deere id ${e.jdId}` : 'no Deere id'}
       </p>

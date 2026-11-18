@@ -12,6 +12,7 @@ import { InfoPopover } from '@/components/InfoPopover'
 import { useDistrictRate } from '@/lib/irrigation'
 import { n0, n1 } from '@/lib/format'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { HeadTip } from '@/components/HeadTip'
 
 const signed = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${n0(Math.abs(v))}`
 
@@ -247,7 +248,7 @@ export function LicenceCard({ pool, detail, thisSeason, highlight }: { pool: Poo
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-sm font-semibold text-gray-900">{l.number}</span>
         {l.status && (
-          <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold', l.status === 'draft' ? 'bg-amber-100 text-amber-800' : 'bg-green-50 text-green-800')}>
+          <span className={cn('rounded px-1.5 py-0.5 text-xs font-semibold', l.status === 'draft' ? 'bg-amber-100 text-amber-800' : 'bg-green-50 text-green-800')}>
             {l.status === 'draft' ? 'draft — not signed' : l.status}
           </span>
         )}
@@ -256,12 +257,12 @@ export function LicenceCard({ pool, detail, thisSeason, highlight }: { pool: Poo
           {vol != null && pool.acres > 0 && ` · ${n1((vol * 12) / pool.acres)}" over them all`}
         </span>
         {l.holder && <span className="text-gray-400">{l.holder}</span>}
-        <button type="button" onClick={() => setOpen((o) => !o)} className="ml-auto inline-flex items-center gap-1 text-[11px] text-sky-700 underline">
+        <button type="button" onClick={() => setOpen((o) => !o)} className="ml-auto inline-flex items-center gap-1 text-xs text-sky-700 underline">
           <FileText className="h-3 w-3" /> {open ? 'hide' : `licence details${pool.fields.length > 1 ? ` · ${pool.fields.length} fields` : ''}`}
         </button>
       </div>
       {open && (
-        <dl className="mt-1.5 grid gap-x-3 gap-y-0.5 rounded bg-gray-50 p-2 text-[11px] text-gray-700 sm:grid-cols-[auto_1fr]">
+        <dl className="mt-1.5 grid gap-x-3 gap-y-0.5 rounded bg-gray-50 p-2 text-xs text-gray-700 sm:grid-cols-[auto_1fr]">
           {(
             [
               ['Priority', detail.priority_number],
@@ -298,8 +299,8 @@ export function LicenceCard({ pool, detail, thisSeason, highlight }: { pool: Poo
               <th className={cn(TABLE_TH, 'text-right')}>Needs</th>
               <th className={cn(TABLE_TH, 'text-right')}>vs share</th>
               {thisSeason && <th className={cn(TABLE_TH, 'text-right')}>Used</th>}
-              <th className={cn(TABLE_TH, 'text-right')} title="The most this field can take if every other field on the licence gets exactly its need">
-                Can take up to
+              <th className={cn(TABLE_TH, 'text-right')}>
+                Can take up to<HeadTip title="Can take up to">The most this field can take if every other field on the licence gets exactly its need</HeadTip>
               </th>
             </tr>
           </thead>
@@ -310,17 +311,17 @@ export function LicenceCard({ pool, detail, thisSeason, highlight }: { pool: Poo
                   <Link to={`/fields/${f.fieldId}/work`} className="hover:underline">
                     {f.name}
                   </Link>
-                  {f.pending && <span className="ml-1 rounded bg-amber-50 px-1 text-[10px] text-amber-800">pending amendment</span>}
+                  {f.pending && <span className="ml-1 rounded bg-amber-50 px-1 text-xs text-amber-800">pending amendment</span>}
                 </td>
                 <td className="px-3 py-1 text-right tabular-nums text-gray-600">{n0(f.acres)}</td>
                 <td className="px-3 py-1 text-right tabular-nums text-gray-700">
                   {f.shareAf != null ? `${n0(f.shareAf)} ac-ft` : '—'}
-                  {f.shareIn != null && <span className="block text-[10px] text-gray-400">{n1(f.shareIn)}&quot;</span>}
+                  {f.shareIn != null && <span className="block text-xs text-gray-400">{n1(f.shareIn)}&quot;</span>}
                 </td>
                 <td className="px-3 py-1 text-gray-600">{f.crop ?? '—'}</td>
                 <td className="px-3 py-1 text-right tabular-nums text-gray-700" title={f.needWhy ?? undefined}>
                   {f.needAf != null ? `${n0(f.needAf)} ac-ft` : '—'}
-                  {f.needIn != null && <span className="block text-[10px] text-gray-400">{n1(f.needIn)}&quot;</span>}
+                  {f.needIn != null && <span className="block text-xs text-gray-400">{n1(f.needIn)}&quot;</span>}
                 </td>
                 <td className={cn('px-3 py-1 text-right tabular-nums', (f.overShareAf ?? 0) > 0.5 ? 'text-amber-700' : (f.overShareAf ?? 0) < -0.5 ? 'text-green-700' : 'text-gray-500')}>
                   {f.overShareAf != null ? signed(f.overShareAf) : f.pending && f.needAf != null ? signed(f.needAf) : '—'}
@@ -328,7 +329,7 @@ export function LicenceCard({ pool, detail, thisSeason, highlight }: { pool: Poo
                 {thisSeason && <td className="px-3 py-1 text-right tabular-nums text-gray-700">{n0(f.usedAf)}</td>}
                 <td className="px-3 py-1 text-right tabular-nums font-medium text-gray-900">
                   {f.ceilingAf != null ? `${n0(f.ceilingAf)} ac-ft` : '—'}
-                  {f.ceilingAf != null && f.acres > 0 && <span className="block text-[10px] font-normal text-gray-400">{n1((f.ceilingAf * 12) / f.acres)}&quot;</span>}
+                  {f.ceilingAf != null && f.acres > 0 && <span className="block text-xs font-normal text-gray-400">{n1((f.ceilingAf * 12) / f.acres)}&quot;</span>}
                 </td>
               </tr>
             ))}

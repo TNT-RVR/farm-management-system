@@ -134,7 +134,7 @@ export function CropBinRules() {
           </li>
         ))}
       </ul>
-      <p className="mt-1 text-[11px] text-gray-500">
+      <p className="mt-1 text-xs text-gray-500">
         Bushels: blank stores the whole crop. “Keep fields separate” is for seed crops, where no bin may hold two fields.
       </p>
     </div>

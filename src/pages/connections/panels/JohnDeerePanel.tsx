@@ -55,7 +55,7 @@ export function JohnDeerePanel() {
       {linked && orgs.length > 0 && (
         <div className="mt-3 rounded-md border border-gray-200 p-3">
           <p className="text-xs font-medium text-gray-700">Organization to sync</p>
-          <p className="mt-0.5 text-[11px] text-gray-500">
+          <p className="mt-0.5 text-xs text-gray-500">
             Your John Deere login can see {orgs.length} organizations. Only the one chosen here is
             read.
           </p>
@@ -96,7 +96,7 @@ export function JohnDeerePanel() {
           <p className="text-xs font-medium text-amber-900">
             One more step: share your organization
           </p>
-          <p className="mt-0.5 text-[11px] text-amber-800">
+          <p className="mt-0.5 text-xs text-amber-800">
             You're signed in to John Deere, but Operations Center still needs you to choose which
             organizations this app may read. Until you do, syncs return nothing.
           </p>
@@ -175,7 +175,7 @@ export function JohnDeerePanel() {
             >
               {explore.isPending ? 'Reading…' : 'Explore API'}
             </button>
-            <span className="text-[11px] text-gray-500">
+            <span className="text-xs text-gray-500">
               Read-only. Samples each endpoint so the field-operations mapping can be written
               against real payloads.
             </span>
@@ -185,7 +185,7 @@ export function JohnDeerePanel() {
           )}
           {explore.data && (
             <>
-              <ul className="mt-2 text-[11px] text-gray-600">
+              <ul className="mt-2 text-xs text-gray-600">
                 {explore.data.summary.map((line) => (
                   <li key={line} className="font-mono">
                     {line}
@@ -196,9 +196,9 @@ export function JohnDeerePanel() {
                 readOnly
                 onFocus={(e) => e.target.select()}
                 value={JSON.stringify(explore.data.probes, null, 2)}
-                className="mt-2 h-48 w-full rounded-md border border-gray-200 bg-gray-50 p-2 font-mono text-[10px]"
+                className="mt-2 h-48 w-full rounded-md border border-gray-200 bg-gray-50 p-2 font-mono text-xs"
               />
-              <p className="mt-1 text-[11px] text-gray-500">
+              <p className="mt-1 text-xs text-gray-500">
                 Click the box, copy, and paste it back to me.
               </p>
             </>

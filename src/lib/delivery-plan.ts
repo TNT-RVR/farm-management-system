@@ -14,6 +14,8 @@ export type PlanContract = {
   remainingBu: number
   deliveryStart: string | null
   deliveryEnd: string | null
+  /** The crop year the contract was written under, which need not be the one on screen. */
+  cropYear?: number | null
 }
 
 export type PlanBin = { binId: string; name: string; cropId: string | null; bu: number; carryOver: boolean }

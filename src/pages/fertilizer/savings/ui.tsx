@@ -16,7 +16,7 @@ export type Source = { label: string; to?: string; href?: string }
 export function Sources({ sources }: { sources: Source[] }) {
   if (!sources.length) return null
   return (
-    <p className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-blue-50/60 px-2.5 py-1.5 text-[11px] text-gray-600">
+    <p className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-blue-50/60 px-2.5 py-1.5 text-xs text-gray-600">
       <span className="font-semibold text-gray-700">Where this comes from:</span>
       {sources.map((s, i) =>
         s.to ? (
@@ -44,7 +44,7 @@ export function Sources({ sources }: { sources: Source[] }) {
 export function SourceLinks({ sources }: { sources: Source[] }) {
   if (!sources.length) return null
   return (
-    <p className="mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-gray-400">
+    <p className="mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-gray-400">
       <span>From</span>
       {sources.map((s, i) => (
         <span key={i} className="inline-flex items-center">
@@ -158,7 +158,7 @@ export function ToolCard({
           aria-expanded={open}
           className="flex min-w-0 flex-1 items-start gap-2 text-left"
         >
-          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-50 text-[11px] font-semibold text-brand-800">
+          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-semibold text-brand-800">
             {n}
           </span>
           <span className="min-w-0">
@@ -180,7 +180,7 @@ export function ToolCard({
               {savingLabel} {money(saving)}
             </span>
           ) : note ? (
-            <span className="max-w-[12rem] text-right text-[11px] text-gray-400">{note}</span>
+            <span className="max-w-[12rem] text-right text-xs text-gray-400">{note}</span>
           ) : null}
           {actions}
         </span>

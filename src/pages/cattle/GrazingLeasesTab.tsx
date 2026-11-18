@@ -143,7 +143,7 @@ export function GrazingLeasesTab({ canEdit }: { canEdit: boolean }) {
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <div className="flex flex-wrap items-end gap-3 print:hidden">
-        <label className="text-[11px] font-medium text-gray-500">
+        <label className="text-xs font-medium text-gray-500">
           Lease
           <Select
             value={lease?.id ?? ''}
@@ -153,7 +153,7 @@ export function GrazingLeasesTab({ canEdit }: { canEdit: boolean }) {
             className="mt-0.5 w-56"
           />
         </label>
-        <label className="text-[11px] font-medium text-gray-500">
+        <label className="text-xs font-medium text-gray-500">
           Grazing year
           <Select
             value={String(year)}
@@ -490,7 +490,7 @@ function ReturnEditor({
               </Field>
             </div>
           </div>
-          <p className="mt-1 text-[11px] text-gray-500">
+          <p className="mt-1 text-xs text-gray-500">
             Completion and submission of this form annually is a requirement of your disposition.
           </p>
         </Part>
@@ -754,7 +754,7 @@ function ReturnEditor({
           </div>
         </Part>
 
-        <footer className="border-t border-gray-200 pt-3 text-[11px] text-gray-500">
+        <footer className="border-t border-gray-200 pt-3 text-xs text-gray-500">
           The province collects this under Alberta&rsquo;s Protection of Privacy Act and the Public
           Lands Administration Regulation (PLAR). Questions: FP.StockReturnClientAdmin@gov.ab.ca
         </footer>
@@ -777,7 +777,7 @@ function ReturnEditor({
             />
           </Field>
           <div>
-            <p className="text-[11px] font-medium text-gray-500">
+            <p className="text-xs font-medium text-gray-500">
               Pastures inside the lease — their grazing fills part 1
             </p>
             {!pastures.data?.length ? (
@@ -858,7 +858,7 @@ function Part({
         <span>{title}</span>
         {mark && (
           <span
-            className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800"
+            className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800"
             title="Filled in by the app. Edit it, or save it as it is, once it is right."
           >
             {mark} — check
@@ -872,7 +872,7 @@ function Part({
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block text-[11px] font-medium text-gray-500">
+    <label className="block text-xs font-medium text-gray-500">
       {label}
       <div className="mt-0.5 text-sm text-gray-900">{children}</div>
     </label>
@@ -1163,7 +1163,7 @@ function LeaseList({
               <ChevronRight className={cn('h-3.5 w-3.5 text-gray-400 transition-transform', open === l.id && 'rotate-90')} />
               <span className={cn('font-medium', l.active ? 'text-gray-900' : 'text-gray-400')}>{l.disposition_no}</span>
               <span className="text-xs text-gray-500">{ranchName(l.ranch_id) || 'No ranch'}</span>
-              {!l.active && <span className="text-[11px] text-gray-400">ended</span>}
+              {!l.active && <span className="text-xs text-gray-400">ended</span>}
               <span className="ml-auto text-xs text-gray-500">{l.expiry_date ? `expires ${formDate(l.expiry_date)}` : ''}</span>
               {canEdit && (
                 <span onClick={(e) => e.stopPropagation()} className="flex items-center gap-1">

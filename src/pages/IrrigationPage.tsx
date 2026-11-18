@@ -505,7 +505,7 @@ function Setup({ isManager, focusField }: { isManager: boolean; focusField: stri
                   <td className="px-3 py-2 font-medium">
                     {f.name}
                     {zone && (
-                      <span className="ml-1.5 rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-800">
+                      <span className="ml-1.5 rounded bg-brand-50 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-brand-800">
                         {cropById.get(zone.crop_id)?.name ?? 'zone'}
                       </span>
                     )}
@@ -520,7 +520,7 @@ function Setup({ isManager, focusField }: { isManager: boolean; focusField: stri
                     {/* The curve column is folded away, so its one warning — a
                         crop with no curve will not schedule — is said here. */}
                     {planCrop && !autoLabel && !s?.crop_coefficient_id && (
-                      <p className="mt-0.5 text-[10px] leading-tight text-amber-700">
+                      <p className="mt-0.5 text-xs leading-tight text-amber-700">
                         no water-use curve for this crop — pick one under{' '}
                         {advanced ? (
                           'Advanced overrides'
@@ -583,7 +583,7 @@ function Setup({ isManager, focusField }: { isManager: boolean; focusField: stri
                       className="rounded-md border border-gray-300 px-2 py-1 text-sm"
                     />
                     {s?.planting_date && (
-                      <p className="mt-0.5 text-[10px] leading-none text-gray-400">
+                      <p className="mt-0.5 text-xs leading-none text-gray-400">
                         {s.planting_date_source === 'john_deere'
                           ? 'from John Deere'
                           : s.planting_date_source === 'manual'
@@ -621,7 +621,7 @@ function Setup({ isManager, focusField }: { isManager: boolean; focusField: stri
                       }
                       className="w-16 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums"
                     />
-                    <p className="mt-0.5 text-[10px] leading-none text-gray-400">
+                    <p className="mt-0.5 text-xs leading-none text-gray-400">
                       {s?.system_capacity_mm_day != null
                         ? 'overridden'
                         : autoCap(f.id) != null

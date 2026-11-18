@@ -6,10 +6,12 @@ import { useCattleSales } from '@/lib/cattleMarkets'
 import { useFarmSettings, useSaveFarmSetup } from '@/lib/farm-setup'
 import { hasAdminAccess, useAuth } from '@/lib/auth'
 import { historyWeight, monthName, saleWeightSource } from '@/lib/calf-sale'
+import { saleBeforeWeaning } from '@/lib/cattle-assumptions'
 import { CARD_HEAD } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: monthName(i + 1) }))
+const weanedOn = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-CA', { day: 'numeric', month: 'short' })
 
 /**
  * The sale month and weight for a ranch that hasn't set its own below. Moved
@@ -73,6 +75,7 @@ export function CalfSaleSettings({ ranch, isManager }: { ranch: Ranch; isManager
   const { data: sales } = useCattleSales()
   const farm = useFarmSettings()
   const hist = { steers: historyWeight(sales ?? [], ranch.name, 'steers'), heifers: historyWeight(sales ?? [], ranch.name, 'heifers') }
+  const saleMonth = ranch.calf_sale_month ?? farm.calfSaleMonth
   const input = 'w-24 rounded-md border border-gray-200 px-1.5 py-1 text-right text-sm tabular-nums disabled:border-transparent disabled:bg-transparent'
 
   const weightField = (key: 'steer_sale_weight_lb' | 'heifer_sale_weight_lb', sex: 'steers' | 'heifers', label: string) => {
@@ -95,7 +98,7 @@ export function CalfSaleSettings({ ranch, isManager }: { ranch: Ranch; isManager
           />
           <span className="text-gray-400">lb</span>
         </span>
-        <span className="block text-[10px] text-gray-400">
+        <span className="block text-xs text-gray-400">
           {ranch[key] != null ? 'typed — clear it to use your sales' : h ? `blank: ${saleWeightSource(h)}` : 'blank: no sales on record, the figure above'}
         </span>
       </label>
@@ -136,7 +139,7 @@ export function CalfSaleSettings({ ranch, isManager }: { ranch: Ranch; isManager
           Calves sold in
           <span className="mt-0.5 block w-36">
             <Select
-              value={String(ranch.calf_sale_month ?? farm.calfSaleMonth)}
+              value={String(saleMonth)}
               options={MONTHS}
               disabled={!isManager}
               size="sm"
@@ -147,6 +150,11 @@ export function CalfSaleSettings({ ranch, isManager }: { ranch: Ranch; isManager
         {weightField('steer_sale_weight_lb', 'steers', 'Steers sell at')}
         {weightField('heifer_sale_weight_lb', 'heifers', 'Heifers sell at')}
       </div>
+      {saleBeforeWeaning(ranch.weaning_date, saleMonth) && (
+        <p className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+          Calves sold in {monthName(saleMonth)}, before the {weanedOn(ranch.weaning_date!)} weaning date — check one of the two.
+        </p>
+      )}
 
       </div>
     </section>

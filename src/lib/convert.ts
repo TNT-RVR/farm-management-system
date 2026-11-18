@@ -159,6 +159,10 @@ export function formatHours(hours: number): string {
 export function fmt(value: number | null, digits = 2): string {
   if (value == null || !isFinite(value)) return '—'
   if (value !== 0 && Math.abs(value) < 0.001) return value.toExponential(2)
+  // A real quantity never prints as nothing: 1 mL is 0.001 L, not 0 L
+  // (batch 2 test, 17 Nov 2026). Too small for the unit's usual decimals,
+  // it gets three significant figures instead.
+  if (value !== 0 && Math.abs(value) < 0.5 * 10 ** -digits) return value.toLocaleString('en-CA', { maximumSignificantDigits: 3 })
   const s = value.toLocaleString('en-CA', { maximumFractionDigits: digits })
   return s
 }

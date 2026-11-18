@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useCrops } from '@/lib/queries'
+import { isBookkeepingCrop } from '@/lib/crop-label'
 import { depthText, populationText, usePlanterProfiles, type PlanterProfile } from '@/lib/planter-profiles'
 import { hasPlanterOverrides } from '@/lib/crop-variety-settings'
 import { useCropVarietySettings } from '@/lib/crop-variety-settings-data'
@@ -37,7 +38,9 @@ export function CropPlanterList() {
         varieties: (varieties ?? []).filter((v) => v.crop_id === c.id && hasPlanterOverrides(v)).length,
       })
     }
-    return { rows, missing: active.filter((c) => !byCrop.has(c.id)) }
+    // Summer Fallow, Not farmed by us and the placeholder crops are never sown,
+    // so a planter setting for them is not a gap.
+    return { rows, missing: active.filter((c) => !byCrop.has(c.id) && !isBookkeepingCrop(c.name)) }
   }, [crops, profiles, varieties])
 
   if (isLoading) return <p className="text-sm text-gray-400">Loading…</p>
@@ -68,7 +71,7 @@ export function CropPlanterList() {
                       {name}
                     </Link>
                     {n > 0 && (
-                      <span className="block text-[11px] text-gray-500">
+                      <span className="block text-xs text-gray-500">
                         {n} {n === 1 ? 'variety' : 'varieties'} set differently
                       </span>
                     )}

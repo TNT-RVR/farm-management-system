@@ -196,7 +196,7 @@ export function GrassQuality({
                   <tr key={b.label} className={here ? 'font-semibold text-gray-900' : undefined}>
                     <td className="py-0.5 pr-2">{b.label}</td>
                     <td className="py-0.5 text-right">{n0(b.yields[q])} lb/ac</td>
-                    <td className="py-0.5 pl-2 text-[11px] font-normal text-gray-400">
+                    <td className="py-0.5 pl-2 text-xs font-normal text-gray-400">
                       {here ? 'this ranch' : ''}
                     </td>
                   </tr>

@@ -264,15 +264,17 @@ export function usePkHistory() {
     queryKey: ['fert_research', 'pk'],
     queryFn: async () => {
       const [ops, reports] = await Promise.all([
-        // Application passes only, and only the columns the balance reads — the
-        // raw Deere payload on every operation made this the heaviest query on
-        // the Savings tab. A season counts only when a pass carried nutrients
-        // (see PkBalanceCard), so seeding and harvest passes are not needed.
+        // Application and seeding passes, and only the columns the balance reads
+        // — the raw Deere payload on every operation made this the heaviest
+        // query on the Savings tab. Seeding counts because fertilizer placed
+        // with the drill is recorded on it (the season table below already
+        // counted it); a pass Deere sent twice counts once.
         supabase
           .from('jd_field_operations')
           .select('id, field_id, crop_season, operation_type, started_at, products')
-      .or('not_ours.is.null,not_ours.eq.rented_out')
-          .eq('operation_type', 'application'),
+          .or('not_ours.is.null,not_ours.eq.rented_out')
+          .is('duplicate_of', null)
+          .in('operation_type', ['application', 'seeding']),
         supabase.from('soil_test_reports').select('field_id, crop_year, report_date, soil_test_samples(depth_top_in, p_bicarb_ppm, k_ppm)'),
       ])
       if (ops.error) throw ops.error

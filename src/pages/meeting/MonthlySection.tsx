@@ -23,7 +23,7 @@ export function MonthlySection({ now }: { now: number }) {
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
         <CalendarCheck className={cn('h-4 w-4', left ? 'text-amber-600' : 'text-gray-400')} />
         <h2 className="text-sm font-semibold text-gray-800">Monthly jobs</h2>
-        <span className={cn('rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums', left ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-gray-600')}>{left}</span>
+        <span className={cn('rounded-full px-1.5 py-0.5 text-xs font-semibold tabular-nums', left ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-gray-600')}>{left}</span>
         <label className="ml-3 flex items-center gap-1 text-xs text-gray-600 print:hidden">
           <input type="checkbox" checked={withNext} onChange={(e) => setWithNext(e.target.checked)} /> Next month too
         </label>

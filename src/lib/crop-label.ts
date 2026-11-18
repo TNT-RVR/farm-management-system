@@ -86,3 +86,12 @@ export function companiesFor(
   }
   return [...seen].sort()
 }
+
+/**
+ * Bookkeeping kept in the crops list that nobody sows or writes about: Summer
+ * Fallow, Not farmed by us, Farm at Hand's "Custom Crop bu/ac" placeholders
+ * and the "(kind not chosen)" planning stand-ins.
+ */
+export function isBookkeepingCrop(name: string | null | undefined): boolean {
+  return /\(|custom crop|not farmed|fallow/i.test(name ?? '')
+}

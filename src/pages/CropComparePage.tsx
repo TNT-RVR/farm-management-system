@@ -373,7 +373,7 @@ function Num({ label, value, placeholder, onChange, hint, step = 'any' }: { labe
     <label className="block text-xs text-gray-600">
       <span className="flex items-baseline justify-between gap-2">
         <span>{label}</span>
-        {hint && <span className="truncate text-[11px] text-gray-400" title={hint}>{hint}</span>}
+        {hint && <span className="truncate text-xs text-gray-400" title={hint}>{hint}</span>}
       </span>
       <input
         type="number"
@@ -408,7 +408,14 @@ function SideCard({
   const m = marginPerAcre(s.side)
   const be = breakevenYield(s.side)
   const gross = s.side.revShare * s.side.yield * s.side.price
-  const costs = gross - m
+  // The table below is a sum somebody checks: gross, less inputs, is what the
+  // crop made over its inputs. The inputs are already the difference of the
+  // other two (gross − margin), and rounding all three on their own left them a
+  // dollar out of step often enough to look like an error in the costs. So the
+  // inputs line is the difference between the two figures printed around it.
+  const grossShown = Math.round(gross)
+  const mShown = Math.round(m)
+  const costsShown = grossShown - mShown
   const red = s.ev.blocked.length > 0
   return (
     <section className={cn('rounded-lg border bg-white p-3', red ? 'border-red-300' : 'border-gray-200')}>
@@ -416,11 +423,11 @@ function SideCard({
         <span className="rounded bg-gray-100 px-1.5 text-xs text-gray-600">{letter}</span>
         {s.crop.name}
         {tag && (
-          <span className="inline-flex items-center gap-0.5 rounded bg-brand-50 px-1.5 py-0.5 text-[11px] font-medium text-brand-800">
+          <span className="inline-flex items-center gap-0.5 rounded bg-brand-50 px-1.5 py-0.5 text-xs font-medium text-brand-800">
             <Sparkles className="h-3 w-3" /> {tag}
           </span>
         )}
-        {red ? <span className="ml-auto rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-medium text-red-800">Not advised here</span> : s.ev.cautions.length ? <span className="ml-auto rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">Caution</span> : <span className="ml-auto rounded bg-green-100 px-1.5 py-0.5 text-[11px] font-medium text-green-800">Fits here</span>}
+        {red ? <span className="ml-auto rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800">Not advised here</span> : s.ev.cautions.length ? <span className="ml-auto rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">Caution</span> : <span className="ml-auto rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800">Fits here</span>}
       </h2>
 
       {(s.ev.blocked.length > 0 || s.ev.cautions.length > 0 || s.ev.plus.length > 0) && (
@@ -447,7 +454,7 @@ function SideCard({
         <Num label={`Per-${u} costs ($/${u})`} hint="drying, storage, hauling" value={s.o.extraUnit ?? ''} placeholder="0" onChange={(v) => setO('extraUnit', v)} />
       </div>
       {s.lines.length > 0 && (
-        <details className="mt-1 text-[11px] text-gray-500">
+        <details className="mt-1 text-xs text-gray-500">
           <summary className="cursor-pointer">What's in the inputs</summary>
           <ul className="mt-1 space-y-0.5">
             {s.lines.map((l, i) => (
@@ -462,19 +469,19 @@ function SideCard({
 
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 border-t border-gray-100 pt-2 text-sm">
         <dt className="text-gray-600">{s.basis.ownUse ? 'Feed value' : 'Gross'} /ac</dt>
-        <dd className="text-right tabular-nums">{money(gross)}</dd>
+        <dd className="text-right tabular-nums">{money(grossShown)}</dd>
         <dt className="text-gray-600">Inputs &amp; work /ac</dt>
-        <dd className="text-right tabular-nums">−{money(costs)}</dd>
+        <dd className="text-right tabular-nums">−{money(costsShown)}</dd>
         <dt className="font-semibold text-gray-900">Over its inputs /ac</dt>
-        <dd className={cn('text-right font-semibold tabular-nums', m < 0 ? 'text-red-700' : 'text-gray-900')}>{money(m)}</dd>
+        <dd className={cn('text-right font-semibold tabular-nums', m < 0 ? 'text-red-700' : 'text-gray-900')}>{money(mShown)}</dd>
         <dt className="font-semibold text-gray-900">Field ({n0(acres)} ac)</dt>
-        <dd className={cn('text-right font-semibold tabular-nums', m < 0 ? 'text-red-700' : 'text-gray-900')}>{money(m * acres)}</dd>
+        <dd className={cn('text-right font-semibold tabular-nums', m < 0 ? 'text-red-700' : 'text-gray-900')}>{money(mShown * acres)}</dd>
         <dt className="text-gray-600">Pays its inputs at</dt>
         <dd className="text-right tabular-nums">{be == null ? '—' : fmtYield(be, u)}</dd>
       </dl>
       {fixed != null && fixed > 0 && <AgainstFixed m={m} fixed={fixed} full={yieldFor(s.side, fixed)} unit={u} />}
 
-      <p className="mt-2 text-[11px] text-gray-500">
+      <p className="mt-2 text-xs text-gray-500">
         {s.grown.length ? `Grown here: ${s.grown.slice(0, 5).map((g) => `${g.year} ${fmtYield(g.y, u)}${g.abnormal ? ` (abnormal — left out of averages: ${g.abnormal})` : ''}`).join(' · ')}` : 'No harvest of this crop on record here.'}
         {s.waterIn != null && ` · Needs about ${Math.round(s.waterIn)}" of irrigation`}
       </p>
@@ -511,7 +518,7 @@ function Verdict({ A, B, acres }: { A: SideData; B: SideData; acres: number }) {
 
       <div className="mt-3 overflow-x-auto">
         <table className="w-full min-w-[420px] text-xs tabular-nums">
-          <caption className="mb-1 text-left text-[11px] text-gray-500">
+          <caption className="mb-1 text-left text-xs text-gray-500">
             {A.crop.name} less {B.crop.name}, $/ac, at yields either side of the expected ones. Green: {A.crop.name} wins. Red: {B.crop.name} wins.
           </caption>
           <thead className={TABLE_HEAD}>
@@ -551,12 +558,15 @@ function Verdict({ A, B, acres }: { A: SideData; B: SideData; acres: number }) {
 
 /** How much of the farm's fixed $/ac a crop's earnings over its inputs cover. */
 function AgainstFixed({ m, fixed, full, unit }: { m: number; fixed: number; full: number | null; unit: string }) {
-  const pct = Math.max(0, m / fixed)
-  const short = fixed - m
+  // Rounded before the subtraction, so "$132/ac short" is the difference
+  // between the two figures printed either side of it.
+  const fixedShown = Math.round(fixed)
+  const short = fixedShown - Math.round(m)
+  const pct = fixedShown > 0 ? Math.max(0, Math.round(m) / fixedShown) : 0
   return (
-    <div className="mt-2 rounded-md bg-gray-50 px-2 py-1.5 text-[11px] text-gray-600">
+    <div className="mt-2 rounded-md bg-gray-50 px-2 py-1.5 text-xs text-gray-600">
       <div className="flex justify-between gap-2">
-        <span>Against fixed costs ({money(fixed)}/ac)</span>
+        <span>Against fixed costs ({money(fixedShown)}/ac)</span>
         <span className={cn('font-medium tabular-nums', short > 0 ? 'text-amber-700' : 'text-green-700')}>
           {short > 0 ? `covers ${Math.round(pct * 100)}% · ${money(short)}/ac short` : `covers them · ${money(-short)}/ac over`}
         </span>
@@ -658,21 +668,32 @@ function FarmCheck({
   }, [q.data, ctx, year])
 
   if (!result || result.avg == null) return null
-  const avg = result.avg
-  const over = fixed != null ? avg - fixed : null
+  // The three figures in the sentence below are arithmetic a reader does in
+  // their head, so they have to agree: $337 over inputs less $132 of fixed
+  // costs is $205 ahead, not $206. Each used to be rounded on its own, so the
+  // difference of the real figures and the difference of the printed ones
+  // disagreed by a dollar and the line looked wrong. Rounding first and
+  // subtracting after costs a fraction of a dollar an acre on a figure that is
+  // an estimate either way, and buys a line that adds up.
+  const avg = Math.round(result.avg)
+  const fixedShown = fixed != null ? Math.round(fixed) : null
+  const over = fixedShown != null ? avg - fixedShown : null
   return (
     <section className="overflow-hidden mt-3 rounded-lg border border-gray-200 bg-white">
       <h2 className={cn('font-medium', CARD_HEAD)}>Farm check · {year}</h2>
       <div className="p-3">
       <p className="mt-1 text-sm text-gray-700">
         {n0(result.acres)} ac of crops made <b>{money(avg)}/ac</b> over their inputs
-        {fixed != null && over != null ? (
+        {fixedShown != null && over != null ? (
           <>
-            {' '}against fixed costs of {money(fixed)}/ac, so the farm came out{' '}
+            {' '}against fixed costs of {money(fixedShown)}/ac, so the farm came out{' '}
             <b className={over < 0 ? 'text-red-700' : 'text-green-700'}>
               {money(Math.abs(over))}/ac {over < 0 ? 'short' : 'ahead'}
             </b>{' '}
-            ({money(Math.abs(over) * result.acres)} in all).
+            {/* The acres in this same sentence are printed whole, so the total
+                is that figure times the one beside it — not the raw acres,
+                which put it twenty dollars out of a reader's own arithmetic. */}
+            ({money(Math.abs(over) * Math.round(result.acres))} in all).
           </>
         ) : (
           '.'
@@ -708,7 +729,7 @@ function FarmCheck({
                         </span>
                       )}
                       {c.noCosts && (
-                        <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-semibold uppercase text-amber-800" title="No input costs are budgeted for this crop, so nothing has been taken off its income">
+                        <span className="ml-1 rounded bg-amber-100 px-1 text-xs font-semibold uppercase text-amber-800" title="No input costs are budgeted for this crop, so nothing has been taken off its income">
                           income only
                         </span>
                       )}
@@ -723,7 +744,7 @@ function FarmCheck({
           </table>
         </div>
         {result.list.some((c) => c.noCosts) && (
-          <p className="mt-1 text-[11px] leading-snug text-amber-700">
+          <p className="mt-1 text-xs leading-snug text-amber-700">
             <b>Income only:</b> {result.list.filter((c) => c.noCosts).map((c) => c.name).join(', ')}{' '}
             {result.list.filter((c) => c.noCosts).length === 1 ? 'has' : 'have'} no input costs budgeted, so nothing is taken off. Set them on{' '}
             <Link to="/plan?tab=budget" className="underline">
@@ -732,7 +753,7 @@ function FarmCheck({
             to compare fairly.
           </p>
         )}
-        <p className="mt-1 text-[11px] text-gray-500">
+        <p className="mt-1 text-xs text-gray-500">
           Amber: doesn't cover the fixed costs on its own. Yields are that year's harvest where recorded.
           {result.rentedOut > 0 && ` ${n0(result.rentedOut)} ac rented out not counted.`}
           {result.unpriced > 0 && ` ${n0(result.unpriced)} ac with no price or yield not counted.`}

@@ -76,12 +76,12 @@ insert into public.chemical_grazing_rules (registration_number, crop, crop_key, 
   ('DEMO-1001', null,     null,     'graze', 5,  false, 'After a pre-harvest application.', 'Example: do not graze or harvest treated vegetation for livestock feed within 5 days.', 'label');
 
 insert into public.chemical_recrop_rules (registration_number, following_crop, crop_key, months, status, condition, quote, source) values
-  ('DEMO-1006', 'Wheat',  'wheat',  10, 'ok',   null, 'Example: wheat, barley and peas may be seeded the year following application.', 'label'),
-  ('DEMO-1006', 'Barley', 'barley', 10, 'ok',   null, 'Example: wheat, barley and peas may be seeded the year following application.', 'label'),
+  ('DEMO-1006', 'Wheat',  'wheat',  10, 'ok',   null, 'Example: wheat, barley and peas may be seeded 10 months after application.', 'label'),
+  ('DEMO-1006', 'Barley', 'barley', 10, 'ok',   null, 'Example: wheat, barley and peas may be seeded 10 months after application.', 'label'),
   ('DEMO-1006', 'Canola', 'canola', 22, 'second_season', 'Imidazolinone-tolerant canola may follow the next year.', 'Example: do not seed canola other than imidazolinone-tolerant varieties until the second season after application.', 'label'),
-  ('DEMO-1006', 'Oats',   'oats',   10, 'ok',   null, 'Example: oats may be seeded the year following application.', 'label'),
-  ('DEMO-1004', 'Canola', 'canola', 11, 'ok',   null, 'Example: canola, peas and cereals may be grown the year following application.', 'label'),
-  ('DEMO-1004', 'Peas',   'pea',    11, 'ok',   null, 'Example: canola, peas and cereals may be grown the year following application.', 'label'),
+  ('DEMO-1006', 'Oats',   'oats',   10, 'ok',   null, 'Example: oats may be seeded 10 months after application.', 'label'),
+  ('DEMO-1004', 'Canola', 'canola', 11, 'ok',   null, 'Example: canola, peas and cereals may be grown 11 months after application.', 'label'),
+  ('DEMO-1004', 'Peas',   'pea',    11, 'ok',   null, 'Example: canola, peas and cereals may be grown 11 months after application.', 'label'),
   ('DEMO-1002', 'Wheat',  'wheat',  null, 'ok', null, 'Example: no rotational crop restrictions the year after application.', 'label'),
   ('DEMO-1002', 'Peas',   'pea',    null, 'ok', null, 'Example: no rotational crop restrictions the year after application.', 'label');
 
@@ -232,27 +232,31 @@ insert into public.chem_stock_adjustments (product_id, kind, quantity, occurred_
   ('0de30000-0000-4000-8000-000000000901', 'count', 310, current_date - 30, 'Counted the chem shed after pre-harvest.', '0de30000-0000-4000-8000-0000000000a2');
 
 -- Soil tests: this fall's samples on six fields, last fall's on four more.
+-- A report's crop year is the year of the crop it was taken for, as on the
+-- farm: this fall's are for next year's crop, last fall's for this year's. The
+-- crop each names is that year's crop in 030_crops_plans.sql.
 insert into public.soil_test_reports (id, field_id, crop_year, part_label, crop_label, lab, report_ref, report_date, source_file)
 select v.id::uuid, v.field::uuid, extract(year from current_date)::int + v.dy, '', v.next_crop, 'Prairie Soil Lab', v.ref,
-       case when v.dy = 0 then current_date - 9 else current_date - 370 end, null
+       case when v.dy = 1 then current_date - 9 else current_date - 370 end, null
 from (values
-  ('0de30000-0000-4000-8000-000000000a01', '0de30000-0000-4000-8000-000000000102', 0,  'Wheat',  'PSL-24-11831'),
-  ('0de30000-0000-4000-8000-000000000a02', '0de30000-0000-4000-8000-000000000103', 0,  'Wheat',  'PSL-24-11832'),
-  ('0de30000-0000-4000-8000-000000000a03', '0de30000-0000-4000-8000-000000000105', 0,  'Wheat',  'PSL-24-11833'),
-  ('0de30000-0000-4000-8000-000000000a04', '0de30000-0000-4000-8000-000000000112', 0,  'Barley', 'PSL-24-11834'),
-  ('0de30000-0000-4000-8000-000000000a05', '0de30000-0000-4000-8000-000000000113', 0,  'Wheat',  'PSL-24-11835'),
-  ('0de30000-0000-4000-8000-000000000a06', '0de30000-0000-4000-8000-000000000114', 0,  'Wheat',  'PSL-24-11836'),
-  ('0de30000-0000-4000-8000-000000000a11', '0de30000-0000-4000-8000-000000000107', -1, 'Peas',   'PSL-23-09712'),
-  ('0de30000-0000-4000-8000-000000000a12', '0de30000-0000-4000-8000-000000000109', -1, 'Oats',   'PSL-23-09713'),
-  ('0de30000-0000-4000-8000-000000000a13', '0de30000-0000-4000-8000-000000000101', -1, 'Wheat',  'PSL-23-09714'),
-  ('0de30000-0000-4000-8000-000000000a14', '0de30000-0000-4000-8000-000000000108', -1, 'Wheat',  'PSL-23-09715')
+  ('0de30000-0000-4000-8000-000000000a01', '0de30000-0000-4000-8000-000000000102', 1,  'Wheat',  'PSL-24-11831'),
+  ('0de30000-0000-4000-8000-000000000a02', '0de30000-0000-4000-8000-000000000103', 1,  'Wheat',  'PSL-24-11832'),
+  ('0de30000-0000-4000-8000-000000000a03', '0de30000-0000-4000-8000-000000000105', 1,  'Wheat',  'PSL-24-11833'),
+  ('0de30000-0000-4000-8000-000000000a04', '0de30000-0000-4000-8000-000000000112', 1,  'Barley', 'PSL-24-11834'),
+  ('0de30000-0000-4000-8000-000000000a05', '0de30000-0000-4000-8000-000000000113', 1,  'Wheat',  'PSL-24-11835'),
+  ('0de30000-0000-4000-8000-000000000a06', '0de30000-0000-4000-8000-000000000114', 1,  'Wheat',  'PSL-24-11836'),
+  ('0de30000-0000-4000-8000-000000000a11', '0de30000-0000-4000-8000-000000000107', 0,  'Peas',   'PSL-23-09712'),
+  ('0de30000-0000-4000-8000-000000000a12', '0de30000-0000-4000-8000-000000000109', 0,  'Oats',   'PSL-23-09713'),
+  ('0de30000-0000-4000-8000-000000000a13', '0de30000-0000-4000-8000-000000000101', 0,  'Wheat',  'PSL-23-09714'),
+  ('0de30000-0000-4000-8000-000000000a14', '0de30000-0000-4000-8000-000000000108', 0,  'Wheat',  'PSL-23-09715')
 ) as v(id, field, dy, next_crop, ref);
 
 insert into public.soil_test_samples (report_id, sample_code, depth_label, depth_top_in, depth_bottom_in, om_pct, no3n_ppm, no3n_lb_ac, p_bicarb_ppm, k_ppm, so4s_ppm, ph, cec_meq,
                                       base_k_pct, base_mg_pct, base_ca_pct, base_na_pct, zn_ppm, cu_ppm, mn_ppm, fe_ppm, b_ppm, cl_ppm, ec_ms_cm)
 select r.id, s.code, s.depth, s.top, s.bot,
        case when s.top = 0 then v.om end,
-       round(v.no3 * s.nf / (s.bot - s.top) * 6 / 3.6, 1),
+       -- ppm from lb/ac at 0.3 lb per ppm per inch, the ratio the farm's own lab sheets show.
+       round(v.no3 * s.nf / ((s.bot - s.top) * 0.3), 1),
        round(v.no3 * s.nf),
        case when s.top = 0 then v.p end,
        case when s.top = 0 then v.k end,
@@ -276,18 +280,19 @@ join (values
   ('0de30000-0000-4000-8000-000000000a13', 6.2, 29, 20, 395, 8.5, 6.7, 30, 1.5),
   ('0de30000-0000-4000-8000-000000000a14', 4.1, 24, 9, 300, 6.5, 7.6, 25, 0.9)
 ) as v(report, om, no3, p, k, s, ph, cec, zn) on v.report::uuid = r.id
-cross join (values ('A', '0-6"', 0, 6, 0.45, 1.0, 0.0), ('B', '6-24"', 6, 24, 0.55, 2.2, 0.3)) as s(code, depth, top, bot, nf, sf, phd);
+-- Sample codes are site + depth letter, as the farm's lab writes them: 1A is
+-- site 1's 0-6" core, and the sampling map finds site 1 by it.
+cross join (values ('1A', '0-6"', 0, 6, 0.45, 1.0, 0.0), ('1B', '6-24"', 6, 24, 0.55, 2.2, 0.3)) as s(code, depth, top, bot, nf, sf, phd);
 
+-- One benchmark site per field, coded as the lab codes it, for each year's test.
 insert into public.soil_sample_sites (field_id, code, lat, lng, crop_year, depth_label, notes, active, created_by)
-select r.field_id, 'S' || k, st_y(pt) + (k - 2) * 0.0012, st_x(pt) + (k - 2) * 0.0015, r.crop_year, '0-6", 6-24"',
-       case k when 1 then 'Knoll' when 2 then 'Mid-slope (benchmark)' else 'Lower slope' end, true, '0de30000-0000-4000-8000-0000000000a1'
+select r.field_id, '1', st_y(pt), st_x(pt), r.crop_year, '0-6", 6-24"',
+       'Mid-slope benchmark', true, '0de30000-0000-4000-8000-0000000000a1'
 from public.soil_test_reports r
 join public.field_boundaries b on b.field_id = r.field_id and b.valid_to is null
-cross join lateral (select st_pointonsurface(b.geom) as pt) p
-cross join generate_series(1, 3) k
-where r.crop_year = extract(year from current_date)::int;
+cross join lateral (select st_pointonsurface(b.geom) as pt) p;
 
--- Example AI assessments of this fall's soil tests.
+-- Example AI assessments of this fall's soil tests (for next year's crops).
 insert into public.soil_test_assessments (report_id, crop_label, assessment_md, recommendation, model, generated_at, column_notes)
 select r.id, r.crop_label,
        'Example — written for this made-up farm. In your own copy, the AI writes this from your farm''s data.' || E'\n\n' || v.body,
@@ -315,9 +320,35 @@ join (values
    '[{"nutrient":"N","product":"46-0-0 Urea","lb_per_ac":115,"product_lb_per_ac":250,"timing":"Side-band at seeding","note":null},{"nutrient":"N","product":"46-0-0 Urea","lb_per_ac":30,"product_lb_per_ac":65,"timing":"Top-dress at flag leaf","note":"For protein."},{"nutrient":"P","product":"11-52-0 MAP","lb_per_ac":28,"product_lb_per_ac":55,"timing":"Seed-placed","note":null}]',
    '{"no3n_lb_ac":{"summary":"Example: the highest carry-over on the farm this fall.","priorCrop":"Canola","nextCrop":"Wheat"}}'),
   ('0de30000-0000-4000-8000-000000000a06',
-   E'Creek Pivot East grew 120 bu malt barley and still has 52 lb nitrate in the profile. Phosphorus is moderate at 16 ppm and potassium the lowest of the pivots at 290 ppm, though still adequate.\n\nZinc is marginal (0.8 ppm) on this field. Wheat is not very sensitive, but a small zinc rate in the blend is inexpensive.\n\nFor 90 bu wheat, plan about 135 lb of actual N with a split application.',
+   E'Creek Pivot East grew 120 bu malt barley and still has 52 lb nitrate in the profile. Phosphorus is moderate at 16 ppm and potassium the lowest of the pivots at 290 ppm, though still adequate.\n\nZinc is marginal (0.8 ppm) on this field. Wheat is not very sensitive, but a small zinc rate in the blend is inexpensive.\n\nFor 90 bu wheat, plan 130 lb of N from urea in a split application; the MAP adds about 7 lb more.',
    '[{"nutrient":"N","product":"46-0-0 Urea","lb_per_ac":100,"product_lb_per_ac":217,"timing":"Side-band at seeding","note":null},{"nutrient":"N","product":"46-0-0 Urea","lb_per_ac":30,"product_lb_per_ac":65,"timing":"Top-dress at flag leaf","note":null},{"nutrient":"P","product":"11-52-0 MAP","lb_per_ac":31,"product_lb_per_ac":60,"timing":"Seed-placed","note":null},{"nutrient":"Zn","product":"Zinc sulphate","lb_per_ac":1,"product_lb_per_ac":3,"timing":"In the blend","note":"Marginal zinc."}]',
    '{"zn_ppm":{"summary":"Example: marginal; add a little zinc.","priorCrop":"Barley","nextCrop":"Wheat"}}')
+) as v(report, body, rec, notes) on v.report::uuid = r.id;
+
+-- Last fall's four, written a year ago for this year's crops, so this year's
+-- fertilizer plan has its own soil-test programmes.
+insert into public.soil_test_assessments (report_id, crop_label, assessment_md, recommendation, model, generated_at, column_notes)
+select r.id, r.crop_label,
+       'Example — written for this made-up farm. In your own copy, the AI writes this from your farm''s data.' || E'\n\n' || v.body,
+       v.rec::jsonb, 'claude-opus-5-5', now() - interval '360 days', v.notes::jsonb
+from public.soil_test_reports r
+join (values
+  ('0de30000-0000-4000-8000-000000000a11',
+   E'West Half came off wheat with 18 lb of nitrate-N in the top two feet. Peas fix their own nitrogen, so with a good inoculant none needs adding.\n\nPhosphorus is moderate at 15 ppm. Seed-placed phosphate is limited for peas, so keep it to about 20 lb and build on the cereal years.\n\nSulphur, potassium and pH (6.5) are all fine for peas.',
+   '[{"nutrient":"P","product":"11-52-0 MAP","lb_per_ac":20,"product_lb_per_ac":38,"timing":"Seed-placed","note":"The safe seed-placed rate for peas."}]',
+   '{"no3n_lb_ac":{"summary":"Example: low, but peas need none added.","priorCrop":"Wheat","nextCrop":"Peas"}}'),
+  ('0de30000-0000-4000-8000-000000000a12',
+   E'Sandhill is the lightest field on the farm: 3.6% organic matter, 14 lb of nitrate-N and only 11 ppm phosphorus. Sulphate is low at 4.5 ppm.\n\nOats do not need much nitrogen, and on sand it leaches if it goes on early, so keep it moderate and side-banded.\n\nPhosphorus and sulphur are the ones to fix here. Zinc is marginal (0.7 ppm), but oats are not sensitive to it.',
+   '[{"nutrient":"N","product":"46-0-0 Urea","lb_per_ac":60,"product_lb_per_ac":130,"timing":"Side-band at seeding","note":"Plus about 9 lb from the AMS and 6 from the MAP."},{"nutrient":"P","product":"11-52-0 MAP","lb_per_ac":30,"product_lb_per_ac":58,"timing":"Seed-placed","note":"Above removal to build."},{"nutrient":"S","product":"21-0-0-24 AMS","lb_per_ac":10,"product_lb_per_ac":42,"timing":"Side-band at seeding","note":null}]',
+   '{"p_bicarb_ppm":{"summary":"Example: low; worth building.","priorCrop":"Barley","nextCrop":"Oats"},"so4s_ppm":{"summary":"Example: low; add sulphur.","priorCrop":"Barley","nextCrop":"Oats"}}'),
+  ('0de30000-0000-4000-8000-000000000a13',
+   E'Home Quarter came off canola with 29 lb of nitrate-N left. Organic matter is good at 6.2%, so the soil supplies a fair share of the wheat''s nitrogen.\n\nPhosphorus is adequate at 20 ppm; a maintenance rate keeps it there. Potassium, sulphur and pH (6.7) need nothing.',
+   '[{"nutrient":"N","product":"46-0-0 Urea","lb_per_ac":90,"product_lb_per_ac":196,"timing":"Side-band at seeding","note":"Plus about 5 lb from the MAP."},{"nutrient":"P","product":"11-52-0 MAP","lb_per_ac":25,"product_lb_per_ac":48,"timing":"Seed-placed","note":"Maintenance rate."}]',
+   '{}'),
+  ('0de30000-0000-4000-8000-000000000a14',
+   E'Hilltop came off canola with 24 lb of nitrate-N. The eroded knolls pull the averages down: organic matter 4.1% and phosphorus only 9 ppm, the lowest on the farm.\n\nThe pH of 7.6 ties up some phosphorus, so seed-placed MAP is the best place for it. Put on as much as the wheat seed will safely take.\n\nZinc is marginal (0.9 ppm); wheat is not very sensitive to it.',
+   '[{"nutrient":"N","product":"46-0-0 Urea","lb_per_ac":85,"product_lb_per_ac":185,"timing":"Side-band at seeding","note":"Plus about 7 lb from the MAP."},{"nutrient":"P","product":"11-52-0 MAP","lb_per_ac":35,"product_lb_per_ac":67,"timing":"Seed-placed","note":"Building a low test."}]',
+   '{"p_bicarb_ppm":{"summary":"Example: low; the limiting nutrient here.","priorCrop":"Canola","nextCrop":"Wheat"}}')
 ) as v(report, body, rec, notes) on v.report::uuid = r.id;
 
 -- Scouting this season.

@@ -41,6 +41,7 @@ import { useBinEstimate } from '@/lib/bin-estimate'
 import { cn } from '@/lib/utils'
 import { useAllCropZones } from '@/lib/cropZones'
 import { Modal } from '@/components/Modal'
+import { dbErrorMessage } from '@/lib/db-error'
 
 export type StorageTab = 'estimator' | 'bins' | 'map'
 
@@ -70,7 +71,7 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
   const { data: plans } = useCropPlans(cropYear)
   const { data: allBoundaries } = useAllBoundaries()
   const { data: fields } = useFields()
-  const { data: contents } = useBinContents()
+  const { data: contents, isLoading: contentsLoading } = useBinContents()
   // The bin whose contents are being written down from its own row.
   const [recordFor, setRecordFor] = useState<BinRow | null>(null)
   // Closing out what was in a bin, from its row: which content row, and the day.
@@ -81,7 +82,8 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
   const { data: zones } = useAllCropZones()
   const allocMut = useAllocationMutations(cropYear)
   const [showFields, setShowFields] = useState<BinEstimateLine | null>(null)
-  const { data: onHand } = useBinOnHand()
+  // Until the bushels arrive a bin is unknown, not empty (batch 2 test, 17 Nov 2026).
+  const { data: onHand, isLoading: onHandLoading, error: onHandError } = useBinOnHand()
   const { data: fieldsIn } = useBinFieldsIn()
 
   /**
@@ -215,7 +217,7 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
             <p className="mt-0.5 text-lg font-bold tabular-nums text-gray-900">
               {Math.round(room.roomBu).toLocaleString()} bu
             </p>
-            <p className="text-[11px] leading-tight text-gray-500">
+            <p className="text-xs leading-tight text-gray-500">
               {room.emptyBins} bin{room.emptyBins === 1 ? '' : 's'} empty
               {room.inUseRoomBu > 0.5 && (
                 <>
@@ -235,7 +237,7 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
             <p className={cn('mt-0.5 text-lg font-bold tabular-nums', shortBins > 0 ? 'text-red-700' : 'text-gray-900')}>
               {shortBins}
             </p>
-            <p className="text-[11px] leading-tight text-gray-500">
+            <p className="text-xs leading-tight text-gray-500">
               {shortBins > 0 ? 'for the crop still in the field' : 'everything still out has somewhere to go'}
             </p>
           </div>
@@ -346,7 +348,7 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
                     </p>
                     <span
                       className={cn(
-                        'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold',
+                        'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
                         !l.needsBins
                           ? 'bg-gray-200 text-gray-600'
                           : short
@@ -385,7 +387,7 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
 
                   <p className={cn('mt-1.5 text-xs', short ? 'font-medium text-red-700' : 'text-gray-600')}>{l.summary}</p>
 
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
                     {l.fieldCount > 0 && (
                       <button
                         type="button"
@@ -456,6 +458,7 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
               at a glance — a bar filled in the crop's colour, the bushels and
               where from. An empty bin shows its plan instead, marked as a plan,
               until grain goes in. A tap opens the bin for everything else. */}
+          {onHandError && <p className="border-b border-gray-100 px-3 py-2 text-sm text-red-700">{dbErrorMessage(onHandError, 'What is in the bins could not be loaded.')}</p>}
           <ul className="max-h-[calc(100dvh-12rem)] divide-y divide-gray-100 overflow-y-auto">
             {(bins ?? []).map((bin) => {
               const a = allocByBin.get(bin.id)
@@ -496,10 +499,12 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
                     )}
                   </div>
 
-                  {held <= 0 && products.length > 0 ? (
+                  {onHandLoading || contentsLoading ? (
+                    <div role="status" aria-label="Loading" className="mt-1.5 h-2.5 rounded-full bg-gray-200/80 motion-safe:animate-pulse" />
+                  ) : onHandError ? null : held <= 0 && products.length > 0 ? (
                     <p className="mt-1 flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
                       <span>
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">In the bin </span>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-emerald-700">In the bin </span>
                         {products.map((pr) => (
                           <span key={pr.product} className="mr-2">
                             <b className="tabular-nums text-gray-900">{pr.tonnes.toLocaleString('en-CA', { maximumFractionDigits: 2 })} t</b>{' '}
@@ -516,7 +521,7 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
                       </div>
                       <p className="mt-1 flex flex-wrap items-baseline justify-between gap-x-2 text-sm">
                         <span>
-                          <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">In the bin </span>
+                          <span className="text-xs font-semibold uppercase tracking-wide text-emerald-700">In the bin </span>
                           <b className="tabular-nums text-gray-900">
                             {est > 0 ? '~' : ''}
                             {Math.round(held).toLocaleString()} bu
@@ -533,7 +538,7 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
                   ) : c ? (
                     <p className="mt-1 flex flex-wrap items-center justify-between gap-2 text-sm">
                       <span>
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">In the bin </span>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-emerald-700">In the bin </span>
                         <span className={cn(isCarryOver(c, cropYear) ? 'font-medium text-amber-800' : 'text-gray-900')}>{contentLabel(c)}</span>
                       </span>
                       {isManager && !isPast &&
@@ -567,7 +572,7 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
                     // Empty: the plan, plainly a plan (dashed, blue, says so).
                     <div className="mt-1.5 rounded-md border border-dashed border-sky-300 bg-sky-50/60 px-2 py-1.5">
                       <div className="flex flex-wrap items-center gap-2 text-sm">
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-sky-800">Plan · nothing in it yet</span>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-sky-800">Plan · nothing in it yet</span>
                         <span className="ml-auto text-xs tabular-nums text-gray-500">empty · {cap.toLocaleString()} bu</span>
                       </div>
                       {isManager && !isPast ? (
@@ -623,7 +628,7 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
                 {showFields.cuts
                   .filter((c) => c.fieldId === id)
                   .map((c, i) => (
-                    <span key={`${c.label}-${i}`} className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-900">
+                    <span key={`${c.label}-${i}`} className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900">
                       {c.label}
                     </span>
                   ))}

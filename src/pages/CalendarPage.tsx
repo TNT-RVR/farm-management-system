@@ -335,7 +335,7 @@ function CalendarSubscribe({ token }: { token: string }) {
         </button>
       </div>
       {regenerate.isError && (
-        <p className="mt-1 text-[11px] text-red-600">{(regenerate.error as Error).message}</p>
+        <p className="mt-1 text-xs text-red-600">{(regenerate.error as Error).message}</p>
       )}
     </div>
   )
@@ -564,7 +564,7 @@ export function CalendarPage() {
                   onClick={() => syncTimeOff.mutate()}
                   disabled={syncTimeOff.isPending}
                   title="Read the calendar now rather than at the daily run"
-                  className="rounded border border-gray-200 px-1.5 py-0.5 text-[11px] text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                  className="rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-50 disabled:opacity-50"
                 >
                   {syncTimeOff.isPending ? 'reading…' : 'refresh'}
                 </button>
@@ -636,7 +636,7 @@ export function CalendarPage() {
                     onClick={it.onClick}
                     title={it.title ?? it.label}
                     className={cn(
-                      'block w-full truncate rounded px-1 py-0.5 text-left text-[11px] leading-tight',
+                      'block w-full truncate rounded px-1 py-0.5 text-left text-xs leading-tight',
                       it.color,
                     )}
                   >
@@ -644,7 +644,7 @@ export function CalendarPage() {
                   </button>
                 ))}
                 {items.length > 4 && (
-                  <span className="px-1 text-[10px] text-gray-400">+{items.length - 4} more</span>
+                  <span className="px-1 text-xs text-gray-400">+{items.length - 4} more</span>
                 )}
               </div>
             </div>

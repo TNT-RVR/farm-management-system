@@ -404,12 +404,12 @@ export function BinMap({ canEdit, cropYear, actions, compact = false }: { canEdi
                       </span>
                     </span>
                     {c?.planned && (
-                      <span className="shrink-0 rounded border border-dashed border-sky-300 bg-sky-50 px-1 text-[10px] italic text-sky-800">
+                      <span className="shrink-0 rounded border border-dashed border-sky-300 bg-sky-50 px-1 text-xs italic text-sky-800">
                         plan: {[crop?.name, fieldName(c.fieldId)].filter(Boolean).join(', ')}
                       </span>
                     )}
                     {b.lng == null && (
-                      <span className="shrink-0 text-[10px] font-medium uppercase text-amber-700">
+                      <span className="shrink-0 text-xs font-medium uppercase text-amber-700">
                         no pin
                       </span>
                     )}

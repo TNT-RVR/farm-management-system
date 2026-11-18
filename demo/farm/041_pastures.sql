@@ -13,6 +13,11 @@ update public.pastures p set legal_description = 'Home Ranch · NW-15-40-25-W4',
 update public.pastures set area_acres = round((st_area(boundary::geography) / 4046.86)::numeric, 1),
        boundary_analysis = st_multi(st_buffer(boundary::geography, -15)::geometry)
  where id in ('0de30000-0000-4000-8000-000000000415', '0de30000-0000-4000-8000-000000000416', '0de30000-0000-4000-8000-000000000417');
+-- The Grazing tab's copy of each paddock's size follows the redrawn shape,
+-- so the map and the Grazing table give the same acres.
+update public.grazing_pastures g set km2 = round((p.area_acres * 0.00404686)::numeric, 3)
+  from public.pastures p
+ where g.pasture_id = p.id and p.id in ('0de30000-0000-4000-8000-000000000415', '0de30000-0000-4000-8000-000000000416', '0de30000-0000-4000-8000-000000000417');
 
 update public.cattle_water set geom = st_setsrid(st_makepoint(-113.544512, 52.454715), 4326) where name = 'Yard trough';
 update public.cattle_water set geom = st_setsrid(st_makepoint(-113.550139, 52.460193), 4326) where name = 'East Bush dugout';

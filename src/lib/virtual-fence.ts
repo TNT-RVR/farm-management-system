@@ -149,6 +149,17 @@ export function fencePlan(p: FencePaddockInput, demand: FenceDemand, daysPerRota
   }
 }
 
+/**
+ * Days the short last fence lasts, in the whole days shown: the paddock's
+ * total days as printed less its whole fences. `rotations × days + this` is
+ * the total days on screen, so the two columns add up ("11 + 2 d" at 3 days,
+ * 35 days) instead of reading as 11 × 3 = 33 against 35.
+ */
+export function shortFenceDays(p: Pick<FencePaddockPlan, 'rotations' | 'totalDays'>, daysPerRotation: number): number {
+  if (daysPerRotation <= 0) return 0
+  return Math.max(0, Math.round(p.totalDays) - p.rotations * daysPerRotation)
+}
+
 export type FenceTotals = { grazeableAc: number; totalLb: number; rotations: number; totalDays: number; lbPerAc: number }
 
 /**

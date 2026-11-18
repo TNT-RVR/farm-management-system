@@ -247,7 +247,7 @@ export function InspectionView({
       {save.isError && <p className="text-xs text-red-700">{(save.error as Error).message}</p>}
 
       {/* The sections, to jump between; a tick when every item is answered. */}
-      <div className="flex gap-1 overflow-x-auto pb-1 text-[11px]">
+      <div className="flex gap-1 overflow-x-auto pb-1 text-xs">
         {INSPECTION_SECTIONS.map((s, n) => {
           const left = s.items.filter((i) => !answers[i.key]).length
           const bad = s.items.some((i) => answers[i.key] === 'fix')

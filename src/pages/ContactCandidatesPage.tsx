@@ -103,7 +103,7 @@ function WhyCell({
           >
             Cancel
           </button>
-          <span className="text-[11px] text-gray-400">Enter saves · Esc cancels</span>
+          <span className="text-xs text-gray-400">Enter saves · Esc cancels</span>
         </div>
       </div>
     )
@@ -130,7 +130,7 @@ function WhyCell({
       <span className="mt-1 flex items-center gap-1">
         <span
           className={cn(
-            'rounded-full px-1.5 py-0.5 text-[11px]',
+            'rounded-full px-1.5 py-0.5 text-xs',
             candidate.source === 'both'
               ? 'bg-brand-50 text-brand-700'
               : candidate.source === 'mail'
@@ -200,7 +200,7 @@ export function ContactCandidatesPage() {
         <div className="min-w-[9rem] whitespace-normal">
           <div className="font-medium text-gray-900">{c.company}</div>
           {who(c) && <div className="text-xs text-gray-600">{who(c)}</div>}
-          <div className="mt-0.5 text-[11px] uppercase tracking-wide text-gray-400">
+          <div className="mt-0.5 text-xs uppercase tracking-wide text-gray-400">
             {typeLabel(c.type)}
           </div>
         </div>

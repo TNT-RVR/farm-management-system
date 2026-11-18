@@ -106,7 +106,69 @@ export type RecropRule = {
 
 export type FieldApp = { product: string; registration: string | null; appliedOn: string }
 
-export type CarryoverHit = { product: string; registration: string; appliedOn: string; block: boolean; message: string; quote: string | null }
+export type CarryoverHit = {
+  product: string
+  registration: string
+  appliedOn: string
+  block: boolean
+  message: string
+  quote: string | null
+  /**
+   * Whether the label line this rule was read from still reads like the rule.
+   * `null` where there is no quote, or where the line does not say plainly
+   * enough either way to judge — which is most of them.
+   */
+  quoteFits: boolean | null
+}
+
+/** A label line permitting a crop to go in: "may be seeded", "can be grown". */
+const QUOTE_PERMITS = /\b(may|can|could)\b[^.;]{0,40}\b(seeded|sown|planted|grown|seed|sow|plant|grow)\b/i
+/** A label line forbidding it: "do not seed", "must not be planted". */
+const QUOTE_FORBIDS = /\b(do not|don't|never|must not|cannot|may not)\b[^.;]{0,40}\b(seed|sow|plant|grow)/i
+/**
+ * A wait written into the line itself: "11 months following", "the year
+ * after", "the second season".
+ *
+ * A permission carrying one of these is not a contradiction of a rule that
+ * makes you wait — the rule IS that wait, read off this line. Without this,
+ * "can be seeded 11 months following an application" was flagged as
+ * disagreeing with "label needs 11 months; this is 10", and on the farm's own
+ * 547 label rules that fired on 32 of the 138 verdicts the screen can show.
+ * A warning that cries wolf on a quarter of them teaches people to skip it.
+ */
+const QUOTE_DELAY =
+  /\d+\s*(month|year|day|season)|\b(the\s+)?(year|season|spring|crop)\s+(following|after)\b|\bfollowing\s+(year|season|spring|crop)\b|\bsecond\s+season\b|\bnext\s+(year|spring|season)\b|\byears?\s+following\b/i
+
+/**
+ * Does the label line a rule came from still agree with the rule?
+ *
+ * The screen prints the verdict and then the label's own words underneath it,
+ * and nothing used to make the two agree: a "label rules it out" sat directly
+ * above "wheat, barley and peas may be seeded the year following application"
+ * (page walk, 17 Nov 2026). A reader believes the label's words — they are the
+ * more believable of the two — so a mismatch is worse than no quote at all.
+ *
+ * It judges only a line that names this crop and then says plainly one thing
+ * or the other; everything else is `null`, both at once and neither included.
+ * A permission that carries its own wait is `null` as well, because that wait
+ * is what the rule was read from.
+ *
+ * What is left is the narrow case worth a word: a line that lets this crop
+ * follow with no wait attached, under a rule that stops it. Over the farm's
+ * own label rules that is rare, which is what makes it worth printing.
+ */
+export function quoteFitsRule(quote: string | null, followingCrop: string, blocks: boolean): boolean | null {
+  if (!quote?.trim() || !followingCrop?.trim()) return null
+  const stem = followingCrop.trim().toLowerCase().replace(/s$/, '')
+  if (stem.length < 3) return null
+  const namesCrop = new RegExp(`\\b${stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}e?s?\\b`, 'i').test(quote)
+  if (!namesCrop) return null
+  const permits = QUOTE_PERMITS.test(quote)
+  const forbids = QUOTE_FORBIDS.test(quote)
+  if (permits === forbids) return null
+  if (permits && QUOTE_DELAY.test(quote)) return null
+  return blocks ? forbids : permits
+}
 
 /** Months between two ISO dates. */
 const monthsBetween = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / (30.44 * 86_400_000)
@@ -184,6 +246,7 @@ export function carryover(crop: CropKey, apps: FieldApp[], rulesByReg: Map<strin
         block,
         message: `${a.product} sprayed ${a.appliedOn}: ${need}${r.condition ? ` (${r.condition})` : ''}.`,
         quote: r.quote,
+        quoteFits: quoteFitsRule(r.quote, r.following_crop, block),
       })
     }
   }

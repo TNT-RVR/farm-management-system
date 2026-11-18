@@ -140,7 +140,7 @@ function ProgressPanel({
       </dl>
 
       {p.unrecorded.acres > 0 && (
-        <div className="mt-2 flex items-start gap-1 text-[11px] text-amber-700">
+        <div className="mt-2 flex items-start gap-1 text-xs text-amber-700">
           <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
             {ac(p.unrecorded.acres)} ac in crop with no Deere {p.kind} record — counted separately.
@@ -359,7 +359,7 @@ export function FieldProgressPage() {
                             {f.cropName ?? 'no crop'}
                           </span>
                           {f.hasAnyOperation && kind === 'seeding' && (
-                            <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800">
+                            <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-xs font-medium text-amber-800">
                               in crop, not recorded
                             </span>
                           )}

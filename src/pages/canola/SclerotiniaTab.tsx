@@ -174,7 +174,7 @@ function Checklist({
               </span>
               <span
                 className={cn(
-                  'rounded-full px-2 py-0.5 text-[11px] font-medium normal-case tracking-normal',
+                  'rounded-full px-2 py-0.5 text-xs font-medium normal-case tracking-normal',
                   s.clears == null ? 'bg-blue-50 text-blue-800'
                   : s.clears ? 'bg-amber-100 text-amber-900'
                   : 'bg-gray-100 text-gray-700',
@@ -203,7 +203,7 @@ function Checklist({
                             onClick={() => setAnswers({ ...answers, [String(q.n)]: o.points })}
                             title={suggested ? hint.why : undefined}
                             className={cn(
-                              'rounded-md border px-2 py-1 text-[11px] font-medium',
+                              'rounded-md border px-2 py-1 text-xs font-medium',
                               chosen
                                 ? 'border-brand-600 bg-brand-50 text-brand-800'
                                 : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50',
@@ -217,7 +217,7 @@ function Checklist({
                       })}
                     </div>
                     {hint && (
-                      <p className="mt-0.5 text-[11px] text-gray-500">
+                      <p className="mt-0.5 text-xs text-gray-500">
                         The records suggest {hint.points} — {hint.why}
                       </p>
                     )}

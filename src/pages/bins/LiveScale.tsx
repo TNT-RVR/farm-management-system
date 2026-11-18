@@ -114,15 +114,15 @@ export function TakeScaleWeight({
         </button>
       </div>
       {!config.canCapture && (
-        <p className="mt-0.5 text-[11px] text-gray-500">The scale key is not set yet (Farm setup → Keys).</p>
+        <p className="mt-0.5 text-xs text-gray-500">The scale key is not set yet (Farm setup → Keys).</p>
       )}
       {taken && !error && (
-        <p className="mt-0.5 text-[11px] text-green-800">
+        <p className="mt-0.5 text-xs text-green-800">
           {kg(taken.weightKg)} taken off the scale at{' '}
           {new Date(taken.readingAt).toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit' })}
         </p>
       )}
-      {error && <p className="mt-0.5 text-[11px] text-red-700">{error}</p>}
+      {error && <p className="mt-0.5 text-xs text-red-700">{error}</p>}
     </div>
   )
 }

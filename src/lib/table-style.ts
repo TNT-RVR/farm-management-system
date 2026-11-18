@@ -21,13 +21,27 @@
  * default, which was right on the white headers these replaced and all but
  * invisible on green (Sam, 29 Oct 2026).
  */
-export const TABLE_HEAD = 'rvr-head bg-brand-700 text-left text-[11px] uppercase tracking-wide text-white'
+export const TABLE_HEAD = 'rvr-head bg-brand-700 text-left text-xs uppercase tracking-wide text-white'
 
 /**
  * A `th` inside it. Pages that need their own padding or alignment pass their
  * own classes after this one.
  */
 export const TABLE_TH = 'px-3 py-2 font-medium'
+
+/**
+ * The bar for a supporting table: the same green as a rule along the top, on
+ * a pale green band, instead of a solid fill (design review, Nov 2026).
+ *
+ * A page with six solid bars down it has nothing leading: the answer and the
+ * lists that feed it look alike. The page's main table keeps TABLE_HEAD; a
+ * table that is there in support of it (the other options, the product list)
+ * takes this. Still one family, still edge to edge across its tile.
+ *
+ * No `rvr-head`: that turns grey text and the ⓘ white, which is right on solid
+ * green and invisible on this pale band.
+ */
+export const TABLE_HEAD_SUPPORT = 'border-t-[3px] border-brand-700 bg-brand-50 text-left text-xs uppercase tracking-wide text-brand-800'
 
 /**
  * A header cell that has to recede — a history year beside the year being
@@ -41,7 +55,10 @@ export const TABLE_TH_MUTED = 'text-brand-200'
  * same kind of object on one page. `Card` uses it; so does any panel that
  * draws its own heading.
  */
-export const CARD_HEAD = 'rvr-head bg-brand-700 px-3 py-2 text-[11px] uppercase tracking-wide text-white'
+export const CARD_HEAD = 'rvr-head bg-brand-700 px-3 py-2 text-xs uppercase tracking-wide text-white'
+
+/** CARD_HEAD for a supporting card; see TABLE_HEAD_SUPPORT. */
+export const CARD_HEAD_SUPPORT = 'border-t-[3px] border-brand-700 bg-brand-50 px-3 py-2 text-xs uppercase tracking-wide text-brand-800'
 
 /** The heading text inside CARD_HEAD. */
 export const CARD_HEAD_TEXT = 'font-medium text-white'

@@ -236,7 +236,7 @@ export function CattleSuppliers({
             <p key={c.id} className="text-gray-600">
               {c.company}
               {c.address && <span className="text-gray-400"> · {c.address}</span>}
-              {c.notes_md && <span className="block text-[11px] text-gray-400">{c.notes_md}</span>}
+              {c.notes_md && <span className="block text-xs text-gray-400">{c.notes_md}</span>}
             </p>
           ))}
         </div>
@@ -247,7 +247,7 @@ export function CattleSuppliers({
               {c.company}
               {c.contact_name && ` (${c.contact_name})`}
               {c.address && <span className="text-gray-400"> · {c.address}</span>}
-              {c.notes_md && <span className="block text-[11px] text-gray-400">{c.notes_md}</span>}
+              {c.notes_md && <span className="block text-xs text-gray-400">{c.notes_md}</span>}
             </p>
           ))}
           {vets.length === 0 && <p className="text-gray-400">None recorded.</p>}

@@ -58,7 +58,7 @@ export function CropDefaultBadge({ className }: { className?: string }) {
   return (
     <span
       title="Not enough harvests yet: the estimate is the crop’s normal yield (Crop settings, or the variety’s)"
-      className={cn('ml-1 rounded bg-amber-50 px-1 py-0.5 text-[10px] uppercase tracking-wide text-amber-700', className)}
+      className={cn('ml-1 rounded bg-amber-50 px-1 py-0.5 text-xs uppercase tracking-wide text-amber-700', className)}
     >
       {CROP_DEFAULT}
     </span>
@@ -95,7 +95,7 @@ export function VersusCell({
           so beats dropping the line, which looks like no goal was ever set. */}
       {score.goalOffScale && score.goal.value != null ? (
         <span
-          className="text-[11px] font-medium text-amber-800"
+          className="text-xs font-medium text-amber-800"
           title={`A goal of ${formatYield(score.goal.value)}/ac is nowhere near this crop’s normal yield — nearly always a figure typed in another unit. Fix it on the plan or in Crop settings and the harvest will be graded against it.`}
         >
           goal of {formatYield(score.goal.value)} looks wrong
@@ -106,7 +106,7 @@ export function VersusCell({
       {mark ? (
         <AbnormalYearMark {...mark} reason={score.actual.abnormal} />
       ) : (
-        score.actual.abnormal != null && <span className="text-[11px] font-medium text-amber-800">{abnormalText(score.actual.abnormal)}</span>
+        score.actual.abnormal != null && <span className="text-xs font-medium text-amber-800">{abnormalText(score.actual.abnormal)}</span>
       )}
     </span>
   )

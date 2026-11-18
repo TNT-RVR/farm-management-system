@@ -188,7 +188,7 @@ export function SilageTab({ year, isManager }: { year: number; isManager: boolea
         </HelpNote>
         <div className="mt-4">
           <SettingsGroup settingKey="silage_haul" fields={FIELDS} values={i} defaults={s.defaults} isManager={isManager} />
-          <p className="mt-1 text-[11px] text-gray-400">
+          <p className="mt-1 text-xs text-gray-400">
             Value default: {s.valueSource ?? 'a round $68.25/t'}. Dry matter default: {s.dmSource ?? 'a typical 35%'}.
           </p>
         </div>
@@ -230,7 +230,7 @@ export function SilageTab({ year, isManager }: { year: number; isManager: boolea
                     {onlySilage && <td className="px-3 py-1 text-right tabular-nums">{sf?.tonnes != null ? n0(sf.tonnes) : '—'}</td>}
                     <td className="px-3 py-1 text-right tabular-nums text-gray-600">
                       {t ? `${n1(t.km)} km` : '—'}
-                      {t?.note && <span className="block text-[10px] text-amber-700">estimate</span>}
+                      {t?.note && <span className="block text-xs text-amber-700">estimate</span>}
                     </td>
                     <td className="hidden px-3 py-1 text-right tabular-nums text-gray-600 md:table-cell">{c ? `${n0(c.cycleMin)} min` : '—'}</td>
                     <td className={cn('px-3 py-1 text-right tabular-nums', c?.chopperWaits && 'text-amber-700')}>{c ? c.trucksNeeded : '—'}</td>
@@ -248,7 +248,7 @@ export function SilageTab({ year, isManager }: { year: number; isManager: boolea
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-[11px] text-gray-400">Trucks in amber: fewer are running than it takes to keep the chopper going at that distance.</p>
+        <p className="mt-2 text-xs text-gray-400">Trucks in amber: fewer are running than it takes to keep the chopper going at that distance.</p>
       </Card>
     </div>
   )

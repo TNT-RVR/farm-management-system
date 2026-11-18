@@ -92,7 +92,7 @@ export function FieldMapSnapshot({
       className={`group relative block h-40 w-full overflow-hidden rounded-lg border border-gray-200 sm:h-56 ${className ?? ''}`}
     >
       <div ref={containerRef} className="pointer-events-none h-full w-full" />
-      <span className="pointer-events-none absolute right-2 top-2 flex items-center gap-1 rounded-md bg-black/55 px-2 py-1 text-[11px] font-medium text-white opacity-90 group-hover:opacity-100">
+      <span className="pointer-events-none absolute right-2 top-2 flex items-center gap-1 rounded-md bg-black/55 px-2 py-1 text-xs font-medium text-white opacity-90 group-hover:opacity-100">
         <Maximize2 className="h-3 w-3" />
         Open on the map
       </span>

@@ -128,7 +128,7 @@ export function PriceAlerts({
             >
               Cancel
             </button>
-            {editingId && <span className="text-[11px] text-gray-400">A moved line arms the watch again.</span>}
+            {editingId && <span className="text-xs text-gray-400">A moved line arms the watch again.</span>}
           </div>
         </Modal>
       )}
@@ -169,7 +169,7 @@ export function PriceAlerts({
                 {unitOf(a.series_id)}
               </span>
               {a.last_fired_at && (
-                <span className="text-[11px] text-gray-400">
+                <span className="text-xs text-gray-400">
                   fired {a.last_fired_at.slice(0, 10)} at {a.last_fired_value}
                   {!a.armed && ' · quiet until it comes back'}
                 </span>

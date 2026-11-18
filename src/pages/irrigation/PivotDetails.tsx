@@ -52,7 +52,7 @@ const DEPTH_LABEL: Record<number, string> = { 0.25: '¼ in', 0.5: '½ in', 0.75:
 /** The power cost of a ¼, ½, ¾ and 1 inch on this pivot, at the grid price. */
 function PivotWaterCost({ pivot, fieldName, pump, pivotsOnPump }: { pivot: FieldPivotRow; fieldName: string; pump: PumpRow | null; pivotsOnPump: number }) {
   const { prices } = usePowerPrices()
-  const title = <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Cost to put water on</p>
+  const title = <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Cost to put water on</p>
   if (pivot.operated_by)
     return (
       <div className="space-y-1">

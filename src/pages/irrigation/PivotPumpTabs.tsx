@@ -416,7 +416,7 @@ export function PivotTab({ isManager }: { isManager: boolean }) {
                   <span title={d?.share.note}>
                     {d?.share.af != null ? numFmt(d.share.af, 1) : '—'}
                     {d && d.share.how !== 'set' && (
-                      <span className={`ml-1 text-[10px] ${d.share.how === 'derived' ? 'italic text-gray-400' : 'text-amber-700'}`}>{d.share.how}</span>
+                      <span className={`ml-1 text-xs ${d.share.how === 'derived' ? 'italic text-gray-400' : 'text-amber-700'}`}>{d.share.how}</span>
                     )}
                   </span>,
                 ],
@@ -466,17 +466,17 @@ export function PivotTab({ isManager }: { isManager: boolean }) {
                 <td className="px-2 py-1.5 font-medium text-gray-900">
                   {field?.name ?? '—'}
                   {p.on_river && (
-                    <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
+                    <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-xs font-medium text-sky-700">
                       River
                     </span>
                   )}
                   {p.operated_by && (
-                    <span className="ml-1.5 rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">
+                    <span className="ml-1.5 rounded bg-violet-50 px-1.5 py-0.5 text-xs font-medium text-violet-700">
                       Run by {p.operated_by}
                     </span>
                   )}
                   {p.not_used && (
-                    <span title={p.not_used_note ?? undefined} className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+                    <span title={p.not_used_note ?? undefined} className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
                       Never run · dryland
                     </span>
                   )}
@@ -485,27 +485,27 @@ export function PivotTab({ isManager }: { isManager: boolean }) {
                       type="button"
                       onClick={() => toggle(p.id)}
                       title={flagLines(p.equipment_flags).join('\n')}
-                      className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+                      className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800"
                     >
                       Check
                     </button>
                   )}
                   {(pivotPhotos?.get(p.id)?.length ?? 0) > 0 && (
-                    <span className="ml-1.5 text-[10px] font-normal text-gray-400">{pivotPhotos!.get(p.id)!.length} photo{pivotPhotos!.get(p.id)!.length === 1 ? '' : 's'}</span>
+                    <span className="ml-1.5 text-xs font-normal text-gray-400">{pivotPhotos!.get(p.id)!.length} photo{pivotPhotos!.get(p.id)!.length === 1 ? '' : 's'}</span>
                   )}
                 </td>
                 <td className="px-2 py-1.5 text-gray-600">{p.pump_id ? txt(pumpById.get(p.pump_id)?.name) : '—'}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{numFmt(p.acres_irrigated, 1)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums" title={p.system_capacity_ls != null ? `Capacity ${numFmt(p.system_capacity_ls, 1)} L/s` : undefined}>
                   {numFmt(p.gpm)}
-                  {p.gpm_source === 'fieldnet' && <span className="block text-[10px] text-gray-400">FieldNET</span>}
-                  {p.gpm_source === 'confirmed' && <span className="block text-[10px] text-gray-400">confirmed</span>}
+                  {p.gpm_source === 'fieldnet' && <span className="block text-xs text-gray-400">FieldNET</span>}
+                  {p.gpm_source === 'confirmed' && <span className="block text-xs text-gray-400">confirmed</span>}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums">
                   <span title={p.efficiency_basis ? `From: ${p.efficiency_basis}` : undefined}>{stored != null ? `${Math.round(stored * 100)}%` : '—'}</span>
-                  {p.efficiency_basis === 'default' && <span className="block text-[10px] text-gray-400">default</span>}
+                  {p.efficiency_basis === 'default' && <span className="block text-xs text-gray-400">default</span>}
                   {sug?.eff != null && Math.round(sug.eff * 100) !== Math.round((stored ?? 0) * 100) && (
-                    <span className="block text-[10px] text-gray-500" title={[...sug.parts, sug.missing.length ? `Would sharpen it: ${sug.missing.join(', ')}` : ''].filter(Boolean).join('; ')}>
+                    <span className="block text-xs text-gray-500" title={[...sug.parts, sug.missing.length ? `Would sharpen it: ${sug.missing.join(', ')}` : ''].filter(Boolean).join('; ')}>
                       suggests {Math.round(sug.eff * 100)}%
                       {isManager && (
                         <button
@@ -522,7 +522,7 @@ export function PivotTab({ isManager }: { isManager: boolean }) {
                 <td className="px-2 py-1.5 text-right tabular-nums">
                   {d?.inches.inches != null ? numFmt(d.inches.inches, 1) : '—'}
                   {d?.inches.from && (
-                    <span className={`block text-[10px] ${d.inches.from === 'override' ? 'font-medium text-amber-700' : 'text-gray-400'}`}>
+                    <span className={`block text-xs ${d.inches.from === 'override' ? 'font-medium text-amber-700' : 'text-gray-400'}`}>
                       {d.inches.from === 'override' ? 'override' : smrid.setFor === year ? 'smrid.com' : `smrid.com ${smrid.setFor}`}
                     </span>
                   )}
@@ -874,9 +874,9 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
                       <span className="flex items-center gap-1">
                         <ChevronRight className={cn('h-3.5 w-3.5 text-gray-400 transition-transform', openPump === p.id && 'rotate-90')} />
                         {p.name}
-                        <span className="text-[11px] font-normal capitalize text-gray-400">{p.kind}</span>
+                        <span className="text-xs font-normal capitalize text-gray-400">{p.kind}</span>
                         {(p.purpose ?? 'irrigation') !== 'irrigation' && (
-                          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 first-letter:uppercase">{p.purpose}</span>
+                          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600 first-letter:uppercase">{p.purpose}</span>
                         )}
                       </span>
                     </td>
@@ -956,7 +956,7 @@ export function PumpTab({ isManager }: { isManager: boolean }) {
                           <ChevronRight className={cn('h-3.5 w-3.5 text-gray-400 transition-transform', isOpen && 'rotate-90')} />
                           {l.licence_number}
                           {l.status && l.status !== 'issued' && (
-                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">{l.status === 'draft' ? 'draft' : l.status}</span>
+                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">{l.status === 'draft' ? 'draft' : l.status}</span>
                           )}
                         </span>
                       </td>

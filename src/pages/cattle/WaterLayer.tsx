@@ -294,17 +294,17 @@ function PinLocation({ source }: { source: WaterSource }) {
     await copy(message)
   }
   const btn =
-    'flex items-center gap-1 rounded-md border border-gray-200 px-1.5 py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50'
+    'flex items-center gap-1 rounded-md border border-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-50'
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-      <code className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] tabular-nums text-gray-700">{coords}</code>
+      <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs tabular-nums text-gray-700">{coords}</code>
       <button onClick={() => copy(coords)} className={btn} title="Copy the latitude and longitude">
         <Copy className="h-3 w-3" /> Copy
       </button>
       <button onClick={share} className={btn} title="Send it with a map link">
         <Share2 className="h-3 w-3" /> Share
       </button>
-      {said && <span className="text-[11px] font-medium text-brand-700">{said === 'copied' ? 'Copied' : 'Sent'}</span>}
+      {said && <span className="text-xs font-medium text-brand-700">{said === 'copied' ? 'Copied' : 'Sent'}</span>}
     </div>
   )
 }
@@ -338,7 +338,7 @@ function WaterEditor({
           ✕
         </button>
       </div>
-      <p className="text-[11px] uppercase tracking-wide text-gray-500">
+      <p className="text-xs uppercase tracking-wide text-gray-500">
         {source.pasture_name ?? 'Outside every paddock'}
         {source.source === 'mymap' && ' · from the My Map'}
       </p>
@@ -397,7 +397,7 @@ function WaterEditor({
             {pickingServes && (
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
                 {lettered.map((p) => (
-                  <label key={p.id} className="flex items-center gap-1 text-[11px] text-gray-700">
+                  <label key={p.id} className="flex items-center gap-1 text-xs text-gray-700">
                     <input
                       type="checkbox"
                       checked={source.serves.includes(p.id)}
@@ -417,7 +417,7 @@ function WaterEditor({
             )}
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] text-gray-500">Drag the pin to move it.</span>
+            <span className="text-xs text-gray-500">Drag the pin to move it.</span>
             <button
               onClick={onDelete}
               className="flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
@@ -480,10 +480,10 @@ function WhatIsInTheWater({ source }: { source: WaterSource }) {
   return (
     <div className="mt-2 border-t border-gray-100 pt-2">
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[11px] uppercase tracking-wide text-gray-500">What is in it</span>
+        <span className="text-xs uppercase tracking-wide text-gray-500">What is in it</span>
         <span
           className={cn(
-            'rounded-full px-2 py-0.5 text-[11px] font-medium',
+            'rounded-full px-2 py-0.5 text-xs font-medium',
             verdict === 'acceptable'
               ? 'bg-green-100 text-green-900'
               : verdict === 'limits'
@@ -495,7 +495,7 @@ function WhatIsInTheWater({ source }: { source: WaterSource }) {
         >
           {VERDICT_LABEL[verdict]}
         </span>
-        <span className="text-[11px] text-gray-400">{when}</span>
+        <span className="text-xs text-gray-400">{when}</span>
       </div>
       {flagged.length === 0 ? (
         <p className="mt-1 text-xs text-gray-600">
@@ -516,7 +516,7 @@ function WhatIsInTheWater({ source }: { source: WaterSource }) {
         </ul>
       )}
       {judged.untested.length > 0 && (
-        <p className="mt-1 text-[11px] text-gray-400">
+        <p className="mt-1 text-xs text-gray-400">
           Not on this sheet: {judged.untested.slice(0, 5).join(', ')}
           {judged.untested.length > 5 && ` and ${judged.untested.length - 5} more`}.
         </p>

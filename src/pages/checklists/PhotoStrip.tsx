@@ -40,7 +40,7 @@ export function PhotoStrip({
           <button key={p.id} onClick={() => setBig(p)} className="relative h-20 w-20 overflow-hidden rounded-md border border-gray-200 bg-gray-100">
             {urls?.[p.storage_path] ? <img src={urls[p.storage_path]} alt={p.caption ?? ''} className="h-full w-full object-cover" /> : null}
             {kept?.has(p.storage_path) && (
-              <span className="absolute bottom-0.5 left-0.5 rounded bg-brand-700/90 px-1 text-[9px] font-semibold text-white">next year</span>
+              <span className="absolute bottom-0.5 left-0.5 rounded bg-brand-700/90 px-1 text-xs font-semibold text-white">next year</span>
             )}
           </button>
         ))}
@@ -48,7 +48,7 @@ export function PhotoStrip({
           <button
             onClick={() => input.current?.click()}
             disabled={add.isPending}
-            className="flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-gray-300 text-[11px] text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+            className="flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-gray-300 text-xs text-gray-500 hover:bg-gray-50 disabled:opacity-50"
           >
             <Camera className="h-5 w-5" />
             {add.isPending ? 'Uploading…' : label}

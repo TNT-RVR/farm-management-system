@@ -271,7 +271,7 @@ function ReferenceTables() {
               </tr>
             </tbody>
           </table>
-          <p className="border-t border-gray-100 px-3 py-2 text-[11px] text-gray-400">
+          <p className="border-t border-gray-100 px-3 py-2 text-xs text-gray-400">
             lbs/acre. The Irrigation row is reference only — grazeable irrigated acres use the precip-based
             supply in the calculator.
           </p>

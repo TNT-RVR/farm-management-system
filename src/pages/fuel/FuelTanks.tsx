@@ -133,18 +133,18 @@ export function FuelTanks({ isManager }: { isManager: boolean }) {
           <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {byFuel.map(([p, s]) => (
               <div key={p} className="rounded-md bg-gray-50 px-3 py-2">
-                <p className="text-[11px] text-gray-500">
+                <p className="text-xs text-gray-500">
                   {FUEL_PRODUCT_LABEL[p]} · {s.count} tank{s.count === 1 ? '' : 's'}
                 </p>
                 <p className="font-semibold tabular-nums text-gray-900">{L(s.capacity)}</p>
-                <p className="text-[11px] text-gray-500">
+                <p className="text-xs text-gray-500">
                   {s.unknown === s.count ? 'Levels not read' : `Room for ${L(s.room)}${s.unknown ? ` + ${s.unknown} not read` : ''}`}
                 </p>
               </div>
             ))}
           </div>
           <FuelTankMap tanks={tanks} isManager={isManager} placing={placing} onPlace={place} onOpen={(t) => isManager && setOpen(t)} />
-          <div className="mb-3 mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+          <div className="mb-3 mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
             {placing ? (
               <button type="button" onClick={() => setPlacingId(null)} className="text-brand-700 underline">
                 Cancel placing {placing.name}
@@ -185,7 +185,7 @@ export function FuelTanks({ isManager }: { isManager: boolean }) {
                     >
                       <td className="px-3 py-1.5 font-medium text-gray-900">
                         {t.name}
-                        {t.notes && <p className="text-[11px] font-normal text-gray-500">{t.notes}</p>}
+                        {t.notes && <p className="text-xs font-normal text-gray-500">{t.notes}</p>}
                       </td>
                       <td className="px-3 py-1.5 text-gray-700">{t.location ?? '—'}</td>
                       <td className="px-3 py-1.5 text-gray-700">
@@ -200,17 +200,17 @@ export function FuelTanks({ isManager }: { isManager: boolean }) {
                           <>
                             {L(t.level_l)} <span className="text-gray-400">({pct}%)</span>
                             {t.level_source === 'telus' && t.level_at ? (
-                              <p className="text-[10px] text-emerald-700" title={`TELUS gauge, read ${new Date(t.level_at).toLocaleString('en-CA')}`}>
+                              <p className="text-xs text-emerald-700" title={`TELUS gauge, read ${new Date(t.level_at).toLocaleString('en-CA')}`}>
                                 gauge · {ago(t.level_at)}
                               </p>
                             ) : t.level_source === 'typed' && t.level_at ? (
-                              <p className="text-[10px] text-gray-500" title="Typed in; the gauge's next report replaces it">
+                              <p className="text-xs text-gray-500" title="Typed in; the gauge's next report replaces it">
                                 typed · {ago(t.level_at)}
                               </p>
                             ) : (
-                              t.level_on && <p className="text-[10px] text-gray-400">{t.level_on}</p>
+                              t.level_on && <p className="text-xs text-gray-400">{t.level_on}</p>
                             )}
-                            {gaugeTrouble(t) && <p className="text-[10px] text-amber-700">{gaugeTrouble(t)}</p>}
+                            {gaugeTrouble(t) && <p className="text-xs text-amber-700">{gaugeTrouble(t)}</p>}
                           </>
                         )}
                       </td>

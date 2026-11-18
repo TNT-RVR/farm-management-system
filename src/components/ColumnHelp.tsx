@@ -85,7 +85,7 @@ export function ColumnHelp({
 
           {help.ranges && (
             <div className="mt-2.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                 {help.ranges.label}
               </p>
               {valueLabel && (
@@ -112,20 +112,20 @@ export function ColumnHelp({
                         {' — '}
                         {band.note}
                       </span>
-                      {isHit && <span className="ml-1 text-[10px] uppercase tracking-wide">← this field</span>}
+                      {isHit && <span className="ml-1 text-xs uppercase tracking-wide">← this field</span>}
                     </li>
                   )
                 })}
               </ul>
               {help.ranges.footnote && (
-                <p className="mt-1 text-[11px] leading-relaxed text-gray-400">{help.ranges.footnote}</p>
+                <p className="mt-1 text-xs leading-relaxed text-gray-400">{help.ranges.footnote}</p>
               )}
             </div>
           )}
 
           {note && (note.summary || note.priorCrop || note.nextCrop) && (
             <div className="mt-2.5 rounded-md border border-brand-100 bg-brand-50/60 p-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-800">
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-800">
                 For this field
               </p>
               {note.summary && (
@@ -148,7 +148,7 @@ export function ColumnHelp({
 
           {help.how && (
             <div className="mt-2.5 rounded-md bg-gray-50 p-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                 {help.how.label}
               </p>
               <ul className="mt-1 space-y-1">

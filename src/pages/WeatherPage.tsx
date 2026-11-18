@@ -121,7 +121,7 @@ function NowCard({ site, active, onPick }: { site: WeatherSite; active: boolean;
       <span className={cn('absolute inset-x-0 top-0 h-1.5', col.bar)} />
       <div className="flex items-center justify-between gap-2">
         <span className={cn('text-sm font-bold uppercase tracking-wide', col.text)}>{site.name}</span>
-        {age && <span className={cn('text-[11px]', age.stale ? 'rounded bg-amber-100 px-1.5 font-medium text-amber-800' : 'text-gray-500')}>{age.label}</span>}
+        {age && <span className={cn('text-xs', age.stale ? 'rounded bg-amber-100 px-1.5 font-medium text-amber-800' : 'text-gray-500')}>{age.label}</span>}
       </div>
       {isLoading || !c ? (
         <p className="py-8 text-center text-sm text-gray-400">{isLoading ? 'Loading…' : 'Unavailable'}</p>
@@ -142,7 +142,7 @@ function NowCard({ site, active, onPick }: { site: WeatherSite; active: boolean;
             <p className="mt-1 inline-flex items-center justify-end gap-1 rounded-md bg-sky-100 px-1.5 py-0.5 text-sm font-bold text-sky-900">
               <Droplets className="h-4 w-4 text-sky-600" />
               <span className={rhClass(c.humidity)}>{c.humidity == null ? '—' : `${Math.round(c.humidity)}%`}</span>
-              <span className="text-[10px] font-medium text-sky-700">humidity</span>
+              <span className="text-xs font-medium text-sky-700">humidity</span>
             </p>
           </div>
         </div>
@@ -157,7 +157,7 @@ function SprayStrip({ spray, labelled = true }: { spray: SprayDay; labelled?: bo
   const inWindow = (t: string) => !!spray.window && t >= spray.window.start && t < spray.window.end
   return (
     <div className="mt-1.5">
-      {labelled && <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-400">Spray hours, 9 am to 7 am (see Legend)</p>}
+      {labelled && <p className="mb-0.5 text-xs font-medium uppercase tracking-wide text-gray-400">Spray hours, 9 am to 7 am (see Legend)</p>}
       <div className="flex h-5 overflow-hidden rounded-md ring-1 ring-gray-200">
         {spray.hours.map((h) => (
           <div
@@ -170,7 +170,7 @@ function SprayStrip({ spray, labelled = true }: { spray: SprayDay; labelled?: bo
           />
         ))}
       </div>
-      <div className="mt-0.5 flex justify-between text-[10px] text-gray-400">
+      <div className="mt-0.5 flex justify-between text-xs text-gray-400">
         <span>9 am</span>
         <span>noon</span>
         <span>6 pm</span>
@@ -222,7 +222,7 @@ function DayRow({ day, following, spray, today, first, weekLo, weekHi, shade, rh
           </div>
           {/* The day's low and high under the bar's ends; they move apart
               when the bar is too short for both (see tempBar.ts). */}
-          <div className="relative mt-0.5 h-3.5 text-[11px] font-semibold leading-none tabular-nums" aria-hidden="true">
+          <div className="relative mt-0.5 h-3.5 text-xs font-semibold leading-none tabular-nums" aria-hidden="true">
             {day.lo != null && (
               <span className={cn('absolute top-0 w-8 text-left', tempColour(day.lo))} style={{ left: bar.lowLeft }}>
                 {deg(day.lo)}
@@ -240,7 +240,7 @@ function DayRow({ day, following, spray, today, first, weekLo, weekHi, shade, rh
             <p className="font-bold text-sky-900">
               <Droplets className="mr-0.5 inline h-4 w-4 text-sky-600" />
               <span className={rhClass(rh.min)}>{rh.min}</span>–<span className={rhClass(rh.max)}>{rh.max}%</span>
-              <span className="ml-1 text-[10px] font-medium text-sky-700">humidity</span>
+              <span className="ml-1 text-xs font-medium text-sky-700">humidity</span>
             </p>
           )}
           <p className={cn('font-medium', (day.precip ?? 0) >= 1 ? 'text-sky-700' : 'text-gray-500')}>
@@ -271,7 +271,7 @@ function DayRow({ day, following, spray, today, first, weekLo, weekHi, shade, rh
                 <div className="flex items-center gap-2">
                   <SprayCan className="h-4 w-4 text-gray-500" />
                   <span className="text-sm font-semibold text-gray-800">Spraying</span>
-                  <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-bold', RATING[spray.rating].cls)}>{RATING[spray.rating].label}</span>
+                  <span className={cn('rounded-full px-2 py-0.5 text-xs font-bold', RATING[spray.rating].cls)}>{RATING[spray.rating].label}</span>
                 </div>
               )}
               {show.bees &&
@@ -302,7 +302,7 @@ function DayRow({ day, following, spray, today, first, weekLo, weekHi, shade, rh
               <div className="flex items-center gap-2">
                 <Sprout className="h-4 w-4 text-gray-500" />
                 <span className="text-sm font-semibold text-gray-800">Fertilizing</span>
-                <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-bold', RATING[fert.rating].cls)}>{RATING[fert.rating].label}</span>
+                <span className={cn('rounded-full px-2 py-0.5 text-xs font-bold', RATING[fert.rating].cls)}>{RATING[fert.rating].label}</span>
               </div>
               <p className="mt-1 text-sm text-gray-900">{fert.summary}</p>
               {fert.reasons.length > 0 && <p className="text-xs text-gray-500">{fert.reasons.join(' · ')}</p>}
@@ -381,7 +381,7 @@ function SettingsDialog({ settings, onChange, onClose }: { settings: WeatherSett
           {box('bees', 'Bee-safe window', 'When to spray with the bees home')}
           {box('fert', 'Fertilizing', 'Whether it’s a good day to put down nitrogen')}
         </div>
-        <p className="text-[11px] text-gray-400">Saved on this device. Applies to the Week and the Next 24 hours views.</p>
+        <p className="text-xs text-gray-400">Saved on this device. Applies to the Week and the Next 24 hours views.</p>
         <div className="flex justify-end">
           <button type="button" onClick={onClose} className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white">
             Done

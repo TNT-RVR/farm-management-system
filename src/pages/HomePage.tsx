@@ -61,7 +61,7 @@ export function HomePage() {
                 <Icon className="h-6 w-6 text-brand-700" />
                 <div className="mt-2">
                   <p className="text-sm font-semibold leading-tight text-gray-900">{t.label}</p>
-                  <p className="mt-0.5 text-[11px] leading-snug text-gray-500">{t.hint}</p>
+                  <p className="mt-0.5 text-xs leading-snug text-gray-500">{t.hint}</p>
                 </div>
               </Link>
             )

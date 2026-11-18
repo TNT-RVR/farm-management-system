@@ -36,7 +36,7 @@ function WeedPhoto({ weed, className }: { weed: Weed; className: string }) {
         aria-label={`${weed.name} — no photo yet`}
       >
         <span
-          className="px-1 text-center text-[10px] font-medium leading-tight"
+          className="px-1 text-center text-xs font-medium leading-tight"
           style={{ color: weed.color }}
         >
           No photo yet
@@ -99,7 +99,7 @@ function ChemicalPicker({
               >
                 <span className="text-sm text-gray-900">{c.name}</span>
                 {c.registration_number && (
-                  <span className="text-[11px] text-gray-500">Reg. {c.registration_number}</span>
+                  <span className="text-xs text-gray-500">Reg. {c.registration_number}</span>
                 )}
               </button>
             </li>
@@ -428,7 +428,7 @@ function WeedPatchDialog({
               )}
             >
               <WeedPhoto weed={w} className="aspect-square w-full object-cover" />
-              <span className="block px-1 py-1 text-[11px] font-medium leading-tight text-gray-800">
+              <span className="block px-1 py-1 text-xs font-medium leading-tight text-gray-800">
                 {w.name}
               </span>
             </button>
@@ -436,7 +436,7 @@ function WeedPatchDialog({
         </div>
 
         {chosen && (
-          <div className="rounded-md bg-gray-50 p-2 text-[11px] leading-relaxed text-gray-600">
+          <div className="rounded-md bg-gray-50 p-2 text-xs leading-relaxed text-gray-600">
             <p>
               <span className="font-semibold text-gray-800">{chosen.name}</span>{' '}
               <span className="italic">{chosen.latin}</span> ·{' '}
@@ -553,7 +553,7 @@ function WeedPatchDetail({
         {w && (
           <div className="flex gap-3">
             <WeedPhoto weed={w} className="h-24 w-24 shrink-0 rounded-md object-cover" />
-            <div className="min-w-0 text-[11px] leading-relaxed text-gray-600">
+            <div className="min-w-0 text-xs leading-relaxed text-gray-600">
               <p className="italic">{w.latin}</p>
               <p
                 className={cn(
@@ -570,24 +570,24 @@ function WeedPatchDetail({
 
         <dl className="grid grid-cols-3 gap-2 text-sm">
           <div>
-            <dt className="text-[11px] uppercase tracking-wide text-gray-500">Size</dt>
+            <dt className="text-xs uppercase tracking-wide text-gray-500">Size</dt>
             <dd className="font-semibold text-gray-900">
               {patch.acres == null ? '—' : `${patch.acres} ac`}
             </dd>
           </div>
           <div>
-            <dt className="text-[11px] uppercase tracking-wide text-gray-500">How thick</dt>
+            <dt className="text-xs uppercase tracking-wide text-gray-500">How thick</dt>
             <dd className="font-semibold capitalize text-gray-900">{patch.severity ?? '—'}</dd>
           </div>
           <div>
-            <dt className="text-[11px] uppercase tracking-wide text-gray-500">Found</dt>
+            <dt className="text-xs uppercase tracking-wide text-gray-500">Found</dt>
             <dd className="font-semibold text-gray-900">{patch.observed_on}</dd>
           </div>
         </dl>
 
         {patch.notes && <p className="rounded-md bg-gray-50 p-2 text-sm text-gray-700">{patch.notes}</p>}
 
-        <p className="text-[11px] text-gray-500">
+        <p className="text-xs text-gray-500">
           {patch.treated_on
             ? `${TREATMENT_LABEL[patch.treatment ?? 'other']} ${patch.treated_on}${
                 patch.chemical ? ` — ${patch.chemical}` : ''

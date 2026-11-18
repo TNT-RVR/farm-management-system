@@ -142,7 +142,13 @@ export function fieldFertility(fieldId: string, year: number, d: FertilityData, 
   return { lines, bySource, total }
 }
 
-/** What fieldFertility reads for a season: the application passes, the retailer's lines, and manure from the two years before on. */
+/**
+ * What fieldFertility reads for a season: the application and seeding passes,
+ * the retailer's lines, and manure from the two years before on. Seeding
+ * passes count because fertilizer placed with the drill (side-banded MAP) is
+ * recorded on them: the season balance on Savings card 35 counted it and the
+ * soil-test request left the same field blank (batch 4 page walk).
+ */
 export async function loadFertility(year: number, fieldId: string | null): Promise<FertilityData> {
   const [ops, ici, manure] = await Promise.all([
     fetchAll<FieldOperation>((a, b) => {
@@ -150,7 +156,7 @@ export async function loadFertility(year: number, fieldId: string | null): Promi
         .from('jd_field_operations')
         .select('id, field_id, crop_season, operation_type, started_at, products')
         .eq('crop_season', year)
-        .eq('operation_type', 'application')
+        .in('operation_type', ['application', 'seeding'])
         .is('duplicate_of', null)
         .is('not_ours', null)
         .or('confirm_status.is.null,confirm_status.eq.confirmed')

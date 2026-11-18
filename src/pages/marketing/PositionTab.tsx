@@ -109,10 +109,11 @@ export function PositionTab({ year }: { year: number }) {
     )
 
   const anyContracts = rows.some((r) => r.contracted > 0)
-  // What is still open is worth, summed over the crops a board price exists for.
+  // What is still open is worth, summed over the crops a board price exists for —
+  // each crop's figure rounded as it is printed, so the total is the column's sum.
   const openAtBoard = rows.reduce((sum, p) => {
     const board = prices?.byCrop.get(p.cropId)
-    return board ? sum + (summarise(p).openValueAt(board.value) ?? 0) : sum
+    return board ? sum + Math.round(summarise(p).openValueAt(board.value) ?? 0) : sum
   }, 0)
 
   return (
@@ -158,7 +159,7 @@ export function PositionTab({ year }: { year: number }) {
                   <td className="px-3 py-2 font-medium text-gray-800">
                     {p.cropName}
                     {p.category === 'own_use' && (
-                      <span className="ml-1.5 text-[10px] text-gray-400">own use</span>
+                      <span className="ml-1.5 text-xs text-gray-400">own use</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-600">
@@ -167,12 +168,12 @@ export function PositionTab({ year }: { year: number }) {
                   <td className="px-3 py-2 text-right tabular-nums">
                     {qty(p.expected, p.unit)}
                     {p.expectedLow != null && p.expectedHigh != null && p.expectedHigh - p.expectedLow > 0.5 && (
-                      <span className="block text-[10px] text-gray-400">
+                      <span className="block text-xs text-gray-400">
                         {qty(p.expectedLow, p.unit)} to {qty(p.expectedHigh, p.unit)}
                       </span>
                     )}
                     {(p.cutQuantity ?? 0) > 0 && (
-                      <span className="block text-[10px] font-medium text-amber-800">
+                      <span className="block text-xs font-medium text-amber-800">
                         −{qty(p.cutQuantity!, p.unit)} cut on {Math.round(p.cutAcres ?? 0).toLocaleString('en-CA')} ac
                       </span>
                     )}
@@ -190,7 +191,7 @@ export function PositionTab({ year }: { year: number }) {
                   <td className="px-3 py-2">
                     <PricedBar fraction={s.pricedFraction} />
                     {s.oversold != null && (
-                      <span className="mt-0.5 block text-[10px] font-medium text-red-700">
+                      <span className="mt-0.5 block text-xs font-medium text-red-700">
                         oversold by {qty(s.oversold, p.unit)}
                       </span>
                     )}
@@ -227,7 +228,7 @@ export function PositionTab({ year }: { year: number }) {
                     {board ? (
                       <span title={`${board.name}, ${board.on} — ${board.basis}`}>
                         {fmtMoney(s.openValueAt(board.value) ?? 0)}
-                        <span className="block text-[10px] text-gray-400">
+                        <span className="block text-xs text-gray-400">
                           at {fmtUnitPrice(board.value, board.unit)}/{board.unit}
                           {board.converted && ` (from ${board.quoted})`}
                         </span>
@@ -258,7 +259,7 @@ export function PositionTab({ year }: { year: number }) {
         </table>
       </div>
 
-      <p className="mt-2 text-[11px] text-gray-500">
+      <p className="mt-2 text-xs text-gray-500">
         Expected is planned acres × yield — a forecast until it is in the bin. Contracted and
         delivered are facts.
       </p>

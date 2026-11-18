@@ -67,7 +67,7 @@ export function InfoPopover({
         aria-expanded={open}
       >
         <Info className="h-3.5 w-3.5" />
-        {label && <span className="text-[11px]">{label}</span>}
+        {label && <span className="text-xs">{label}</span>}
       </button>
 
       {open && pos && (

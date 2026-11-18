@@ -21,7 +21,7 @@ import {
   type MarketSeries, useArchiveCommodity } from '@/lib/markets'
 import { PriceAlerts } from '@/components/PriceAlerts'
 import { ScenarioPanel } from '@/pages/plan/ScenarioPanel'
-import { useCropPosition } from '@/lib/marketing-data'
+import { useCropPosition, useLatestCropPrices } from '@/lib/marketing-data'
 import { summarise } from '@/lib/marketing'
 import { useCropInputs, useCrops } from '@/lib/queries'
 import { useCropYear } from '@/lib/crop-year'
@@ -171,6 +171,19 @@ export function MarketsTab() {
     return rows.length ? rows.reduce((s, i) => s + Number(i.cost_per_acre), 0) : null
   }, [cropInputs, chosenCrop])
 
+  // The price the break-even starts from, named for what it is: the elevator
+  // bid where one is quoted, else the newest board price in bushels, which
+  // used to be called "today's bid" under a headline saying there was none
+  // (batch 2 test, 17 Nov 2026).
+  const { data: boardPrices } = useLatestCropPrices()
+  const startPrice = useMemo(() => {
+    const bid = latestBid && chosen ? perBushel(latestBid.value, chosen) : null
+    if (bid != null) return { value: bid, from: "today's elevator bid" }
+    const board = chosenCrop ? boardPrices?.byCrop.get(chosenCrop.id) : undefined
+    if (board && board.unit === 'bu') return { value: board.value, from: 'the latest board price' }
+    return null
+  }, [latestBid, chosen, chosenCrop, boardPrices])
+
   // How much of the crop on screen is sold. The table itself — every crop,
   // delivered, sold against the market — is Contracts › Position; this page
   // had its own copy with a second contract editor, and one place to keep
@@ -208,7 +221,7 @@ export function MarketsTab() {
             >
               {c}
               {showArchived && isArchived(c) && (
-                <span className="ml-1 text-[10px] opacity-60">archived</span>
+                <span className="ml-1 text-xs opacity-60">archived</span>
               )}
             </button>
           ))}
@@ -380,13 +393,15 @@ export function MarketsTab() {
           bodyClassName="p-0 [&>section]:rounded-none [&>section]:border-0"
         >
           <ScenarioPanel
+            // Starts again when the crop or its price changes, rather than
+            // keeping sliders set from another crop.
+            key={`${chosen}|${startPrice?.from ?? ''}|${startPrice?.value ?? ''}`}
             cropName={chosen}
             costPerAcre={costPerAcre}
             defaultYield={chosenCrop?.default_yield_per_acre ?? null}
             yieldUnit={chosenCrop?.yield_unit ?? null}
-            todayBidPerBushel={
-              latestBid && chosen ? perBushel(latestBid.value, chosen) : null
-            }
+            todayBidPerBushel={startPrice?.value ?? null}
+            priceFrom={startPrice?.from}
           />
         </Fold>
       )}
@@ -467,7 +482,7 @@ function Stat({
 }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-3">
-      <p className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-gray-500">
+      <p className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-gray-500">
         <TrendingUp className="h-3 w-3" /> {label}
       </p>
       <p
@@ -479,7 +494,7 @@ function Stat({
         {value}
       </p>
       {extra && <p className="text-xs tabular-nums text-gray-600">{extra}</p>}
-      {sub && <p className="mt-0.5 text-[11px] text-gray-400">{sub}</p>}
+      {sub && <p className="mt-0.5 text-xs text-gray-400">{sub}</p>}
     </div>
   )
 }

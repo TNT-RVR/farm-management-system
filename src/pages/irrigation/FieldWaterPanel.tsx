@@ -16,6 +16,7 @@ import { HandEventActions } from './HandEventActions'
 import { DetailList, rowClick } from '@/components/RecordEditor'
 import { n1 } from '@/lib/format'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { HeadTip } from '@/components/HeadTip'
 
 /** Every irrigation event on one field in a year, newest first. */
 export function useFieldEvents(fieldId: string, year: number) {
@@ -183,7 +184,7 @@ function AppliedBlock({ fieldId, w, u, year }: { fieldId: string; w: FieldWater;
                   Net ({unit})
                 </th>
                 <th className={TABLE_TH}>From</th>
-                <th className={cn(TABLE_TH, 'text-right')} title="Degrees of the circle FieldNET recorded water on that day">Covered</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Covered<HeadTip title="Covered">Degrees of the circle FieldNET recorded water on that day</HeadTip></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -235,7 +236,7 @@ function AppliedBlock({ fieldId, w, u, year }: { fieldId: string; w: FieldWater;
           </table>
           </div>
           {w.events.length > 8 && (
-            <button type="button" onClick={() => setShowAll((s) => !s)} className="mt-1 text-[11px] text-brand-700 underline">
+            <button type="button" onClick={() => setShowAll((s) => !s)} className="mt-1 text-xs text-brand-700 underline">
               {showAll ? 'show fewer' : `show all ${w.events.length}`}
             </button>
           )}

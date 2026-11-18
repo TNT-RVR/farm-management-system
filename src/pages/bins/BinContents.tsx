@@ -90,7 +90,7 @@ export function BinContentsPanel({
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
           <Archive className="h-4 w-4 text-gray-400" /> What is in the bins
           {carry.length > 0 && (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
               {carry.length} carried over · not counted as {cropYear} storage
             </span>
           )}
@@ -217,7 +217,7 @@ export function BinContentsPanel({
                 <span className="text-gray-700">{contentLabel(c)}</span>
                 {old && (
                   <span
-                    className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-900"
+                    className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900"
                     title={`Grown in ${c.crop_year}, still in the bin for ${cropYear}`}
                   >
                     carry-over
@@ -402,7 +402,7 @@ export function RecordContentsDialog({
         placeholder="Anything worth knowing — contracted, needs moving, tough…"
         className="mt-3 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
       />
-      <p className="mt-2 text-[11px] text-gray-500">
+      <p className="mt-2 text-xs text-gray-500">
         Grown in {form.crop_year || '…'}: anything before {cropYear} shows as carry-over, and the
         estimator stops counting this bin as empty.
       </p>

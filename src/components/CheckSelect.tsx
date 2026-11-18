@@ -177,7 +177,7 @@ export function CheckSelect({
                         <span className="block break-words">
                           {o.label}
                           {i === 0 && (
-                            <span className="ml-1 text-[10px] font-semibold uppercase text-brand-700">
+                            <span className="ml-1 text-xs font-semibold uppercase text-brand-700">
                               plan
                             </span>
                           )}
@@ -185,7 +185,7 @@ export function CheckSelect({
                         {o.hint && (
                           <span
                             className={cn(
-                              'block text-[11px]',
+                              'block text-xs',
                               o.tone === 'bad'
                                 ? 'text-red-600'
                                 : o.tone === 'warn'

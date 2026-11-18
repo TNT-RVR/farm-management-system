@@ -43,7 +43,7 @@ function NutrientCompare({ f }: { f: FieldIci }) {
   }
   return (
     <div className="inline-block max-w-full overflow-x-auto rounded-lg border border-gray-200">
-    <table className="text-[11px] tabular-nums">
+    <table className="text-xs tabular-nums">
       <thead className={TABLE_HEAD}>
         <tr>
           <th className={TABLE_TH} />
@@ -206,22 +206,22 @@ export function IciTab({ isManager }: { isManager: boolean }) {
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <p className="text-xs text-gray-500">Paid to {retailerName} for fertilizer, {cropYear}</p>
           <p className="mt-1 text-2xl font-bold tabular-nums text-gray-900">{$0(t.all)}</p>
-          <p className="text-[11px] text-gray-400">{data.invoiceCount} invoices</p>
+          <p className="text-xs text-gray-400">{data.invoiceCount} invoices</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <p className="text-xs text-gray-500">Product</p>
           <p className="mt-1 text-xl font-bold tabular-nums text-gray-900">{$0(t.blend)}</p>
-          <p className="text-[11px] text-gray-400">Edge {$0(t.edge)}</p>
+          <p className="text-xs text-gray-400">Edge {$0(t.edge)}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <p className="text-xs text-gray-500">Application</p>
           <p className="mt-1 text-xl font-bold tabular-nums text-gray-900">{$0(t.floating)}</p>
-          <p className="text-[11px] text-gray-400">floating · delivery {$0(t.delivery)}</p>
+          <p className="text-xs text-gray-400">floating · delivery {$0(t.delivery)}</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <p className="text-xs text-gray-500">Per acre farmed</p>
           <p className="mt-1 text-xl font-bold tabular-nums text-gray-900">{farmed ? `$${Math.round(onFields / farmed)}` : '—'}</p>
-          <p className="text-[11px] text-gray-400">
+          <p className="text-xs text-gray-400">
             {rows.length} fields, {n0(farmed)} ac · {$0(t.all - onFields)} not on a field
           </p>
         </div>
@@ -248,7 +248,7 @@ export function IciTab({ isManager }: { isManager: boolean }) {
         {latest?.status === 'done' && latest.content ? (
           <>
             <Review text={latest.content} />
-            <p className="mt-2 text-[11px] text-gray-400">
+            <p className="mt-2 text-xs text-gray-400">
               AI second opinion, written {new Date(latest.finished_at ?? latest.created_at).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · check rates
               <AdminOnly> · {latest.model}</AdminOnly>
             </p>
@@ -264,7 +264,7 @@ export function IciTab({ isManager }: { isManager: boolean }) {
       <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
         <div className={cn('flex flex-wrap items-center justify-between gap-2', CARD_HEAD)}>
           <h2 className="font-medium">What {retailerName} put on each field</h2>
-          <span className="text-[11px] text-brand-100">
+          <span className="text-xs text-brand-100">
             lb/ac · <span className="text-amber-200">red</span> 15+ over the soil test (or the prescription where there&apos;s no test) · <span className="text-amber-200">amber</span> 15+ under
           </span>
         </div>
@@ -277,7 +277,7 @@ export function IciTab({ isManager }: { isManager: boolean }) {
                 <p className="font-medium text-gray-900">{f.name}</p>
                 <p className="shrink-0 font-semibold tabular-nums text-gray-900">{$0(f.cost.total)}</p>
               </div>
-              <div className="flex items-baseline justify-between gap-2 text-[11px] text-gray-500">
+              <div className="flex items-baseline justify-between gap-2 text-xs text-gray-500">
                 <span>{f.crop ?? '—'}</span>
                 {(f.cost.edge > 0 || f.cost.floating > 0) && (
                   <span className="shrink-0">
@@ -297,7 +297,7 @@ export function IciTab({ isManager }: { isManager: boolean }) {
               <div className="mt-1.5">
                 <NutrientCompare f={f} />
               </div>
-              <p className="mt-1.5 flex flex-wrap gap-x-3 text-[11px] text-gray-500">
+              <p className="mt-1.5 flex flex-wrap gap-x-3 text-xs text-gray-500">
                 <span>
                   Product <span className="tabular-nums text-gray-700">{$0(f.cost.blend)}</span>
                   {blendPerAc ? <span className="tabular-nums text-gray-400"> · ${Math.round(blendPerAc)}/ac</span> : null}
@@ -358,7 +358,7 @@ export function IciTab({ isManager }: { isManager: boolean }) {
                     <p className="font-medium text-gray-900" title={f.invoices.length ? `Invoices ${f.invoices.join(', ')}` : undefined}>
                       {f.name}
                     </p>
-                    <p className="text-[11px] text-gray-500">{f.crop ?? '—'}</p>
+                    <p className="text-xs text-gray-500">{f.crop ?? '—'}</p>
                   </td>
                   <td className="px-2 py-2 text-xs text-gray-700">
                     {f.blends.map((b) => (
@@ -373,7 +373,7 @@ export function IciTab({ isManager }: { isManager: boolean }) {
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums">
                     {$0(f.cost.blend)}
-                    {blendPerAc && <span className="block text-[11px] text-gray-400">${Math.round(blendPerAc)}/ac</span>}
+                    {blendPerAc && <span className="block text-xs text-gray-400">${Math.round(blendPerAc)}/ac</span>}
                   </td>
                   <td
                     className="px-2 py-2 text-right font-semibold tabular-nums"
@@ -381,7 +381,7 @@ export function IciTab({ isManager }: { isManager: boolean }) {
                   >
                     {$0(f.cost.total)}
                     {(f.cost.edge > 0 || f.cost.floating > 0) && (
-                      <span className="block text-[11px] font-normal text-gray-400">
+                      <span className="block text-xs font-normal text-gray-400">
                         incl. Edge {f.cost.edge ? $0(f.cost.edge) : '—'} · float {f.cost.floating ? $0(f.cost.floating) : '—'}
                       </span>
                     )}
@@ -417,7 +417,7 @@ export function IciTab({ isManager }: { isManager: boolean }) {
               </p>
             </InfoPopover>
           </h2>
-          <span className="flex items-center gap-2 text-[11px] text-gray-500">
+          <span className="flex items-center gap-2 text-xs text-gray-500">
             {flagged.length} of {tickets.length} fields worth asking about
             <button
               type="button"
@@ -440,7 +440,7 @@ export function IciTab({ isManager }: { isManager: boolean }) {
           {ticketShown.map(({ f, farmed, edgeAgreed, flags }) => (
             <li key={f.fieldId} className="px-3 py-2">
               <p className="font-medium text-gray-900">{f.name}</p>
-              <p className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-gray-500">
+              <p className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-gray-500">
                 <span>
                   Acres farmed <span className="tabular-nums text-gray-700">{n0(farmed)}</span> · ticket{' '}
                   <span className={cn('tabular-nums', farmed && f.ticketAcres > farmed * 1.05 ? 'font-semibold text-red-700' : 'text-gray-700')}>{n0(f.ticketAcres)}</span> · floated{' '}

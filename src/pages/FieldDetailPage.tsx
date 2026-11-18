@@ -27,16 +27,18 @@ import { FieldSoilTestCard } from '@/components/FieldSoilTestCard'
 import type { Database } from '@/lib/database.types'
 import { FieldCropCard } from '@/components/FieldCropCard'
 import { HarvestEstimateLine } from '@/components/HarvestEstimateLine'
+import { FieldSeasonSummary } from '@/components/FieldSeasonSummary'
+import { FieldMoneyCard } from '@/components/FieldMoneyCard'
 import { FieldFiles } from '@/components/FieldFiles'
 import { TabSuspense } from '@/components/TabSuspense'
-import { hasManagerAccess, useAuth } from '@/lib/auth'
+import { canSeeFinances, hasManagerAccess, useAuth } from '@/lib/auth'
 import { useCropYear } from '@/lib/crop-year'
 import { CanolaBloomCard } from '@/pages/field/CanolaBloomCard'
 import { labelPointOf } from '@/lib/geo/area'
 import { reverseLld, sameParcel } from '@/lib/geo/ats'
 import { useTownshipTable } from '@/lib/geo/atsTownships'
 import { parseLld } from '@/lib/geo/lld'
-import { FarmWideLinks, FieldTabBar, fieldSectionPath, type FieldSection } from './field/FieldTabs'
+import { FarmWideLinks, FieldTabBar, fieldSectionPath, isFinanceSection, type FieldSection } from './field/FieldTabs'
 import { FieldScoutReports } from './field/FieldScoutReports'
 import { grownTrait, isCanola } from '@/lib/canola-trait'
 import { companyLookup } from '@/lib/crop-label'
@@ -45,6 +47,9 @@ import { RecordEditModal, rowClick } from '@/components/RecordEditor'
 import { keepInspectionRef } from '@/lib/record-edits'
 import { cn } from '@/lib/utils'
 import { fieldNameProblem } from '@/lib/field-name'
+import { dbErrorMessage } from '@/lib/db-error'
+import { useUnsavedGuard } from '@/lib/unsaved'
+import { ConfirmDialog } from '@/components/Modal'
 import { useVisibleReports } from '@/lib/reports/visible'
 import {
   boundariesForYear,
@@ -94,6 +99,9 @@ function NotesEditor({
   // Parent passes key={fieldId+column+initial} so state resets on data change.
   const [value, setValue] = useState(initial ?? '')
   const [dirty, setDirty] = useState(false)
+  // Notes are typed at length and saved by a button, so a click on another tab
+  // used to throw away a paragraph without saying so.
+  const leaving = useUnsavedGuard(dirty && !readOnly)
 
   const queryClient = useQueryClient()
   const save = useMutation({
@@ -134,7 +142,16 @@ function NotesEditor({
         placeholder="—"
         className="mt-2 w-full resize-y rounded-md border border-gray-200 p-2 text-sm focus:border-brand-600 focus:outline-none"
       />
-      {save.isError && <p className="mt-1 text-xs text-red-600">{(save.error as Error).message}</p>}
+      {save.isError && <p className="mt-1 text-xs text-red-600">{dbErrorMessage(save.error)}</p>}
+      {leaving.pending && (
+        <ConfirmDialog
+          title="Leave without saving?"
+          message={`${label} has been typed but not saved.`}
+          confirmLabel="Leave without saving"
+          onConfirm={leaving.leave}
+          onClose={leaving.stay}
+        />
+      )}
     </div>
   )
 }
@@ -154,6 +171,9 @@ function FieldInfoEditor({
   const [legal, setLegal] = useState(field.legal_land_description ?? '')
   const [dirty, setDirty] = useState(false)
   const { update } = useFieldMutations()
+  // Typed but not saved. Leaving the page took the typing with it and said
+  // nothing, so a rename somebody assumed had stuck quietly had not.
+  const leaving = useUnsavedGuard(dirty)
   // A name goes into file names (combine shapefiles): no / \ : * ? " < > |.
   const nameProblem = fieldNameProblem(name)
 
@@ -255,8 +275,19 @@ function FieldInfoEditor({
           Renaming updates this field everywhere — irrigation, crop plan, tasks, calendar.
         </p>
       )}
-      {update.isError && (
-        <p className="mt-1 text-xs text-red-600">{(update.error as Error).message}</p>
+      {update.isError && <p className="mt-1 text-xs text-red-600">{dbErrorMessage(update.error)}</p>}
+      {leaving.pending && (
+        <ConfirmDialog
+          title="Leave without saving?"
+          message={
+            name.trim() !== field.name
+              ? `This field is still called ${field.name}. The new name has been typed but not saved.`
+              : 'The legal land description has been typed but not saved.'
+          }
+          confirmLabel="Leave without saving"
+          onConfirm={leaving.leave}
+          onClose={leaving.stay}
+        />
       )}
     </div>
   )
@@ -362,7 +393,7 @@ function ActivityTimeline({ fieldId }: { fieldId: string }) {
         <p className="mt-2 text-sm text-gray-400">Nobody has changed this field by hand.</p>
       )}
       {byPeople.length > RECENT && (
-        <p className="mt-2 text-[11px] text-gray-400">
+        <p className="mt-2 text-xs text-gray-400">
           The {RECENT} most recent changes made by somebody, of {byPeople.length}.
         </p>
       )}
@@ -471,7 +502,7 @@ function FieldHailCard({ fieldId }: { fieldId: string }) {
                 },
               })
             } catch (err) {
-              setError((err as Error).message)
+              setError(dbErrorMessage(err))
               throw err
             }
           }}
@@ -484,13 +515,13 @@ function FieldHailCard({ fieldId }: { fieldId: string }) {
             try {
               await edit.remove.mutateAsync(opened.id)
             } catch (err) {
-              setError((err as Error).message)
+              setError(dbErrorMessage(err))
               throw err
             }
           }}
         >
           {/AFSC inspection/.test(opened.notes ?? '') && (
-            <p className="mt-2 text-[11px] text-gray-500">The AFSC inspection number is kept in the note.</p>
+            <p className="mt-2 text-xs text-gray-500">The AFSC inspection number is kept in the note.</p>
           )}
         </RecordEditModal>
       )}
@@ -741,6 +772,9 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
   const partnerYears = usePartnerYears(id)
   const canEdit = hasManagerAccess(profile?.role) || partnerYears.own
   const fieldReadOnly = partner && !partnerYears.own
+  // Cost and revenue are the owners' and the accountant's. A partner never
+  // sees our books, on his own field either: his share is his deal.
+  const canSeeMoney = canSeeFinances(profile) && !partner
   // For him, a year's yields are his to enter only in his listed years.
   const canEditYear = partner ? partnerYears.canWrite : undefined
 
@@ -819,17 +853,30 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
           </div>
 
           {/* Acres are in the heading above; where the boundary came from and
-              since when are under Settings, beside the button that redraws it. */}
+              since when are under Settings, beside the button that redraws it.
+              The link says what it does rather than where to go: on a narrow
+              window the Settings tab is folded into the tab bar's overflow, so
+              "under Settings" sent people hunting for a tab they could not
+              see — past a link that would have taken them straight there. */}
           {!boundary && canEdit && (
             <p className="mt-2 text-xs text-gray-500">
               This field has no boundary, so it has no acres, no soil survey and no place on the
               map.{' '}
               <Link to={fieldSectionPath(field.id, 'settings')} className="text-brand-700 underline">
-                Draw one under Settings
+                Draw its boundary
               </Link>
               .
             </p>
           )}
+
+          {/* How the year went, before what explains it. The cards under this
+              one are each a part of the same season, and until now reading the
+              whole of it meant four tabs. */}
+          <FieldSeasonSummary
+            fieldId={field.id}
+            cropYear={cropYear}
+            boundaryAcres={boundary?.acres ?? null}
+          />
 
           <div className="mt-4">
             <FieldCropCard
@@ -931,6 +978,17 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
       {section === 'scout-reports' && (
         <TabSuspense>
           <FieldScoutReports fieldId={field.id} />
+        </TabSuspense>
+      )}
+
+      {/* Typing /money without finance access lands on the field itself. The
+          tab is already hidden; this catches a pasted link, and together the
+          two are the gate (FieldTabs.tsx says what the database does and does
+          not cover on its own). */}
+      {isFinanceSection(section) && !canSeeMoney && <Navigate to={`/fields/${field.id}`} replace />}
+      {section === 'money' && canSeeMoney && (
+        <TabSuspense>
+          <FieldMoneyCard fieldId={field.id} cropYear={cropYear} />
         </TabSuspense>
       )}
 

@@ -183,11 +183,11 @@ function MineralEditor({
           ✕
         </button>
       </div>
-      <p className="text-[11px] uppercase tracking-wide text-gray-500">
+      <p className="text-xs uppercase tracking-wide text-gray-500">
         {tub.pasture_name ?? 'Outside every paddock'}
         {out != null && ` · out ${out} day${out === 1 ? '' : 's'}`}
       </p>
-      <code className="mt-1.5 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[11px] tabular-nums text-gray-700">
+      <code className="mt-1.5 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs tabular-nums text-gray-700">
         {tub.lat.toFixed(5)}, {tub.lon.toFixed(5)}
       </code>
       {canEdit ? (

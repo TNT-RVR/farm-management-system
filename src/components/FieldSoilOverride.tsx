@@ -100,7 +100,7 @@ export function FieldSoilOverride({
         </span>
         <span
           className={cn(
-            'rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset',
+            'rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset',
             source === 'manual'
               ? 'bg-brand-50 text-brand-800 ring-brand-200'
               : 'bg-gray-50 text-gray-600 ring-gray-200',
@@ -162,7 +162,7 @@ export function FieldSoilOverride({
               </p>
             </div>
             {survey && (
-              <p className="text-[11px] text-gray-500">
+              <p className="text-xs text-gray-500">
                 The survey says {survey.fc}% and {survey.wp}% for this field.
               </p>
             )}

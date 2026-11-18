@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { money, n0, n1, n1Fixed, n2, pct } from './format'
+import { money, n0, n1, n1Fixed, n2, pct, shortDay } from './format'
 
 describe('format', () => {
   it('shows a dash for missing or non-finite values', () => {
@@ -25,5 +25,24 @@ describe('format', () => {
     expect(n2(1.234)).toBe('1.23')
     expect(pct(12.34)).toBe('12.3%')
     expect(pct(3, 1, { sign: true })).toBe('+3.0%')
+  })
+
+  it('never prints a negative zero', () => {
+    expect(n0(-0.4)).toBe('0')
+    expect(n1(-0.04)).toBe('0')
+    expect(n1Fixed(-0.04)).toBe('0.0')
+    expect(n2(-0.004)).toBe('0')
+    expect(money(-0.3)).toBe('$0')
+    expect(pct(-0.04)).toBe('0.0%')
+    // A real negative keeps its sign.
+    expect(n0(-0.6)).toBe('-1')
+    expect(money(-0.6)).toBe('−$1')
+  })
+
+  it('writes a day the way the forms do', () => {
+    expect(shortDay('2026-11-18')).toBe('18 Nov')
+    expect(shortDay('2025-04-03T22:10:00Z', { year: true })).toBe('3 Apr 2025')
+    expect(shortDay(null)).toBe('—')
+    expect(shortDay('soon')).toBe('soon')
   })
 })

@@ -24,7 +24,7 @@ export function useRequirements(cropYear: number) {
           .from('soil_test_reports')
           .select('id, field_id, crop_year, crop_label, soil_test_assessments(recommendation, crop_label)')
           .eq('crop_year', cropYear),
-        supabase.from('crop_plans').select('field_id, planned_acres').eq('crop_year', cropYear),
+        supabase.from('crop_plans').select('field_id, planned_acres, crops(name)').eq('crop_year', cropYear),
         supabase.from('field_boundaries_geojson').select('field_id, acres'),
         supabase.from('fields').select('id, name, active'),
       ])
@@ -84,6 +84,19 @@ export function useRequirements(cropYear: number) {
       .sort((a, b) => a.fieldName.localeCompare(b.fieldName))
   }, [data])
 
-  return { requirements, isLoading }
+  /** What the crop plan puts on each field, so a soil test written for another crop can be caught. */
+  const planCrops = useMemo(() => {
+    const m = new Map<string, string[]>()
+    for (const p of data?.plans ?? []) {
+      const row = p as { field_id: string; crops?: { name?: string | null } | null }
+      const name = row.crops?.name
+      // "Not farmed by us" is a plan entry, not a crop to hold a soil test against.
+      if (!name || /not farmed/i.test(name)) continue
+      m.set(row.field_id, [...new Set([...(m.get(row.field_id) ?? []), name])])
+    }
+    return m
+  }, [data])
+
+  return { requirements, planCrops, isLoading }
 }
 

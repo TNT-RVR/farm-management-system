@@ -135,13 +135,16 @@ export function useOnRanch(ranchId: string): (pastureId: string | null | undefin
 /** usePastures narrowed to the Ranch filter ('' = All). */
 export function useRanchScopedPastures(ranchId: string) {
   const q = usePastures()
-  const { data: links } = usePastureRanchLinks()
-  const { data: ranches } = useRanches()
+  const { data: links, isLoading: linksLoading } = usePastureRanchLinks()
+  const { data: ranches, isLoading: ranchesLoading } = useRanches()
+  // Filtered by ranch before the links and ranches arrive, every paddock was
+  // dropped and the map read "0 paddocks · 0 ac" as a fact (batch 5).
+  const waiting = q.isLoading || (Boolean(ranchId) && (linksLoading || ranchesLoading))
   const data = useMemo(
-    () => (q.data ? pasturesForRanch(q.data, ranchId, links ?? new Map(), ranches ?? []) : undefined),
-    [q.data, ranchId, links, ranches],
+    () => (q.data && !waiting ? pasturesForRanch(q.data, ranchId, links ?? new Map(), ranches ?? []) : undefined),
+    [q.data, waiting, ranchId, links, ranches],
   )
-  return { data, isLoading: q.isLoading }
+  return { data, isLoading: waiting }
 }
 
 /** The satellite view of each crop field, for shading the main map. */

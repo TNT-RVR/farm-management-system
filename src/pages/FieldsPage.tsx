@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Archive, ArchiveRestore, FileUp, Pencil, Plus, Trash2 } from 'lucide-react'
 import { DataTable, type DataTableColumn } from '@/components/DataTable'
+import { IconButton } from '@/components/IconButton'
 import { ConfirmDialog, Modal } from '@/components/Modal'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useCropYear } from '@/lib/crop-year'
@@ -19,15 +20,28 @@ import {
 } from '@/lib/queries'
 import { useFieldSeasons } from '@/lib/irrigation'
 import { cn } from '@/lib/utils'
+import { Dot } from '@/components/RowCards'
 import { HelpNote } from '@/components/HelpNote'
 import { useAllowJdField, useDismissedJdFields } from '@/lib/jd-dismissed'
 import { withDisplay } from '@/lib/reports/columns'
 import { fieldListColumns, fieldListRows, fieldSeasonMap, type FieldListRow } from '@/lib/reports/lists'
 import { useSeasonProgress, progressByField } from '@/lib/field-progress-data'
-import { fieldState, hailLabel, hailSummary, FIELD_STATE_CLASS, type HailSummary } from '@/lib/field-state'
+import { fieldState, hailLabel, hailSummary, FIELD_STATE_CLASS, FIELD_STATE_LABEL, type HailSummary } from '@/lib/field-state'
 import { HailEventDialog } from '@/components/HailEventDialog'
 import { CARD_HEAD } from '@/lib/table-style'
 import { usePartnerAccess } from '@/lib/partner-view'
+import { fieldSectionPath } from './field/FieldTabs'
+import { Select } from '@/components/Select'
+import { SavedViews } from '@/components/SavedViews'
+import {
+  cropOptions,
+  filterFieldRows,
+  isFieldFiltered,
+  readFieldFilter,
+  writeFieldFilter,
+  FIELD_STATE_KEYS,
+  type FieldFilter,
+} from '@/lib/field-filter'
 
 type Row = FieldListRow
 
@@ -96,7 +110,16 @@ export function FieldsPage() {
 
   const stateOf = (id: string) => stateByField.get(id) ?? fieldState({ cropName: null })
 
-  const [tab, setTab] = useState<'active' | 'archive'>('active')
+  // The tab and the two filters live in the URL, so the view can be linked and
+  // can be kept under a name (lib/saved-views.ts).
+  const [params, setParams] = useSearchParams()
+  const filter = readFieldFilter(params)
+  const { tab } = filter
+  // Changing the tab is a move, so it goes on the history stack and the back
+  // button returns; turning a dropdown is not, and pushing each one would mean
+  // pressing back five times to leave the page.
+  const setFilter = (patch: Partial<FieldFilter>, push = false) =>
+    setParams((p) => writeFieldFilter(p, { ...filter, ...patch }), { replace: !push })
   const [adding, setAdding] = useState(false)
   const [deleting, setDeleting] = useState<FieldRow | null>(null)
   const [hailFor, setHailFor] = useState<{ id: string; name: string } | null>(null)
@@ -111,11 +134,22 @@ export function FieldsPage() {
 
   const activeFields = useMemo(() => (fields ?? []).filter((f) => f.active), [fields])
   const archivedFields = useMemo(() => (fields ?? []).filter((f) => !f.active), [fields])
-  const rows = useMemo(
+  const tabRows = useMemo(
     () => buildRows(tab === 'active' ? activeFields : archivedFields),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tab, activeFields, archivedFields, allBoundaries, cropYear, plans, history, crops],
   )
+  // The crops this tab holds — plus the one being filtered to even when it
+  // holds none of it, so a saved view ("the canola") still reads as set rather
+  // than looking like an empty list with nothing asked for.
+  //
+  // Neither of these is wrapped in useMemo: `filter` is built fresh on every
+  // render, so a memo keyed on its parts could not be preserved and the React
+  // Compiler skipped optimizing the whole page over it. Two passes over
+  // twenty-odd rows cost nothing, and the compiler memoizes them itself.
+  const cropsHere = cropOptions(tabRows, filter.crop)
+  const rows = filterFieldRows(tabRows, filter, (id) => stateOf(id).key)
+  const narrowed = isFieldFiltered(filter)
 
   // The columns the CSV carries are shared with the Reports page; only what is
   // drawn on screen is added here.
@@ -188,29 +222,20 @@ export function FieldsPage() {
       className: 'text-right',
       render: (r) => partner && !isOwnField(r.id) ? null : (
         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => navigate(`/fields/${r.id}`)}
-            className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-            title="Edit field"
-          >
-            <Pencil className="h-4 w-4" />
-          </button>
-          <button
+          {/* The pencil lands on Settings, where the name, the land
+              description and the boundary are edited. It used to open Overview
+              — a read-only summary with nothing to type into — so the one
+              control on the row that promises editing left you looking for a
+              tab, and on a narrow window that tab is inside the overflow. */}
+          {/* IconButton: a 44px target on a touch screen, so a gloved tap on the
+              pencil does not land on Archive beside it (design review, Nov 2026). */}
+          <IconButton icon={Pencil} label="Edit field" onClick={() => navigate(fieldSectionPath(r.id, 'settings'))} />
+          <IconButton
+            icon={r.active ? Archive : ArchiveRestore}
+            label={r.active ? 'Archive field' : 'Restore field'}
             onClick={() => setArchived.mutate({ id: r.id, archived: r.active })}
-            className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-            title={r.active ? 'Archive field' : 'Restore field'}
-          >
-            {r.active ? <Archive className="h-4 w-4" /> : <ArchiveRestore className="h-4 w-4" />}
-          </button>
-          {!r.active && (
-            <button
-              onClick={() => setDeleting(r)}
-              className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
-              title="Permanently delete"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          )}
+          />
+          {!r.active && <IconButton icon={Trash2} label="Permanently delete" tone="danger" onClick={() => setDeleting(r)} />}
         </div>
       ),
     })
@@ -230,7 +255,7 @@ export function FieldsPage() {
             {(['active', 'archive'] as const).map((t) => (
               <button
                 key={t}
-                onClick={() => setTab(t)}
+                onClick={() => setFilter({ tab: t }, true)}
                 className={cn(
                   'rounded px-3 py-1 capitalize',
                   tab === t ? 'bg-brand-700 font-semibold text-white' : 'text-gray-600 hover:bg-gray-50',
@@ -259,6 +284,48 @@ export function FieldsPage() {
         )}
       </div>
 
+      {/* Two filters and the saved views for them. A 20-odd row list does not
+          want a search box, but "what is still growing" and "the canola" are
+          questions worth coming back to under a name. Held back until the
+          fields are in: the dropdown would offer no crops and the count
+          beside it would read nought. */}
+      {!isLoading && <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Select
+          size="sm"
+          ariaLabel="Crop"
+          value={filter.crop}
+          onChange={(crop) => setFilter({ crop })}
+          className="w-40"
+          options={[
+            { value: '', label: `Any crop (${cropYear})` },
+            ...cropsHere.map((c) => ({ value: c, label: c })),
+          ]}
+        />
+        <Select
+          size="sm"
+          ariaLabel="Season state"
+          value={filter.state}
+          onChange={(state) => setFilter({ state: state as FieldFilter['state'] })}
+          className="w-40"
+          options={[
+            { value: '', label: 'Any state' },
+            ...FIELD_STATE_KEYS.map((k) => ({ value: k, label: FIELD_STATE_LABEL[k] })),
+          ]}
+        />
+        {narrowed && (
+          <button
+            onClick={() => setFilter({ crop: '', state: '' })}
+            className="text-xs text-gray-500 underline hover:text-gray-800"
+          >
+            Clear
+          </button>
+        )}
+        <span className="text-xs text-gray-500">
+          {narrowed ? `${rows.length} of ${tabRows.length}` : `${rows.length} fields`}
+        </span>
+        <SavedViews />
+      </div>}
+
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading…</p>
       ) : (
@@ -268,7 +335,50 @@ export function FieldsPage() {
           rowKey={(r) => r.id}
           exportFilename={`fields-${tab}-${cropYear}`}
           onRowClick={(r) => navigate(`/fields/${r.id}`)}
-          emptyMessage={tab === 'archive' ? 'No archived fields.' : 'No fields yet.'}
+          // A phone card of one line, not six labelled rows: about 360px a
+          // field became about 70 (design review, Nov 2026). Hail only when
+          // there is some; it is recorded from the field's own page too.
+          phoneSummary={(r) => {
+            const s = stateOf(r.id)
+            const hail = hailByField.get(r.id)
+            const bits: React.ReactNode[] = [
+              r.map_acres != null ? `${r.map_acres.toFixed(1)} ac` : null,
+              r.legal_land_description,
+              r.crop_name,
+            ].filter(Boolean)
+            return (
+              <>
+                {bits.map((b, i) => (
+                  <span key={i} className="contents">
+                    {i > 0 && <Dot />}
+                    <span>{b}</span>
+                  </span>
+                ))}
+                {s.key !== 'no-crop' && (
+                  <span className={cn('rounded px-1.5 py-0.5 text-xs font-medium', FIELD_STATE_CLASS[s.key])}>{s.label}</span>
+                )}
+                {hail && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setHailFor({ id: r.id, name: r.name })
+                    }}
+                    className="rounded bg-red-50 px-1.5 py-0.5 text-xs font-medium text-red-700"
+                  >
+                    Hail: {hailLabel(hail)}
+                  </button>
+                )}
+              </>
+            )
+          }}
+          emptyMessage={
+            narrowed
+              ? 'No fields match those filters.'
+              : tab === 'archive'
+                ? 'No archived fields.'
+                : 'No fields yet.'
+          }
         />
       )}
 
@@ -319,7 +429,7 @@ export function FieldsPage() {
             create.reset()
             setAdding(false)
           }}
-          onRestore={(id) => setArchived.mutate({ id, archived: false }, { onSuccess: () => { setAdding(false); setTab('active') } })}
+          onRestore={(id) => setArchived.mutate({ id, archived: false }, { onSuccess: () => { setAdding(false); setFilter({ tab: 'active' }) } })}
           onCreate={(name, legal) =>
             create.mutate(
               { farm_id: farmId, name, legal_land_description: legal },

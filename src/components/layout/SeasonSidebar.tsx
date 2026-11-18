@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
 export function ShortcutMark({ home, className, compact = false }: { home: string; className?: string; compact?: boolean }) {
   const label = MENU_SECTION_BY_KEY.get(home)?.label ?? home
   return (
-    <span className={cn('ml-auto flex shrink-0 items-center gap-0.5 text-[10px] font-normal text-gray-400', className)} title={`Lives in ${label}`}>
+    <span className={cn('ml-auto flex shrink-0 items-center gap-0.5 text-xs font-normal text-gray-400', className)} title={`Lives in ${label}`}>
       <ArrowUpRight className="h-3 w-3" aria-label={`Lives in ${label}`} />
       {!compact && label}
     </span>

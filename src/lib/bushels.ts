@@ -139,7 +139,9 @@ export function allUnits(
   return MASS_UNITS.map((u) => ({
     unit: u.key,
     label: u.label,
-    value: convertMass(value, from, u.key, lbPerBu),
+    // The unit typed in is the amount typed in, test weight or not: 1,000 bu
+    // stays 1,000 bu with no crop chosen (batch 2 test, 17 Nov 2026).
+    value: u.key === from ? (Number.isFinite(value) ? value : null) : convertMass(value, from, u.key, lbPerBu),
   }))
 }
 

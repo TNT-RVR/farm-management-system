@@ -69,7 +69,7 @@ export function RainReadingsList({ readings, gaugeName, u }: { readings: Reading
       </table>
       </div>
       {readings.length > 8 && (
-        <button type="button" onClick={() => setAll((a) => !a)} className="mt-1 text-[11px] text-brand-700 underline">
+        <button type="button" onClick={() => setAll((a) => !a)} className="mt-1 text-xs text-brand-700 underline">
           {all ? 'show fewer' : `show all ${readings.length}`}
         </button>
       )}
@@ -146,7 +146,7 @@ export function RainGaugeManager({ onClose }: { onClose: () => void }) {
               return (
                 <li key={g.id} className={cn('flex flex-wrap items-center gap-2 px-3 py-2', !g.active && 'opacity-60')}>
                   <span className="font-medium text-gray-900">{g.name}</span>
-                  {!g.active && <span className="rounded bg-gray-100 px-1.5 text-[10px] text-gray-500">retired</span>}
+                  {!g.active && <span className="rounded bg-gray-100 px-1.5 text-xs text-gray-500">retired</span>}
                   <span className="text-xs text-gray-500">{on.length ? on.join(', ') : 'no field on it'}</span>
                   <span className="ml-auto flex gap-1">
                     <EditButton

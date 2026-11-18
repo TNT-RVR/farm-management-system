@@ -91,7 +91,7 @@ export function UnpricedMatches({
               </span>
               <span
                 className={cn(
-                  'rounded px-1.5 py-0.5 text-[11px]',
+                  'rounded px-1.5 py-0.5 text-xs',
                   m.reason === 'registration'
                     ? 'bg-green-100 text-green-900'
                     : 'bg-gray-100 text-gray-600',

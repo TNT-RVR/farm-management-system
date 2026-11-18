@@ -226,7 +226,7 @@ export function SoilReadingsBlock({ fieldId, year, u }: { fieldId: string; year:
         <p className="text-gray-500">No readings this season. Use &ldquo;Submit soil moisture&rdquo; at the top, or record one on a field inspection.</p>
       )}
       {remove.isError && <p className="text-red-700">{(remove.error as Error).message}</p>}
-      <p className="text-[11px] text-gray-400">
+      <p className="text-xs text-gray-400">
         Two or more readings also teach the field its own water-use calibration (shown under Soil &amp; calibration).
       </p>
       {editing && (

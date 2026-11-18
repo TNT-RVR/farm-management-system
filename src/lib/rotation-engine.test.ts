@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildPlan, carryover, cropKey, evaluate, type CropInfo, type FieldCtx, type RecropRule, type SeedScout } from './rotation-engine'
+import { buildPlan, carryover, cropKey, evaluate, quoteFitsRule, type CropInfo, type FieldCtx, type RecropRule, type SeedScout } from './rotation-engine'
 
 const crops: CropInfo[] = [
   { id: 'can', name: 'Canola', key: 'canola', minReturn: 3, margin: 288 },
@@ -367,5 +367,106 @@ describe('which crop gets the fields first', () => {
     const fs2 = [field({ id: 'a', name: 'A', crops: new Map([[2026, ['can']]]) })]
     const p = buildPlan('profit', 2027, fs2, crops, pref, new Map(), new Map(), new Map(), new Map(), { priority: ['bean'] })
     expect(p.assignments[0].cropId).not.toBe('bean')
+  })
+})
+
+describe('a label line that disagrees with the rule read off it', () => {
+  // The narrow case worth a word: the line lets this crop follow with no wait
+  // attached, and the rule stops it anyway.
+  it('catches a permission with no wait under a rule that blocks', () => {
+    expect(quoteFitsRule('Barley may be seeded after this product.', 'barley', true)).toBe(false)
+  })
+
+  it('catches a prohibition under a verdict that only asks for a bioassay', () => {
+    expect(quoteFitsRule('Do not plant canola after application.', 'canola', false)).toBe(false)
+  })
+
+  it('is content when the line forbids and the rule blocks', () => {
+    expect(quoteFitsRule('Do not seed barley within 10 months of application.', 'barley', true)).toBe(true)
+  })
+
+  it('is content when the line permits with no wait and the rule does not block', () => {
+    expect(quoteFitsRule('Canola may be planted after application.', 'canola', false)).toBe(true)
+  })
+
+  // A permission that carries its own wait says nothing against a rule that
+  // makes you wait: the rule was read off that very wait. Flagging these fired
+  // on 32 of the 138 verdicts the farm's own labels can produce.
+  it('leaves a permission carrying its own wait alone', () => {
+    const lines = [
+      'Fields previously treated can be seeded 11 months following an application.',
+      'Wheat, barley and peas may be seeded the year following application.',
+      'Canola may be planted 12 months after application.',
+      'Rye may be seeded next year.',
+      'Flax and canola may be safely planted 2 years following application.',
+      'Barley may be grown in the second season after treatment.',
+    ]
+    for (const line of lines) {
+      expect(quoteFitsRule(line, 'barley', true)).toBeNull()
+      expect(quoteFitsRule(line, 'canola', true)).toBeNull()
+    }
+  })
+
+  // Everything below answers null too: a wrong "these disagree" costs exactly
+  // the trust the quote is there to earn.
+  it('says nothing about a line that does not name this crop', () => {
+    expect(quoteFitsRule('Wheat may be seeded after application.', 'barley', true)).toBeNull()
+  })
+
+  it('says nothing about a line that neither permits nor forbids', () => {
+    expect(quoteFitsRule('Barley has been grown successfully in trials.', 'barley', true)).toBeNull()
+  })
+
+  it('says nothing about a line that does both', () => {
+    expect(
+      quoteFitsRule('Do not seed canola; barley may be seeded after application.', 'barley', true),
+    ).toBeNull()
+  })
+
+  it('says nothing with no quote and nothing with no crop', () => {
+    expect(quoteFitsRule(null, 'barley', true)).toBeNull()
+    expect(quoteFitsRule('   ', 'barley', true)).toBeNull()
+    expect(quoteFitsRule('Barley may be seeded after application.', '', true)).toBeNull()
+  })
+
+  it('matches a plural or singular crop name either way round', () => {
+    expect(quoteFitsRule('Peas may be seeded after application.', 'pea', true)).toBe(false)
+    expect(quoteFitsRule('Pea may be seeded after application.', 'peas', true)).toBe(false)
+  })
+
+  it('does not match a crop name inside a longer word', () => {
+    expect(quoteFitsRule('Oatgrass may be seeded after application.', 'oat', true)).toBeNull()
+  })
+})
+
+describe('carryover carries the verdict about its own quote', () => {
+  const rule = (quote: string): RecropRule => ({
+    registration_number: '111',
+    crop_key: 'barley',
+    following_crop: 'barley',
+    status: 'wait',
+    months: 10,
+    condition: null,
+    quote,
+  })
+  const hitsFor = (quote: string) =>
+    carryover(
+      'barley',
+      [{ product: 'Imazamox + Bentazon', registration: '111', appliedOn: '2026-11-17' }],
+      new Map([['111', [rule(quote)]]]),
+      '2027-05-01',
+    )
+
+  it('flags a permission with no wait under a blocking verdict', () => {
+    const hits = hitsFor('Barley may be seeded after an application of this product.')
+    expect(hits).toHaveLength(1)
+    expect(hits[0].block).toBe(true)
+    expect(hits[0].quoteFits).toBe(false)
+  })
+
+  it('says nothing about the same verdict under a line that carries a wait', () => {
+    const hits = hitsFor('Wheat, barley and peas may be seeded the year following application.')
+    expect(hits).toHaveLength(1)
+    expect(hits[0].quoteFits).toBeNull()
   })
 })

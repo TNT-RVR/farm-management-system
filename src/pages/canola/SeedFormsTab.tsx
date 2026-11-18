@@ -649,7 +649,7 @@ function BinTempHeader({ report, style }: { report: SeedReport; style: FormStyle
         <Field label={style.fieldNumber.label} id="bt-field-number" value={d.field_number} onChange={set('field_number')} placeholder={style.fieldNumber.placeholder} />
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <p className="mr-auto text-[11px] text-gray-500">Printed at the top of every bin page. The same as the seed report&apos;s.</p>
+        <p className="mr-auto text-xs text-gray-500">Printed at the top of every bin page. The same as the seed report&apos;s.</p>
         {save.error && <p className="text-xs text-red-600">{(save.error as Error).message}</p>}
         <button
           type="button"

@@ -71,6 +71,25 @@ describe('tableReportToPdf', () => {
     save('sample-portrait.pdf', doc)
   })
 
+  it('names a section again at the top of a page it runs onto', async () => {
+    const doc = await tableReportPdfDoc(
+      {
+        title: 'Moisture test log',
+        meta: [['Tests', 80]],
+        sections: [
+          { title: 'Wheat', head: ['Date', 'Field', 'Moisture'], rows: Array.from({ length: 80 }, (_, i) => [`2026-09-${String(1 + (i % 28)).padStart(2, '0')}`, `Field ${i}`, '14.1 %']) },
+        ],
+      },
+      { brand, now },
+    )
+    // jsPDF keeps each page's drawing operators as text until it is written out.
+    const pageText = (p: number) => ((doc.internal as unknown as { pages: string[][] }).pages[p] ?? []).join('\n')
+    expect(doc.getNumberOfPages()).toBeGreaterThan(1)
+    expect(pageText(1)).not.toContain('(continued)')
+    for (let p = 2; p <= doc.getNumberOfPages(); p++) expect(pageText(p)).toContain('(Wheat \\(continued\\)) Tj')
+    save('sample-continued.pdf', doc)
+  })
+
   it('takes a picture and lead lines, as the AIMM report does', async () => {
     const doc = await tableReportPdfDoc(
       {

@@ -63,7 +63,7 @@ function Stat({
       </p>
       <Link to={to} className="group block after:absolute after:inset-0" aria-label={`${label}: open its page`}>
         <p className={cn('mt-1 text-2xl font-bold tabular-nums', tone === 'muted' ? 'text-base font-semibold text-gray-500' : 'text-gray-900')}>{value}</p>
-        {sub && <p className="mt-0.5 text-[11px] leading-snug text-gray-500">{sub}</p>}
+        {sub && <p className="mt-0.5 text-xs leading-snug text-gray-500">{sub}</p>}
         <ChevronRight className="absolute right-2 top-3 h-4 w-4 text-gray-300 group-hover:text-brand-700" />
       </Link>
     </div>
@@ -147,7 +147,27 @@ function RanchFigures({ ranch, year, showName }: { ranch: Ranch; year: number; s
         <Stat
           label={`Break-even · ${calf.sale.steers.lb} lb steer`}
           value={perLb(be)}
-          sub={calf.breakEven ? `${money(calf.breakEven.costPerCalf)} a calf sold${calf.costsCarriedFrom ? ` · ${calf.costsCarriedFrom} costs` : ''}` : calf.costsLoading ? undefined : 'No cow costs entered'}
+          sub={
+            calf.breakEven ? (
+              <>
+                {money(calf.breakEven.costPerCalf)} a calf sold{calf.costsCarriedFrom ? ` · ${calf.costsCarriedFrom} costs` : ''}
+                {/* What the figure leaves out or assumes: a cost line left
+                    blank counts as nothing, and so reads as good news. */}
+                {(calf.breakEven.missing.length > 0 || (calf.breakEven.cullPctAssumed && calf.breakEven.cullCreditPerCow != null)) && (
+                  <span className="block text-amber-700">
+                    {[
+                      calf.breakEven.missing.length > 0 && `missing: ${calf.breakEven.missing.join(', ')}`,
+                      calf.breakEven.cullPctAssumed && calf.breakEven.cullCreditPerCow != null && `cows culled ${calf.breakEven.cullPct}% assumed`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                )}
+              </>
+            ) : calf.costsLoading ? undefined : (
+              'No cow costs entered'
+            )
+          }
           to="/cattle-markets?tab=markets"
         />
 

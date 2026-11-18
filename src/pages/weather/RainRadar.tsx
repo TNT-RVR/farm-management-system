@@ -195,7 +195,7 @@ export function RainRadar() {
         <div className="flex items-baseline gap-2">
           <span
             className={cn(
-              'rounded px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide',
+              'rounded px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide',
               frame?.kind === 'forecast' ? 'bg-violet-100 text-violet-800' : 'bg-sky-100 text-sky-800',
             )}
           >
@@ -306,7 +306,7 @@ export function RainRadar() {
       </div>
 
       {frames.length > 1 && (
-        <div className="mt-1 flex gap-0.5 text-[10px] font-semibold uppercase tracking-wide">
+        <div className="mt-1 flex gap-0.5 text-xs font-semibold uppercase tracking-wide">
           <span className="rounded-sm bg-sky-100 py-0.5 text-center text-sky-800" style={{ flexGrow: radarCount }}>
             Radar
           </span>

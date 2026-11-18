@@ -149,7 +149,7 @@ export function ArrivalRisk({ cropYear, canEdit }: { cropYear: number; canEdit: 
                 <ul className="mt-2 space-y-1.5">
                   {risk.factors.map((f) => (
                     <li key={f.key} className="text-xs text-gray-700">
-                      <span className={cn('mr-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium', STATE_STYLE[f.state])}>
+                      <span className={cn('mr-1.5 rounded-full px-1.5 py-0.5 text-xs font-medium', STATE_STYLE[f.state])}>
                         {f.label}
                       </span>
                       <b>{f.value}</b> — {f.says}
@@ -271,7 +271,7 @@ function ArrivalForm({ arrival }: { arrival: ArrivalWithLines }) {
 
   return (
     <div className="mt-3 rounded border border-gray-200 bg-white p-3">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">What the load went through</p>
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">What the load went through</p>
       <div className="mt-2 flex flex-wrap items-end gap-3">
         <label className="text-xs text-gray-600">
           Source
@@ -333,7 +333,7 @@ function ArrivalForm({ arrival }: { arrival: ArrivalWithLines }) {
       >
         {save.isPending ? 'Saving…' : 'Save'}
       </button>
-      <p className="mt-1.5 text-[11px] text-gray-500">
+      <p className="mt-1.5 text-xs text-gray-500">
         The visual health assessment on the study&rsquo;s list is the one factor the app cannot read — that is
         the note above, and the pen rider.
       </p>

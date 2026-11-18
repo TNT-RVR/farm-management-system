@@ -79,7 +79,7 @@ export function PastureFeedBreakdown({ p }: { p: PastureCalc }) {
 
   return (
     <div className="max-w-3xl">
-      <table className="w-full text-[11px]">
+      <table className="w-full text-xs">
         <thead>
           <tr className="text-gray-400">
             <th className="py-1 pr-2 text-left font-medium">Where the feed comes from</th>
@@ -118,7 +118,7 @@ export function PastureFeedBreakdown({ p }: { p: PastureCalc }) {
           </tr>
         </tbody>
       </table>
-      <p className="mt-1 text-[11px] text-gray-400">
+      <p className="mt-1 text-xs text-gray-400">
         <FieldsInfo window={p.window} />
       </p>
     </div>

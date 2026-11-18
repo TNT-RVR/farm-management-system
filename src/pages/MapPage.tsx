@@ -114,6 +114,7 @@ import { SALT_CLASSES, SALT_NO_DATA, fieldSalinity, saltColour, useFieldSalinity
 import { useFarmMap } from '@/lib/geo/use-farm-map'
 import { labelPointOf } from '@/lib/geo/area'
 import { cn } from '@/lib/utils'
+import { cropColour } from '@/lib/crop-colour'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
 import { InfoPopover } from '@/components/InfoPopover'
 import { HoverTip } from '@/components/HoverTip'
@@ -133,6 +134,8 @@ type Feature = {
     fn_status: string
     /** The colour the satellite fill uses. Grey where there is no observation. */
     ndvi_colour: string
+    /** The planned (else grown) crop's own colour, the same one the bins and plan use. */
+    crop_colour: string
   }
 }
 
@@ -263,7 +266,7 @@ function SaltLegend({
   return (
     <>
       <LegendList items={[['No soil-test EC', SALT_NO_DATA] as const, ...SALT_CLASSES.map((c) => [`EC ${c.label}`, c.colour] as const)]} />
-      <div className="ml-6 mb-1 flex items-center gap-1 text-[11px] text-gray-500">
+      <div className="ml-6 mb-1 flex items-center gap-1 text-xs text-gray-500">
         Topsoil EC (mS/cm), latest soil test
         <InfoPopover title="Salinity" width={300}>
           <p>
@@ -280,7 +283,7 @@ function SaltLegend({
           </p>
         </InfoPopover>
       </div>
-      <p className="ml-6 mb-1 text-[11px] text-gray-500">
+      <p className="ml-6 mb-1 text-xs text-gray-500">
         Saltiest patches:{' '}
         {worst.length
           ? worst.map(([id, v]) => `${names.get(id)!.name} ${v.worst.toFixed(2)}${v.naPct != null && v.naPct >= 5 ? ` (Na ${v.naPct.toFixed(0)}%)` : ''}`).join(', ')
@@ -301,7 +304,7 @@ function LegendList({
   return (
     <ul className={className}>
       {items.map(([l, color]) => (
-        <li key={l} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+        <li key={l} className="flex items-center gap-1.5 text-xs text-gray-600">
           <span className="inline-block h-2.5 w-2.5 flex-none rounded-sm" style={{ backgroundColor: color }} />
           {l}
         </li>
@@ -336,7 +339,7 @@ function MyMapLayerRow({
   return (
     <li>
       <div className="flex items-center gap-1">
-        <label className="flex min-w-0 flex-1 items-center gap-2 py-0.5 text-[13px]">
+        <label className="flex min-w-0 flex-1 items-center gap-2 py-0.5 text-sm">
           <input type="checkbox" checked={checked} onChange={(e) => onToggle(e.target.checked)} />
           <span className="truncate">{layer}</span>
         </label>
@@ -346,7 +349,7 @@ function MyMapLayerRow({
         <>
           <LegendList items={legend.map((e) => [e.label, e.color] as const)} className="mb-1 ml-6 space-y-0.5" />
           {legend.length === 0 && (
-            <p className="mb-1 ml-6 text-[11px] text-gray-400">Nothing in this layer.</p>
+            <p className="mb-1 ml-6 text-xs text-gray-400">Nothing in this layer.</p>
           )}
         </>
       )}
@@ -376,11 +379,15 @@ function SatelliteSource({ kind }: { kind: 'satellite' | 'photo' }) {
 
 /** A group name in the layer tile. */
 function LayerHeading({ children }: { children: React.ReactNode }) {
-  return <p className="mb-0.5 mt-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 first:mt-1">{children}</p>
+  return <p className="mb-0.5 mt-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500 first:mt-1">{children}</p>
 }
 
 const FILL_MODES = [
   ['none', 'Off'],
+  // What is in each field this season, in the crop colours the bins and the
+  // plan already use (design review, Nov 2026). Opening still shows no fill
+  // (Sam, 29 Oct 2026); this is one more choice, not a new default.
+  ['crop', 'Crop'],
   ['aimm', 'Irrigation (AIMM)'],
   ['fieldnet', 'Live pivots (FieldNET)'],
   ['satellite', 'Satellite (NDVI)'],
@@ -391,6 +398,7 @@ const FILL_MODES = [
 
 /** Which hover card each field-colour choice shows ("Off" has none). */
 const FILL_INFO: Partial<Record<(typeof FILL_MODES)[number][0], LayerInfoKey>> = {
+  crop: 'crop',
   aimm: 'aimm',
   fieldnet: 'fieldnet',
   satellite: 'ndvi',
@@ -411,7 +419,8 @@ function LayerName({ info, children }: { info?: LayerInfoKey; children: React.Re
 
 export function MapPage() {
   const containerRef = useRef<HTMLDivElement>(null)
-  const markersRef = useRef<maplibregl.Marker[]>([])
+  /** Read when the name layer is first added, which happens outside the toggle's effect. */
+  const showLabelsRef = useRef(true)
   const overlayLoaded = useRef<Set<string>>(new Set())
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
@@ -445,7 +454,8 @@ export function MapPage() {
 
   // Field-fill colouring: off, AIMM irrigation status, FieldNET live pivots,
   // the satellite layers, salinity or productivity zones. Off on opening.
-  const [fillMode, setFillMode] = useState<'none' | 'aimm' | 'fieldnet' | 'satellite' | 'photo' | 'salinity' | 'yield'>('none')
+  const [fillMode, setFillMode] = useState<(typeof FILL_MODES)[number][0]>('none')
+  const showCrop = fillMode === 'crop'
   const showIrrigation = fillMode === 'aimm'
   const showFieldnet = fillMode === 'fieldnet'
   const showSatellite = fillMode === 'satellite'
@@ -744,6 +754,20 @@ export function MapPage() {
     return m
   }, [plans, history, crops])
 
+  // The same choice as cropForField (the plan wins over what was grown), as a
+  // crop row so its colour comes from the one helper the bins and plan use.
+  const cropRowForField = useMemo(() => {
+    const byId = new Map(crops?.map((c) => [c.id, c]) ?? [])
+    const m = new Map<string, NonNullable<typeof crops>[number]>()
+    const put = (fieldId: string, cropId: string | null) => {
+      const c = cropId ? byId.get(cropId) : undefined
+      if (c) m.set(fieldId, c)
+    }
+    history?.forEach((h) => put(h.field_id, h.crop_id))
+    plans?.forEach((p) => put(p.field_id, p.crop_id))
+    return m
+  }, [plans, history, crops])
+
   const fieldById = useMemo(() => {
     const m = new Map<string, FieldRow>()
     fields?.forEach((f) => m.set(f.id, f))
@@ -781,10 +805,26 @@ export function MapPage() {
             ? ndreColour(ndreByField.get(b.field_id)?.ndre ?? null)
             : ndviColour(ndviByField.get(b.field_id)?.ndvi ?? null),
         salt_colour: saltColour(saltByField.get(b.field_id)?.ec),
+        crop_colour: cropColour(cropRowForField.get(b.field_id)),
       },
     }))
     return { type: 'FeatureCollection' as const, features }
-  }, [fields, boundaries, fieldById, statusByField, fnByField, ndviByField, ndreByField, index, saltByField])
+  }, [fields, boundaries, fieldById, statusByField, fnByField, ndviByField, ndreByField, index, saltByField, cropRowForField])
+
+  // The Crop legend: only the crops on the map this season, most acres first.
+  const cropLegend = useMemo(() => {
+    if (!showCrop || !boundaries) return []
+    const acres = new Map<string, { label: string; colour: string; acres: number }>()
+    for (const b of boundaries) {
+      if (!fieldById.has(b.field_id)) continue
+      const c = cropRowForField.get(b.field_id)
+      const key = c?.id ?? ''
+      const e = acres.get(key) ?? { label: c?.name ?? 'No crop', colour: cropColour(c), acres: 0 }
+      e.acres += b.acres ?? 0
+      acres.set(key, e)
+    }
+    return [...acres.values()].sort((x, y) => y.acres - x.acres)
+  }, [showCrop, boundaries, fieldById, cropRowForField])
 
   const { mapRef, ready: mapReady } = useFarmMap(containerRef, {
     zoom: 10,
@@ -852,7 +892,9 @@ export function MapPage() {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady || !map.getLayer('boundaries-fill')) return
-    const color = showSatellite
+    const color = showCrop
+      ? (['get', 'crop_colour'] as unknown)
+      : showSatellite
       ? (['get', 'ndvi_colour'] as unknown)
       : showSalt
         ? (['get', 'salt_colour'] as unknown)
@@ -872,8 +914,12 @@ export function MapPage() {
       // the basemap blue and shifted how the crop underneath read. The outline
       // marks the field; a wash of colour over real ground only misleads.
       // A fill-opacity of 0 still hit-tests, so clicking a field keeps working.
-      showPhoto || (!showSatellite && !showFieldnet && !showIrrigation && !showSalt)
+      showPhoto || (!showCrop && !showSatellite && !showFieldnet && !showIrrigation && !showSalt)
         ? 0
+        : showCrop
+          // Strong enough to tell canola yellow from wheat tan at a glance,
+          // light enough that the white field names still read over it.
+          ? 0.6
         : showSalt
           // Nearly solid. At 0.6 the clean end of the ramp disappeared into the
           // green of the field under it, which is most of the farm (Sam,
@@ -888,7 +934,7 @@ export function MapPage() {
             ? 0.12
             : 0.55,
     )
-  }, [mapRef, showFieldnet, showIrrigation, showSatellite, showPhoto, showSalt, mapReady, featureCollection])
+  }, [mapRef, showCrop, showFieldnet, showIrrigation, showSatellite, showPhoto, showSalt, mapReady, featureCollection])
 
   useEffect(() => void localStorage.setItem('map_ndviScale', ndviScale), [ndviScale])
 
@@ -1256,15 +1302,58 @@ export function MapPage() {
       map.on('mouseleave', 'boundaries-fill', () => (map.getCanvas().style.cursor = ''))
     }
 
-    // Field-name labels as HTML markers (no glyph server needed)
-    markersRef.current.forEach((m) => m.remove())
-    markersRef.current = featureCollection.features.map((f) => {
-      const el = document.createElement('div')
-      el.className =
-        'pointer-events-none select-none text-xs font-semibold text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]'
-      el.textContent = f.properties.name
-      return new maplibregl.Marker({ element: el }).setLngLat(labelPointOf(f.geometry)).addTo(map)
-    })
+    // Field names as a symbol layer (design review, Nov 2026). They were HTML
+    // markers, chosen when the map had no glyph server; markers take no part
+    // in MapLibre's collision detection, so at the zoom a phone opens on they
+    // overprinted — "SandhillHilltop", "SchoolhoHayRailway Quarter". The style
+    // serves its own glyphs now (lib/geo/map-style.ts), so the names can drop
+    // out where they would collide and come back as you zoom in, the way
+    // PastureMap's paddock names already do.
+    const labelPoints: GeoJSON.FeatureCollection<GeoJSON.Point> = {
+      type: 'FeatureCollection',
+      features: featureCollection.features.map((f) => ({
+        type: 'Feature',
+        properties: { name: f.properties.name },
+        geometry: { type: 'Point', coordinates: labelPointOf(f.geometry) as [number, number] },
+      })),
+    }
+    const labelSource = map.getSource('field-labels') as maplibregl.GeoJSONSource | undefined
+    if (labelSource) {
+      labelSource.setData(labelPoints)
+    } else {
+      map.addSource('field-labels', { type: 'geojson', data: labelPoints })
+      map.addLayer({
+        id: 'field-labels',
+        type: 'symbol',
+        source: 'field-labels',
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 13,
+          'text-max-width': 8,
+          'text-padding': 4,
+          'text-allow-overlap': false,
+          visibility: showLabelsRef.current ? 'visible' : 'none',
+        },
+        paint: { 'text-color': '#ffffff', 'text-halo-color': '#111827', 'text-halo-width': 1.6 },
+      })
+      // Overlays (irrigation, NDVI, salinity, a field colour) are added later
+      // and would land on top of the names, where the HTML markers never could.
+      // Keep the names above every fill, line and raster; other symbol layers —
+      // bin labels, pin names — stay where they are.
+      const keepNamesOnTop = () => {
+        const layers = map.getStyle()?.layers ?? []
+        const at = layers.findIndex((l) => l.id === 'field-labels')
+        if (at < 0) return
+        let lastShape = -1
+        layers.forEach((l, i) => {
+          if (l.type !== 'symbol') lastShape = i
+        })
+        if (lastShape > at) map.moveLayer('field-labels', layers[lastShape + 1]?.id)
+      }
+      map.on('styledata', keepNamesOnTop)
+      keepNamesOnTop()
+    }
 
     const bounds = new maplibregl.LngLatBounds()
     featureCollection.features.forEach((f) =>
@@ -1287,10 +1376,11 @@ export function MapPage() {
   }, [mapRef, showBoundaries, mapReady, featureCollection])
 
   useEffect(() => {
-    markersRef.current.forEach((m) => {
-      m.getElement().style.display = showLabels ? '' : 'none'
-    })
-  }, [showLabels, featureCollection, mapReady])
+    showLabelsRef.current = showLabels
+    const map = mapRef.current
+    if (!map || !mapReady || !map.getLayer('field-labels')) return
+    map.setLayoutProperty('field-labels', 'visibility', showLabels ? 'visible' : 'none')
+  }, [mapRef, showLabels, featureCollection, mapReady])
 
   useEffect(() => {
     const map = mapRef.current
@@ -1730,7 +1820,7 @@ export function MapPage() {
                 <button
                   onClick={hideAllLayers}
                   title="Turn off the field colour and every overlay. Boundaries and labels stay."
-                  className="rounded-full bg-black/5 px-2 py-0.5 text-[11px] font-medium text-gray-600 hover:bg-black/10"
+                  className="rounded-full bg-black/5 px-2 py-0.5 text-xs font-medium text-gray-600 hover:bg-black/10"
                 >
                   Hide all
                 </button>
@@ -1783,6 +1873,11 @@ export function MapPage() {
                     )}
                   </div>
                   {/* Each legend sits directly under the option it belongs to. */}
+                  {val === 'crop' && showCrop && (
+                    <LegendList
+                      items={cropLegend.map((e) => [`${e.label} · ${Math.round(e.acres).toLocaleString()} ac`, e.colour] as const)}
+                    />
+                  )}
                   {val === 'yield' && showYield && yieldLegend && (
                     <div className="ml-6 mt-0.5">
                       <LegendList
@@ -1795,7 +1890,7 @@ export function MapPage() {
                           opens. These are an index normalised to each field's own
                           average, which is not obvious from a map of coloured
                           ground and changes what the colours mean. */}
-                      <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-400">
+                      <div className="mt-1 flex items-center gap-1 text-xs text-gray-400">
                         % of the field&rsquo;s own average
                         <InfoPopover title="Productivity zones" width={280}>
                           <p>
@@ -1837,7 +1932,7 @@ export function MapPage() {
                       {/* Spec §7.1: say plainly that zones are waiting on history,
                           rather than leaving their absence to be interpreted. */}
                       {satLegend && zoneWaitingMessage(zoneReadiness) && (
-                        <p className="ml-6 mb-1 text-[11px] text-gray-500">
+                        <p className="ml-6 mb-1 text-xs text-gray-500">
                           {zoneWaitingMessage(zoneReadiness)}
                         </p>
                       )}
@@ -1861,7 +1956,7 @@ export function MapPage() {
                                 localStorage.setItem('map_index', val)
                               }}
                               className={cn(
-                                'whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium',
+                                'whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium',
                                 index === val
                                   ? 'bg-brand-700 text-white'
                                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
@@ -1901,7 +1996,7 @@ export function MapPage() {
                               key={val}
                               onClick={() => setNdviScale(val)}
                               className={cn(
-                                'whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium',
+                                'whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium',
                                 ndviScale === val
                                   ? 'bg-brand-700 text-white'
                                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
@@ -1921,7 +2016,7 @@ export function MapPage() {
                           </InfoPopover>
                         </div>
                       </div>
-                      <p className="ml-6 mb-1 text-[11px] text-gray-500">
+                      <p className="ml-6 mb-1 text-xs text-gray-500">
                         {asOf
                           ? ndviRasters?.length
                             ? `Nearest ${asOf}: ${photoDateLabel(ndviRasters.map((i) => i.sensed_on))}`
@@ -1934,7 +2029,7 @@ export function MapPage() {
                   )}
                   {val === 'photo' && showPhoto && (
                     <p
-                      className={`ml-6 mb-1 text-[11px] ${fieldImagesError ? 'text-red-600' : 'text-gray-500'}`}
+                      className={`ml-6 mb-1 text-xs ${fieldImagesError ? 'text-red-600' : 'text-gray-500'}`}
                       // The raw error is for whoever is fixing it; hover shows it.
                       title={fieldImagesError ? (fieldImagesError as Error).message : undefined}
                     >
@@ -1948,9 +2043,9 @@ export function MapPage() {
                   {val === 'fieldnet' && showFieldnet && (
                     <>
                       {fnLegend && <LegendList items={FIELDNET_LEGEND} />}
-                      {asOf && <p className="ml-6 text-[11px] text-gray-500">From the passes recorded up to {asOf}.</p>}
+                      {asOf && <p className="ml-6 text-xs text-gray-500">From the passes recorded up to {asOf}.</p>}
                       {!asOf && <label
-                        className="ml-6 flex items-center gap-2 py-0.5 text-[13px]"
+                        className="ml-6 flex items-center gap-2 py-0.5 text-sm"
                         title="Shade each pivot sector by applied water depth vs the pivot's own average"
                       >
                         <input
@@ -1968,7 +2063,7 @@ export function MapPage() {
                                 key={w}
                                 onClick={() => setHeatWindow(w)}
                                 className={cn(
-                                  'rounded px-1.5 py-0.5 text-[10px] font-medium',
+                                  'rounded px-1.5 py-0.5 text-xs font-medium',
                                   heatWindow === w
                                     ? 'bg-brand-700 text-white'
                                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
@@ -1979,7 +2074,7 @@ export function MapPage() {
                             ))}
                           </div>
                           <div className="ml-10 mt-1 flex items-center gap-1">
-                            <p className="flex-1 text-[10px] text-gray-400">
+                            <p className="flex-1 text-xs text-gray-400">
                               Water applied · {WINDOW_LABEL[heatWindow].toLowerCase()}
                             </p>
                             <LegendArrow open={heatLegend} onToggle={toggleHeatLegend} label="heatmap" />
@@ -2015,9 +2110,9 @@ export function MapPage() {
                     <LegendArrow open={myMapOpen} onToggle={toggleMyMapOpen} label="My Map layer" />
                   )}
                 </div>
-                {showMyMap && myMapLoading && <p className="ml-6 text-[11px] text-gray-400">Loading…</p>}
+                {showMyMap && myMapLoading && <p className="ml-6 text-xs text-gray-400">Loading…</p>}
                 {showMyMap && myMapError && (
-                  <p className="ml-6 text-[11px] text-red-600">
+                  <p className="ml-6 text-xs text-red-600">
                     {(myMapError as Error).message === 'not_shared'
                       ? 'Map isn’t shared — set it to “Anyone with the link: Viewer” in My Maps.'
                       : 'Couldn’t load the map.'}
@@ -2055,11 +2150,11 @@ export function MapPage() {
                       const v = e.target.value.trim() || null
                       if (farmMap !== undefined && v !== (myMapUrl ?? null)) setMyMapUrl.mutate({ id: farmMap?.id, mymaps_url: v })
                     }}
-                    className="mt-1 w-full rounded-md border border-gray-200 bg-white/70 px-2 py-1 text-[11px]"
+                    className="mt-1 w-full rounded-md border border-gray-200 bg-white/70 px-2 py-1 text-xs"
                   />
                 )}
                 {isManager && myMapUrl && !editingMyMapUrl && showMyMap && myMapOpen && (
-                  <button onClick={() => setEditingMyMapUrl(true)} className="ml-6 mt-0.5 text-[11px] text-gray-500 underline">
+                  <button onClick={() => setEditingMyMapUrl(true)} className="ml-6 mt-0.5 text-xs text-gray-500 underline">
                     Change the My Map link
                   </button>
                 )}
@@ -2107,7 +2202,7 @@ export function MapPage() {
 
               {overlayFiles && overlayFiles.length > 0 && (
                 <div className="mt-2 border-t border-gray-100 pt-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
                     Files
                   </p>
                   {overlayFiles.map((f: FieldFileRow) => (
@@ -2207,7 +2302,7 @@ export function MapPage() {
                         <p className="text-sm font-semibold text-gray-900">
                           {identified.result.text}
                         </p>
-                        <p className="mt-0.5 text-[11px] text-gray-500">
+                        <p className="mt-0.5 text-xs text-gray-500">
                           {identified.result.source === 'survey'
                             ? 'From the survey grid'
                             : // The fallback tier is roughly 300 m — a third of a
@@ -2221,7 +2316,7 @@ export function MapPage() {
                         That point is outside the Alberta township system.
                       </p>
                     )}
-                    <p className="mt-0.5 text-[11px] tabular-nums text-gray-400">
+                    <p className="mt-0.5 text-xs tabular-nums text-gray-400">
                       {identified.lngLat[1].toFixed(4)}, {identified.lngLat[0].toFixed(4)}
                     </p>
                   </div>
@@ -2240,7 +2335,7 @@ export function MapPage() {
                 <p className="flex items-center gap-1 text-xs font-semibold text-amber-900">
                   <MapPin className="h-3 w-3 shrink-0" /> {lldLookup.label}
                 </p>
-                <div className="mt-0.5 flex items-center gap-1 text-[11px] leading-snug text-amber-800">
+                <div className="mt-0.5 flex items-center gap-1 text-xs leading-snug text-amber-800">
                   <span>
                     {lldLookup.quarter ? 'Section outlined, quarter shaded' : 'Section outlined'}
                     {lldLookup.assumedMeridian ? ', assuming W4' : ''}.
@@ -2256,12 +2351,12 @@ export function MapPage() {
                 {lldField ? (
                   <button
                     onClick={() => setSelectedId(lldField.id)}
-                    className="mt-1 text-[11px] font-medium text-amber-900 underline underline-offset-2"
+                    className="mt-1 text-xs font-medium text-amber-900 underline underline-offset-2"
                   >
                     Our field: {lldField.name}
                   </button>
                 ) : (
-                  <p className="mt-1 text-[11px] text-amber-700">Not one of our fields.</p>
+                  <p className="mt-1 text-xs text-amber-700">Not one of our fields.</p>
                 )}
               </div>
             )}
@@ -2337,7 +2432,7 @@ export function MapPage() {
                 <div className="mt-3">
                   <PivotStatusPanel system={s} compact />
                   {s.applied_behind_deg != null && s.applied_behind_deg > 10 && (
-                    <p className="mt-1.5 rounded bg-red-50 px-2 py-1 text-[11px] text-red-700">
+                    <p className="mt-1.5 rounded bg-red-50 px-2 py-1 text-xs text-red-700">
                       {Math.round(s.applied_behind_deg)}° of the circle under-watered
                       {s.applied_min_mm != null && s.applied_mean_mm != null
                         ? ` — driest ${Math.round(s.applied_min_mm)} vs mean ${Math.round(s.applied_mean_mm)} mm`
@@ -2397,7 +2492,7 @@ export function MapPage() {
                   <button
                     type="button"
                     onClick={() => setAimmMore((m) => !m)}
-                    className="mt-1.5 text-[11px] font-medium text-brand-700 hover:underline"
+                    className="mt-1.5 text-xs font-medium text-brand-700 hover:underline"
                   >
                     {aimmMore ? 'Less' : 'More'}
                   </button>

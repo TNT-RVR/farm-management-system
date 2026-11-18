@@ -41,7 +41,7 @@ export function PassFuel({ fuel, dieselPerL }: { fuel: OpFuel; dieselPerL: numbe
         )}
         <span className="ml-auto font-medium tabular-nums text-gray-900">{$(fuel.litres * dieselPerL)}</span>
       </div>
-      <p className="mt-0.5 text-[11px] text-gray-400">
+      <p className="mt-0.5 text-xs text-gray-400">
         {fuel.inField.note[0].toUpperCase() + fuel.inField.note.slice(1)}.{t?.note ? ` Road: ${t.note}` : ''}
       </p>
     </div>

@@ -62,7 +62,7 @@ function PlanForm({
   const num = (v: string) => (v.trim() === '' ? null : Number(v))
   const valid = d.name.trim() && (d.interval_hours.trim() || d.interval_months.trim())
   const box = (key: keyof typeof d, label: string, opts: { type?: string; min?: string; span?: boolean; placeholder?: string } = {}) => (
-    <label className={cn('text-[11px] text-gray-500', opts.span && 'col-span-2 sm:col-span-3')}>
+    <label className={cn('text-xs text-gray-500', opts.span && 'col-span-2 sm:col-span-3')}>
       {label}
       <input
         type={opts.type ?? 'text'}
@@ -86,7 +86,7 @@ function PlanForm({
         {box('warn_within_days', 'Warn within (days)', { type: 'number', min: '0' })}
         <span className="hidden sm:block" />
         {box('last_done_hours', 'Last done at (hours)', { type: 'number', min: '0' })}
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           Last done on
           <DateField value={d.last_done_on} onChange={(v) => setD({ ...d, last_done_on: v })} />
         </label>
@@ -258,7 +258,7 @@ export function EquipmentMaintenance({
                 <li key={plan.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2">
                   <span
                     className={cn(
-                      'rounded-full px-2 py-0.5 text-[11px] font-medium',
+                      'rounded-full px-2 py-0.5 text-xs font-medium',
                       STATE_STYLE[due.state],
                     )}
                   >
@@ -284,9 +284,9 @@ export function EquipmentMaintenance({
                     {at ? `next ${at} · ` : ''}
                     {dueLabel(due)}
                   </span>
-                  {plan.parts && <span className="text-[11px] text-gray-400">parts: {plan.parts}</span>}
+                  {plan.parts && <span className="text-xs text-gray-400">parts: {plan.parts}</span>}
                   {hoursStaleSince && plan.interval_hours ? (
-                    <span className="text-[11px] font-medium text-amber-800">hours due point can&apos;t be trusted</span>
+                    <span className="text-xs font-medium text-amber-800">hours due point can&apos;t be trusted</span>
                   ) : null}
 
                   <span className="ml-auto flex items-center gap-2">
@@ -363,7 +363,7 @@ export function EquipmentMaintenance({
               <li key={a.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 text-sm">
                 <span className="text-gray-800">{a.description ?? a.code ?? 'Alert'}</span>
                 {a.severity && a.severity !== 'NONE' && (
-                  <span className="rounded bg-amber-100 px-1.5 text-[10px] font-medium text-amber-800">
+                  <span className="rounded bg-amber-100 px-1.5 text-xs font-medium text-amber-800">
                     {a.severity.toLowerCase()}
                   </span>
                 )}

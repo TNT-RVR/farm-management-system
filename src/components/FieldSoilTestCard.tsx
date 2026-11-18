@@ -36,15 +36,15 @@ function Stat({
 }) {
   return (
     <div className="rounded-md bg-gray-50 px-2.5 py-2">
-      <p className="flex items-center text-[11px] font-medium text-gray-500">
+      <p className="flex items-center text-xs font-medium text-gray-500">
         {label}
         {helpKey && SOIL_HELP[helpKey] && <ColumnHelp help={SOIL_HELP[helpKey]} />}
       </p>
       <p className={cn('text-sm font-bold tabular-nums', rating ? RATING_CLASS[rating] : 'text-gray-900')}>
         {value == null ? '—' : Math.round(value * 100) / 100}
-        {value != null && unit && <span className="ml-0.5 text-[10px] font-normal text-gray-400">{unit}</span>}
+        {value != null && unit && <span className="ml-0.5 text-xs font-normal text-gray-400">{unit}</span>}
       </p>
-      {rating && <p className={cn('text-[10px]', RATING_CLASS[rating])}>{RATING_WORD[rating]}</p>}
+      {rating && <p className={cn('text-xs', RATING_CLASS[rating])}>{RATING_WORD[rating]}</p>}
     </div>
   )
 }

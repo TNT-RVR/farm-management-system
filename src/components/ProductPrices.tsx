@@ -24,7 +24,7 @@ import {
   type SortKey,
   type SortableRow,
 } from '@/lib/product-groups'
-import { openChemicalLabel } from '@/lib/chemicals'
+import { foldCropNames, openChemicalLabel } from '@/lib/chemicals'
 import { UnpricedMatches } from '@/components/UnpricedMatches'
 import { InvoiceViewer } from '@/components/InvoiceViewer'
 import { RegistrationPicker } from '@/components/RegistrationPicker'
@@ -40,6 +40,7 @@ import { askConfirm } from '@/components/askConfirm'
 import { HelpNote } from '@/components/HelpNote'
 import { CardList, RowCard, type Fact } from '@/components/RowCards'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { HeadTip } from '@/components/HeadTip'
 
 /**
  * The price book behind every input cost in the app.
@@ -190,8 +191,22 @@ export function ProductPrices({
    * not one — so every seed row counts as never applied and the filter hides
    * the whole list. Offering a tick box that empties the page is worse than
    * not offering it.
+   *
+   * The same goes for a list where nothing has been applied yet: a new farm
+   * before its first Deere sync, or one whose fertilizer only ever goes on in
+   * the seeding pass. Hiding the never-applied there hides everything.
    */
-  const canHideNeverApplied = category !== 'seed'
+  const anyApplied = useMemo(
+    () =>
+      !apps ||
+      (data?.products ?? []).some(
+        (p) =>
+          (p.category ?? 'chemical') === category &&
+          (!!apps.byProduct.get(p.id)?.length || !!p.manual_last_applied),
+      ),
+    [apps, data, category],
+  )
+  const canHideNeverApplied = category !== 'seed' && anyApplied
   const [hideStored, setHideNeverApplied] = useState(() => {
     try {
       return localStorage.getItem(HIDE_KEY) !== '0'
@@ -239,16 +254,14 @@ export function ProductPrices({
         const dates = applications.map((a) => a.applied_on).filter(Boolean) as string[]
         // Deere's record plus what a person has added by hand; the newer
         // date wins and the crops are added together.
-        const crops = [
-          ...new Set([
-            ...(applications
-              .map((a) =>
-                a.field_id && a.crop_season ? cropBySeason?.get(`${a.field_id}|${a.crop_season}`) : null,
-              )
-              .filter(Boolean) as string[]),
-            ...(p.manual_crops ?? []),
-          ]),
-        ].sort()
+        // Folded, so "Canola" off a crop record and "canola" typed off the
+        // label are one crop, and so are "Peas" and "pea".
+        const crops = foldCropNames([
+          ...applications.map((a) =>
+            a.field_id && a.crop_season ? cropBySeason?.get(`${a.field_id}|${a.crop_season}`) : null,
+          ),
+          ...(p.manual_crops ?? []),
+        ])
         return {
           product: p,
           aliases: aliasesFor.get(p.id) ?? [],
@@ -359,7 +372,7 @@ export function ProductPrices({
             type="button"
             onClick={() => setMerging(p)}
             title="This is a second spelling of another product — fold it in"
-            className="ml-2 text-[11px] font-normal text-gray-400 underline decoration-dotted hover:text-gray-800"
+            className="ml-2 text-xs font-normal text-gray-400 underline decoration-dotted hover:text-gray-800"
           >
             same as…
           </button>
@@ -379,7 +392,7 @@ export function ProductPrices({
                   if (await askConfirm(`Delete ${p.name} from the price list? It was added by hand: no Deere record or invoice uses it.`)) deleteProduct.mutate(p.id)
                 }}
                 title="Added by hand and used by nothing — remove it"
-                className="ml-2 text-[11px] font-normal text-red-400 underline decoration-dotted hover:text-red-700"
+                className="ml-2 text-xs font-normal text-red-400 underline decoration-dotted hover:text-red-700"
               >
                 delete
               </button>
@@ -424,7 +437,7 @@ export function ProductPrices({
       priceFrom: p.price_updated_on ? (
         <span className={cn(isStale(p.price_updated_on) && 'text-amber-700')}>
           {p.price_updated_on}
-          {p.price_source && <span className="block text-[10px] text-gray-400">{p.price_source}</span>}
+          {p.price_source && <span className="block text-xs text-gray-400">{p.price_source}</span>}
         </span>
       ) : p.price_per_unit != null ? (
         <span className="text-gray-400">entered by hand</span>
@@ -464,11 +477,11 @@ export function ProductPrices({
         <span>
           {r.lastApplied}
           {p.manual_last_applied === r.lastApplied && (
-            <span className="ml-1 text-[10px] text-gray-400" title="Typed in, not from Deere">
+            <span className="ml-1 text-xs text-gray-400" title="Typed in, not from Deere">
               typed
             </span>
           )}
-          <span className="block text-[10px] text-gray-400">
+          <span className="block text-xs text-gray-400">
             {r.applications.length} application{r.applications.length === 1 ? '' : 's'}
             {canEdit && (
               <button
@@ -824,16 +837,15 @@ export function ProductPrices({
                 </th>
                   {c.key === 'name' && <th className="px-3 py-2 font-medium">Type</th>}
                   {c.key === 'fields' && showsApplications && (
-                    <th className="px-3 py-2 font-medium" title="Crops it has actually been sprayed on here, not everything the label allows">
-                      Crops sprayed
+                    <th className="px-3 py-2 font-medium">
+                      Crops sprayed<HeadTip title="Crops sprayed">Crops it has actually been sprayed on here, not everything the label allows</HeadTip>
                     </th>
                   )}
                   {c.key === 'fields' && category === 'chemical' && (
                     <th
                       className="px-3 py-2 font-medium"
-                      title="From the label: our crops that cannot be planted the spring after a June spray (or need a bioassay). Hover a cell for the label's words."
                     >
-                      Can&apos;t grow next year
+                      Can&apos;t grow next year<HeadTip title="Can&apos;t grow next year">From the label: our crops that cannot be planted the spring after a June spray (or need a bioassay). Hover a cell for the label&apos;s words.</HeadTip>
                     </th>
                   )}
                 </Fragment>
@@ -841,9 +853,8 @@ export function ProductPrices({
               {category === 'chemical' && (
                 <th
                   className="px-3 py-2 font-medium"
-                  title="The Health Canada registration. Without it the label cannot be read, so there is no re-entry interval."
                 >
-                  Label
+                  Label<HeadTip title="Label">The Health Canada registration. Without it the label cannot be read, so there is no re-entry interval.</HeadTip>
                 </th>
               )}
               <th className="px-3 py-2 font-medium">Invoice</th>

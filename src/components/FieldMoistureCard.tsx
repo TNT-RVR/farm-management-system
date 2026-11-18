@@ -111,7 +111,7 @@ export function FieldMoistureCard({ fieldId }: { fieldId: string }) {
             {t.grade && (
               <span
                 className={cn(
-                  'rounded px-1.5 py-0.5 text-[11px] font-medium capitalize',
+                  'rounded px-1.5 py-0.5 text-xs font-medium capitalize',
                   GRADE_STYLE[t.grade as Grade],
                 )}
               >

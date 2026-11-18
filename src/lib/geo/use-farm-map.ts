@@ -28,7 +28,11 @@ export type FarmMapOptions = {
   controls?: { nav?: NavigationControlOptions | false; navAt?: ControlPosition; geolocate?: GeolocateControlOptions; scale?: boolean }
   /** false: a picture, not a tool. */
   interactive?: boolean
-  /** The Esri credit. Off unless asked for; 'compact' is the "i" button. */
+  /**
+   * The imagery credit, as the small "i" button. On unless a map passes
+   * false: Esri's terms ask for the credit wherever its imagery is shown, and
+   * fifteen maps had quietly gone without it because off was the default.
+   */
   attribution?: false | 'compact'
   style?: StyleSpecification | string
   /** Keep the frame in the canvas so it can be read back as a PNG. */
@@ -128,7 +132,7 @@ export function useFarmMap(container: Container, options: FarmMapOptions = {}, d
       style: o.style ?? SATELLITE_STYLE,
       center: kept?.center ?? o.center ?? farmMapCenter(),
       zoom: kept?.zoom ?? o.zoom ?? 12,
-      attributionControl: o.attribution === 'compact' ? { compact: true } : false,
+      attributionControl: o.attribution === false ? false : { compact: true },
       ...(o.interactive === false ? { interactive: false } : {}),
       ...(o.preserveDrawingBuffer ? { canvasContextAttributes: { preserveDrawingBuffer: true } } : {}),
       ...o.mapOptions,

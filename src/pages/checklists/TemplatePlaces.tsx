@@ -189,7 +189,7 @@ function PlaceEditor({
           <X className="h-4 w-4" />
         </button>
       </div>
-      {place.source && place.source !== 'drawn' && <p className="mt-1 text-[11px] text-gray-400">From {place.source.replace(/^mymap:/, 'My Map · ').replace(/^pump:.*/, 'the pump list')}</p>}
+      {place.source && place.source !== 'drawn' && <p className="mt-1 text-xs text-gray-400">From {place.source.replace(/^mymap:/, 'My Map · ').replace(/^pump:.*/, 'the pump list')}</p>}
 
       <div className="mt-3 flex items-end gap-2">
         <label className="block flex-1 text-xs font-medium text-gray-600">
@@ -276,7 +276,7 @@ function PlaceEditor({
       {!readonly && (
         <div className="mt-4 flex flex-wrap gap-2 border-t border-gray-100 pt-3">
           {place.feature_id ? (
-            <span className="self-center text-[11px] text-gray-500">Follows the farm map — move or reshape it on the main Map.</span>
+            <span className="self-center text-xs text-gray-500">Follows the farm map — move or reshape it on the main Map.</span>
           ) : (
             <button className={cn(btn, moving && btnOn)} onClick={onMove}>
               {place.geojson.type === 'Point' ? 'Move pin' : 'Redraw line'}
@@ -341,7 +341,7 @@ function FarmMapPick({ templateId, existing, nextOrder, onClose }: { templateId:
                     />
                     {f.geojson.type === 'LineString' ? <Route className="h-3.5 w-3.5 text-gray-400" /> : <MapPin className="h-3.5 w-3.5 text-gray-400" />}
                     <span className="flex-1 truncate">{f.label || '(no name — name it on the main map)'}</span>
-                    {already && <span className="text-[11px]">added</span>}
+                    {already && <span className="text-xs">added</span>}
                   </label>
                 </li>
               )
@@ -393,7 +393,7 @@ function PumpImport({ templateId, existing, nextOrder, onClose }: { templateId: 
       <ul className="max-h-[50vh] divide-y divide-gray-100 overflow-auto rounded-md border border-gray-100 text-sm">
         {(pumps ?? []).map((p) => (
           <li key={p.id} className={cn('px-2 py-1.5', taken.has(`pump:${p.id}`) && 'text-gray-400')}>
-            {p.name} {taken.has(`pump:${p.id}`) && <span className="text-[11px]">· added</span>}
+            {p.name} {taken.has(`pump:${p.id}`) && <span className="text-xs">· added</span>}
           </li>
         ))}
       </ul>

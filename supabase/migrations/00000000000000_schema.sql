@@ -9304,6 +9304,45 @@ CREATE OR REPLACE FUNCTION "public"."unread"("n" "public"."notifications") RETUR
 ALTER FUNCTION "public"."unread"("n" "public"."notifications") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."update_feed_record"("p_id" "uuid", "p_record" "jsonb", "p_lines" "jsonb") RETURNS "void"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  update public.feed_records set
+    ranch_id      = (p_record->>'ranch_id')::uuid,
+    herd_group    = p_record->>'herd_group',
+    herd_count_id = nullif(p_record->>'herd_count_id', '')::uuid,
+    period_start  = (p_record->>'period_start')::date,
+    period_end    = (p_record->>'period_end')::date,
+    head_count    = nullif(p_record->>'head_count', '')::int,
+    notes         = nullif(p_record->>'notes', ''),
+    updated_at    = now(),
+    updated_by    = auth.uid()
+  where id = p_id;
+  if not found then
+    raise exception 'That feed record is gone or is not yours to change.' using errcode = 'P0002';
+  end if;
+
+  delete from public.feed_record_lines where record_id = p_id;
+
+  insert into public.feed_record_lines (record_id, feed_type_id, feed_type_name, quantity, unit, lb_per_bale, purpose, sort_order)
+  select p_id,
+         nullif(l->>'feed_type_id', '')::uuid,
+         l->>'feed_type_name',
+         (l->>'quantity')::numeric,
+         l->>'unit',
+         nullif(l->>'lb_per_bale', '')::numeric,
+         l->>'purpose',
+         (l->>'sort_order')::int
+  from jsonb_array_elements(p_lines) as l;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."update_feed_record"("p_id" "uuid", "p_record" "jsonb", "p_lines" "jsonb") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."use_area_scale_yield"("p_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
@@ -14002,7 +14041,11 @@ CREATE TABLE IF NOT EXISTS "public"."soil_test_samples" (
     "cl_ppm" numeric,
     "ec_ms_cm" numeric,
     "enr" numeric,
-    "gfi" numeric
+    "gfi" numeric,
+    CONSTRAINT "soil_test_samples_depth_order" CHECK ((("depth_top_in" >= 0) AND ("depth_bottom_in" > "depth_top_in"))),
+    CONSTRAINT "soil_test_samples_not_negative" CHECK ((("no3n_ppm" >= (0)::numeric) AND ("no3n_lb_ac" >= (0)::numeric) AND ("p_bicarb_ppm" >= (0)::numeric) AND ("p_melich3_ppm" >= (0)::numeric) AND ("k_ppm" >= (0)::numeric) AND ("so4s_ppm" >= (0)::numeric) AND ("cec_meq" >= (0)::numeric) AND ("mg_ppm" >= (0)::numeric) AND ("ca_ppm" >= (0)::numeric) AND ("na_ppm" >= (0)::numeric) AND ("zn_ppm" >= (0)::numeric) AND ("mn_ppm" >= (0)::numeric) AND ("fe_ppm" >= (0)::numeric) AND ("cu_ppm" >= (0)::numeric) AND ("b_ppm" >= (0)::numeric) AND ("soluble_salts" >= (0)::numeric) AND ("al_ppm" >= (0)::numeric) AND ("k_mg_ratio" >= (0)::numeric) AND ("cl_ppm" >= (0)::numeric) AND ("ec_ms_cm" >= (0)::numeric) AND ("enr" >= (0)::numeric) AND ("gfi" >= (0)::numeric))),
+    CONSTRAINT "soil_test_samples_pct_range" CHECK (((("om_pct" >= (0)::numeric) AND ("om_pct" <= (100)::numeric)) AND (("base_k_pct" >= (0)::numeric) AND ("base_k_pct" <= (100)::numeric)) AND (("base_mg_pct" >= (0)::numeric) AND ("base_mg_pct" <= (100)::numeric)) AND (("base_ca_pct" >= (0)::numeric) AND ("base_ca_pct" <= (100)::numeric)) AND (("base_h_pct" >= (0)::numeric) AND ("base_h_pct" <= (100)::numeric)) AND (("base_na_pct" >= (0)::numeric) AND ("base_na_pct" <= (100)::numeric)) AND (("p_sat_pct" >= (0)::numeric) AND ("p_sat_pct" <= (100)::numeric)) AND (("al_sat_pct" >= (0)::numeric) AND ("al_sat_pct" <= (100)::numeric)))),
+    CONSTRAINT "soil_test_samples_ph_range" CHECK ((("ph" >= (0)::numeric) AND ("ph" <= (14)::numeric)))
 );
 
 
@@ -15885,7 +15928,9 @@ CREATE TABLE IF NOT EXISTS "public"."manure_haul_invoices" (
     "tonnes" numeric,
     "notes" "text",
     "created_by" "uuid",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "manure_haul_invoices_dated" CHECK ((("work_date" IS NOT NULL) OR ("invoice_date" IS NOT NULL))),
+    CONSTRAINT "manure_haul_invoices_not_negative" CHECK ((("amount" >= (0)::numeric) AND ("gst" >= (0)::numeric) AND ("hours" >= (0)::numeric) AND ("rate_per_hour" >= (0)::numeric) AND ("loads" >= 0) AND ("tonnes" >= (0)::numeric)))
 );
 
 
@@ -20446,7 +20491,9 @@ CREATE TABLE IF NOT EXISTS "public"."tissue_tests" (
     "source_file" "text",
     "created_by" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "no3n_ppm" numeric
+    "no3n_ppm" numeric,
+    CONSTRAINT "tissue_tests_pct_range" CHECK (((("n_pct" >= (0)::numeric) AND ("n_pct" <= (15)::numeric)) AND (("p_pct" >= (0)::numeric) AND ("p_pct" <= (15)::numeric)) AND (("k_pct" >= (0)::numeric) AND ("k_pct" <= (15)::numeric)) AND (("ca_pct" >= (0)::numeric) AND ("ca_pct" <= (15)::numeric)) AND (("mg_pct" >= (0)::numeric) AND ("mg_pct" <= (15)::numeric)) AND (("s_pct" >= (0)::numeric) AND ("s_pct" <= (15)::numeric)))),
+    CONSTRAINT "tissue_tests_ppm_not_negative" CHECK ((("b_ppm" >= (0)::numeric) AND ("cu_ppm" >= (0)::numeric) AND ("fe_ppm" >= (0)::numeric) AND ("mn_ppm" >= (0)::numeric) AND ("zn_ppm" >= (0)::numeric) AND ("no3n_ppm" >= (0)::numeric)))
 );
 
 
@@ -41329,6 +41376,11 @@ GRANT ALL ON TABLE "public"."notifications" TO "service_role";
 
 GRANT ALL ON FUNCTION "public"."unread"("n" "public"."notifications") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."unread"("n" "public"."notifications") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."update_feed_record"("p_id" "uuid", "p_record" "jsonb", "p_lines" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_feed_record"("p_id" "uuid", "p_record" "jsonb", "p_lines" "jsonb") TO "service_role";
 
 
 

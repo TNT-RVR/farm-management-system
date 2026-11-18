@@ -18,6 +18,7 @@ import {
   WELL_COST,
   type WaterSystem,
 } from '@/lib/water-system-payback'
+import { HeadTip } from '@/components/HeadTip'
 
 /**
  * Does a trough pay for itself?
@@ -180,7 +181,7 @@ export function WaterPaybackPage() {
             </tbody>
           </table>
           {kind === 'cow_calf' && (
-            <p className="mt-2 border-t border-gray-100 pt-2 text-[11px] text-gray-500">
+            <p className="mt-2 border-t border-gray-100 pt-2 text-xs text-gray-500">
               The cows gain {n1(result.benefit.cowGainLb)} lb each as well. That is condition, not a cheque — counted here only on the{' '}
               {Math.round(num(h.cullSharePct))}% sold this year, worth {money(result.benefit.cullValue, 2)} a pair.
             </p>
@@ -257,12 +258,12 @@ export function WaterPaybackPage() {
               <th className="px-2 py-2 text-left font-medium">System</th>
               <th className="px-2 py-2 text-right font-medium">Cost after grant</th>
               <th className="px-2 py-2 text-right font-medium">Running</th>
-              <th className="px-2 py-2 text-right font-medium" title="What the water earns, less what the system costs to run">
-                Net a year
+              <th className="px-2 py-2 text-right font-medium">
+                Net a year<HeadTip title="Net a year">What the water earns, less what the system costs to run</HeadTip>
               </th>
               <th className="px-2 py-2 text-right font-medium">Pays back in</th>
-              <th className="px-2 py-2 text-right font-medium" title="The BCRC's own figure, which leaves running costs out">
-                Their figure
+              <th className="px-2 py-2 text-right font-medium">
+                Their figure<HeadTip title="Their figure">The BCRC&apos;s own figure, which leaves running costs out</HeadTip>
               </th>
               <th className="px-2 py-2 text-right font-medium">After {n0(horizon)} yr</th>
             </tr>

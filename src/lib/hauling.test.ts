@@ -205,22 +205,22 @@ describe('trucking', () => {
 })
 
 describe('manure hauling', () => {
-  // N & K Custom, invoice #1160.
+  // A custom hauler’s invoice.
   const lines = [
-    { hours: 26, rate: 157.5, amount: 4095, loads: 55, tonnes: 922.9, oneWayKm: 6.892 },
-    { hours: 25.5, rate: 157.5, amount: 4016.25, loads: 91, tonnes: 1441.44, oneWayKm: 2.183 },
+    { hours: 26, rate: 150, amount: 3900, loads: 55, tonnes: 920, oneWayKm: 6.892 },
+    { hours: 25.5, rate: 150, amount: 3825, loads: 91, tonnes: 1440, oneWayKm: 2.183 },
   ]
   it('fits load time and road speed to the invoice and reproduces it', () => {
     const m = fitCustomModel(lines)!
     expect(m.fitted).toBe(true)
-    expect(m.rate).toBeCloseTo(157.5)
-    expect(m.tonnesPerLoad).toBeCloseTo(2364.34 / 146, 2)
+    expect(m.rate).toBeCloseTo(150)
+    expect(m.tonnesPerLoad).toBeCloseTo(2360 / 146, 2)
     expect(1 / m.hoursPerKm).toBeGreaterThan(40)
     expect(1 / m.hoursPerKm).toBeLessThan(60)
     // Two points, two unknowns: each line's hours come back exactly.
     expect(55 * (m.fixedHours + m.hoursPerKm * 2 * 6.892)).toBeCloseTo(26, 6)
     expect(91 * (m.fixedHours + m.hoursPerKm * 2 * 2.183)).toBeCloseTo(25.5, 6)
-    expect(4095 / 922.9).toBeCloseTo(4.44, 2)
+    expect(3900 / 920).toBeCloseTo(4.24, 2)
   })
 
   it('prices custom and ourselves on the same trip', () => {

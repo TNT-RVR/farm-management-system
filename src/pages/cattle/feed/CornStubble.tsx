@@ -5,9 +5,11 @@ import { Select } from '@/components/Select'
 import { Fold } from '@/components/Fold'
 import { HelpNote } from '@/components/HelpNote'
 import { supabase } from '@/lib/supabase'
+import { dbErrorMessage } from '@/lib/db-error'
 import { varietyLookup } from '@/lib/crop-variety-settings'
 import { cropVarietySettingsQuery } from '@/lib/crop-variety-settings-data'
 import { droppedBuPerAcre, stubbleCowDays, type Warning } from '@/lib/cattle-nutrition'
+import { defaultWeightLb, weightFor } from '@/lib/animal-units'
 import { useStubbleMutations, type HerdCountRow, type StubbleRow } from '@/lib/winter-feeding'
 import { addDays, blocking, clashes, untilWord } from '@/lib/grazing-restrictions'
 import { useGrazingPicture } from '@/lib/grazing-restrictions-hooks'
@@ -152,7 +154,7 @@ export function CornStubble({
           <button type="button" onClick={() => setAdding(false)} className="text-gray-500">
             Cancel
           </button>
-          {m.save.isError && <span className="text-red-600">{(m.save.error as Error).message}</span>}
+          {m.save.isError && <span className="text-red-600">{dbErrorMessage(m.save.error)}</span>}
           {(() => {
             const w = sprayWarning(f.fieldId || null, f.start || null)
             return w ? <div className="w-full"><WarningList warnings={[w]} /></div> : null
@@ -166,7 +168,8 @@ export function CornStubble({
         <div className="divide-y divide-gray-100">
           {rows.map((s) => {
             const g = groupOf(s.herd_count_id)
-            const w = g ? Number(g.avg_weight_lb) : 1300
+            // The weight the season walks with (seasonInputs), so these lines add up to its total.
+            const w = g ? weightFor(g).lb : defaultWeightLb('cow')
             const cd = stubbleCowDays(Number(s.acres), Number(s.yield_bu), Number(s.weather_loss_pct), w)
             const daysForGroup = g && g.head_count > 0 ? cd.cowDays / g.head_count : null
             const dropped = s.ears_counted == null ? null : droppedBuPerAcre(Number(s.ears_counted))

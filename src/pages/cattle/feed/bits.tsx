@@ -15,7 +15,7 @@ export function FromHerdChip({ className }: { className?: string }) {
       to="/herd?tab=animals"
       title="Head counts come from the Herd tab — add or remove classes there."
       className={cn(
-        'inline-flex items-center rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-500 hover:border-brand-300 hover:text-brand-700',
+        'inline-flex items-center rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-500 hover:border-brand-300 hover:text-brand-700',
         className,
       )}
     >

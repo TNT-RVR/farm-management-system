@@ -86,7 +86,7 @@ export function ProductSheetCell({
             </button>
           )}
           {showSummary === d.id && d.summary && (
-            <p className="basis-full whitespace-pre-line rounded bg-gray-50 px-2 py-1.5 text-[11px] text-gray-700">
+            <p className="basis-full whitespace-pre-line rounded bg-gray-50 px-2 py-1.5 text-xs text-gray-700">
               {d.summary}
             </p>
           )}
@@ -101,7 +101,7 @@ export function ProductSheetCell({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Why there is no label — adjuvant, fertiliser, wrong name…"
-            className="w-48 rounded border border-gray-300 px-1.5 py-1 text-[11px]"
+            className="w-48 rounded border border-gray-300 px-1.5 py-1 text-xs"
           />
           <button
             type="button"
@@ -109,13 +109,13 @@ export function ProductSheetCell({
               save.mutate({ id: product.id, label_note: note.trim() || null })
               setEditingNote(false)
             }}
-            className="rounded bg-brand-700 px-1.5 py-1 text-[11px] font-semibold text-white"
+            className="rounded bg-brand-700 px-1.5 py-1 text-xs font-semibold text-white"
           >
             Save
           </button>
         </div>
       ) : product.label_note ? (
-        <p className="max-w-xs text-[11px] leading-snug text-gray-500">
+        <p className="max-w-xs text-xs leading-snug text-gray-500">
           {product.label_note}
           {canEdit && (
             <button
@@ -138,7 +138,7 @@ export function ProductSheetCell({
       )}
 
       {canEdit && (
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-400">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
           {product.label_note && (
             <button type="button" onClick={onLink} className="underline decoration-dotted hover:text-gray-800">
               link a registration

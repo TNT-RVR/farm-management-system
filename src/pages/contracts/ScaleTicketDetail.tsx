@@ -171,7 +171,7 @@ export function ScaleTicketDetail({
           }}
           onSave={save}
         >
-          <p className="mt-2 text-[11px] text-gray-500">
+          <p className="mt-2 text-xs text-gray-500">
             The contract’s delivered total follows the ticket. A bin it was drawn from is not redrawn — correct that under What is
             in the bins.
           </p>

@@ -62,7 +62,7 @@ export function BreakevenCard({ books, seasons }: { books: FieldBooks[]; seasons
       <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-1 text-left">
         {open ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronRight className="h-4 w-4 text-gray-500" />}
         <h2 className="text-sm font-semibold text-gray-800">Breakeven</h2>
-        {losing > 0 && <span className="ml-auto rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-800">{losing} under water</span>}
+        {losing > 0 && <span className="ml-auto rounded bg-red-100 px-1.5 py-0.5 text-xs font-semibold text-red-800">{losing} under water</span>}
       </button>
       {open && (
         <>
@@ -71,13 +71,13 @@ export function BreakevenCard({ books, seasons }: { books: FieldBooks[]; seasons
               <li key={b.fieldId} className="py-1.5">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="truncate text-gray-800">
-                    {b.name} <span className="text-[10px] text-gray-400">{b.cropName}</span>
+                    {b.name} <span className="text-xs text-gray-400">{b.cropName}</span>
                   </span>
                   <span className={cn('shrink-0 tabular-nums', be.netAtPrice == null ? 'text-gray-400' : be.netAtPrice < 0 ? 'text-red-700' : 'text-green-800')}>
                     {be.netAtPrice != null ? `${money(be.netAtPrice)}/ac` : `${money(be.costPerAcre)}/ac cost`}
                   </span>
                 </div>
-                <div className="mt-0.5 text-[11px] leading-snug text-gray-500">
+                <div className="mt-0.5 text-xs leading-snug text-gray-500">
                   {be.breakevenPrice != null && be.unit ? `needs ${unitPrice(be.breakevenPrice, be.unit)} at ${be.yieldPerAcre!.toFixed(be.unit === 'lbs' ? 0 : 1)} ${be.unit}/ac` : 'no yield yet'}
                   {be.breakevenYield != null && be.price != null && (
                     <>

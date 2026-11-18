@@ -5,7 +5,7 @@ import { PillTabs } from '@/components/PillTabs'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useTab } from '@/lib/useTab'
 import { useSearchParams } from 'react-router-dom'
-import { SCOUT_COMPANIES, scoutCompanies, scoutYears, useScoutReports } from '@/lib/scout-reports'
+import { isCompanyOf, SCOUT_COMPANIES, scoutCompanies, scoutYears, useScoutReports } from '@/lib/scout-reports'
 import { ScoutCompanyTab } from './scout/ScoutCompanyTab'
 import { ScoutOverviewTab } from './scout/ScoutOverviewTab'
 
@@ -45,6 +45,7 @@ export function ScoutReportsPage() {
   }
 
   const forYear = useMemo(() => (rows ?? []).filter((r) => r.crop_year === year), [rows, year])
+  const company = companies.find((c) => c.key === tab) ?? companies[0]
 
   return (
     <div className="mx-auto max-w-6xl space-y-3 p-4 md:p-6">
@@ -84,9 +85,9 @@ export function ScoutReportsPage() {
         <ScoutOverviewTab year={year} rows={rows ?? []} companies={companies} />
       ) : (
         <ScoutCompanyTab
-          company={companies.find((c) => c.key === tab) ?? companies[0]}
+          company={company}
           year={year}
-          rows={forYear.filter((r) => r.company === tab)}
+          rows={forYear.filter((r) => isCompanyOf(company, r.company))}
           isManager={isManager}
         />
       )}

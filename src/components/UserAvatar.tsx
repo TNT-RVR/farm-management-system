@@ -16,7 +16,7 @@ const initials = (name: string | null | undefined) =>
 // The same person gets the same colour everywhere.
 const colourOf = (key: string) => COLOURS[[...key].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % COLOURS.length]
 
-const SIZES = { xs: 'h-5 w-5 text-[9px]', sm: 'h-7 w-7 text-[11px]', md: 'h-9 w-9 text-xs', lg: 'h-20 w-20 text-2xl' }
+const SIZES = { xs: 'h-5 w-5 text-[9px]', sm: 'h-7 w-7 text-xs', md: 'h-9 w-9 text-xs', lg: 'h-20 w-20 text-2xl' }
 
 export function UserAvatar({ person, size = 'sm', className, title }: { person: AvatarPerson; size?: keyof typeof SIZES; className?: string; title?: string }) {
   const name = person.full_name ?? ''

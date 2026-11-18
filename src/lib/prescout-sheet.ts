@@ -2,7 +2,7 @@
  * Corteva's prescout spreadsheet, read into scout reports.
  *
  * The sheet is eighty-one columns wide and arrives once a year by email
- * ("Prairie Creek Prescouts 2027.xlsx", Kathryn Bilcik, 12 Nov 2026). Most of the
+ * ("Prairie Creek Prescouts 2027.xlsx", from Corteva, 12 Nov 2026). Most of the
  * width is the same seven weeds counted twice — in the count and between the
  * counts — for each of two walks, plus link columns that only work inside
  * Corteva's own app.

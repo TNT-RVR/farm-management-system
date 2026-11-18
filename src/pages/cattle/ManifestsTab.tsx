@@ -226,7 +226,7 @@ export function ManifestsTab({ cropYear, canEdit }: { cropYear: number; canEdit:
                     {m.moved_on} · {totalHead(m.lines)} head
                   </span>
                   {m.direction === 'in' && (
-                    <span className="rounded bg-brand-100 px-1.5 py-0.5 text-[11px] font-medium text-brand-900">
+                    <span className="rounded bg-brand-100 px-1.5 py-0.5 text-xs font-medium text-brand-900">
                       arrived
                     </span>
                   )}
@@ -235,7 +235,7 @@ export function ManifestsTab({ cropYear, canEdit }: { cropYear: number; canEdit:
                     {m.manifest_no ? ` · manifest ${m.manifest_no}` : ''}
                   </span>
                   {gaps.length > 0 && (
-                    <span className="flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
+                    <span className="flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
                       <AlertTriangle className="h-3 w-3" /> {gaps.length} to fill
                     </span>
                   )}
@@ -394,7 +394,7 @@ function Block({ title, rows }: { title: string; rows: [string, string | null][]
   const shown = rows.filter(([, v]) => v)
   return (
     <div>
-      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{title}</h4>
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-400">{title}</h4>
       {shown.length === 0 ? (
         <p className="text-xs text-gray-400">Nothing recorded.</p>
       ) : (
@@ -723,7 +723,7 @@ function ManifestForm({
         </label>
       </div>
 
-      <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">From</p>
+      <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-gray-400">From</p>
       <div className="grid gap-2 sm:grid-cols-3">
         {text('owner_name', 'Owner')}
         {text('owner_phone', 'Phone')}
@@ -746,7 +746,7 @@ function ManifestForm({
         </label>
       )}
 
-      <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">To</p>
+      <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-gray-400">To</p>
       <div className="grid gap-2 sm:grid-cols-3">
         <label className="text-xs font-medium text-gray-500">
           From contacts
@@ -771,7 +771,7 @@ function ManifestForm({
         {text('destination_premises_id', 'Premises ID')}
       </div>
 
-      <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+      <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
         Hauled by
       </p>
       <div className="grid gap-2 sm:grid-cols-4">
@@ -782,7 +782,7 @@ function ManifestForm({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
           On the truck
         </p>
         {d.ranch_id && (herd?.length ?? 0) > 0 && (

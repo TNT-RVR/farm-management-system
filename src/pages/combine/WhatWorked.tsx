@@ -96,7 +96,7 @@ function Row({ r, field, combine }: { r: WhatWorkedRow; field: string; combine: 
     <tr className={cn('border-b border-gray-50 last:border-0', r.best && 'bg-green-50 font-semibold')}>
       <td className="whitespace-nowrap px-2 py-1.5 text-gray-600">
         {day(r.row.checked_at)}
-        {r.best && <span className="ml-1 rounded bg-green-600 px-1 text-[9px] font-semibold uppercase text-white">lowest</span>}
+        {r.best && <span className="ml-1 rounded bg-green-600 px-1 text-xs font-semibold uppercase text-white">lowest</span>}
       </td>
       <td className="max-w-[10rem] truncate px-2 py-1.5 text-gray-700" title={`${field} · ${combine}`}>
         {field}

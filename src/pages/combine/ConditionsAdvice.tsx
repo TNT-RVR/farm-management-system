@@ -188,7 +188,7 @@ function FieldConditionsBody({ fieldId, cropYear, onCropChange }: { fieldId: str
 
   return (
     <div className="mt-2 space-y-3">
-      <p className="text-[11px] text-gray-500">
+      <p className="text-xs text-gray-500">
         {fc?.cropName ?? dd?.cropName}
         {swathed ? ` · swathed${fc?.swathedOn ? ` ${shortDate(fc.swathedOn)}` : ''}` : dd?.methodSet ? ' · straight cut' : ''}
       </p>
@@ -249,7 +249,7 @@ const settingText = (s: AdviceSetting, b: { value: number | null; from: string }
 function Tile({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-md border border-gray-200 p-2.5">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{title}</h3>
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</h3>
       <div className="mt-1 space-y-1 text-xs text-gray-700">{children}</div>
     </div>
   )
@@ -272,13 +272,13 @@ function ThicknessTile({ t, fieldId, cropName, swathed }: { t: Thickness | null;
       <p className="tabular-nums">
         {Math.round(t.thinShare * 100)}% thin · {Math.round(t.averageShare * 100)}% average · {Math.round(t.heavyShare * 100)}% heavy
       </p>
-      <p className="text-[11px] text-gray-500">
+      <p className="text-xs text-gray-500">
         Peak NDVI {t.peak.mean.toFixed(2)} on {shortDate(t.peak.date)}
         {t.against === 'farm' ? `, against ${cropName ?? 'this crop'}’s median ${t.reference!.median.toFixed(2)} on ${t.reference!.fields} fields` : ', against its own average (too few fields of this crop to compare)'}
         {clear < 0.95 ? ` · ${Math.round(clear * 100)}% of the field clear of cloud` : ''}
       </p>
       {t.latest && t.latest.date !== t.peak.date && (
-        <p className="text-[11px] text-gray-500">
+        <p className="text-xs text-gray-500">
           Latest {shortDate(t.latest.date)} ({t.latestAgeDays} d old): {t.latest.mean.toFixed(2)}
           {t.green === 'green' ? ' — still green' : t.green === 'some' ? ' — some green left' : t.green === 'ripe' ? ' — ripe' : swathed ? ' — swathed, not read' : ''}
           {(t.latest.validFraction ?? 1) < 0.95 ? ` · ${Math.round((t.latest.validFraction ?? 1) * 100)}% clear` : ''}
@@ -287,7 +287,7 @@ function ThicknessTile({ t, fieldId, cropName, swathed }: { t: Thickness | null;
       {pic && (
         <div className="flex items-end gap-2 pt-1">
           <img src={pic.url} alt={`NDVI of the field on ${pic.date}`} className="h-24 w-auto max-w-[60%] rounded border border-gray-200 bg-gray-50 object-contain" style={{ imageRendering: 'pixelated' }} />
-          <span className="text-[10px] leading-tight text-gray-500">
+          <span className="text-xs leading-tight text-gray-500">
             {shortDate(pic.date)}, this field’s own range: brown {pic.lo.toFixed(2)} → green {pic.hi.toFixed(2)}
           </span>
         </div>
@@ -309,14 +309,14 @@ function MoistureTile({ m, bands, reason }: { m: { now: MoistureNow | null; next
       {m.now ? (
         <p className="text-sm font-semibold text-gray-900">
           {pct(m.now.pct)} <span className="text-xs font-normal text-gray-500">{m.now.source === 'test' ? 'tested' : 'model now'}</span>
-          {g && <span className={cn('ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase', GRADE_STYLE[g])}>{gradeLabel(g)}</span>}
+          {g && <span className={cn('ml-1.5 rounded px-1.5 py-0.5 text-xs font-semibold uppercase', GRADE_STYLE[g])}>{gradeLabel(g)}</span>}
         </p>
       ) : (
         <p>{reason ?? 'No reading yet.'}</p>
       )}
-      {m.lastTest && m.now?.source !== 'test' && <p className="text-[11px] text-gray-500">Last test {pct(m.lastTest.pct)}, {lastAt}</p>}
+      {m.lastTest && m.now?.source !== 'test' && <p className="text-xs text-gray-500">Last test {pct(m.lastTest.pct)}, {lastAt}</p>}
       {bands && (
-        <p className="text-[11px] text-gray-500">
+        <p className="text-xs text-gray-500">
           Dry ≤ {bands.dry_max}%{bands.tough_max != null && bands.tough_max > (bands.dry_max ?? 0) ? ` · tough ≤ ${bands.tough_max}%` : ''}
           {bands.dry_min != null ? ` · too dry < ${bands.dry_min}%` : ''}
         </p>
@@ -345,7 +345,7 @@ function WeatherTile({ w }: { w: { now: WxHour | null; next: WxHour[] } }) {
         Wind {n.windKmh != null ? Math.round(n.windKmh) : '—'} km/h {windDirLabel(n.windDir)}
         {n.gustKmh != null ? `, gusts ${Math.round(n.gustKmh)}` : ''} · dew pt {n.dewC != null ? `${Math.round(n.dewC)} °C` : '—'}
       </p>
-      <p className="text-[11px] text-gray-500">
+      <p className="text-xs text-gray-500">
         {spread != null && spread <= THRESHOLDS.dewSpreadC ? 'Dew forming now.' : firstDew ? `Dew likely from about ${hourLabel(firstDew.time)}.` : 'No dew in the next 12 hours.'}
       </p>
       {w.next.length > 0 && (
@@ -373,19 +373,19 @@ function WeatherTile({ w }: { w: { now: WxHour | null; next: WxHour[] } }) {
 function HourStrip({ cells, label }: { cells: { time: string; text: string; cls: string }[]; label: string }) {
   return (
     <div className="pt-1">
-      <div className="grid grid-cols-12 gap-px text-center text-[9px] tabular-nums">
+      <div className="grid grid-cols-12 gap-px text-center text-xs tabular-nums">
         {cells.map((c) => (
           <span key={c.time} title={`${hourLabel(c.time)}: ${c.text}`} className={cn('rounded-sm py-0.5', c.cls)}>
             {c.text}
           </span>
         ))}
       </div>
-      <div className="grid grid-cols-12 gap-px text-center text-[9px] text-gray-400">
+      <div className="grid grid-cols-12 gap-px text-center text-xs text-gray-400">
         {cells.map((c, i) => (
           <span key={c.time}>{i % 3 === 0 ? hourLabel(c.time).replace(' ', '') : ''}</span>
         ))}
       </div>
-      <p className="text-[10px] text-gray-400">{label}</p>
+      <p className="text-xs text-gray-400">{label}</p>
     </div>
   )
 }
@@ -414,10 +414,10 @@ function Suggestions({ advice, baseOf }: { advice: Advice; baseOf: (s: AdviceSet
                 <DirIcon d={s.direction} />
                 <span className="font-medium text-gray-900">{label}</span>
                 <span className={cn('text-xs', s.direction === 'none' ? 'text-gray-400' : 'font-semibold text-gray-900')}>{directionWords(s.setting, s.direction)}</span>
-                {from && <span className="ml-auto shrink-0 text-[11px] tabular-nums text-gray-400">{from}</span>}
+                {from && <span className="ml-auto shrink-0 text-xs tabular-nums text-gray-400">{from}</span>}
               </div>
               {s.reasons.length > 0 && (
-                <ul className="mt-0.5 space-y-0.5 pl-5 text-[11px] text-gray-600">
+                <ul className="mt-0.5 space-y-0.5 pl-5 text-xs text-gray-600">
                   {[...new Set(s.reasons.map((r) => r.text))].map((t) => (
                     <li key={t}>{t}</li>
                   ))}
@@ -427,9 +427,9 @@ function Suggestions({ advice, baseOf }: { advice: Advice; baseOf: (s: AdviceSet
           )
         })}
       </ul>
-      {!any && <p className="px-2.5 pb-2 text-[11px] text-gray-500">Nothing in the conditions asks for a change: start from the settings shown.</p>}
+      {!any && <p className="px-2.5 pb-2 text-xs text-gray-500">Nothing in the conditions asks for a change: start from the settings shown.</p>}
       {(advice.notes.length > 0 || advice.later.length > 0) && (
-        <ul className="space-y-0.5 border-t border-gray-100 px-2.5 py-1.5 text-[11px] text-gray-700">
+        <ul className="space-y-0.5 border-t border-gray-100 px-2.5 py-1.5 text-xs text-gray-700">
           {advice.notes.map((n) => (
             <li key={n.rule}>{n.text}</li>
           ))}
@@ -504,7 +504,7 @@ function HistoryLine({ h, fieldName }: { h: LowestLoss; fieldName: (id: string |
     <p className="rounded-md border border-green-200 bg-green-50 px-2.5 py-2 text-xs text-green-900">
       <span className="font-semibold">Lowest loss in similar conditions: </span>
       {settingsLine(h.settings)} ({where}) — {pct != null ? `${pct.toFixed(1)}%` : `${Number(h.best.loss_bu_per_acre).toFixed(2)} bu/ac`} lost
-      <span className="block text-[11px] text-green-800">
+      <span className="block text-xs text-green-800">
         From {h.similar} past check{h.similar === 1 ? "" : "s"} of this crop at similar grain moisture (the same band) and RH within {SIMILAR.rhPts} points. History, not a rule.
       </span>
     </p>
@@ -514,7 +514,7 @@ function HistoryLine({ h, fieldName }: { h: LowestLoss; fieldName: (id: string |
 function HowWorkedOut() {
   return (
     <Fold title="How these are worked out" storageKey="combine-conditions-how">
-      <div className="space-y-2 text-[11px] text-gray-700">
+      <div className="space-y-2 text-xs text-gray-700">
         <p>
           Thickness is the season’s peak NDVI (a ripe crop reads low at harvest whatever it carried), split into thin, average and heavy by {THRESHOLDS.ndviMargin} either side of the crop’s median on
           the farm’s other fields, from the look’s p10, mean and p90. The latest look says how green it still is. Moisture is the meter test if it is under 1½ hours old, else the dry-down model.

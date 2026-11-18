@@ -80,7 +80,7 @@ export function HailReportsPage() {
           >
             <Upload className="h-3.5 w-3.5" /> {busy ? 'Reading…' : 'Upload a report'}
           </button>
-          <span className="text-[11px] text-gray-400">
+          <span className="text-xs text-gray-400">
             Or forward it to the mailbox once that is set up — same path, no typing.
           </span>
         </div>
@@ -131,7 +131,7 @@ export function HailReportsPage() {
               <li key={i.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-2 text-sm">
                 <span
                   className={cn(
-                    'rounded-full px-2 py-0.5 text-[11px] font-medium',
+                    'rounded-full px-2 py-0.5 text-xs font-medium',
                     i.status === 'applied'
                       ? 'bg-green-100 text-green-800'
                       : 'bg-gray-100 text-gray-500',
@@ -179,7 +179,7 @@ function InspectionCard({
         <span className="text-sm font-semibold text-gray-900">Inspection {i.inspection_number}</span>
         <span className="text-xs text-gray-500">{i.land_location}</span>
         {i.crop_label && <span className="text-xs text-gray-500">· {i.crop_label}</span>}
-        {i.source && <span className="ml-auto text-[11px] text-gray-400">{i.source}</span>}
+        {i.source && <span className="ml-auto text-xs text-gray-400">{i.source}</span>}
       </div>
 
       <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -190,7 +190,7 @@ function InspectionCard({
       </div>
 
       {i.bands && i.bands.filter((b) => b.acres).length > 1 && (
-        <p className="mt-1.5 text-[11px] text-gray-500">
+        <p className="mt-1.5 text-xs text-gray-500">
           Split across bands:{' '}
           {i.bands
             .filter((b) => b.acres)
@@ -211,7 +211,7 @@ function InspectionCard({
               {matched.name}
             </Link>
             {i.match_confidence === 'section' && (
-              <span className="ml-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-900">
+              <span className="ml-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">
                 section only — our record has no quarter, check it is the right one
               </span>
             )}
@@ -253,7 +253,7 @@ function InspectionCard({
           </button>
         </div>
       )}
-      {error && <p className="mt-1.5 text-[11px] text-red-700">{error}</p>}
+      {error && <p className="mt-1.5 text-xs text-red-700">{error}</p>}
     </div>
   )
 }
@@ -261,7 +261,7 @@ function InspectionCard({
 function Stat({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <div className="rounded-md bg-gray-50 px-2.5 py-1.5">
-      <p className="text-[11px] text-gray-500">{label}</p>
+      <p className="text-xs text-gray-500">{label}</p>
       <p className={cn('tabular-nums', strong ? 'text-lg font-bold text-gray-900' : 'text-sm text-gray-800')}>
         {value}
       </p>

@@ -117,7 +117,7 @@ function WeekCard({ week, repo, open = false, manager, onRewrite, busy }: { week
             {week.items.map((it, i) => (
               <li key={i} className="text-sm">
                 <div className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">{it.area}</span>
+                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500">{it.area}</span>
                   <span className="font-medium text-gray-900">{it.title}</span>
                   {it.link && (
                     <Link to={it.link} className="inline-flex items-center gap-0.5 text-xs font-medium text-brand-700 hover:underline">
@@ -127,7 +127,7 @@ function WeekCard({ week, repo, open = false, manager, onRewrite, busy }: { week
                 </div>
                 <p className="mt-0.5 text-gray-600">{it.detail}</p>
                 {it.commits.length > 0 && repo && (
-                  <p className="mt-0.5 flex flex-wrap gap-x-2 text-[11px] text-gray-400">
+                  <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-gray-400">
                     {it.commits.slice(0, 6).map((sha) => (
                       <a key={sha} href={`${repo}/commit/${sha}`} target="_blank" rel="noopener noreferrer" title={bySha.get(sha)?.subject} className="inline-flex items-center gap-0.5 hover:text-brand-700 hover:underline">
                         <GitCommitHorizontal className="h-3 w-3" /> {sha.slice(0, 7)}
@@ -152,7 +152,7 @@ function WeekCard({ week, repo, open = false, manager, onRewrite, busy }: { week
             )}
           </div>
           {allCommits && (
-            <ul className={cn('mt-2 max-h-80 space-y-0.5 overflow-auto text-[11px] text-gray-600')}>
+            <ul className={cn('mt-2 max-h-80 space-y-0.5 overflow-auto text-xs text-gray-600')}>
               {week.commits.map((c) => (
                 <li key={c.sha}>
                   {repo ? (

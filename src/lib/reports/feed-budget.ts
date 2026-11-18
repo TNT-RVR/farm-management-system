@@ -9,6 +9,7 @@ import {
   planSettings,
   seasonInputs,
   seasonPlan,
+  stalksNote,
   usableInYard,
   withReserve,
   type FeedTestRow,
@@ -156,7 +157,7 @@ export async function gatherFeedBudget(p: ParamValues, ctx: GatherContext): Prom
         `${head.toLocaleString('en-CA')} head in ${inputs.groups.length} group${inputs.groups.length === 1 ? '' : 's'}`,
         `${Math.round(season.dmLb / LB_PER_TONNE).toLocaleString('en-CA')} t of dry matter eaten`,
         `${settings.reservePct}% reserve`,
-        season.stubbleCowDays > 0 ? `stalks carry ${Math.round(season.stubbleCowDays).toLocaleString('en-CA')} cow-days` : null,
+        stalksNote(season),
         usable.size ? (b.short.length ? `short of ${b.short.join(', ')}` : 'the yard covers it') : 'nothing counted in the yard yet',
         noRation.length ? `no ration on file for ${noRation.join(', ')}` : null,
       ]

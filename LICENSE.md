@@ -5,6 +5,11 @@ License 1.0.0** (full text below), with one additional permission for farms.
 
 Required Notice: Copyright TNT-RVR, the Farm Management System project (https://github.com/TNT-RVR/farm-management-system)
 
+Some files in this repository are other people's — the Canadian Grain
+Commission's moisture charts, the Alberta township survey data, two fonts —
+and stay under their own terms, not this licence. [NOTICE.md](NOTICE.md)
+lists them.
+
 ## Additional permission: running your own farm
 
 The PolyForm Noncommercial License on its own would not let a farm business

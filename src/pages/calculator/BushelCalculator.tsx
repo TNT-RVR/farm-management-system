@@ -142,7 +142,7 @@ export function BushelCalculator() {
         </tbody>
       </table>
 
-      <p className="mt-2 text-[11px] text-gray-500">
+      <p className="mt-2 text-xs text-gray-500">
         {standard?.source === 'crop'
           ? `${crop?.name} is set to ${standard.lbPerBu} lb/bu on its crop record.`
           : standard

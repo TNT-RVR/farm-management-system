@@ -32,6 +32,7 @@ import {
   type SoilReport,
   type SoilSampleRow,
 } from '@/lib/soilTests'
+import { soilFieldOptions } from '@/lib/soil-field-options'
 import {
   rateDepthScaled,
   rateProfileValue,
@@ -43,6 +44,7 @@ import {
 import { RatingLegendInfo } from '@/components/RatingLegendInfo'
 import { PillTabs } from '@/components/PillTabs'
 import { cn } from '@/lib/utils'
+import { dbErrorMessage } from '@/lib/db-error'
 import { FieldSoilSurvey } from '@/components/FieldSoilSurvey'
 import { useCropYear } from '@/lib/crop-year'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
@@ -140,6 +142,7 @@ function SampleTable({
 }: {
   samples: SoilSampleRow[]
   columns: { key: string; label: string; unit?: string }[]
+  /** Shown only when the lab returned none of these columns — never under a full table. */
   note?: string
   columnNotes?: Record<string, { summary?: string; priorCrop?: string; nextCrop?: string }>
   /** A manager clicks a sample to correct its numbers (Sam, 7 Oct 2026). */
@@ -177,7 +180,7 @@ function SampleTable({
           rather than squeezing 15 columns into the screen until headings
           overlap and numbers run together (Sam, 13 Nov 2026). */}
       <div className="overflow-x-auto">
-      <table className="w-full table-fixed text-[11px]" style={{ minWidth: shown.length * SOIL_COL_MIN_PX + 40 }}>
+      <table className="w-full table-fixed text-xs" style={{ minWidth: shown.length * SOIL_COL_MIN_PX + 40 }}>
         <colgroup>
           {shown.map((c) => (
             <col
@@ -247,9 +250,6 @@ function SampleTable({
         </tbody>
       </table>
       </div>
-      {note && (
-        <p className="border-t border-gray-100 px-1 py-1.5 text-[11px] text-gray-400">{note}</p>
-      )}
     </div>
   )
 }
@@ -349,7 +349,7 @@ function ReportCard({
           <h3 className="text-sm font-semibold text-gray-900">
             {report.crop_year}
             {report.part_label && (
-              <span className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600">
+              <span className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide text-gray-600">
                 {report.part_label}
               </span>
             )}
@@ -363,7 +363,7 @@ function ReportCard({
         </button>
         {report.report_ref && (
           <AdminOnly>
-            <p className="text-[11px] text-gray-400">{report.report_ref}</p>
+            <p className="text-xs text-gray-400">{report.report_ref}</p>
           </AdminOnly>
         )}
         <RatingLegendInfo classes={RATING_CLASS} />
@@ -405,7 +405,7 @@ function ReportCard({
           fields={SAMPLE_FIELDS}
           row={editingSample}
           saving={updSample.isPending || delSample.isPending}
-          error={(updSample.error ?? delSample.error)?.message ?? null}
+          error={updSample.error ?? delSample.error ? dbErrorMessage(updSample.error ?? delSample.error) : null}
           onClose={() => {
             updSample.reset()
             delSample.reset()
@@ -490,7 +490,7 @@ function ReportCard({
       <SampleTable samples={report.samples} columns={SOIL_COLUMNS} columnNotes={columnNotes} onOpen={openSample} />
 
       <div className="border-t border-gray-200">
-        <p className="px-2 pt-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+        <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
           Micronutrients &amp; salts — topsoil only
         </p>
         <SampleTable
@@ -583,13 +583,13 @@ function Assessment({ report }: { report: SoilReport }) {
   return (
     <div className="border-t border-gray-200 px-3 py-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+        <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
           <Sparkles className="h-3.5 w-3.5" /> Agronomic assessment
           {a?.crop_label && <span className="normal-case text-gray-400">for {a.crop_label}</span>}
         </h4>
         <div className="flex items-center gap-2">
           {justFinished && (
-            <span className="flex items-center gap-1 text-[11px] font-medium text-green-700">
+            <span className="flex items-center gap-1 text-xs font-medium text-green-700">
               <CheckCircle2 className="h-3.5 w-3.5" /> Done
             </span>
           )}
@@ -609,7 +609,7 @@ function Assessment({ report }: { report: SoilReport }) {
       </div>
 
       {waiting && (
-        <div className="mt-1.5 flex items-center gap-2 rounded-md bg-brand-50 px-2 py-1.5 text-[11px] text-brand-900">
+        <div className="mt-1.5 flex items-center gap-2 rounded-md bg-brand-50 px-2 py-1.5 text-xs text-brand-900">
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
           <span>
             Reading this field against the crop coming next. It takes a minute or two and will fill
@@ -618,7 +618,7 @@ function Assessment({ report }: { report: SoilReport }) {
         </div>
       )}
       {generate.isError && (
-        <p className="mt-1.5 rounded-md bg-red-50 px-2 py-1.5 text-[11px] text-red-700">
+        <p className="mt-1.5 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-700">
           {(generate.error as Error).message}
         </p>
       )}
@@ -634,7 +634,7 @@ function Assessment({ report }: { report: SoilReport }) {
               word a line; it scrolls sideways on a phone instead. */}
           {recs.length > 0 && (
             <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
-            <table className="w-full min-w-[560px] table-fixed text-[11px]">
+            <table className="w-full min-w-[560px] table-fixed text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>
                   <th className={TABLE_TH} style={{ width: '12%' }}>
@@ -682,7 +682,7 @@ function Assessment({ report }: { report: SoilReport }) {
             {a.assessment_md}
           </div>
           <HelpNote
-            className="mt-1.5 text-[10px]"
+            className="mt-1.5 text-xs"
             summary={
               <>
                 AI second opinion · check rates · {a.generated_at?.slice(0, 10)}
@@ -745,10 +745,10 @@ function SweepBanner() {
         {sweep.isPending ? 'Started…' : 'Write them all'}
       </button>
       {sweep.isError && (
-        <p className="w-full text-[11px] text-red-700">{(sweep.error as Error).message}</p>
+        <p className="w-full text-xs text-red-700">{(sweep.error as Error).message}</p>
       )}
       {refused && (
-        <p className="w-full text-[11px] text-red-700">
+        <p className="w-full text-xs text-red-700">
           Last run was refused — writing assessments needs an active manager account. Ask an admin
           to raise your role, or have a manager press this.
         </p>
@@ -756,7 +756,7 @@ function SweepBanner() {
       {/* The job's own status line is for whoever maintains it. */}
       {!refused && status?.detail && !sweep.isPending && (
         <AdminOnly>
-          <p className="w-full text-[11px] text-amber-800">Last run: {status.detail}</p>
+          <p className="w-full text-xs text-amber-800">Last run: {status.detail}</p>
         </AdminOnly>
       )}
     </div>
@@ -774,18 +774,16 @@ function SoilSampling({
 }) {
   const [importing, setImporting] = useState(false)
   const { data: fields } = useFields()
-  const { data: coverage } = useSoilTestCoverage()
-  // Active fields, plus any archived one that still has a test on file. A field
-  // retired this year keeps its history, and hiding it would make the data
-  // unreachable the moment it stopped being farmed — which is exactly when
-  // somebody goes looking for what it used to do.
-  const options = useMemo(() => {
-    const tested = new Set((coverage ?? []).map((c) => c.field_id))
-    return (fields ?? [])
-      .filter((f) => f.active || tested.has(f.id))
-      .map((f) => ({ value: f.id, label: f.active ? f.name : `${f.name} (archived)` }))
-  }, [fields, coverage])
-  const selected = fieldId || options[0]?.value || ''
+  const { data: coverage, isLoading: coverageLoading } = useSoilTestCoverage()
+  // Fields with a test first, under their own heading, so the page opens on one
+  // with something to show; archived fields only when they still hold a test.
+  const options = useMemo(
+    () => soilFieldOptions(fields ?? [], (coverage ?? []).flatMap((c) => (c.field_id ? [c.field_id] : []))),
+    [fields, coverage],
+  )
+  // Wait for the coverage before picking a default, or it opens on the first
+  // field whether or not it has a test.
+  const selected = fieldId || (coverageLoading ? '' : options[0]?.value) || ''
   const { data: reports, isLoading } = useFieldSoilReports(selected || undefined)
 
   return (
@@ -820,7 +818,7 @@ function SoilSampling({
 
       <SweepBanner />
 
-      {isLoading ? (
+      {isLoading || (!fieldId && coverageLoading) ? (
         <p className="py-16 text-center text-sm text-gray-400">Loading…</p>
       ) : !reports || reports.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 py-16 text-center text-sm text-gray-400">

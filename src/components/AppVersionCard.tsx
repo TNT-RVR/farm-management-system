@@ -129,7 +129,7 @@ export function AppVersionCard() {
         >
           Force a fresh copy
         </button>
-        <p className="mt-2 text-[11px] text-gray-400">
+        <p className="mt-2 text-xs text-gray-400">
           Force a fresh copy re-downloads the app. Saved map tiles and files are kept.
         </p>
       </Fold>

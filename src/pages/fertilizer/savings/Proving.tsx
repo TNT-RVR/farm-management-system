@@ -93,7 +93,7 @@ export function OverAppliedCard() {
               <td className={tdNum}>
                 {n0(x.applied.lb.n)} · {n0(x.applied.lb.p2o5)} · {n0(x.applied.lb.k2o)} · {n0(x.applied.lb.s)}
                 {x.applied.passes > x.applied.counted && (
-                  <span className="block text-[10px] text-gray-400">{x.applied.passes - x.applied.counted} pass(es) by volume not counted</span>
+                  <span className="block text-xs text-gray-400">{x.applied.passes - x.applied.counted} pass(es) by volume not counted</span>
                 )}
               </td>
               <td className={td}>
@@ -187,7 +187,7 @@ export function CostPerBushelCard() {
               <td className={tdNum}>{money(x.perAc, 2)}</td>
               <td className={tdNum}>
                 {x.yieldPerAc != null ? `${n0(x.yieldPerAc)} ${x.unit}` : '—'}
-                {x.fromLoads && <span className="block text-[10px] text-gray-400">from bin loads so far</span>}
+                {x.fromLoads && <span className="block text-xs text-gray-400">from bin loads so far</span>}
               </td>
               <td className={cn(tdNum, 'font-semibold')}>{x.perUnit != null ? money(x.perUnit, 2) : '—'}</td>
             </tr>
@@ -253,7 +253,7 @@ export function ThreeSeasonBalance() {
               {x.b.rows.map((r) => (
                 <td key={r.year} className={tdNum}>
                   {n0(r.netP)} · {n0(r.netK)}
-                  {!r.removed && <span className="block text-[10px] text-gray-400">no yield</span>}
+                  {!r.removed && <span className="block text-xs text-gray-400">no yield</span>}
                 </td>
               ))}
               <td className={cn(tdNum, x.b.p > 50 ? 'text-sky-800' : x.b.p < -50 ? 'text-amber-800' : '')}>{n0(x.b.p)}</td>
@@ -340,7 +340,7 @@ export function BalanceAndStripsCard() {
             <tr key={s.id} className="cursor-pointer hover:bg-gray-50" onClick={rowClick(() => setOpened(s))}>
               <td className={td}>
                 {inputs.fieldName(s.field_id)}
-                {s.where_text && <span className="block text-[10px] text-gray-400">{s.where_text}</span>}
+                {s.where_text && <span className="block text-xs text-gray-400">{s.where_text}</span>}
               </td>
               <td className={td}>{s.nutrient}</td>
               <td className={tdNum}>

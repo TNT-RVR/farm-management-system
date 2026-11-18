@@ -63,10 +63,10 @@ export function KeyRow({ k, status }: { k: SetupKey; status?: KeyStatus }) {
     <div className="py-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-medium text-gray-800">{k.label}</span>
-        {k.optional && <span className="text-[11px] text-gray-400">optional</span>}
+        {k.optional && <span className="text-xs text-gray-400">optional</span>}
         <span
           className={cn(
-            'ml-auto rounded-full px-2 py-0.5 text-[11px] font-medium',
+            'ml-auto rounded-full px-2 py-0.5 text-xs font-medium',
             inNetlify || inApp ? 'bg-green-50 text-green-800' : 'bg-gray-100 text-gray-500',
           )}
         >
@@ -94,7 +94,7 @@ export function KeyRow({ k, status }: { k: SetupKey; status?: KeyStatus }) {
         )}
       </p>
       {inNetlify ? (
-        <p className="mt-1 text-[11px] text-gray-400">
+        <p className="mt-1 text-xs text-gray-400">
           Netlify&apos;s setting wins; change it there if it needs changing.
         </p>
       ) : (
@@ -197,7 +197,7 @@ export function ConnectRow({ group, keysReady }: { group: string; keysReady: boo
         </span>
         <span
           className={cn(
-            'ml-auto rounded-full px-2 py-0.5 text-[11px] font-medium',
+            'ml-auto rounded-full px-2 py-0.5 text-xs font-medium',
             connected ? 'bg-green-50 text-green-800' : row?.status === 'error' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-500',
           )}
         >
@@ -243,10 +243,10 @@ export function ConnectRow({ group, keysReady }: { group: string; keysReady: boo
           >
             {busy ? 'Opening…' : linked ? 'Reconnect' : `Connect ${cfg.name}`}
           </button>
-          {!keysReady && <span className="text-[11px] text-gray-400">Save the keys above first.</span>}
+          {!keysReady && <span className="text-xs text-gray-400">Save the keys above first.</span>}
         </div>
       ) : (
-        <p className="mt-1.5 text-[11px] text-gray-400">
+        <p className="mt-1.5 text-xs text-gray-400">
           {cfg.who === 'finance' ? 'Connecting the books is for the owners and the farm’s accountant.' : 'Connecting is for managers.'}
         </p>
       )}
@@ -302,7 +302,7 @@ export function GroupBadge({
   return (
     <span
       className={cn(
-        'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold',
+        'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
         state === 'connected' && 'bg-green-100 text-green-800',
         state === 'partial' && 'bg-amber-100 text-amber-800',
         state === 'none' && 'bg-gray-100 text-gray-600',

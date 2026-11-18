@@ -222,7 +222,7 @@ export function NutrientHistory({
             {range && (range.from !== span.from || range.to !== span.to) && (
               <button
                 onClick={() => setRange(span)}
-                className="rounded border border-gray-200 px-1.5 py-0.5 text-[11px] text-gray-600 hover:bg-gray-50"
+                className="rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
               >
                 All years
               </button>
@@ -235,7 +235,7 @@ export function NutrientHistory({
           option is worse than not offering it, because the empty chart that
           follows looks like a bug rather than a gap in the lab panel. */}
       <div className="mb-3 rounded-lg border border-gray-200 bg-white p-2">
-        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+        <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
           Nutrients ({picked.length} shown)
         </p>
         <div className="flex flex-wrap gap-1">
@@ -249,7 +249,7 @@ export function NutrientHistory({
                 style={on ? { borderColor: colour, color: colour } : undefined}
                 aria-pressed={on}
                 className={cn(
-                  'rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors',
+                  'rounded-full border px-2 py-0.5 text-xs font-medium transition-colors',
                   on ? 'bg-white' : 'border-gray-200 text-gray-500 hover:bg-gray-50',
                 )}
               >
@@ -322,7 +322,7 @@ export function NutrientHistory({
 
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-gray-100 pt-2">
             {picked.map((key) => (
-              <span key={key} className="flex items-center text-[11px] text-gray-500">
+              <span key={key} className="flex items-center text-xs text-gray-500">
                 {LABEL.get(key)}
                 {axisOf.get(key) === 'right' && <span className="ml-1 text-gray-400">(right axis)</span>}
                 {SOIL_HELP[key] && <ColumnHelp help={SOIL_HELP[key]} />}

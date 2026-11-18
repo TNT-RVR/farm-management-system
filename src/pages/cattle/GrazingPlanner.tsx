@@ -9,6 +9,7 @@ import { Fold } from '@/components/Fold'
 import { InfoPopover } from '@/components/InfoPopover'
 import { CardList, RowCard } from '@/components/RowCards'
 import { askConfirm } from '@/components/askConfirm'
+import { auFor, auFromWeight } from '@/lib/animal-units'
 import { computePasture, computePastures, grazingRain, grazingUtilization, useGrazingHerd, useGrazingPastures, usePastureFieldContext, usePastureSeasonFactors, useRanchPrecip } from '@/lib/grazing'
 import { usePastures } from '@/lib/pastures'
 import { mobClass } from '@/lib/pasture-move'
@@ -47,6 +48,7 @@ import { PlanMap, type PlanGate, type PlanMove, type PlanStop } from './plan/Pla
 import { shortName, stayMonths, type PlanMapPasture } from './plan/plan-geo'
 import { PlanTimeline, type TimelineBar } from './plan/PlanTimeline'
 import { DEFAULT_UTILIZATION } from '@/lib/forage-response'
+import { HeadTip } from '@/components/HeadTip'
 
 const ALL = 'all'
 const PALETTE = ['#16a34a', '#2563eb', '#d97706', '#9333ea', '#db2777', '#0891b2', '#65a30d']
@@ -193,14 +195,17 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
 
   /* ------------------------------------------------------------ groups */
 
-  const groups = useMemo(() => (herd ?? []).filter((h) => h.head_count > 0), [herd])
+  // AU per head from weight (auFor), the Grazing tab's figure. This read the
+  // stored au_equivalent until 18 Nov 2026, which still held the old linear
+  // values, so a plan's AUM disagreed with the Grazing tab's need.
+  const groups = useMemo(() => (herd ?? []).filter((h) => h.head_count > 0).map((h) => ({ ...h, au: auFor(h) })), [herd])
   const calves = groups.find((g) => /calf|calves/i.test(g.class_name)) ?? null
   const totalHead = groups.reduce((s, g) => s + g.head_count, 0)
-  const totalAU = groups.reduce((s, g) => s + g.head_count * g.au_equivalent, 0)
+  const totalAU = groups.reduce((s, g) => s + g.head_count * g.au, 0)
   const [groupPick, setGroupPick] = useState<string | null>(null)
   const defaultGroup =
     groups.find((g) => /^cows?$/i.test(g.class_name))?.id ??
-    [...groups].sort((a, b) => b.head_count * b.au_equivalent - a.head_count * a.au_equivalent)[0]?.id ??
+    [...groups].sort((a, b) => b.head_count * b.au - a.head_count * a.au)[0]?.id ??
     ALL
   const groupKey = groupPick && (groupPick === ALL || groups.some((g) => g.id === groupPick)) ? groupPick : defaultGroup
   const group = groups.find((g) => g.id === groupKey) ?? null
@@ -228,7 +233,7 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
   // Calves at side graze with the cows but are their own group on the Herd
   // tab; their AUs ride along with a cow stay when the switch is on.
   const calfAuPerCow = (cows: { head_count: number }) =>
-    calvesOn && calves && cows.head_count > 0 ? (calves.head_count * calves.au_equivalent) / cows.head_count : 0
+    calvesOn && calves && cows.head_count > 0 ? (calves.head_count * calves.au) / cows.head_count : 0
 
   /** Head and AUs per head for a planned stay. */
   const stayFigures = useCallback(
@@ -236,7 +241,7 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
       const g = r.herd_count_id ? groupById.get(r.herd_count_id) : null
       const baseHead = g ? g.head_count : totalHead
       const head = r.head_count ?? baseHead
-      const au = g ? g.au_equivalent + (isCows(g) ? calfAuPerCow(g) : 0) : totalHead > 0 ? totalAU / totalHead : 0
+      const au = g ? g.au + (isCows(g) ? calfAuPerCow(g) : 0) : totalHead > 0 ? totalAU / totalHead : 0
       return { head, au }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -379,9 +384,9 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
       const cls = r.mob ? mobClass(r.mob) : null
       const g = cls ? byClass.get(cls.toLowerCase()) : undefined
       const au = g
-        ? g.au_equivalent + (isCows(g) ? calfAuPerCow(g) : 0)
+        ? g.au + (isCows(g) ? calfAuPerCow(g) : 0)
         : r.avg_animal_weight_lb
-          ? r.avg_animal_weight_lb / 1000
+          ? auFromWeight(r.avg_animal_weight_lb)
           : 1
       return {
         pasture_id: r.pasture_id,
@@ -614,11 +619,18 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
                     <>{u.days} days planned</>
                   )}
                 </p>
-                <p className="mt-0.5">
+                {/* A div, not a p: the popover's panel is a div inside it. */}
+                <div className="mt-0.5">
                   {n0(u.aums)}
                   {cap != null ? ` of ${n0(cap)}` : ''} animal-unit months (AUM)
-                  {u.outside_season.length > 0 && ` · ${u.outside_season.length} stay${u.outside_season.length === 1 ? '' : 's'} outside the season`}
-                </p>
+                  {u.outside_season.length > 0 && ` · ${u.outside_season.length} stay${u.outside_season.length === 1 ? '' : 's'} outside the season`}{' '}
+                  <InfoPopover title="Why the lease reads fewer AUM than its stays" width={320}>
+                    <p>
+                      A lease counts the Crown&apos;s month of 30.4 days, the way the lease is billed. Each stay below counts the
+                      Grazing tab&apos;s 30-day month, so the stays on a lease add to slightly more AUM than the lease line.
+                    </p>
+                  </InfoPopover>
+                </div>
               </div>
             )
           })}
@@ -647,7 +659,7 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
             onPickFence={(pair, at) => void pickFence(pair, at)}
             className="h-[340px] w-full sm:h-[460px] lg:h-[560px]"
           />
-          <p className="border-t border-gray-100 px-3 py-1.5 text-[11px] text-gray-500">
+          <p className="border-t border-gray-100 px-3 py-1.5 text-xs text-gray-500">
             {gateMode
               ? 'Tap the fence between two pastures to record a gate there.'
               : isManager
@@ -655,7 +667,7 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
                 : 'Each pasture shows its step number and the month the cattle are in it.'}
           </p>
           {gatelessMoves.length > 0 && (
-            <p className="border-t border-gray-100 px-3 py-1.5 text-[11px] text-amber-800">
+            <p className="border-t border-gray-100 px-3 py-1.5 text-xs text-amber-800">
               Drawn straight across the fence, no gate marked:{' '}
               {gatelessMoves.map((m) => `${nameOf(m.from)}→${nameOf(m.to)}`).join(', ')}.
             </p>
@@ -668,7 +680,7 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
             <h2 className="text-sm font-semibold text-gray-900">
               {group?.class_name ?? 'Whole herd'} · {year}
             </h2>
-            <span className="text-[11px] text-gray-500">
+            <span className="text-xs text-gray-500">
               {steps.length
                 ? `${steps.length} stay${steps.length === 1 ? '' : 's'} · ${fmt(steps[0].start_date)} – ${fmt(steps.at(-1)!.end_date)} · ${totalDays} days`
                 : `${n0(groupAuDay)} AU a day`}
@@ -701,6 +713,10 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
               const gapAfter = next && next.start_date !== s.end_date
               const lease = leaseOf.get(s.pasture_id)
               const overGrass = plannedHere > cap * 1.0001 && cap > 0
+              // A cow stay counts the calves at side on top, so its head is cows, not pairs.
+              const stayGroup = s.herd_count_id ? groupById.get(s.herd_count_id) : undefined
+              const pairs = !!stayGroup && isCows(stayGroup) && calfAuPerCow(stayGroup) > 0
+              const headOver = s.head_count != null && stayGroup != null && s.head_count > stayGroup.head_count
               return (
                 <li key={s.id} className={cn('px-3 py-2.5', selected === s.pasture_id && 'bg-yellow-50/60')}>
                   <div className="flex items-start gap-2">
@@ -717,12 +733,12 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
                         <span className="text-sm font-semibold text-gray-900">{nameOf(s.pasture_id)}</span>
                         <span className="text-xs tabular-nums text-gray-600">{days} days</span>
                         {est != null && est !== days && (
-                          <span className="text-[11px] text-gray-400" title="Days the grass would last this group, an estimate">
+                          <span className="text-xs text-gray-400" title="Days the grass would last this group, an estimate">
                             grass for ~{est}
                           </span>
                         )}
                         {lease && (
-                          <span className="rounded bg-sky-50 px-1.5 text-[10px] font-medium text-sky-700">Lease {lease}</span>
+                          <span className="rounded bg-sky-50 px-1.5 text-xs font-medium text-sky-700">Lease {lease}</span>
                         )}
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -737,8 +753,8 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
                               ariaLabel={`Stay ${i + 1} end`}
                               className="w-[8.5rem]"
                             />
-                            <label className="flex items-center gap-1 text-[11px] text-gray-500">
-                              head
+                            <label className="flex items-center gap-1 text-xs text-gray-500">
+                              {pairs ? 'cows (calves added)' : 'head'}
                               <input
                                 key={`${s.id}-${s.head_count}`}
                                 type="number"
@@ -754,15 +770,22 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
                           </>
                         ) : (
                           <span className="text-xs text-gray-600">
-                            {fmt(s.start_date)} → {fmt(s.end_date)} · {n0(f.head)} head
+                            {fmt(s.start_date)} → {fmt(s.end_date)} · {n0(f.head)} {pairs ? 'cows and their calves' : 'head'}
                           </span>
                         )}
                       </div>
-                      <p className={cn('mt-1 text-[11px]', overGrass ? 'font-medium text-red-700' : 'text-gray-500')}>
+                      {headOver && (
+                        <p className="mt-1 flex items-start gap-1 text-xs font-medium text-amber-700">
+                          <TriangleAlert className="mt-px h-3 w-3 shrink-0" />
+                          {s.head_count} typed, but {stayGroup!.class_name} has {stayGroup!.head_count}
+                          {pairs ? ' cows — type cows only; their calves are added already.' : ' head.'}
+                        </p>
+                      )}
+                      <p className={cn('mt-1 text-xs', overGrass ? 'font-medium text-red-700' : 'text-gray-500')}>
                         Uses {n0(grassAumsFromAuDays(used))} AUM · pasture {n0(grassAumsFromAuDays(plannedHere))} of {n0(grassAumsFromAuDays(cap))} planned
                       </p>
                       {restHit && (
-                        <p className="mt-1 flex items-start gap-1 text-[11px] font-medium text-red-700">
+                        <p className="mt-1 flex items-start gap-1 text-xs font-medium text-red-700">
                           <TriangleAlert className="mt-px h-3 w-3 shrink-0" />
                           Back after {restHit.rest_days} days&apos; rest — {nameOf(s.pasture_id)} wants {restHit.min_rest_days}.
                         </p>
@@ -770,7 +793,7 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
                       {gate && (
                         <div
                           className={cn(
-                            'mt-1 flex items-start gap-1.5 rounded-md px-2 py-1 text-[11px]',
+                            'mt-1 flex items-start gap-1.5 rounded-md px-2 py-1 text-xs',
                             gate.kind === 'no-gate' ? 'bg-amber-50 text-amber-900' : 'bg-sky-50 text-sky-900',
                           )}
                         >
@@ -806,7 +829,7 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
                     )}
                   </div>
                   {gapAfter && isManager && (
-                    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-gray-50 px-2 py-1.5 text-[11px] text-gray-600">
+                    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-gray-50 px-2 py-1.5 text-xs text-gray-600">
                       <CalendarRange className="h-3.5 w-3.5 text-gray-400" />
                       <span className="flex-1">
                         Next stay starts {fmt(next.start_date)}, not {fmt(s.end_date)}.
@@ -822,7 +845,7 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
           </ol>
           {isManager && steps.length > 0 && (
             <div className="flex justify-end border-t border-gray-100 px-3 py-1.5">
-              <button onClick={() => void clearPlan()} className="text-[11px] font-medium text-gray-400 hover:text-red-600">
+              <button onClick={() => void clearPlan()} className="text-xs font-medium text-gray-400 hover:text-red-600">
                 Clear this plan
               </button>
             </div>
@@ -834,7 +857,7 @@ export function GrazingPlanner({ isManager, ranch }: { isManager: boolean; ranch
       <section className="rounded-lg border border-gray-200 bg-white p-3">
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-1">
           <h2 className="text-sm font-semibold text-gray-900">Season {year}</h2>
-          <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500">
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
             {[...new Set(allRows.map((r) => r.herd_count_id ?? null))].map((id) => (
               <span key={id ?? 'all'} className="flex items-center gap-1">
                 <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: colourOf(id) }} />
@@ -920,7 +943,7 @@ function GrassTable({
           <thead className={TABLE_HEAD}>
             <tr>
               <th className="px-2 py-2 font-medium">Pasture</th>
-              <th className="px-2 py-2 text-right font-medium" title="A normal season's grass after utilization">Grows, AUM</th>
+              <th className="px-2 py-2 text-right font-medium">Grows, AUM<HeadTip title="Grows, AUM">A normal season&apos;s grass after utilization</HeadTip></th>
               <th className="px-2 py-2 text-right font-medium">Planned {year}</th>
               <th className="px-2 py-2 text-right font-medium">Grazed {actualYear}</th>
             </tr>
@@ -930,7 +953,7 @@ function GrassTable({
               <tr key={p.id} className="border-b border-gray-100 last:border-0">
                 <td className="px-2 py-1.5 font-medium text-gray-800">
                   {p.name}
-                  {p.lease && <span className="ml-1.5 text-[10px] font-normal text-sky-700">{p.lease}</span>}
+                  {p.lease && <span className="ml-1.5 text-xs font-normal text-sky-700">{p.lease}</span>}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{n0(p.available)}</td>
                 <td className="px-2 py-1.5 text-right">{used(p.planned, p.available)}</td>
@@ -946,7 +969,7 @@ function GrassTable({
               heading={
                 <>
                   {p.name}
-                  {p.lease && <span className="ml-1.5 text-[10px] font-normal text-sky-700">{p.lease}</span>}
+                  {p.lease && <span className="ml-1.5 text-xs font-normal text-sky-700">{p.lease}</span>}
                 </>
               }
               facts={[

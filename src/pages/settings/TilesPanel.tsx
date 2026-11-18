@@ -79,7 +79,7 @@ export function TilesPanel() {
       </HelpNote>
 
       <div className="mt-3">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
           On your home screen ({visible.length})
         </p>
         {visible.length === 0 ? (
@@ -93,7 +93,7 @@ export function TilesPanel() {
                   <Icon className="h-4 w-4 shrink-0 text-brand-700" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm text-gray-900">{t.label}</span>
-                    <span className="block truncate text-[11px] text-gray-400">{t.hint}</span>
+                    <span className="block truncate text-xs text-gray-400">{t.hint}</span>
                   </span>
                   <button
                     onClick={() => move(i, -1)}
@@ -113,7 +113,7 @@ export function TilesPanel() {
                   </button>
                   <button
                     onClick={() => turnOff(t)}
-                    className="shrink-0 rounded border border-gray-300 px-2 py-0.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
+                    className="shrink-0 rounded border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
                   >
                     Remove
                   </button>
@@ -125,7 +125,7 @@ export function TilesPanel() {
       </div>
 
       <div className="mt-4">
-        <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+        <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
           Add from a section
           <Select
             value={group}
@@ -161,7 +161,7 @@ export function TilesPanel() {
                     <Icon className="h-4 w-4 shrink-0 text-gray-400" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm text-gray-900">{t.label}</span>
-                      <span className="block truncate text-[11px] text-gray-400">{t.hint}</span>
+                      <span className="block truncate text-xs text-gray-400">{t.hint}</span>
                     </span>
                   </label>
                 </li>
@@ -172,10 +172,10 @@ export function TilesPanel() {
       </div>
 
       {save.isError && (
-        <p className="mt-2 text-[11px] text-red-700">{(save.error as Error).message}</p>
+        <p className="mt-2 text-xs text-red-700">{(save.error as Error).message}</p>
       )}
       {profile?.denied_views?.length ? (
-        <p className="mt-3 border-t border-gray-100 pt-2 text-[11px] text-gray-400">
+        <p className="mt-3 border-t border-gray-100 pt-2 text-xs text-gray-400">
           Sections an administrator has turned off for you are not listed here.
         </p>
       ) : null}

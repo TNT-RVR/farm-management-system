@@ -11,6 +11,7 @@ import {
   GRADE_STYLE,
   bandRanges,
   gradeLabel,
+  CHART_CREDIT,
   chartPdfUrl,
   chartSummary,
 } from '@/lib/moisture'
@@ -193,9 +194,10 @@ export function CropMoisture({ crop, readonly }: { crop: CropRow; readonly: bool
             href={chartPdfUrl(summary.key)}
             target="_blank"
             rel="noreferrer"
+            title={CHART_CREDIT}
             className="flex items-center gap-1 underline hover:text-brand-700"
           >
-            <FileText className="h-3.5 w-3.5" /> chart PDF
+            <FileText className="h-3.5 w-3.5" /> Grain Commission chart (PDF)
           </a>
         </p>
       )}

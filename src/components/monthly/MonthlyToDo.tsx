@@ -83,7 +83,7 @@ export function MonthlyToDo({ now, withNext, compact = false }: { now: number; w
             <div className={cn('mb-1 flex items-baseline gap-2', s.leftover && 'text-amber-800')}>
               <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{s.title}</h3>
               {!s.leftover && s.items.length > 0 && (
-                <span className="text-[11px] text-gray-400">
+                <span className="text-xs text-gray-400">
                   {done} of {s.items.length} done
                 </span>
               )}
@@ -141,7 +141,7 @@ function JobRow({
         )}
       >
         {copy.state === 'done' && <Check className="h-3.5 w-3.5" />}
-        {copy.state === 'skipped' && <span className="text-[10px] font-bold">–</span>}
+        {copy.state === 'skipped' && <span className="text-xs font-bold">–</span>}
       </button>
       <div className="min-w-0 flex-1">
         <span className={cn('font-medium text-gray-900', closed && 'text-gray-400 line-through decoration-gray-300')}>{job.title}</span>

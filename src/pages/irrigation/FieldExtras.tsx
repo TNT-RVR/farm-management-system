@@ -186,7 +186,7 @@ export function RainBlock({ fieldId, year, u }: { fieldId: string; year: number;
             >
               Add &amp; link
             </button>
-            <button type="button" onClick={() => setManaging(true)} className="text-[11px] text-brand-700 underline">
+            <button type="button" onClick={() => setManaging(true)} className="text-xs text-brand-700 underline">
               all gauges
             </button>
           </span>
@@ -342,7 +342,7 @@ export function PivotBlock({ fieldId, year, u }: { fieldId: string; year: number
           </table>
           </div>
           {data.passes.length > 6 && (
-            <button type="button" onClick={() => setAll((a) => !a)} className="mt-1 text-[11px] text-brand-700 underline">
+            <button type="button" onClick={() => setAll((a) => !a)} className="mt-1 text-xs text-brand-700 underline">
               {all ? 'show fewer' : `show all ${data.passes.length}`}
             </button>
           )}

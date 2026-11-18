@@ -38,6 +38,35 @@ const BY_CONSTRAINT: Record<string, string> = {
   // Hail
   field_hail_events_loss_pct_check: 'Hail loss has to be between 0 and 100%.',
 
+  // Fertilizer
+  fert_bookings_tonnes_check: 'Tonnes booked has to be more than zero.',
+  fert_bookings_price_per_tonne_check: 'The price per tonne cannot be negative.',
+  fert_quotes_price_per_tonne_check: 'The price per tonne cannot be negative.',
+  manure_haul_invoices_not_negative: 'Hours, rate, amount, loads and tonnes cannot be negative.',
+  manure_haul_invoices_dated: 'An invoice line needs a work date or an invoice date.',
+
+  // Soil and tissue tests
+  soil_test_samples_ph_range: 'pH has to be between 0 and 14.',
+  soil_test_samples_pct_range: 'Organic matter, base saturations and the other percentages have to be between 0 and 100%.',
+  soil_test_samples_depth_order: 'The bottom depth has to be below the top depth (top 0, bottom 6, for example).',
+  soil_test_samples_not_negative: 'A soil reading cannot be negative.',
+  tissue_tests_pct_range: 'A tissue percentage has to be between 0 and 15% — check it is not in g/kg.',
+  tissue_tests_ppm_not_negative: 'A tissue reading cannot be negative.',
+
+  // Grain
+  herd_counts_head_count_check: 'Head cannot be negative.',
+  herd_counts_background_head_check: 'Calves kept cannot be negative.',
+  herd_counts_bcs_check: 'Body condition has to be between 1 and 5.',
+  herd_counts_target_bcs_check: 'Target condition has to be between 1 and 5.',
+  herd_counts_target_gain_lb_check: 'Target gain has to be between 0 and 4 lb a day.',
+  feed_record_lines_quantity_check: 'The amount fed cannot be negative.',
+  feed_record_lines_lb_per_bale_check: 'A bale has to weigh more than zero.',
+  feed_records_head_count_check: 'Head fed has to be more than zero.',
+  feed_records_check: 'The last day fed has to be on or after the first.',
+  grazing_plan_head_count_check: 'Head cannot be negative.',
+  grazing_plan_dates: 'The move-out date has to be on or after the move-in date.',
+  moisture_tests_moisture_pct_check: 'A moisture reading has to be 0 or more and under 100%.',
+
   // Leases
   land_leases_term_order_check: "The lease's end date has to be on or after its start date.",
   land_leases_rent_per_acre_check: 'Rent per acre cannot be negative.',

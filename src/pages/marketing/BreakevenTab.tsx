@@ -87,18 +87,18 @@ export function BreakevenTab({ year }: { year: number }) {
                     <>
                       {`${r.yieldPerAcre.toLocaleString('en-CA', { maximumFractionDigits: 1 })} ${r.p.unit}`}
                       {r.yieldLow != null && r.yieldHigh != null && (
-                        <span className="block text-[10px] text-gray-400">
+                        <span className="block text-xs text-gray-400">
                           {r.yieldLow.toLocaleString('en-CA', { maximumFractionDigits: 1 })}–
                           {r.yieldHigh.toLocaleString('en-CA', { maximumFractionDigits: 1 })}
                         </span>
                       )}
                       {(r.p.cutAcres ?? 0) > 0 && (
-                        <span className="block text-[10px] font-medium text-amber-800">
+                        <span className="block text-xs font-medium text-amber-800">
                           cut on {Math.round(r.p.cutAcres ?? 0).toLocaleString('en-CA')} ac
                         </span>
                       )}
                       {(r.p.preCleanAcres > 0 || r.p.cleanAcres > 0) && (
-                        <span className="block text-[10px] text-gray-400">
+                        <span className="block text-xs text-gray-400">
                           {[
                             r.p.cleanAcres > 0 ? `${Math.round(r.p.cleanAcres)} ac clean` : null,
                             r.p.preCleanAcres > 0 ? `${Math.round(r.p.preCleanAcres)} ac pre-clean` : null,
@@ -119,7 +119,7 @@ export function BreakevenTab({ year }: { year: number }) {
                     <>
                       {`${fmtUnitPrice(r.breakevenPerUnit, r.p.unit)}/${r.p.unit}`}
                       {r.breakevenRange?.best != null && r.breakevenRange.worst != null && (
-                        <span className="block text-[10px] font-normal text-gray-400">
+                        <span className="block text-xs font-normal text-gray-400">
                           {fmtUnitPrice(r.breakevenRange.best, r.p.unit)} to {fmtUnitPrice(r.breakevenRange.worst, r.p.unit)}
                         </span>
                       )}
@@ -131,7 +131,7 @@ export function BreakevenTab({ year }: { year: number }) {
                     <span title={`${r.board.name}, ${r.board.on} — ${r.board.basis}`}>
                       {`${fmtUnitPrice(r.board.value, r.board.unit)}/${r.board.unit}`}
                       {r.board.converted && (
-                        <span className="block text-[10px] text-gray-400">
+                        <span className="block text-xs text-gray-400">
                           from {r.board.quoted}
                         </span>
                       )}

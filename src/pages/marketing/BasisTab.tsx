@@ -120,12 +120,12 @@ export function BasisTab() {
                     <td className="px-3 py-2 text-gray-700">
                       {b.buyer}
                       {b.location && (
-                        <span className="block text-[10px] text-gray-400">{b.location}</span>
+                        <span className="block text-xs text-gray-400">{b.location}</span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {fmtMoney(b.price_per_unit)}
-                      <span className="text-[10px] text-gray-400">/{b.unit}</span>
+                      <span className="text-xs text-gray-400">/{b.unit}</span>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-600">
                       {b.futures_value == null ? (

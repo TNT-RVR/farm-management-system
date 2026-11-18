@@ -35,7 +35,7 @@ export function HelpNote({
   width?: number
 }) {
   return (
-    <div className={cn('flex items-start gap-1 text-[11px] leading-snug text-gray-500', className)}>
+    <div className={cn('flex items-start gap-1 text-xs leading-snug text-gray-500', className)}>
       {summary && <span>{summary}</span>}
       <InfoPopover title={title} label={summary ? undefined : (label ?? 'How this works')} width={width}>
         {children}

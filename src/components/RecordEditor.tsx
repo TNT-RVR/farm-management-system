@@ -218,8 +218,8 @@ export function RecordEditModal({
             <span />
           )}
           <div className="flex items-center gap-2">
-            {missing.length > 0 && <span className="text-[11px] text-gray-400">Needs {missing.join(', ')}</span>}
-            {notPlaces.length > 0 && <span className="text-[11px] text-gray-400">{notPlaces.join(', ')} is not a location</span>}
+            {missing.length > 0 && <span className="text-xs text-gray-400">Needs {missing.join(', ')}</span>}
+            {notPlaces.length > 0 && <span className="text-xs text-gray-400">{notPlaces.join(', ')} is not a location</span>}
             <button type="button" onClick={onClose} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
               Cancel
             </button>

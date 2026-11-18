@@ -836,7 +836,7 @@ export function RouteMap({
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-500">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
         <span className="inline-flex items-center gap-1">
           <span className="inline-block h-3 w-3 rounded-[3px] bg-[#7c3aed]" /> S shop
         </span>

@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { cToF, fToC, formOf, moistureRisk, readingRisk, tempRisk } from './bale-checks'
+import { cToF, fToC, formOf, moistureRisk, readingRisk, riskReason, tempRisk } from './bale-checks'
+
+describe('riskReason', () => {
+  it('says a cool bale is on Watch for its moisture', () => {
+    const wet = { temp_c: 33, moisture_pct: 22, bale_form: 'round' }
+    expect(readingRisk(wet)).toBe('watch')
+    expect(riskReason(wet)).toBe('22% moisture')
+    expect(riskReason({ temp_c: 36, moisture_pct: 14, bale_form: 'round' })).toBeNull()
+    expect(riskReason({ temp_c: 58, moisture_pct: 22, bale_form: 'round' })).toBe('58 °C, 22% moisture')
+    expect(riskReason({ temp_c: 70, moisture_pct: null, bale_form: null })).toBe('70 °C')
+  })
+})
 
 describe('tempRisk', () => {
   it('bands core temperature the way the hay-fire guides do', () => {

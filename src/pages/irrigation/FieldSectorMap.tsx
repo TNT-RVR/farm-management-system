@@ -1046,7 +1046,7 @@ function Pill({
       title={title}
       className={cn(
         'rounded-full font-medium disabled:cursor-not-allowed disabled:opacity-40',
-        small ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs',
+        small ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-xs',
         on ? 'bg-brand-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
       )}
     >
@@ -1141,7 +1141,7 @@ function Legend({ bands, mode }: { bands: Band[]; mode: Mode }) {
           ? 'NDVI vs field median'
           : 'Needs water (indicative)'
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-gray-600">
+    <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-gray-600">
       <span className="font-medium text-gray-700">{caption}</span>
       {bands.map((b) => (
         <span key={b.label} className="inline-flex items-center gap-1">
@@ -1187,12 +1187,12 @@ function WedgeDetail({
           {deg(w.a0)}–{deg(w.a1)} <span className="font-normal text-gray-500">({compass((w.a0 + w.a1) / 2)})</span>
         </span>
         {band && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-1.5 py-0.5 text-[11px]">
+          <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-1.5 py-0.5 text-xs">
             <span className="h-2.5 w-2.5 rounded-sm" style={{ background: band.colour }} />
             {band.label}
           </span>
         )}
-        {pinned && <span className="ml-auto text-[11px] text-gray-400">tap again to clear</span>}
+        {pinned && <span className="ml-auto text-xs text-gray-400">tap again to clear</span>}
       </div>
       <dl className="grid grid-cols-1 gap-x-4 gap-y-0.5 sm:grid-cols-2">
         {row.moistureFrac != null && (

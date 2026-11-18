@@ -12,22 +12,22 @@ describe('manure applications', () => {
   it('takes tonnes and cost off the hauler’s invoice and values the first-year credit', () => {
     const r = manureRows(
       [app, { ...app, id: 'm2', applied_on: '2026-04-23', field_id: 'f2', acres: 10, rate_tons_per_acre: 10 }],
-      [{ manure_application_id: 'm1', field_id: 'f1', hauler: 'N & K Custom Ltd. (Coalhurst AB)', invoice_no: '1160', work_date: '2026-04-21', amount: '4095.00', tonnes: '922.90', loads: 55 }],
+      [{ manure_application_id: 'm1', field_id: 'f1', hauler: 'Prairie Custom Hauling', invoice_no: '0420', work_date: '2026-04-21', amount: '4100.00', tonnes: '920.00', loads: 50 }],
       null,
       { n: 1, p2o5: 1, k2o: 1 },
       (id) => (id === 'f1' ? '1' : 'Two'),
     )
     const [one, two] = r.rows
-    expect(one.slice(0, 5)).toEqual(['2026-04-21', 'Field 1', 60.62, 15.2, 922.9])
+    expect(one.slice(0, 5)).toEqual(['2026-04-21', 'Field 1', 60.62, 15.2, 920])
     expect(one[5]).toBe('12-9-14 (Alberta typical)')
     // 182.4 lb N a ton-acre: 10% ammonium less a quarter lost in a day, a quarter of the rest.
     expect(Number(one[6])).toBeCloseTo(182.4 * (0.1 * 0.75 + 0.9 * 0.25), 1)
-    expect(Number(one[11])).toBeCloseTo(4095 / 922.9, 3)
-    expect(one[12]).toBe('N & K Custom Ltd. #1160')
+    expect(Number(one[11])).toBeCloseTo(4100 / 920, 3)
+    expect(one[12]).toBe('Prairie Custom Hauling #0420')
     // No invoice: the rate over the acres, and no cost.
     expect(two[4]).toBe(100)
     expect(two[10]).toBeNull()
-    expect(r.cost).toBe(4095)
+    expect(r.cost).toBe(4100)
     expect(r.unpriced).toBe(false)
   })
 })

@@ -137,16 +137,29 @@ export function cowStage(onDate: Date, calvingMonth: number, calvingDay: number)
   return { month, lactating, daysToCalving, daysSince, pregMonth }
 }
 
-export const STAGE_LABEL = (month: number, lactating: boolean) =>
+/**
+ * How long until she calves, from the days left: weeks inside eight weeks,
+ * then months to the nearest half. "13 − month" used to stand in for this and
+ * read "4 months" on 18 Nov for a 1 March calving, which is 103 days.
+ */
+export function timeToCalve(daysToCalving: number): string {
+  if (daysToCalving < 56) {
+    const w = Math.round(daysToCalving / 7)
+    return w <= 1 ? 'about a week to calve' : `${w} weeks to calve`
+  }
+  const halves = Math.round((daysToCalving / 30.4) * 2) / 2
+  const whole = Math.floor(halves)
+  return `${whole}${halves > whole ? '½' : ''} months to calve`
+}
+
+export const STAGE_LABEL = (month: number, lactating: boolean, daysToCalving: number) =>
   lactating
     ? month <= 1
       ? 'just calved'
       : `nursing, month ${month}`
     : month >= 12
       ? 'last month before calving'
-      : month >= 10
-        ? `late pregnancy (${13 - month} months to calve)`
-        : `mid pregnancy (${13 - month} months to calve)`
+      : `${month >= 10 ? 'late' : 'mid'} pregnancy (${timeToCalve(daysToCalving)})`
 
 export type GroupInput = {
   feedClass: FeedClass
@@ -258,7 +271,7 @@ export function groupNeed(g: GroupInput, c: Conditions): Need {
     const r = cowMonth(st.month)
     const k = Math.pow(W / 1200, 0.75)
     base = { dmi: r.dmi * k, tdn: r.tdn * k, cp: r.cp * k }
-    stage = STAGE_LABEL(st.month, st.lactating)
+    stage = STAGE_LABEL(st.month, st.lactating, st.daysToCalving)
     lactating = st.lactating
     daysToCalving = st.daysToCalving
     // A calf at side starts eating the cows' feed at a few weeks old: about
@@ -271,7 +284,7 @@ export function groupNeed(g: GroupInput, c: Conditions): Need {
       const r = cowMonth(st.month)
       const k = Math.pow(W / 1200, 0.75)
       base = { dmi: r.dmi * k, tdn: r.tdn * k, cp: r.cp * k }
-      stage = STAGE_LABEL(st.month, true)
+      stage = STAGE_LABEL(st.month, true, st.daysToCalving)
       lactating = true
     } else {
       const ps = [5, 7, 8, 9]
@@ -647,9 +660,14 @@ export function solveRation(g: GroupInput, c: Conditions, lines: RationLine[]): 
     warnings.push({ code: 'W5', level: 'amber', text: `This mix (${mixTdn.toFixed(0)}% TDN) can't carry this group today — it needs ${((need.tdnLb / cap) * 100).toFixed(0)}% at what they can eat. Add about ${addGrainLb.toFixed(1)} lb of ${grain.name.toLowerCase()} a head, or feed better hay.` })
   }
   const grainDmTotal = addGrainDm + out.filter((l) => l.feed.category === 'grain').reduce((s, l) => s + l.dmLb, 0)
+  // What a head eats as fed, at each grain's own dry matter. The group table
+  // shows what is put out, waste included, so its figure ÷ head runs a little
+  // higher (113 lb ÷ 6 bulls = 18.8 beside 18.5 eaten); the warning says which.
+  const grainAsFed =
+    addGrainDm / (grain.dmPct / 100) + out.filter((l) => l.feed.category === 'grain').reduce((s, l) => s + l.asFedLb, 0)
   if (g.feedClass !== 'backgrounder' && g.feedClass !== 'heifer_calf') {
-    if (grainDmTotal > 0.01 * W || grainDmTotal / 0.88 > 8) warnings.push({ code: 'W9', level: 'red', text: `Grain is ${(grainDmTotal / 0.88).toFixed(1)} lb a head — over 1% of body weight or 8 lb in one feeding. Split it into two feedings and step up slowly.` })
-    else if (grainDmTotal > 0.005 * W) warnings.push({ code: 'W9', level: 'amber', text: `Grain is over 0.5% of body weight (${(grainDmTotal / 0.88).toFixed(1)} lb a head) — step it up a few pounds at a time, 4–5 days apart, and keep long hay in the ration.` })
+    if (grainDmTotal > 0.01 * W || grainAsFed > 8) warnings.push({ code: 'W9', level: 'red', text: `Grain is ${grainAsFed.toFixed(1)} lb a head eaten (as fed, before waste) — over 1% of body weight or 8 lb in one feeding. Split it into two feedings and step up slowly.` })
+    else if (grainDmTotal > 0.005 * W) warnings.push({ code: 'W9', level: 'amber', text: `Grain is over 0.5% of body weight (${grainAsFed.toFixed(1)} lb a head eaten, as fed) — step it up a few pounds at a time, 4–5 days apart, and keep long hay in the ration.` })
   }
   const strawDm = out.filter((l) => l.feed.category === 'straw').reduce((s, l) => s + l.dmLb, 0)
   const strawShare = out.filter((l) => l.feed.category === 'straw').reduce((s, l) => s + l.sharePct, 0)

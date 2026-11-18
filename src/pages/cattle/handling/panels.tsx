@@ -31,7 +31,7 @@ import { GlyphThumb } from './shapes'
 
 const input =
   'w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500'
-const label = 'text-[11px] font-semibold uppercase tracking-wide text-gray-400'
+const label = 'text-xs font-semibold uppercase tracking-wide text-gray-400'
 const num = (n: number) => n.toLocaleString('en-CA')
 
 // ── Library ────────────────────────────────────────────────────────────────
@@ -264,7 +264,7 @@ export function VersionsPanel({
                   <div className="flex items-center gap-2">
                     <button onClick={() => onActivate(v.id)} className="flex-1 text-left text-sm font-medium">
                       {v.name}
-                      {v.is_base && <span className="ml-1.5 text-[10px] font-semibold uppercase text-gray-400">base</span>}
+                      {v.is_base && <span className="ml-1.5 text-xs font-semibold uppercase text-gray-400">base</span>}
                     </button>
                     {canEdit && (
                       <>
@@ -311,7 +311,7 @@ export function VersionsPanel({
                       />
                       Compare
                     </label>
-                    {by && <span className="truncate text-[11px] text-gray-400">last changed by {by}</span>}
+                    {by && <span className="truncate text-xs text-gray-400">last changed by {by}</span>}
                   </div>
                   {canEdit && (
                     <textarea
@@ -387,7 +387,7 @@ export function InventoryPanel({
       ) : (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-[11px] uppercase tracking-wide text-gray-400">
+            <tr className="text-left text-xs uppercase tracking-wide text-gray-400">
               <th className="font-semibold">Item</th>
               <th className="w-12 text-right font-semibold">Need</th>
               <th className="w-16 text-right font-semibold">Own</th>

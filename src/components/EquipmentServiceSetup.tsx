@@ -82,7 +82,7 @@ export function ServiceAssignees({ equipment }: { equipment: Equipment }) {
       {editing && (
         <Modal title={editing === 'machine' ? 'Who services this machine' : 'Who services machines by default'} onClose={() => setEditing(null)} wide>
           <div className="mt-2">
-            <p className="mb-1 text-[11px] text-gray-500">
+            <p className="mb-1 text-xs text-gray-500">
               {editing === 'machine'
                 ? `For ${equipment.name ?? 'this machine'}. Tick nobody to use the farm default.`
                 : 'For every machine without its own people.'}
@@ -148,7 +148,7 @@ export function ServiceTemplatesPanel({
           options={(Object.keys(MACHINE_TYPE_LABELS) as MachineType[]).map((k) => ({ value: k, label: MACHINE_TYPE_LABELS[k] }))}
         />
       </div>
-      <p className="mt-1 text-[11px] text-amber-800">Generic starting points, not Deere&apos;s and not this machine&apos;s manual. Check each one and edit it after adding.</p>
+      <p className="mt-1 text-xs text-amber-800">Generic starting points, not Deere&apos;s and not this machine&apos;s manual. Check each one and edit it after adding.</p>
       {rows.length === 0 ? (
         <p className="mt-2 text-sm text-gray-400">Every one of these is already on this machine.</p>
       ) : (

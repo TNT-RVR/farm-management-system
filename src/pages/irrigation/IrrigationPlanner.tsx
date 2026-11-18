@@ -150,7 +150,7 @@ function PlanTh({ help, children }: { help: keyof typeof PLAN_HELP; children: Re
 
 /** A cell's label, shown only when the row is stacked on a phone. */
 function Lbl({ children }: { children: ReactNode }) {
-  return <span className="block text-[10px] uppercase tracking-wide text-gray-400 sm:hidden">{children}</span>
+  return <span className="block text-xs uppercase tracking-wide text-gray-400 sm:hidden">{children}</span>
 }
 
 function PlanRules({ u }: { u: UnitSystem }) {
@@ -200,7 +200,7 @@ function PlanRow({ row, u, nowMs, clash, onPickField }: { row: Row; u: UnitSyste
           {row.name}
         </button>
         {row.crop && <span className="block text-gray-500">{row.crop}</span>}
-        {row.zone && <span className="block text-[11px] text-gray-400">driest zone: {row.zone}</span>}
+        {row.zone && <span className="block text-xs text-gray-400">driest zone: {row.zone}</span>}
       </td>
       <td className="align-top sm:px-3 sm:py-1.5">
         <Lbl>Status</Lbl>
@@ -209,7 +209,7 @@ function PlanRow({ row, u, nowMs, clash, onPickField }: { row: Row; u: UnitSyste
       <td className="align-top tabular-nums sm:px-3 sm:py-1.5" title="Water the crop can still use in its root zone now / the level at which it needs irrigating">
         <Lbl>Water / trigger</Lbl>
         {conv.depth(p.availMm, u, dp)} <span className="text-gray-400">/ {conv.depth(p.thresholdMm, u, dp)} {unit}</span>
-        <span className="block text-[11px] text-gray-500">
+        <span className="block text-xs text-gray-500">
           {past
             ? 'past the trigger'
             : p.daysLeft != null
@@ -228,7 +228,7 @@ function PlanRow({ row, u, nowMs, clash, onPickField }: { row: Row; u: UnitSyste
         ) : p.crossing.kind === 'extrapolated' ? (
           <span className="text-gray-600">
             {beyondWeek && <span className="block">not in the next 7 days</span>}
-            <span className="text-[11px] text-gray-500">~{fmtWallDay(p.crossing.ms)} (extrapolated)</span>
+            <span className="text-xs text-gray-500">~{fmtWallDay(p.crossing.ms)} (extrapolated)</span>
           </span>
         ) : (
           <span className="text-gray-400">{p.thresholdMm == null ? '—' : 'not in the next 7 days'}</span>
@@ -241,15 +241,15 @@ function PlanRow({ row, u, nowMs, clash, onPickField }: { row: Row; u: UnitSyste
         ) : p.startByMs == null ? (
           <span className="text-gray-500">
             lap time unknown
-            <span className="block text-[11px] text-gray-400">start well before {fmtWallDay(p.crossing.ms)}</span>
+            <span className="block text-xs text-gray-400">start well before {fmtWallDay(p.crossing.ms)}</span>
           </span>
         ) : (
           <>
             <span className={cn('font-medium', late ? 'text-red-700' : !p.needsWater && 'text-gray-500')}>
               {late ? 'Now' : `${p.crossing.kind === 'extrapolated' ? '~' : ''}${fmtWallTime(p.startByMs)}`}
             </span>
-            {late && !past && <span className="text-[11px] text-red-700"> ({Math.round((nowMs - p.startByMs) / 3_600_000)} h late)</span>}
-            <span className="block text-[11px] text-gray-500">
+            {late && !past && <span className="text-xs text-red-700"> ({Math.round((nowMs - p.startByMs) / 3_600_000)} h late)</span>}
+            <span className="block text-xs text-gray-500">
               {p.lap.source === 'fieldnet'
                 ? `${Math.round(p.lap.lapHours!)} h lap at ${Math.round(p.lap.speedPct!)}% → ${conv.depth(p.lap.appliedGrossMm, u, u === 'metric' ? 0 : 2)} ${unit}`
                 : p.lap.source === 'pivot'
@@ -263,9 +263,9 @@ function PlanRow({ row, u, nowMs, clash, onPickField }: { row: Row; u: UnitSyste
       <td className="col-span-2 align-top sm:px-3 sm:py-1.5">
         <Lbl>Advice</Lbl>
         <span className={cn('inline-block rounded px-1.5 py-0.5 font-medium', ADVICE_COLOR[p.advice.kind])}>{adviceText(p, u)}</span>
-        {p.advice.kind === 'irrigate' && p.advice.rainUnknown && <span className="block text-[11px] text-gray-400">rain chance not in yet for a wet day</span>}
+        {p.advice.kind === 'irrigate' && p.advice.rainUnknown && <span className="block text-xs text-gray-400">rain chance not in yet for a wet day</span>}
         {clash.map((c) => (
-          <span key={c} className="mt-0.5 flex items-center gap-1 text-[11px] text-amber-800">
+          <span key={c} className="mt-0.5 flex items-center gap-1 text-xs text-amber-800">
             <AlertTriangle className="h-3 w-3 shrink-0" /> {c}
           </span>
         ))}
@@ -441,7 +441,7 @@ export function IrrigationPlanner({ year, onPickField }: { year: number; onPickF
                   ))}
                 </tbody>
               </table>
-              <p className="px-3 py-2 text-[11px] text-gray-400">
+              <p className="px-3 py-2 text-xs text-gray-400">
                 From the balance as of {asOf ? fmtWallDay(wallOfDate(asOf)) : '—'} and its forecast; times are local.
                 {doneCount > 0 && ` ${doneCount} field${doneCount === 1 ? '' : 's'} marked done for the season ${doneCount === 1 ? 'is' : 'are'} left out.`} Tap a field
                 for its Detailed View.

@@ -208,7 +208,7 @@ export function IciPrices({ isManager }: { isManager: boolean }) {
             const quoted = isQuote(r.product)
             return (
               <div key={r.product.id} className="rounded-md bg-gray-50 px-2.5 py-2">
-                <p className="flex items-center gap-1 text-[11px] font-medium text-gray-600">
+                <p className="flex items-center gap-1 text-xs font-medium text-gray-600">
                   {/* The invoice's own name for it, less the "Tonne": two UAN
                       products at different prices must not both read "UAN". */}
                   <span className="truncate" title={r.product.name}>
@@ -238,16 +238,16 @@ export function IciPrices({ isManager }: { isManager: boolean }) {
                 </p>
                 <p className="text-sm font-bold tabular-nums text-gray-900">
                   {money(r.price.value, r.price.perTonne ? 0 : 2)}
-                  <span className="ml-0.5 text-[10px] font-normal text-gray-400">{r.price.unit}</span>
+                  <span className="ml-0.5 text-xs font-normal text-gray-400">{r.price.unit}</span>
                 </p>
                 {r.change != null && (
                   // Rising is bad news here, the reverse of the crop tabs.
-                  <p className={cn('text-[10px]', r.change > 0 ? 'text-red-700' : r.change < 0 ? 'text-green-700' : 'text-gray-500')}>
+                  <p className={cn('text-xs', r.change > 0 ? 'text-red-700' : r.change < 0 ? 'text-green-700' : 'text-gray-500')}>
                     {r.change > 0 ? '▲' : r.change < 0 ? '▼' : '—'} {money(Math.abs(r.change), r.price.perTonne ? 0 : 2)}
                     {r.price.unit} since {r.previous?.invoice_date}
                   </p>
                 )}
-                <p className="flex flex-wrap items-center gap-x-2 text-[10px] text-gray-400">
+                <p className="flex flex-wrap items-center gap-x-2 text-xs text-gray-400">
                   {r.product.price_updated_on ? (
                     <span>
                       {r.product.price_updated_on}
@@ -385,7 +385,7 @@ export function IciPrices({ isManager }: { isManager: boolean }) {
             product’s price until the next invoice, and the card above says “quote” while it is.
           </HelpNote>
           <div className="mt-2 flex flex-wrap items-end gap-2">
-            <label className="text-[11px] font-medium text-gray-500">
+            <label className="text-xs font-medium text-gray-500">
               Product
               <Select
                 value={form.product_id}
@@ -400,7 +400,7 @@ export function IciPrices({ isManager }: { isManager: boolean }) {
                 ]}
               />
             </label>
-            <label className="text-[11px] font-medium text-gray-500">
+            <label className="text-xs font-medium text-gray-500">
               Date
               <DateField
                 value={form.on}
@@ -408,7 +408,7 @@ export function IciPrices({ isManager }: { isManager: boolean }) {
                 className="mt-0.5 block rounded-md border border-gray-300 px-2 py-1 text-sm"
               />
             </label>
-            <label className="text-[11px] font-medium text-gray-500">
+            <label className="text-xs font-medium text-gray-500">
               {quoteTarget?.unit === 'L' ? '$/litre' : '$/tonne'}
               <input
                 type="number"
@@ -467,8 +467,8 @@ export function IciPrices({ isManager }: { isManager: boolean }) {
               Cancel
             </button>
           </div>
-          {save.isError && <p className="mt-1.5 text-[11px] text-red-700">{(save.error as Error).message}</p>}
-          {create.isError && <p className="mt-1.5 text-[11px] text-red-700">{(create.error as Error).message}</p>}
+          {save.isError && <p className="mt-1.5 text-xs text-red-700">{(save.error as Error).message}</p>}
+          {create.isError && <p className="mt-1.5 text-xs text-red-700">{(create.error as Error).message}</p>}
         </section>
         </div>
       )}

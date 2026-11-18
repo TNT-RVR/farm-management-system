@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   convert,
   depthForVolume,
+  fmt,
   formatHours,
   hoursForVolume,
   volumeForDepth,
@@ -156,5 +157,15 @@ describe('distance', () => {
   it('round-trips without drift', () => {
     const m = convert(1234, 'distance', 'ft', 'm')
     expect(convert(m as number, 'distance', 'm', 'ft')).toBeCloseTo(1234, 6)
+  })
+})
+
+describe('fmt', () => {
+  it('never prints a real quantity as nothing', () => {
+    // 1 mL in litres, at the litre's one decimal.
+    expect(fmt(convert(1, 'volume', 'ml', 'l'), 1)).toBe('0.001')
+    expect(fmt(0.04, 1)).toBe('0.04')
+    expect(fmt(0, 1)).toBe('0')
+    expect(fmt(1234.56, 1)).toBe('1,234.6')
   })
 })

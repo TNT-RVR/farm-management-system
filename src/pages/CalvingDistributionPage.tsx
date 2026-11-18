@@ -5,6 +5,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { PageHeader } from '@/components/PageHeader'
 import { Select } from '@/components/Select'
 import { useRanches } from '@/lib/ranches'
+import { useCalfMoney } from '@/lib/ranch-summary'
 import { supabase } from '@/lib/supabase'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { money, n0, n1 } from '@/lib/format'
@@ -15,7 +16,9 @@ import {
   THREE_CYCLES,
   breakEvenOpenCows,
   cycleWeaningWeights,
+  distributionProblems,
   lbPerCycleSlipped,
+  marketCalfPricePerLb,
   sharesFromCounts,
   valueOfDistribution,
   type DistributionInputs,
@@ -42,6 +45,7 @@ function Num({
   step = '1',
   type = 'number',
   title,
+  hint,
 }: {
   label: string
   value: string
@@ -50,10 +54,15 @@ function Num({
   step?: string
   type?: string
   title?: string
+  /** One short line under the label: where a default came from. */
+  hint?: string
 }) {
   return (
     <label className="flex items-center justify-between gap-2 text-sm" title={title}>
-      <span className="text-gray-600">{label}</span>
+      <span className="text-gray-600">
+        {label}
+        {hint && <span className="block text-xs leading-tight text-gray-400">{hint}</span>}
+      </span>
       <span className="flex items-center gap-1">
         <input
           type={type}
@@ -77,6 +86,11 @@ export function CalvingDistributionPage() {
   const [ranchId, setRanchId] = useState('')
   const ranch = ranchId || ranchList[0]?.id || ''
   const [year, setYear] = useState(new Date().getFullYear())
+  // Today's calf price, as the Markets tab and Replacement heifers read it:
+  // steers and heifers at this ranch's sale weights, this week's auctions.
+  const [thisYear] = useState(() => new Date().getFullYear())
+  const calfMoney = useCalfMoney(ranchList.find((x) => x.id === ranch), thisYear)
+  const marketPrice = marketCalfPricePerLb(calfMoney.steers?.perLb, calfMoney.heifers?.perLb)
 
   const [f, setF] = useState({
     firstCalfOn: '',
@@ -84,7 +98,8 @@ export function CalvingDistributionPage() {
     birthWeightLb: '85',
     adgLbPerDay: '1.85',
     calfDeathLoss: '0',
-    salePricePerLb: '3.40',
+    // Blank: this week's market price below. Typing replaces it.
+    salePricePerLb: '',
     c1: '',
     c2: '',
     c3: '',
@@ -134,6 +149,14 @@ export function CalvingDistributionPage() {
     return Number.isFinite(x) ? x : 0
   }
 
+  const priceTyped = f.salePricePerLb.trim() !== ''
+  const priceShown = priceTyped ? f.salePricePerLb : marketPrice != null ? marketPrice.toFixed(2) : ''
+  const priceHint = priceTyped
+    ? 'typed — clear it for this week’s auctions'
+    : marketPrice != null
+      ? `this week’s auctions, steers ${calfMoney.sale.steers.lb} lb and heifers ${calfMoney.sale.heifers.lb} lb averaged`
+      : 'no recent auction sales — type a price'
+
   const inputs: DistributionInputs = useMemo(
     () => ({
       firstCalfOn: f.firstCalfOn || null,
@@ -142,10 +165,23 @@ export function CalvingDistributionPage() {
       adgLbPerDay: num(f.adgLbPerDay),
       born: [num(f.c1), num(f.c2), num(f.c3), num(f.c4)],
       calfDeathLoss: num(f.calfDeathLoss),
-      salePricePerLb: num(f.salePricePerLb),
+      salePricePerLb: num(priceShown),
     }),
-    [f],
+    [f, priceShown],
   )
+  const problems = distributionProblems(inputs)
+  const bornTotal = inputs.born.reduce((a, b) => a + b, 0)
+  // What the table still needs before it means anything. Until then it is
+  // not shown: a column of 0 lb and $0 reads as a fact about the herd.
+  const waitingFor =
+    bornTotal <= 0
+      ? 'Enter the calves born in each cycle (or use the scorecard’s) to price the distributions.'
+      : !inputs.firstCalfOn || !inputs.weaningOn
+        ? 'Enter the first calf and the weaning day to work out the weaning weights.'
+        : !(inputs.salePricePerLb > 0)
+          ? 'Enter a calf price to put a value on the distributions.'
+          : null
+  const ready = problems.length === 0 && waitingFor == null
 
   const mineShares = useMemo(() => sharesFromCounts(inputs.born), [inputs])
   const idealKey = ideal.join(',')
@@ -214,7 +250,7 @@ export function CalvingDistributionPage() {
             <Num label="Average birth weight" value={f.birthWeightLb} onChange={set('birthWeightLb')} unit="lb" />
             <Num label="Calf daily gain" value={f.adgLbPerDay} onChange={set('adgLbPerDay')} unit="lb/d" step="0.05" />
             <Num label="Calves lost to weaning" value={f.calfDeathLoss} onChange={set('calfDeathLoss')} unit="head" />
-            <Num label="Calf price" value={f.salePricePerLb} onChange={set('salePricePerLb')} unit="$/lb" step="0.05" />
+            <Num label="Calf price" value={priceShown} onChange={set('salePricePerLb')} unit="$/lb" step="0.05" hint={priceHint} />
           </div>
         </div>
 
@@ -225,8 +261,8 @@ export function CalvingDistributionPage() {
               <Num key={k} label={CYCLE_LABELS[i]} value={f[k]} onChange={set(k)} unit="head" />
             ))}
           </div>
-          {weights && (
-            <table className="mt-2 w-full border-t border-gray-100 pt-2 text-[11px] text-gray-500">
+          {weights && problems.length === 0 && (
+            <table className="mt-2 w-full border-t border-gray-100 pt-2 text-xs text-gray-500">
               <tbody>
                 {CYCLE_LABELS.map((l, i) => (
                   <tr key={l}>
@@ -268,44 +304,60 @@ export function CalvingDistributionPage() {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className={TABLE_HEAD}>
-            <tr>
-              <th className="px-2 py-2 text-left font-medium">Distribution</th>
-              {CYCLE_LABELS.map((l) => (
-                <th key={l} className="px-2 py-2 text-right font-medium">
-                  {l}
-                </th>
-              ))}
-              <th className="px-2 py-2 text-right font-medium">Average weaning wt</th>
-              <th className="px-2 py-2 text-right font-medium">Weaned</th>
-              <th className="px-2 py-2 text-right font-medium">Worth</th>
-              <th className="px-2 py-2 text-right font-medium">vs today</th>
-            </tr>
-          </thead>
-          <tbody>
-            {r.results.map((x, i) => (
-              <tr key={x.key} className={cn('border-t border-gray-100', i === 0 && 'bg-gray-50')}>
-                <td className="px-2 py-1.5">{x.label}</td>
-                {x.shares.map((s, k) => (
-                  <td key={k} className="px-2 py-1.5 text-right tabular-nums text-gray-500">
-                    {pct(s)}
-                  </td>
-                ))}
-                <td className="px-2 py-1.5 text-right tabular-nums">{n0(x.avgWeaningWeightLb)} lb</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{n0(x.calvesWeaned)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{money(x.value, 0)}</td>
-                <td className={cn('px-2 py-1.5 text-right tabular-nums font-medium', x.vsBaseline < 0 ? 'text-red-600' : x.vsBaseline > 0 ? 'text-green-700' : 'text-gray-400')}>
-                  {i === 0 ? '—' : money(x.vsBaseline, 0)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {problems.length > 0 && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+          {problems.map((p) => (
+            <p key={p} className="flex items-start gap-2 text-sm text-red-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              {p}
+            </p>
+          ))}
+        </div>
+      )}
+      {problems.length === 0 && waitingFor != null && (
+        <p className="rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500">{waitingFor}</p>
+      )}
 
-      {breakEven != null && breakEven > 0 && (
+      {ready && (
+        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+          <table className="w-full text-sm">
+            <thead className={TABLE_HEAD}>
+              <tr>
+                <th className="px-2 py-2 text-left font-medium">Distribution</th>
+                {CYCLE_LABELS.map((l) => (
+                  <th key={l} className="px-2 py-2 text-right font-medium">
+                    {l}
+                  </th>
+                ))}
+                <th className="px-2 py-2 text-right font-medium">Average weaning wt</th>
+                <th className="px-2 py-2 text-right font-medium">Weaned</th>
+                <th className="px-2 py-2 text-right font-medium">Worth</th>
+                <th className="px-2 py-2 text-right font-medium">vs today</th>
+              </tr>
+            </thead>
+            <tbody>
+              {r.results.map((x, i) => (
+                <tr key={x.key} className={cn('border-t border-gray-100', i === 0 && 'bg-gray-50')}>
+                  <td className="px-2 py-1.5">{x.label}</td>
+                  {x.shares.map((s, k) => (
+                    <td key={k} className="px-2 py-1.5 text-right tabular-nums text-gray-500">
+                      {pct(s)}
+                    </td>
+                  ))}
+                  <td className="px-2 py-1.5 text-right tabular-nums">{n0(x.avgWeaningWeightLb)} lb</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{n0(x.calvesWeaned)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{money(x.value, 0)}</td>
+                  <td className={cn('px-2 py-1.5 text-right tabular-nums font-medium', x.vsBaseline < 0 ? 'text-red-600' : x.vsBaseline > 0 ? 'text-green-700' : 'text-gray-400')}>
+                    {i === 0 ? '—' : money(x.vsBaseline, 0)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {ready && breakEven != null && breakEven > 0 && (
         <p className="text-sm text-gray-700">
           Getting to the industry target would be worth it right up to{' '}
           <span className="font-medium">{n1(breakEven)} cows</span> going open along the way. Past that, the calves you lose cost more than
@@ -331,6 +383,10 @@ export function CalvingDistributionPage() {
         <p>
           A scenario whose shares do not add to 100% is still priced exactly as typed, and flagged — so a slip shows up rather than being
           quietly corrected.
+        </p>
+        <p>
+          The calf price starts at this week&rsquo;s auction price for this ranch&rsquo;s steers and heifers at their sale weights — the
+          Markets tab&rsquo;s figure — averaged. Type over it to try your own.
         </p>
       </HelpNote>
     </div>

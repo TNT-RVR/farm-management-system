@@ -121,8 +121,51 @@ export function firstCalfAgeDays(i: Pick<DistributionInputs, 'firstCalfOn' | 'we
  */
 export function cycleWeaningWeights(i: DistributionInputs): number[] | null {
   const age = firstCalfAgeDays(i)
-  if (age == null) return null
+  // Weaning on or before the first calf has no weights to give: the sum
+  // below would read out a calf of minus 160 lb as if it meant something.
+  if (age == null || age <= 0) return null
   return Array.from({ length: CYCLES }, (_, k) => n(i.birthWeightLb) + n(i.adgLbPerDay) * (age - cycleMidpointDays(k)))
+}
+
+/**
+ * What stops the inputs being priced at all, as short sentences for the page.
+ * Empty when they can be. Nothing here is a matter of judgement — a calf
+ * cannot be weaned before it is born, and a cycle cannot have minus fifty
+ * calves — so the page shows these instead of the table, not beside it.
+ */
+export function distributionProblems(i: DistributionInputs): string[] {
+  const out: string[] = []
+  const negative = CYCLE_LABELS.filter((_, k) => n(i.born[k]) < 0)
+  if (negative.length) out.push(`Calves born can’t be negative (${negative.join(', ')}).`)
+  const age = firstCalfAgeDays(i)
+  if (age != null && age <= 0) out.push('Weaning day is on or before the first calf. Set it after the first calf is born.')
+  else if (age != null) {
+    // The latest cycle that has calves in it must be born before weaning.
+    const last = i.born.reduce((a, b, k) => (n(b) > 0 ? k : a), -1)
+    if (last > 0 && age <= cycleMidpointDays(last)) out.push(`Weaning day comes before the calves of ${CYCLE_LABELS[last]} are born.`)
+  }
+  if (n(i.calfDeathLoss) < 0) out.push('Calves lost to weaning can’t be negative.')
+  else {
+    const born = i.born.reduce((a, b) => a + Math.max(0, n(b)), 0)
+    if (born > 0 && n(i.calfDeathLoss) > born) out.push('More calves lost than were born.')
+  }
+  if (n(i.birthWeightLb) < 0 || n(i.adgLbPerDay) < 0) out.push('Birth weight and daily gain can’t be negative.')
+  if (n(i.salePricePerLb) < 0) out.push('Calf price can’t be negative.')
+  return out
+}
+
+/**
+ * The calf price to start from: the Markets tab's own steer and heifer prices
+ * at the ranch's sale weights (useCalfMoney), averaged — half the calf crop
+ * is each. One of them alone when the other has no recent sale; null when
+ * neither has, so the page asks for a price rather than inventing one. It
+ * used to start at a fixed $3.40/lb while the heifer and market pages read
+ * this week's auctions.
+ */
+export function marketCalfPricePerLb(steersPerLb: number | null | undefined, heifersPerLb: number | null | undefined): number | null {
+  const got = [steersPerLb, heifersPerLb].filter((v): v is number => v != null && Number.isFinite(v) && v > 0)
+  if (!got.length) return null
+  return got.reduce((a, b) => a + b, 0) / got.length
 }
 
 /** The headline: what one missed cycle costs in weaning weight. */
@@ -130,6 +173,9 @@ export const lbPerCycleSlipped = (adgLbPerDay: number) => n(adgLbPerDay) * CYCLE
 
 /** The farm's own distribution as shares, from the calves counted in each cycle. */
 export function sharesFromCounts(born: number[]): number[] | null {
+  // A negative count would make the others' shares add past 100% (or below
+  // nought) — it is refused, not rounded to a quiet 0%.
+  if (born.some((b) => n(b) < 0)) return null
   const total = born.reduce((a, b) => a + n(b), 0)
   if (!(total > 0)) return null
   return born.map((b) => n(b) / total)

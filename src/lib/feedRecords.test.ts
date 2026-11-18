@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { daysInPeriod, describeQuantity, poundsFor, summarise, type FeedLine } from './feedRecords'
+import {
+  daysInPeriod,
+  describeDays,
+  describeQuantity,
+  feedRecordProblem,
+  poundsFor,
+  summarise,
+  type FeedLine,
+} from './feedRecords'
 
 const lb = (feedTypeName: string, quantity: number): FeedLine => ({
   feedTypeName,
@@ -127,5 +135,46 @@ describe('describeQuantity', () => {
     expect(describeQuantity({ quantity: 8, unit: 'big_square' })).toBe('8 Big Squares')
     expect(describeQuantity({ quantity: 1, unit: 'round' })).toBe('1 Round')
     expect(describeQuantity({ quantity: 233100, unit: 'lb' })).toBe('233,100 lb')
+  })
+})
+
+describe('describeDays', () => {
+  it('says one day, not one days', () => {
+    expect(describeDays(1)).toBe('1 day')
+    expect(describeDays(31)).toBe('31 days')
+  })
+})
+
+describe('feedRecordProblem', () => {
+  const ok = {
+    periodStart: '2026-11-18',
+    periodEnd: '2026-11-18',
+    headCount: '180',
+    lines: [{ quantity: '12', unit: 'round' as const, lbPerBale: '1300' }],
+  }
+
+  it('lets a good record through', () => {
+    expect(feedRecordProblem(ok)).toBeNull()
+    expect(feedRecordProblem({ ...ok, headCount: '' })).toBeNull()
+    expect(feedRecordProblem({ ...ok, lines: [{ quantity: '0', unit: 'lb', lbPerBale: '' }] })).toBeNull()
+  })
+
+  it('refuses a negative amount before it reaches the table', () => {
+    expect(feedRecordProblem({ ...ok, lines: [{ quantity: '-500', unit: 'round', lbPerBale: '1300' }] })).toBe(
+      'The amount fed cannot be negative.',
+    )
+  })
+
+  it('refuses no head, a weightless bale and a period that runs backwards', () => {
+    expect(feedRecordProblem({ ...ok, headCount: '0' })).toBe('Head fed has to be more than zero.')
+    expect(feedRecordProblem({ ...ok, headCount: '-4' })).toBe('Head fed has to be more than zero.')
+    expect(feedRecordProblem({ ...ok, lines: [{ quantity: '3', unit: 'round', lbPerBale: '0' }] })).toBe(
+      'A bale has to weigh more than zero.',
+    )
+    expect(feedRecordProblem({ ...ok, periodEnd: '2026-11-17' })).toBe('The last day fed has to be on or after the first.')
+  })
+
+  it('ignores a bale weight left in a pounds line', () => {
+    expect(feedRecordProblem({ ...ok, lines: [{ quantity: '5000', unit: 'lb', lbPerBale: '0' }] })).toBeNull()
   })
 })

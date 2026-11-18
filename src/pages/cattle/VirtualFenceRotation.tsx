@@ -15,6 +15,7 @@ import {
   usePastureFieldContext,
   usePastureSeasonFactors,
   useRanchPrecip,
+  sumAsShown,
   type HerdRow,
 } from '@/lib/grazing'
 import { grazingSeason } from '@/lib/field-residue'
@@ -31,11 +32,13 @@ import {
   fencePlan,
   fenceTotals,
   secondPass,
+  shortFenceDays,
   type FenceMob,
   type FencePaddockInput,
   type FencePaddockPlan,
   type SecondPass,
 } from '@/lib/virtual-fence'
+import { HeadTip } from '@/components/HeadTip'
 
 const DAYS_KEY = 'virtual_fence_days'
 const CALVES_KEY = 'virtual_fence_calves'
@@ -150,11 +153,27 @@ export function VirtualFenceRotation({ ranch }: { ranch: Ranch }) {
     () => [...available].sort((a, b) => b.head * b.auPerHead - a.head * a.auPerHead)[0]?.id ?? null,
     [available],
   )
+  /*
+   * Ticked to start with: the biggest mob, and — by herd class, with the cows
+   * the biggest and calves riding at side — the calves class too. Left out,
+   * "52 head · 67 AU" sized the fences for the cows alone, a third short of
+   * what the pairs eat (batch 5, 18 Nov 2026).
+   */
+  const defaultIds = useMemo(() => {
+    if (!biggest) return []
+    if (byMob || !calvesOn) return [biggest]
+    const big = classes.find((h) => `class:${h.id}` === biggest)
+    if (big?.feed_class !== 'cow' && !/cow/i.test(big?.class_name ?? '')) return [biggest]
+    const calves = classes.find((h) => h.feed_class === 'backgrounder' || /calf|calves/i.test(h.class_name))
+    // Calves with grazing dates of their own are out as their own group.
+    if (!calves || (calves.graze_start && calves.graze_end)) return [biggest]
+    return [biggest, `class:${calves.id}`]
+  }, [biggest, byMob, calvesOn, classes])
   const chosenIds = useMemo(() => {
     const ids = new Set(available.map((m) => m.id))
-    if (!picked) return new Set(biggest ? [biggest] : [])
+    if (!picked) return new Set(defaultIds)
     return new Set([...picked].filter((id) => ids.has(id)))
-  }, [picked, available, biggest])
+  }, [picked, available, defaultIds])
   const toggleMob = (id: string) =>
     setPicked(() => {
       const next = new Set(chosenIds)
@@ -215,7 +234,8 @@ export function VirtualFenceRotation({ ranch }: { ranch: Ranch }) {
   )
 
   const plans = useMemo(() => inputs.map((p) => fencePlan(p, demand, days)), [inputs, demand, days])
-  const totals = fenceTotals(plans)
+  // Totals as the sum of the rows shown, so the column adds up on screen.
+  const totals = { ...fenceTotals(plans), totalDays: sumAsShown(plans, (p) => p.totalDays) }
 
   /* ------------------------------------------------------ what grows back */
 
@@ -268,7 +288,7 @@ export function VirtualFenceRotation({ ranch }: { ranch: Ranch }) {
     }
     return m
   }, [plans, demand, days, util, turnIn, rainFactorFor])
-  const regrowDays = plans.reduce((a, p) => a + (passes.get(p.id)?.days ?? 0), 0)
+  const regrowDays = sumAsShown(plans, (p) => passes.get(p.id)?.days ?? 0)
   const toggleOpen = (id: string) =>
     setOpened((o) => {
       const next = new Set(o)
@@ -350,7 +370,7 @@ export function VirtualFenceRotation({ ranch }: { ranch: Ranch }) {
             })}
           </div>
           {byMob && calfAuPerCow > 0 && (
-            <label className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-500">
+            <label className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
               <input
                 type="checkbox"
                 checked={calvesOn}
@@ -399,7 +419,7 @@ export function VirtualFenceRotation({ ranch }: { ranch: Ranch }) {
               }
               actions={
                 <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-gray-900">
-                  {ac(p.acresPerRotation)} <span className="text-[11px] font-normal text-gray-400">ac a fence</span>
+                  {ac(p.acresPerRotation)} <span className="text-xs font-normal text-gray-400">ac a fence</span>
                 </span>
               }
               facts={[]}
@@ -409,7 +429,7 @@ export function VirtualFenceRotation({ ranch }: { ranch: Ranch }) {
                   <Dot />
                   <span className="tabular-nums">{n0(p.lbPerAc)} lb/ac</span>
                   <Dot />
-                  <Rotations p={p} />
+                  <Rotations p={p} days={days} />
                   <Dot />
                   <span className="tabular-nums">{n0(p.totalDays)} days</span>
                   <Dot />
@@ -427,23 +447,22 @@ export function VirtualFenceRotation({ ranch }: { ranch: Ranch }) {
             <tr>
               <th className="px-2 py-2 font-medium">Paddock</th>
               <th className="px-2 py-2 text-right font-medium">Grazeable ac</th>
-              <th className="px-2 py-2 text-right font-medium" title="Feed this paddock grows this season an acre, after the utilization rate">
-                Feed lb/ac
+              <th className="px-2 py-2 text-right font-medium">
+                Feed lb/ac<HeadTip title="Feed lb/ac">Feed this paddock grows this season an acre, after the utilization rate</HeadTip>
               </th>
-              <th className="px-2 py-2 text-right font-medium" title="Acres one virtual fence has to hold to feed the mobs for the days set above">
-                Acres per rotation
+              <th className="px-2 py-2 text-right font-medium">
+                Acres per rotation<HeadTip title="Acres per rotation">Acres one virtual fence has to hold to feed the mobs for the days set above</HeadTip>
               </th>
-              <th className="px-2 py-2 text-right font-medium" title="Whole fences this paddock's grass holds — the times the fence gets moved inside it">
-                Rotations
+              <th className="px-2 py-2 text-right font-medium">
+                Rotations<HeadTip title="Rotations">Whole fences this paddock&apos;s grass holds — the times the fence gets moved inside it</HeadTip>
               </th>
-              <th className="px-2 py-2 text-right font-medium" title="Days all of this paddock's grass feeds the mobs, the part rotation at the end included">
-                Total days
+              <th className="px-2 py-2 text-right font-medium">
+                Total days<HeadTip title="Total days">Days all of this paddock&apos;s grass feeds the mobs, the part rotation at the end included</HeadTip>
               </th>
               <th
                 className="px-2 py-2 text-right font-medium"
-                title="Extra days the regrowth is worth by the time the fence comes back round to its first strip"
               >
-                2nd pass
+                2nd pass<HeadTip title="2nd pass">Extra days the regrowth is worth by the time the fence comes back round to its first strip</HeadTip>
               </th>
             </tr>
           </thead>
@@ -461,9 +480,9 @@ export function VirtualFenceRotation({ ranch }: { ranch: Ranch }) {
                   <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{n0(p.lbPerAc)}</td>
                   <td className="px-2 py-1.5 text-right font-medium tabular-nums">{ac(p.acresPerRotation)}</td>
                   <td className="px-2 py-1.5 text-right">
-                    <Rotations p={p} />
+                    <Rotations p={p} days={days} />
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{n0(p.totalDays)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{n0(Math.round(p.totalDays))}</td>
                   <td className="px-2 py-1.5 text-right">
                     <SecondPassDays sp={passes.get(p.id)} />
                   </td>
@@ -546,8 +565,17 @@ export function VirtualFenceRotation({ ranch }: { ranch: Ranch }) {
 }
 
 /** The whole fences a paddock holds; amber when it has not got the grass for one. */
-function Rotations({ p }: { p: FencePaddockPlan }) {
-  if (p.rotations > 0) return <span className="tabular-nums font-medium">{n0(p.rotations)}</span>
+function Rotations({ p, days }: { p: FencePaddockPlan; days: number }) {
+  // The short last fence said beside the whole ones, so rotations × days plus
+  // it is the total days shown: "11 + 2 d" at 3 days is 35, not 33.
+  const rest = shortFenceDays(p, days)
+  if (p.rotations > 0)
+    return (
+      <span className="tabular-nums font-medium" title={rest > 0 ? `${p.rotations} whole fences of ${days} days, then a short one that lasts ${rest} day${rest === 1 ? '' : 's'}` : undefined}>
+        {n0(p.rotations)}
+        {rest > 0 && <span className="font-normal text-gray-400"> + {rest} d</span>}
+      </span>
+    )
   return (
     <span className="tabular-nums text-amber-700" title="This paddock has less grass than one rotation needs — shorten the days, or split the mob.">
       0
@@ -587,7 +615,7 @@ function FenceSplit({ p, sp }: { p: FencePaddockPlan; sp: SecondPass | undefined
   return (
     <div className="max-w-2xl space-y-2">
       {p.surfaces.length > 1 && (
-      <table className="w-full text-[11px]">
+      <table className="w-full text-xs">
         <thead>
           <tr className="text-gray-400">
             <th className="py-1 pr-2 text-left font-medium">Where the fence lands</th>
@@ -618,7 +646,7 @@ function FenceSplit({ p, sp }: { p: FencePaddockPlan; sp: SecondPass | undefined
       </table>
       )}
       {p.headPerAcre > 0 && (
-        <p className="text-[11px] text-gray-400">
+        <p className="text-xs text-gray-400">
           {n1(p.headPerAcre)} head an acre behind the fence ({n1(p.auPerAcre)} AU an acre).
         </p>
       )}
@@ -641,16 +669,16 @@ function utilizationOf(ranch: Ranch) {
  */
 function SecondPassDetail({ p, sp }: { p: FencePaddockPlan; sp: SecondPass }) {
   if (sp.strips.length === 0) {
-    return <p className="text-[11px] text-gray-400">No whole rotation here, so there is no second pass to work out.</p>
+    return <p className="text-xs text-gray-400">No whole rotation here, so there is no second pass to work out.</p>
   }
   const first = sp.strips[0]
   const last = sp.strips[sp.strips.length - 1]
   return (
     <div className="rounded-md bg-white/70 p-2 ring-1 ring-gray-200">
-      <p className="text-[11px] font-medium text-gray-700">
+      <p className="text-xs font-medium text-gray-700">
         Second pass — the fence is back on strip one {fmtDay(sp.backOn)}, after {sp.restDays} days
       </p>
-      <table className="mt-1 w-full text-[11px]">
+      <table className="mt-1 w-full text-xs">
         <thead>
           <tr className="text-gray-400">
             <th className="py-1 pr-2 text-left font-medium">Strip</th>
@@ -681,7 +709,7 @@ function SecondPassDetail({ p, sp }: { p: FencePaddockPlan; sp: SecondPass }) {
           </tr>
         </tbody>
       </table>
-      <p className="mt-1 text-[11px] text-gray-500">
+      <p className="mt-1 text-xs text-gray-500">
         {n0(sp.grossLb)} lb grown back over {n0(sp.coveredAc)} ac, {n0(sp.lb)} lb of it taken at the utilization rate —{' '}
         <span className="font-medium text-emerald-700">{n1(sp.days)} more days</span> for the mobs.
       </p>

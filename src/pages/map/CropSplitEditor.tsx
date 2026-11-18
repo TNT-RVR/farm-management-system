@@ -338,7 +338,7 @@ export function CropSplitEditor({
                 <span className="min-w-0 flex-1 truncate">
                   {cropMap.get(z.crop_id)?.name ?? 'Crop'}
                 </span>
-                {!z.geojson && <span className="text-[10px] text-gray-400">acres only</span>}
+                {!z.geojson && <span className="text-xs text-gray-400">acres only</span>}
                 <input
                   type="number"
                   step="0.1"
@@ -372,7 +372,7 @@ export function CropSplitEditor({
           {mode === 'cut' ? (
             <div className="space-y-2">
               <div className="flex items-end gap-2">
-                <label className="flex-1 text-[11px] font-medium text-gray-500">
+                <label className="flex-1 text-xs font-medium text-gray-500">
                   Angle (&deg;)
                   <input
                     type="number"
@@ -381,7 +381,7 @@ export function CropSplitEditor({
                     className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm tabular-nums"
                   />
                 </label>
-                <label className="flex-1 text-[11px] font-medium text-gray-500">
+                <label className="flex-1 text-xs font-medium text-gray-500">
                   Offset (m)
                   <input
                     type="number"
@@ -392,7 +392,7 @@ export function CropSplitEditor({
                   />
                 </label>
               </div>
-              <p className="text-[11px] text-gray-400">
+              <p className="text-xs text-gray-400">
                 Angle is the planting bearing; offset slides the line sideways from the middle of
                 the field. Zero cuts through the centre.
               </p>
@@ -431,7 +431,7 @@ export function CropSplitEditor({
               </div>
 
               {!cutDivides && (
-                <p className="rounded-md bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
+                <p className="rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
                   This line misses the field, so there is only one side. Move the offset until both
                   sides show acres.
                 </p>

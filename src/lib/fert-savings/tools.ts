@@ -1,4 +1,4 @@
-import { P_STARTER_FLOOR, pBuildRate } from './alberta'
+import { P_BUILD_TARGET_OLSEN, P_STARTER_FLOOR, pBuildRate } from './alberta'
 import { legumeCredit, removalFor, yieldInRemovalUnit, type LossRisk } from './agronomy'
 
 /* ---------------------------------------------------------------------------
@@ -43,6 +43,8 @@ export type Position = {
   invoiced: number
   /** Still to book: need less what is on the yard and already booked. Never below zero. */
   toBook: number | null
+  /** Booked and on hand beyond the need: the other side of `toBook`, so a surplus is not read as "nothing to book". */
+  over: number | null
 }
 
 export function productPositions(input: {
@@ -70,6 +72,7 @@ export function productPositions(input: {
         booked,
         invoiced,
         toBook: need == null ? null : Math.max(0, need - onHand - booked),
+        over: need == null ? null : Math.max(0, onHand + booked - need),
       }
     })
     .sort((a, b) => (b.need ?? 0) - (a.need ?? 0))
@@ -208,7 +211,10 @@ export function suggestedRate(
     // Build = removal + closing the gap to target over four years, at the
     // soil's buffer (about 20 lb P2O5 per ppm Olsen on sand, 37 on clay).
     if (nutrient === 'p' && opts.olsenPpm != null && removal != null) {
-      return { rate: pBuildRate({ olsenPpm: opts.olsenPpm, removal, texture: opts.texture }), rule: 'build' }
+      // A marginal test at or above the build target (Olsen 15–20) gets
+      // removal only, so it is labelled by the rule that set the rate.
+      const rule = opts.olsenPpm >= P_BUILD_TARGET_OLSEN ? 'maintain' : 'build'
+      return { rate: pBuildRate({ olsenPpm: opts.olsenPpm, removal, texture: opts.texture }), rule }
     }
     return { rate: recRate, rule: 'build' }
   }
@@ -313,8 +319,10 @@ export function nutrientBalance(
   const rows = [...years]
     .sort((a, b) => a.year - b.year)
     .map((y) => {
-      const dp = y.applied.p2o5 - (y.removed?.p2o5 ?? 0)
-      const dk = y.applied.k2o - (y.removed?.k2o ?? 0)
+      // Each season's net is rounded to the whole pound it is printed as, and
+      // the running total adds those, so the row's own figures sum to it.
+      const dp = Math.round(y.applied.p2o5 - (y.removed?.p2o5 ?? 0)) || 0
+      const dk = Math.round(y.applied.k2o - (y.removed?.k2o ?? 0)) || 0
       p += dp
       k += dk
       return { ...y, netP: dp, netK: dk, runningP: p, runningK: k }

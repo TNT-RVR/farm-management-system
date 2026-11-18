@@ -93,7 +93,7 @@ function CameraForm({
               </option>
             ))}
           </select>
-          <span className="mt-0.5 block text-[11px] text-gray-400">
+          <span className="mt-0.5 block text-xs text-gray-400">
             Puts this camera on the gauge map under Irrigation → River → Map.
           </span>
         </label>
@@ -110,7 +110,7 @@ function CameraForm({
               </option>
             ))}
           </select>
-          {kindHint && <span className="mt-0.5 block text-[11px] text-gray-400">{kindHint}</span>}
+          {kindHint && <span className="mt-0.5 block text-xs text-gray-400">{kindHint}</span>}
         </label>
         <label className="text-xs text-gray-500 sm:col-span-2">
           Address
@@ -300,7 +300,7 @@ function CameraTile({
         <span className="font-medium text-gray-900">{camera.name}</span>
         {camera.location && <span className="text-xs text-gray-500">{camera.location}</span>}
         {!camera.active && (
-          <span className="rounded bg-gray-100 px-1.5 text-[10px] text-gray-500">out of service</span>
+          <span className="rounded bg-gray-100 px-1.5 text-xs text-gray-500">out of service</span>
         )}
         {canEdit && (
           <span className="ml-auto flex items-center gap-2">

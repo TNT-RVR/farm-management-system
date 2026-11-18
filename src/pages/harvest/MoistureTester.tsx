@@ -9,9 +9,10 @@ import { CheckCircle2, FileText, MapPin, Save, Thermometer, Trash2 } from 'lucid
 import { useHere } from '@/lib/useHere'
 import { Select } from '@/components/Select'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
-import { GRADE_STYLE, chartPdfUrl, gradeLabel, type Grade } from '@/lib/moisture'
+import { CHART_CREDIT, GRADE_STYLE, chartPdfUrl, gradeLabel, isMoistureCrop, type Grade } from '@/lib/moisture'
 import { useDeleteMoistureTest, useMoistureTests } from '@/lib/moisture-queries'
 import { cn } from '@/lib/utils'
+import { dbErrorMessage } from '@/lib/db-error'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
 import { Modal } from '@/components/Modal'
 import { MoistureTestDetail } from './MoistureTestDetail'
@@ -71,6 +72,7 @@ export function MoistureTester({
     reading,
     result,
     pct,
+    pctOutOfRange,
     grade,
     advice,
     saved,
@@ -113,7 +115,7 @@ export function MoistureTester({
                 <button
                   type="button"
                   onClick={() => pickField(here.fieldId!)}
-                  className="inline-flex items-center gap-0.5 text-[11px] text-brand-700 hover:underline"
+                  className="inline-flex items-center gap-0.5 text-xs text-brand-700 hover:underline"
                   title={
                     here.inside
                       ? 'You are in this field'
@@ -145,7 +147,8 @@ export function MoistureTester({
               options={[
                 { value: '', label: 'Choose a crop…' },
                 ...(crops ?? [])
-                  .filter((c) => c.active || c.id === cropId)
+                  // A crop, not fallow or land we don't farm; the one chosen stays listed.
+                  .filter((c) => c.id === cropId || (c.active && isMoistureCrop(c)))
                   .map((c) => ({ value: c.id, label: c.name })),
               ]}
             />
@@ -168,9 +171,10 @@ export function MoistureTester({
               href={chartPdfUrl(summary.key)}
               target="_blank"
               rel="noreferrer"
+              title={CHART_CREDIT}
               className="ml-auto flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 font-medium text-gray-700 hover:bg-gray-50"
             >
-              <FileText className="h-3.5 w-3.5" /> Chart PDF
+              <FileText className="h-3.5 w-3.5" /> Grain Commission chart (PDF)
             </a>
           </div>
         )}
@@ -193,7 +197,7 @@ export function MoistureTester({
             className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900"
           />
           {startedLongAgo && (
-            <span className="mt-0.5 block text-[11px] text-amber-700">
+            <span className="mt-0.5 block text-xs text-amber-700">
               Started over 30 min ago, so it saves as the time you record it. Change it if the
               sample was earlier.
             </span>
@@ -299,6 +303,11 @@ export function MoistureTester({
             />
           </label>
         )}
+        {pctOutOfRange && (
+          <p className="mt-1.5 text-sm text-amber-700">
+            A moisture reading is 0 or more and under 100%.
+          </p>
+        )}
         {!result?.ok && pct != null && grade && (
           <p className="mt-1.5 text-sm text-gray-700">
             <span
@@ -325,13 +334,14 @@ export function MoistureTester({
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
             onClick={() => save(() => onCloseForm?.())}
-            disabled={pct == null || record.isPending}
+            disabled={pct == null || pctOutOfRange || record.isPending}
             className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
           >
             <Save className="h-4 w-4" /> {record.isPending ? 'Saving…' : 'Record this test'}
           </button>
+          {pct == null && <span className="text-sm text-gray-500">Needs a moisture reading.</span>}
           {record.isError && (
-            <span className="text-sm text-red-600">{(record.error as Error).message}</span>
+            <span className="text-sm text-red-600">{dbErrorMessage(record.error)}</span>
           )}
         </div>
 
@@ -448,7 +458,7 @@ export function MoistureTester({
                   {t.grade && (
                     <span
                       className={cn(
-                        'rounded px-1.5 py-0.5 text-[11px] font-medium capitalize',
+                        'rounded px-1.5 py-0.5 text-xs font-medium capitalize',
                         GRADE_STYLE[t.grade as Grade],
                       )}
                     >
@@ -464,7 +474,7 @@ export function MoistureTester({
                     </span>
                   )}
                   {t.entered_by_hand && (
-                    <span className="rounded bg-gray-100 px-1.5 text-[10px] text-gray-500">
+                    <span className="rounded bg-gray-100 px-1.5 text-xs text-gray-500">
                       typed in
                     </span>
                   )}

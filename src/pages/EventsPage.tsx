@@ -109,7 +109,7 @@ function EventCard({
     >
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h3 className="font-medium text-gray-900">{e.name}</h3>
-        <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', STATUS_STYLE[e.status])}>
+        <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', STATUS_STYLE[e.status])}>
           {STATUSES.find((s) => s.key === e.status)?.label ?? e.status}
         </span>
       </div>
@@ -155,7 +155,7 @@ function EventCard({
       {e.categories.length > 0 && (
         <p className="mt-1.5 flex flex-wrap gap-1">
           {e.categories.map((c) => (
-            <span key={c} className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600">
+            <span key={c} className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
               {c}
             </span>
           ))}

@@ -33,7 +33,7 @@ export function VarietyToggle({ open, count, name, onToggle }: { open: boolean; 
       className="-ml-1 mr-1 inline-flex items-center rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
     >
       <ChevronRight className={cn('h-4 w-4 transition-transform', open && 'rotate-90')} />
-      {count > 0 && <span className="text-[10px] font-semibold tabular-nums text-gray-500">{count}</span>}
+      {count > 0 && <span className="text-xs font-semibold tabular-nums text-gray-500">{count}</span>}
     </button>
   )
 }

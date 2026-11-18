@@ -232,7 +232,7 @@ function SiteRow({ r, current }: { r: SolarSiteSummary; current: boolean }) {
       <td className="px-3 py-2">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="font-medium text-gray-900">{r.name}</span>
-          {st && current && <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-medium', TONE[st.tone])}>{st.label}</span>}
+          {st && current && <span className={cn('rounded-full px-1.5 py-0.5 text-xs font-medium', TONE[st.tone])}>{st.label}</span>}
         </div>
       </td>
       <td className="px-2 py-2 text-right tabular-nums">{kw(r.capacityKwp)}</td>

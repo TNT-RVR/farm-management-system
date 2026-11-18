@@ -57,19 +57,19 @@ export function BasisPanel({
 
       <div className="mt-2 flex flex-wrap items-end gap-x-6 gap-y-2">
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-gray-500">{cashLabel}</p>
+          <p className="text-xs uppercase tracking-wide text-gray-500">{cashLabel}</p>
           <p className="text-lg font-semibold tabular-nums text-gray-900">{fmt(point.cash)}</p>
         </div>
         <span className="pb-1.5 text-lg text-gray-300">−</span>
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-gray-500">{boardLabel}</p>
+          <p className="text-xs uppercase tracking-wide text-gray-500">{boardLabel}</p>
           <p className="text-lg font-semibold tabular-nums text-gray-900">
             {fmt(point.futuresEquivalent)}
           </p>
         </div>
         <span className="pb-1.5 text-lg text-gray-300">=</span>
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-gray-500">Basis</p>
+          <p className="text-xs uppercase tracking-wide text-gray-500">Basis</p>
           <p
             className={cn(
               'text-xl font-bold tabular-nums',
@@ -89,12 +89,12 @@ export function BasisPanel({
         </p>
       )}
       {!verdict && history && (
-        <p className="mt-2 text-[11px] text-gray-400">
+        <p className="mt-2 text-xs text-gray-400">
           {history.length} week{history.length === 1 ? '' : 's'} on record — too few to say whether
           this is normal. Eight is the floor.
         </p>
       )}
-      {note && <p className="mt-1.5 text-[11px] text-gray-500">{note}</p>}
+      {note && <p className="mt-1.5 text-xs text-gray-500">{note}</p>}
 
       </div>
     </div>

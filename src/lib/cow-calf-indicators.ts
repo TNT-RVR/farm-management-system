@@ -86,7 +86,7 @@ export const REGION_LABEL: Record<Region, string> = {
 
 /** How a row is read: bigger is better, or smaller is. */
 export type Direction = 'higher' | 'lower'
-export type Format = 'percent' | 'number' | 'days' | 'lb' | 'ratio'
+export type Format = 'percent' | 'number' | 'days' | 'lb' | 'lbPerDay' | 'ratio'
 
 export type IndicatorSpec = {
   key: string
@@ -127,7 +127,7 @@ export const INDICATORS: IndicatorSpec[] = [
   { key: 'lbWeanedPerExposed', label: 'Lb weaned per female exposed', format: 'lb', direction: 'higher', target: 460, benchmark: { west: null, east: null, national: null } },
   { key: 'weaningAge', label: 'Age at weaning', format: 'days', direction: 'higher', target: null, benchmark: { west: 211, east: 226, national: 215 } },
   { key: 'adj205', label: 'Adjusted 205-day weaning weight', format: 'lb', direction: 'higher', target: null, benchmark: { west: 557, east: 546, national: 554 } },
-  { key: 'adgPreWean', label: 'Pre-weaning average daily gain', format: 'number', direction: 'higher', target: null, benchmark: { west: null, east: null, national: null } },
+  { key: 'adgPreWean', label: 'Pre-weaning average daily gain', format: 'lbPerDay', direction: 'higher', target: null, benchmark: { west: null, east: null, national: null } },
   { key: 'wwPctCowWeight', label: 'Weaning weight as % of cow weight', format: 'percent', direction: 'higher', target: 0.45, benchmark: { west: 0.417, east: 0.41, national: 0.415 } },
 ]
 
@@ -261,6 +261,58 @@ export function inputsEntered(i: IndicatorInputs): { entered: number; total: num
  * enforces: the calving distribution should add to the calves born, and the
  * calves weaned cannot exceed the live ones.
  */
+/**
+ * Figures that cannot be true, which the scorecard refuses to save.
+ *
+ * Until 18 Nov 2026 it saved them and worked out "Conception rate 120.0%",
+ * "Length of calving period −28 d" and, from a negative loss, more live calves
+ * than were born.
+ */
+export function impossibleFigures(i: IndicatorInputs): string[] {
+  const out: string[] = []
+  const counts: [keyof IndicatorInputs, string][] = [
+    ['femalesExposed', 'Females exposed'],
+    ['bullsUsed', 'Bulls used'],
+    ['femalesBred', 'Females bred'],
+    ['femalesCalved', 'Females calved'],
+    ['setsOfTwins', 'Sets of twins'],
+    ['calvesBorn1_21', 'Calves born days 1–21'],
+    ['calvesBorn22_42', 'Calves born days 22–42'],
+    ['calvesBorn43_63', 'Calves born days 43–63'],
+    ['calvesBorn64Plus', 'Calves born day 64+'],
+    ['calvesDead24h', 'Calves lost in the first 24 h'],
+    ['calvesDeadToWean', 'Calves lost after day 1'],
+    ['calvesWeaned', 'Calves weaned'],
+    ['avgBirthWeightLb', 'Birth weight'],
+    ['avgWeaningWeightLb', 'Weaning weight'],
+    ['avgCowWeightLb', 'Cow weight'],
+  ]
+  for (const [key, label] of counts) {
+    const v = n(i[key] as number | null | undefined)
+    if (v != null && v < 0) out.push(`${label} cannot be negative.`)
+  }
+  const exposed = n(i.femalesExposed)
+  const bred = n(i.femalesBred)
+  const calved = n(i.femalesCalved)
+  if (bred != null && exposed != null && bred > exposed) out.push(`${bred} females bred is more than the ${exposed} exposed.`)
+  if (calved != null && exposed != null && calved > exposed) out.push(`${calved} females calved is more than the ${exposed} exposed.`)
+  const twins = n(i.setsOfTwins)
+  if (twins != null && calved != null && twins > calved) out.push(`${twins} sets of twins is more than the ${calved} females that calved.`)
+  const live = liveCalvesBorn(i)
+  const weaned = n(i.calvesWeaned)
+  const deadToWean = n(i.calvesDeadToWean) ?? 0
+  if (live != null && weaned != null && weaned > live - deadToWean)
+    out.push(`${weaned} calves weaned is more than the ${live - deadToWean} live calves left after losses.`)
+  const order: [string | null | undefined, string | null | undefined, string][] = [
+    [i.firstCalvingOn, i.lastCalvingOn, 'The last calf has to be born on or after the first.'],
+    [i.firstCalvingOn, i.medianCalvingOn, 'Half the calves cannot be born before the first one.'],
+    [i.medianCalvingOn, i.lastCalvingOn, 'Half the calves cannot be born after the last one.'],
+    [i.lastCalvingOn, i.weaningOn, 'Weaning has to come after the last calf is born.'],
+  ]
+  for (const [a, b, msg] of order) if (a && b && b < a) out.push(msg)
+  return out
+}
+
 export function consistencyWarnings(i: IndicatorInputs): string[] {
   const out: string[] = []
   const bornTotal = totalCalvesBorn(i)
@@ -268,13 +320,7 @@ export function consistencyWarnings(i: IndicatorInputs): string[] {
   const twins = n(i.setsOfTwins) ?? 0
   if (bornTotal != null && calved != null && bornTotal !== calved + twins)
     out.push(`The calving distribution adds to ${bornTotal}, but ${calved} females calved plus ${twins} sets of twins is ${calved + twins}.`)
-  const live = liveCalvesBorn(i)
-  const weaned = n(i.calvesWeaned)
-  const deadToWean = n(i.calvesDeadToWean) ?? 0
-  if (live != null && weaned != null && weaned > live - deadToWean)
-    out.push(`${weaned} calves weaned is more than the ${live - deadToWean} live calves left after losses.`)
-  const bred = n(i.femalesBred)
-  const exposed = n(i.femalesExposed)
-  if (bred != null && exposed != null && bred > exposed) out.push(`${bred} females bred is more than the ${exposed} exposed.`)
+  // Weaned over live calves, and bred over exposed, are refused outright by
+  // impossibleFigures; this list is only what may be true but does not add up.
   return out
 }

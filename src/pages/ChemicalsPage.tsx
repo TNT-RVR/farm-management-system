@@ -152,11 +152,11 @@ function ChemicalCard({ c, canEdit, farmCrops }: { c: ChemicalListRow; canEdit: 
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <span className="font-semibold text-gray-900">{productName(c.name)}</span>
           {c.product_type && (
-            <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', colour.chip)}>
+            <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', colour.chip)}>
               {c.product_type.toLowerCase()}
             </span>
           )}
-          <span className="ml-auto text-[11px] text-gray-400">Reg. {c.registration_number}</span>
+          <span className="ml-auto text-xs text-gray-400">Reg. {c.registration_number}</span>
         </div>
         <p className="mt-0.5 truncate text-xs text-gray-500">{readable(c.active_ingredients) || '—'}</p>
         {warning && (

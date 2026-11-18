@@ -8,6 +8,7 @@ import {
   adviceFor,
   gradeFor,
   hasBands,
+  isMoistureCrop,
   lookupMoisture,
   type Grade,
   type MoistureBands,
@@ -160,7 +161,16 @@ export function useMoistureEntry({ open = false }: { open?: boolean } = {}) {
 
   const byHand = num(manualPct)
   const pct = result?.ok ? result.moisture : byHand
-  const grade: Grade | null = pct != null && hasBands(bands) ? gradeFor(bands, pct) : null
+  /**
+   * Outside what a moisture reading can be. The column is
+   * `check (moisture_pct >= 0 and moisture_pct < 100)`, so the database
+   * refuses these anyway — but it refuses them after the dial has been read,
+   * the grade printed and the button pressed, in the language of a constraint
+   * name. A reading of -5% was being graded "dry, safe to bin" first.
+   */
+  const pctOutOfRange = pct != null && !(pct >= 0 && pct < 100)
+  const grade: Grade | null =
+    pct != null && !pctOutOfRange && hasBands(bands) ? gradeFor(bands, pct) : null
   const advice = grade ? adviceFor(grade, bands) : null
 
   /** Picking the field settles the crop — the whole point of recording against
@@ -169,14 +179,16 @@ export function useMoistureEntry({ open = false }: { open?: boolean } = {}) {
   const pickField = (fid: string) => {
     setFieldId(fid)
     const planned = plans?.find((p) => p.field_id === fid)?.crop_id
-    if (planned) setCropId(planned)
+    // A field planned to fallow or not farmed leaves the crop to be chosen.
+    const plannedCrop = planned ? crops?.find((c) => c.id === planned) : undefined
+    if (planned && (!plannedCrop || isMoistureCrop(plannedCrop))) setCropId(planned)
   }
 
   const setDialAt = (i: number, v: string) =>
     setDial((d) => d.map((x, j) => (j === i ? v : x)))
 
   const save = (onSaved?: () => void) => {
-    if (pct == null) return
+    if (pct == null || pctOutOfRange) return
     const typed = timeEdited && testedAt ? new Date(testedAt) : null
     const testedAtIso =
       typed && !Number.isNaN(typed.getTime())
@@ -251,6 +263,7 @@ export function useMoistureEntry({ open = false }: { open?: boolean } = {}) {
     temperature,
     result,
     pct,
+    pctOutOfRange,
     grade,
     saved,
     record,

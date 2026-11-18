@@ -6,6 +6,10 @@ import { FN_STATUS_COLOR } from '@/lib/fieldnet'
  * pages describe a layer the same way.
  */
 export const LAYER_INFO = {
+  crop: {
+    title: 'Crop',
+    text: 'What is planned in each field for the season you are looking at, or what was grown where there is no plan, in each crop’s own colour.',
+  },
   photo: {
     title: 'Satellite photo',
     text: 'The latest clear picture from the Sentinel-2 satellite, in true colour. 10 m pixels: the field’s colour, not fine detail.',

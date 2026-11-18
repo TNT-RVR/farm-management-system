@@ -386,7 +386,7 @@ function PassCard({
 
       {products.length > 0 && (
         <Section icon={Droplets} title="Products applied">
-          <div className="flex flex-wrap items-baseline gap-x-3 border-b border-gray-100 pb-1 text-[10px] uppercase tracking-wide text-gray-400">
+          <div className="flex flex-wrap items-baseline gap-x-3 border-b border-gray-100 pb-1 text-xs uppercase tracking-wide text-gray-400">
             <span className="min-w-40 flex-1" />
             <span className="w-24 text-right">Rate</span>
             <span className="w-24 text-right">Total on {costAcres ? `${costAcres.toFixed(costAcres < 10 ? 1 : 0)} ac` : 'field'}</span>
@@ -397,7 +397,7 @@ function PassCard({
               <div className="flex flex-wrap items-baseline gap-x-2">
                 <span className="text-sm font-medium text-gray-800">{p.name ?? 'product'}</span>
                 {p.tankMix && (
-                  <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+                  <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
                     tank mix
                   </span>
                 )}
@@ -452,7 +452,7 @@ function PassCard({
                   <span className="text-xs text-gray-500">{v.brand}</span>
                 )}
                 {v.productType && (
-                  <span className="rounded bg-gray-100 px-1.5 text-[10px] uppercase text-gray-500">
+                  <span className="rounded bg-gray-100 px-1.5 text-xs uppercase text-gray-500">
                     {v.productType}
                   </span>
                 )}
@@ -541,7 +541,7 @@ function PassCard({
         </>
       )}
 
-      <p className="mt-3 flex flex-wrap items-center gap-x-2 border-t border-gray-100 pt-2 text-[11px] text-gray-400">
+      <p className="mt-3 flex flex-wrap items-center gap-x-2 border-t border-gray-100 pt-2 text-xs text-gray-400">
         {link && (
           <a
             href={link}

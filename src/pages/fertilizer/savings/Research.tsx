@@ -82,9 +82,10 @@ export function YieldGoalCard() {
       .filter((h) => h.field_id === x.plan.field_id && h.crop === x.crop!.name && h.crop_year < inputs.cropYear && h.yield_per_acre != null && !h.exclude_from_averages)
       .map((h) => (unit ? convertYield(Number(h.yield_per_acre), asUnit(h.yield_unit) ?? unit, unit, lb) : null))
       .filter((v): v is number => v != null)
-    return { ...x, unit, check: yieldGoalCheck({ crop: x.crop!.name, goal: x.goal, unit, lbPerBu: lb, irrigated: x.irrigated, history }) }
+    const normal = x.crop!.default_yield_per_acre == null ? null : Number(x.crop!.default_yield_per_acre)
+    return { ...x, unit, check: yieldGoalCheck({ crop: x.crop!.name, goal: x.goal, unit, lbPerBu: lb, irrigated: x.irrigated, history, normal }) }
   })
-  const off = rows.filter((r) => r.check.verdict === 'high' || r.check.verdict === 'low')
+  const off = rows.filter((r) => r.check.verdict === 'high' || r.check.verdict === 'low' || r.check.verdict === 'unit')
   useReportSaving(29, null)
   return (
     <ToolCard
@@ -92,9 +93,10 @@ export function YieldGoalCard() {
       warn={off.length > 0}
       method={
         <>
-          Judged against the field&apos;s own median over three or more years where it has them; otherwise against southern Alberta&apos;s
-          range — potatoes 300–550 cwt, dry beans 2,000–3,500 lb, corn 100–200 bu, irrigated canola 50–80 bu, alfalfa 4–7 t. More than 25%
-          over the field&apos;s median is flagged high.
+          Judged against the field&apos;s own median over three or more years where it has them; otherwise against a usual range from
+          the research report&apos;s crop reports — potatoes 300–550 cwt, dry beans 2,000–3,500 lb, corn 100–200 bu, irrigated canola 50–80
+          bu, alfalfa 4–7 t. More than 25% over the field&apos;s median is flagged high; a goal ten times off the crop&apos;s normal yield is
+          flagged as a likely wrong unit.
         </>
       }
       sources={[S.plan, S.crops, S.fields]}
@@ -106,7 +108,7 @@ export function YieldGoalCard() {
       {!off.length ? (
         <Empty>
           {rows.length ? (
-            `All ${rows.length} planned goals sit within this farm's record or southern Alberta's range.`
+            `All ${rows.length} planned goals sit within this farm's record or the usual range.`
           ) : (
             <>
               No crop plan for this season yet. <SetupLink managerOnly to={SETUP_LINKS.cropPlan()}>Plan the crops</SetupLink>
@@ -122,10 +124,13 @@ export function YieldGoalCard() {
               </td>
               <td className={td}>{r.crop!.name}</td>
               <td className={tdNum}>
-                {n0(r.goal)} <span className="text-[10px] text-gray-400">{r.unit}</span>
+                {n0(r.goal)} <span className="text-xs text-gray-400">{r.unit}</span>
               </td>
               <td className={td}>
-                <span className={cn('font-semibold', r.check.verdict === 'high' ? 'text-amber-800' : 'text-sky-800')}>{r.check.verdict === 'high' ? 'High' : 'Low'}</span> — {r.check.why}
+                <span className={cn('font-semibold', r.check.verdict === 'low' ? 'text-sky-800' : 'text-amber-800')}>
+                  {r.check.verdict === 'high' ? 'High' : r.check.verdict === 'low' ? 'Low' : 'Unit?'}
+                </span>{' '}
+                — {r.check.why}
               </td>
             </tr>
           ))}
@@ -179,12 +184,12 @@ export function SalinityCard() {
               </td>
               <td className={td}>
                 {r.crop!.name}
-                {r.tol && <span className="block text-[10px] text-gray-400">losses start at {r.tol.threshold} dS/m</span>}
+                {r.tol && <span className="block text-xs text-gray-400">losses start at {r.tol.threshold} dS/m</span>}
               </td>
               <td className={tdNum}>{r.soil.sites.map((s) => s.ec.toFixed(2)).join(', ')}</td>
               <td className={tdNum}>
                 {Math.round(r.cap.factor! * 100)}%
-                <span className="block text-[10px] text-gray-400">{Math.round(r.cap.affectedShare * 100)}% of sites short</span>
+                <span className="block text-xs text-gray-400">{Math.round(r.cap.affectedShare * 100)}% of sites short</span>
               </td>
               <td className={tdNum}>
                 {n0(r.goal)} → <strong>{n0(r.goal ? r.goal * r.cap.factor! : null)}</strong>
@@ -251,14 +256,14 @@ export function ResampleCard() {
               <td className={td}>
                 <span
                   className={cn(
-                    'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase',
+                    'rounded px-1.5 py-0.5 text-xs font-semibold uppercase',
                     r.risk.level === 'high' ? 'bg-amber-100 text-amber-800' : r.risk.level === 'moderate' ? 'bg-gray-100 text-gray-700' : 'bg-green-100 text-green-800',
                   )}
                 >
                   {r.risk.level}
                 </span>
               </td>
-              <td className={cn(td, 'text-[11px]')}>{r.risk.reasons.join('; ') || '—'}</td>
+              <td className={cn(td, 'text-xs')}>{r.risk.reasons.join('; ') || '—'}</td>
               <td className={td}>{r.risk.resample ? <strong className="text-amber-800">Yes</strong> : 'No'}</td>
             </tr>
           ))}
@@ -370,7 +375,7 @@ export function NRichStripCard() {
                     </button>
                     {m.create.error && <span className="text-red-700">{(m.create.error as Error).message}</span>}
                   </div>
-                  <p className="col-span-2 text-[11px] text-gray-500 sm:col-span-5">
+                  <p className="col-span-2 text-xs text-gray-500 sm:col-span-5">
                     One pass wide (18.3 m is 60 ft), the length of the field the way it is farmed, through the middle unless moved off it. Put
                     the extra N on that strip at seeding; the satellite scores it with the field every pass from then on.
                   </p>
@@ -389,11 +394,11 @@ export function NRichStripCard() {
             <tr key={r.s.id} className="cursor-pointer hover:bg-gray-50" onClick={rowClick(() => setOpened(r.s.id))}>
               <td className={td}>
                 <FieldLink id={r.s.field_id} name={r.field?.name ?? '—'} to="work" />
-                {r.s.label && <span className="block text-[10px] text-gray-400">{r.s.label}</span>}
+                {r.s.label && <span className="block text-xs text-gray-400">{r.s.label}</span>}
               </td>
               <td className={tdNum}>
                 {n1(r.s.acres)} ac
-                {r.s.extra_lb_n != null && <span className="block text-[10px] text-gray-400">+{n0(r.s.extra_lb_n)} lb N</span>}
+                {r.s.extra_lb_n != null && <span className="block text-xs text-gray-400">+{n0(r.s.extra_lb_n)} lb N</span>}
               </td>
               <td className={td}>{r.latest?.sensed_on ?? 'no clear pass yet'}</td>
               <td className={tdNum}>{r.latest ? `${Number(r.latest.field_ndre).toFixed(3)} / ${Number(r.latest.strip_ndre).toFixed(3)}` : '—'}</td>
@@ -738,7 +743,7 @@ export function NTrialCard() {
                     </button>
                     {m.save.error && <span className="text-red-700">{(m.save.error as Error).message}</span>}
                   </div>
-                  <p className="col-span-2 text-[11px] text-gray-500 sm:col-span-5">
+                  <p className="col-span-2 text-xs text-gray-500 sm:col-span-5">
                     Default rates are 0, half, the full and one-and-a-half times the field&apos;s recommended N. Each rep holds every rate once in a
                     random order; strips are one pass wide across the middle of the field. Download the prescription and load it into Operations
                     Center as a shapefile (rate column N_LB_AC, or UREA_LB for product).
@@ -957,7 +962,15 @@ export function PkBalanceCard() {
       title="P and K running balance, learned from our tests"
       why="What went on less what came off, field by field since its last test — and how far this farm's soil test actually moves per pound."
       saving={null}
-      note={!model ? 'reading every season…' : mining.length ? `${mining.length} drawing down` : 'no field drawing down hard'}
+      // The summary judges the top table (since each field's last test), not
+      // the three-season table under it, so it says which window it read.
+      note={
+        !model
+          ? 'reading every season…'
+          : mining.length
+            ? `${mining.length} drawing down since the last test`
+            : 'no field drawing down hard since its last test'
+      }
     >
       {!model?.rows.length ? (
         <Empty>No soil tests to start a balance from.</Empty>
@@ -993,7 +1006,7 @@ export function PkBalanceCard() {
                   {r.years.length ? (
                     <>
                       {n0(r.sp)} · {n0(r.sk)}
-                      <span className="block text-[10px] font-normal text-gray-400">{r.years.join(', ')}</span>
+                      <span className="block text-xs font-normal text-gray-400">{r.years.join(', ')}</span>
                     </>
                   ) : (
                     <span className="text-gray-400">no recorded season since</span>

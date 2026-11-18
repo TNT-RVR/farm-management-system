@@ -62,7 +62,7 @@ export function BinExportPanel({ bin, onDone }: { bin: BinRow; onDone: () => voi
           </label>
         </div>
       </div>
-      <p className="text-[11px] text-gray-500">
+      <p className="text-xs text-gray-500">
         Loads weighed in, every movement, moisture tests (the bin's and the fields'), sensor-cable readings, and any needs-air alerts in that range.
       </p>
       <div className="flex gap-2">

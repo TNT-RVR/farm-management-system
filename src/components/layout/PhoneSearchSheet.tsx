@@ -308,7 +308,7 @@ export function PhoneSearchSheet({ onClose, variant = 'sheet' }: { onClose: () =
             </div>
           ) : dialog ? null : (
             <>
-              <h2 className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Most used</h2>
+              <h2 className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-gray-400">Most used</h2>
               <div className="grid grid-cols-4 gap-1">
                 {most.map((i) => {
                   const Icon = i.view.icon
@@ -317,7 +317,7 @@ export function PhoneSearchSheet({ onClose, variant = 'sheet' }: { onClose: () =
                       key={i.view.key}
                       type="button"
                       onClick={() => go(i.view.to)}
-                      className="flex flex-col items-center gap-1 rounded-md px-1 py-2 text-[11px] leading-tight text-gray-700 active:bg-gray-100"
+                      className="flex flex-col items-center gap-1 rounded-md px-1 py-2 text-xs leading-tight text-gray-700 active:bg-gray-100"
                     >
                       <Icon className="h-5 w-5 text-brand-700" />
                       <span className="line-clamp-2 text-center">{i.label}</span>

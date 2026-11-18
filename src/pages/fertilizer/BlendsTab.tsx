@@ -31,10 +31,18 @@ import {
 import { cn } from '@/lib/utils'
 import { money as fmtMoney } from '@/lib/format'
 import { askConfirm } from '@/components/askConfirm'
-import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { readAmount } from '@/lib/number-input'
+import { blendTotalsAsPrinted } from '@/lib/blend-display'
+import { TABLE_HEAD, TABLE_HEAD_SUPPORT, TABLE_TH } from '@/lib/table-style'
 
 const money = (v: number | null | undefined) => fmtMoney(v, v != null && v < 100 ? 2 : 0, { min: 0, neg: 'inside' })
 const lb = (v: number) => v.toLocaleString('en-CA', { maximumFractionDigits: v < 10 ? 1 : 0 })
+/**
+ * The most of each nutrient any crop is asked for, lb/ac. A target past it is a
+ * typing slip (5,000 for 50), so it is refused rather than mixed.
+ */
+const TARGET_MAX: Targets = { n: 500, p: 300, k: 500, s: 150, zn: 50 }
+const ACRES_MAX = 50_000
 /** Nutrient names as the advice model is sent them — plain ASCII, one spelling everywhere. */
 const ADVICE_NAME: Record<keyof Targets, string> = { n: 'N', p: 'P2O5', k: 'K2O', s: 'S', zn: 'Zn' }
 const analysisLabel = (p: BlendProduct) =>
@@ -93,6 +101,7 @@ function BlendTable({
   tone = 'green',
   action,
   children,
+  support,
 }: {
   result: BlendResult
   acres: number
@@ -101,20 +110,24 @@ function BlendTable({
   tone?: 'green' | 'amber'
   action?: React.ReactNode
   children?: React.ReactNode
+  /** One of the other options, under the answer: the quieter header bar. */
+  support?: boolean
 }) {
+  // Totals added from the figures the lines print, so the column sums to them.
+  const printed = blendTotalsAsPrinted(result.lines, acres)
   return (
     <div className={cn('rounded-xl border bg-white p-3', tone === 'amber' ? 'border-amber-300' : 'border-gray-200')}>
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
         {badge && (
-          <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', tone === 'amber' ? 'bg-amber-100 text-amber-900' : 'bg-green-100 text-green-800')}>{badge}</span>
+          <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', tone === 'amber' ? 'bg-amber-100 text-amber-900' : 'bg-green-100 text-green-800')}>{badge}</span>
         )}
         <span className="ml-auto text-lg font-bold tabular-nums text-gray-900">{money(result.costPerAc)}/ac</span>
       </div>
       {children}
       <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
       <table className="w-full text-xs">
-        <thead className={TABLE_HEAD}>
+        <thead className={support ? TABLE_HEAD_SUPPORT : TABLE_HEAD}>
           <tr>
             <th className={TABLE_TH}>Product</th>
             <th className={cn(TABLE_TH, 'text-right')}>lb/ac</th>
@@ -123,13 +136,13 @@ function BlendTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {result.lines.map((l) => (
+          {result.lines.map((l, i) => (
             <tr key={l.product.id}>
               <td className="px-3 py-1 text-gray-800">
                 {l.product.name} <span className="text-gray-400">{analysisLabel(l.product)}</span>
               </td>
               <td className="px-3 py-1 text-right tabular-nums">{lb(l.lbPerAc)}</td>
-              <td className="hidden px-3 py-1 text-right tabular-nums text-gray-600 sm:table-cell">{((l.lbPerAc * acres) / LB_PER_TONNE).toFixed(1)}</td>
+              <td className="hidden px-3 py-1 text-right tabular-nums text-gray-600 sm:table-cell">{printed.lineTonnes[i].toFixed(1)}</td>
               <td className="px-3 py-1 text-right tabular-nums">{l.product.pricePerTonne == null ? '—' : money((l.lbPerAc / LB_PER_TONNE) * l.product.pricePerTonne)}</td>
             </tr>
           ))}
@@ -138,7 +151,7 @@ function BlendTable({
       </div>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
         <span>
-          Rate <b className="tabular-nums text-gray-900">{lb(result.rate)} lb/ac</b>
+          Rate <b className="tabular-nums text-gray-900">{printed.rate.toLocaleString('en-CA', { maximumFractionDigits: 1 })} lb/ac</b>
         </span>
         <span>
           Supplies{' '}
@@ -152,12 +165,12 @@ function BlendTable({
         {result.costPerTonne != null && <span>{money(result.costPerTonne)}/t of blend</span>}
         {acres > 0 && result.costPerAc != null && (
           <span>
-            {((result.rate * acres) / LB_PER_TONNE).toFixed(1)} t · {money(result.costPerAc * acres)} for {lb(acres)} ac
+            {printed.tonnes.toFixed(1)} t · {money(result.costPerAc * acres)} for {lb(acres)} ac
           </span>
         )}
       </div>
       {(Object.keys(result.short).length > 0 || Object.keys(result.over).length > 0 || result.densitySpread > 8) && (
-        <p className="mt-1 text-[11px] text-amber-700">
+        <p className="mt-1 text-xs text-amber-700">
           {Object.entries(result.short).map(([k, v]) => `${lb(v!)} lb ${NUTRIENT_LABEL[k as keyof Targets]} short`).join(', ')}
           {Object.keys(result.short).length > 0 && Object.keys(result.over).length > 0 ? '; ' : ''}
           {Object.entries(result.over).map(([k, v]) => `${lb(v!)} lb extra ${NUTRIENT_LABEL[k as keyof Targets]}`).join(', ')}
@@ -195,7 +208,21 @@ export function BlendsTab() {
 
   const [fieldId, setFieldId] = useState('')
   const [acres, setAcres] = useState('65')
-  const [targets, setTargets] = useState<Targets>({ n: 80, p: 40, k: 12, s: 0, zn: 0 })
+  // As typed, so "eighty" or 5,000 can be named rather than quietly read as 0.
+  const [targetText, setTargetText] = useState<Record<keyof Targets, string>>({ n: '80', p: '40', k: '12', s: '', zn: '' })
+  const setTargets = (t: Targets) =>
+    setTargetText(Object.fromEntries(NUTRIENT_KEYS.map((k) => [k, t[k] ? String(t[k]) : ''])) as Record<keyof Targets, string>)
+  const targetReads = useMemo(
+    () => NUTRIENT_KEYS.map((k) => ({ k, ...readAmount(targetText[k], { label: NUTRIENT_LABEL[k], min: 0, max: TARGET_MAX[k], unit: 'lb/ac' }) })),
+    [targetText],
+  )
+  const targets: Targets = useMemo(
+    () => Object.fromEntries(targetReads.map((r) => [r.k, r.value ?? 0])) as Targets,
+    [targetReads],
+  )
+  const acresRead = readAmount(acres, { label: 'Acres', min: 0, max: ACRES_MAX })
+  const inputErrors = [acresRead.error, ...targetReads.map((r) => r.error)].filter((e): e is string => !!e)
+  const [priceErr, setPriceErr] = useState<Record<string, string>>({})
   const [locks, setLocks] = useState<Record<string, string>>({})
   const [excluded, setExcluded] = useState<Set<string>>(new Set())
   const [custom, setCustom] = useState<BlendLine[] | null>(null)
@@ -221,7 +248,7 @@ export function BlendsTab() {
         })),
     [rows],
   )
-  const ac = Number(acres) || 0
+  const ac = acresRead.value ?? 0
   const locked: BlendLine[] = products.filter((p) => Number(locks[p.id]) > 0).map((p) => ({ product: p, lbPerAc: Number(locks[p.id]) }))
   const pool = products.filter((p) => !excluded.has(p.id))
   const sheet = useMemo(() => sheetBlend(targets, products, locked), [targets, products, locks]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -450,18 +477,24 @@ export function BlendsTab() {
         <p className="mt-3 text-xs font-medium text-gray-700">Nutrient wanted, lb/ac</p>
         <div className="mt-1 grid grid-cols-5 gap-2">
           {NUTRIENT_KEYS.map((k) => (
-            <label key={k} className="text-[11px] text-gray-500">
+            <label key={k} className="text-xs text-gray-500">
               {NUTRIENT_LABEL[k]}
               <input
                 className={cn(input, 'text-base font-semibold')}
                 inputMode="decimal"
-                value={targets[k] || ''}
+                value={targetText[k]}
                 placeholder="0"
-                onChange={(e) => setTargets({ ...targets, [k]: Number(e.target.value) || 0 })}
+                aria-invalid={targetReads.some((r) => r.k === k && r.error) || undefined}
+                onChange={(e) => setTargetText({ ...targetText, [k]: e.target.value })}
               />
             </label>
           ))}
         </div>
+        {inputErrors.length > 0 && (
+          <p className="mt-2 text-xs text-amber-800" role="alert">
+            {inputErrors.join(' ')} Left out until it is corrected.
+          </p>
+        )}
       </section>
 
       {/* Results */}
@@ -513,6 +546,7 @@ export function BlendsTab() {
                 result={o}
                 acres={ac}
                 title={`Option ${i + 2}`}
+                support
                 badge={cheapest.costPerAc != null && o.costPerAc != null ? `+${money(o.costPerAc - cheapest.costPerAc)}/ac` : undefined}
                 action={
                   <button type="button" onClick={() => setCustom(o.lines)} className="text-xs font-medium text-brand-700 underline">
@@ -624,12 +658,14 @@ export function BlendsTab() {
           ESN or 40 Rock in first.
         </HelpNote>
         <div className="mt-2 overflow-x-auto rounded-lg border border-gray-200">
-          <table className="w-full min-w-[560px] text-xs">
-            <thead className={TABLE_HEAD}>
+          {/* Fits a phone without scrolling: the analysis goes under the
+              name there instead of in its own column (design review, Nov 2026). */}
+          <table className="w-full text-xs sm:min-w-[560px] max-sm:[&_td]:px-1.5 max-sm:[&_th]:px-1.5">
+            <thead className={TABLE_HEAD_SUPPORT}>
               <tr>
                 <th className={TABLE_TH}>Use</th>
                 <th className={TABLE_TH}>Product</th>
-                <th className={TABLE_TH}>N-P-K-S</th>
+                <th className={cn(TABLE_TH, 'hidden sm:table-cell')}>N-P-K-S</th>
                 <th className={cn(TABLE_TH, 'text-right')}>$/tonne</th>
                 <th className={cn(TABLE_TH, 'hidden text-right sm:table-cell')}>lb/ft³</th>
                 <th className={cn(TABLE_TH, 'text-right')}>
@@ -657,8 +693,11 @@ export function BlendsTab() {
                         aria-label={`Use ${r.name}`}
                       />
                     </td>
-                    <td className="px-3 py-1 text-gray-800">{r.name}</td>
-                    <td className="px-3 py-1 tabular-nums text-gray-600">{analysisLabel(p)}</td>
+                    <td className="px-3 py-1 text-gray-800">
+                      {r.name}
+                      <span className="block tabular-nums text-gray-500 sm:hidden">{analysisLabel(p)}</span>
+                    </td>
+                    <td className="hidden px-3 py-1 tabular-nums text-gray-600 sm:table-cell">{analysisLabel(p)}</td>
                     <td className="px-3 py-1 text-right">
                       {canPrice ? (
                         <input
@@ -667,16 +706,25 @@ export function BlendsTab() {
                           inputMode="decimal"
                           className="w-20 rounded border border-gray-300 px-1.5 py-0.5 text-right tabular-nums"
                           onBlur={(e) => {
-                            const v = e.target.value.trim() === '' ? null : Number(e.target.value)
+                            // A word or a negative is named, not saved as no price.
+                            const read = readAmount(e.target.value, { label: 'Price', min: 0, max: 20_000, unit: '$/t', blank: null })
+                            setPriceErr((m) => {
+                              const { [r.id]: _gone, ...rest } = m // eslint-disable-line @typescript-eslint/no-unused-vars
+                              return read.error ? { ...rest, [r.id]: read.error } : rest
+                            })
+                            if (read.error) return
+                            const v = read.value
                             if (v !== (r.price_per_tonne == null ? null : Number(r.price_per_tonne)))
                               saveProduct.mutate({ id: r.id, patch: { price_per_tonne: v, price_note: 'Set by hand' } })
                           }}
                           aria-label={`${r.name} price per tonne`}
+                          aria-invalid={priceErr[r.id] ? true : undefined}
                         />
                       ) : (
                         <span className="tabular-nums">{money(p.pricePerTonne)}</span>
                       )}
-                      <span className="block text-[10px] text-gray-400">
+                      {priceErr[r.id] && <span className="block text-xs text-amber-800">{priceErr[r.id]}</span>}
+                      <span className="block text-xs text-gray-400">
                         {r.price_note}
                         {paid && ` · last invoice ${money(paid.perTonne)}${paid.on ? ` (${paid.on.slice(0, 7)})` : ''}`}
                       </span>
@@ -712,6 +760,7 @@ export function BlendsTab() {
           </table>
         </div>
         {deleteProduct.error && <p className="mt-1 text-xs text-red-700">{(deleteProduct.error as Error).message}</p>}
+        {saveProduct.error && <p className="mt-1 text-xs text-red-700">Not saved: {(saveProduct.error as Error).message}</p>}
         {canPrice && <AddProduct onAdd={(patch) => saveProduct.mutate({ patch })} />}
       </section>
 
@@ -892,7 +941,7 @@ function MaxYieldSection(props: {
           </span>
         </div>
         {(plan.ceilings.length > 0 || plan.missing.length > 0) && (
-          <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+          <div className="mt-1 flex flex-wrap gap-1 text-xs">
             {plan.ceilings.map((c) => (
               <span key={c.kind} title={c.detail} className="cursor-help rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
                 {c.label}
@@ -905,7 +954,7 @@ function MaxYieldSection(props: {
             ))}
           </div>
         )}
-        <p className="mt-1 text-[11px] text-gray-500" title="About 1 in spread on 9–10 in rows, good moisture (Saskatchewan and Manitoba seed-row guidelines; Alberta for canola P)">
+        <p className="mt-1 text-xs text-gray-500" title="About 1 in spread on 9–10 in rows, good moisture (Saskatchewan and Manitoba seed-row guidelines; Alberta for canola P)">
           {plan.seedRow.note}
           {props.nitrateYear != null && props.nitrateYear < props.cropYear && ` · nitrate from the ${props.nitrateYear} test`}
         </p>

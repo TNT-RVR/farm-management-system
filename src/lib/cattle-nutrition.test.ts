@@ -6,8 +6,10 @@ import {
   groupNeed,
   maintenanceTdnLb,
   solveRation,
+  STAGE_LABEL,
   stubbleCowDays,
   tdnFromAdf,
+  timeToCalve,
   type Conditions,
   type FeedValue,
   type GroupInput,
@@ -46,6 +48,16 @@ describe('stage', () => {
     const may = cowStage(new Date('2027-05-10T12:00:00'), 4, 1)
     expect(may.month).toBe(2)
     expect(may.lactating).toBe(true)
+  })
+  it('says how long to calving from the days left, not 13 − month', () => {
+    // 18 Nov to a 1 March calving is 103 days: 3.4 months, once read "4 months".
+    const st = cowStage(new Date('2026-11-18T12:00:00'), 3, 1)
+    expect(st.daysToCalving).toBe(103)
+    expect(STAGE_LABEL(st.month, st.lactating, st.daysToCalving)).toBe('mid pregnancy (3½ months to calve)')
+    expect(timeToCalve(45)).toBe('6 weeks to calve')
+    expect(timeToCalve(5)).toBe('about a week to calve')
+    expect(timeToCalve(122)).toBe('4 months to calve')
+    expect(groupNeed(cow(), calm('2026-11-18', { calvingMonth: 3 })).stage).toBe('mid pregnancy (3½ months to calve)')
   })
 })
 
@@ -114,6 +126,18 @@ describe('ration', () => {
     const r = solveRation(cow(1300), calm('2026-12-15'), [{ feed: straw, sharePct: 100, wastePct: 12 }])
     expect(r.warnings.some((w) => w.code === 'W7')).toBe(true)
     expect(r.warnings.some((w) => w.code === 'W8')).toBe(true)
+  })
+  it('gives the grain warning as eaten, so it reads below the put-out figure', () => {
+    const barley: FeedValue = { id: 'b', name: 'Barley grain', category: 'grain', dmPct: 89, tdnPct: 84, cpPct: 12, source: 'book' }
+    const bulls: GroupInput = { feedClass: 'bull', head: 6, weightLb: 1900, bcs: 3, targetBcs: 3, targetGainLb: null }
+    const r = solveRation(bulls, calm('2026-12-15'), [
+      { feed: greenfeed, sharePct: 50, wastePct: 12 },
+      { feed: barley, sharePct: 50, wastePct: 2 },
+    ])
+    const grain = r.lines.find((l) => l.feed.id === 'b')!
+    const w9 = r.warnings.find((w) => w.code === 'W9')!
+    expect(w9.text).toContain(`${grain.asFedLb.toFixed(1)} lb a head eaten`)
+    expect(grain.groupOfferedLb / 6).toBeGreaterThan(grain.asFedLb)
   })
 })
 

@@ -122,6 +122,8 @@ export type BreakEven = {
   cullCreditPerCow: number | null
   /** The cull % used (the ranch's, else DEFAULT_CULL_PCT). */
   cullPct: number
+  /** True when cull_pct was blank and DEFAULT_CULL_PCT stood in for it. */
+  cullPctAssumed: boolean
   /** Cost per cow less the cull credit and other revenue, over the calves. */
   costPerCalf: number
   /** The price a calf must fetch to cover it. */
@@ -189,6 +191,7 @@ export function breakEven(
     calvesPerCow,
     cullCreditPerCow,
     cullPct,
+    cullPctAssumed: num(costs.cull_pct) == null,
     costPerCalf,
     perLb,
     perCwt: perLb != null ? perLb * 100 : null,
@@ -574,6 +577,45 @@ export const COST_LINE_KEYS = [
   'other_cost_per_head',
 ] as const
 export type CostLineKey = (typeof COST_LINE_KEYS)[number]
+
+/** The five lines as the Cattle settings form names them. */
+export const COST_LINE_LABELS: Record<CostLineKey, string> = {
+  cow_cost_per_head: 'Cow cost',
+  feed_cost_per_head: 'Winter feed',
+  pasture_cost_per_head: 'Pasture',
+  vet_cost_per_head: 'Vet and medicine',
+  other_cost_per_head: 'Everything else',
+}
+
+/** A typed line under this share of its benchmark line is pointed out. */
+export const FAR_BELOW_BENCHMARK = 0.5
+
+export type LowCostLine = { key: CostLineKey; label: string; typed: number; benchmark: number }
+
+/**
+ * The typed cost lines that sit far under the Alberta benchmark's own line
+ * (abCowCostLines), for a flag beside the box and in "What this depends on".
+ *
+ * Not an error: a ranch can genuinely run cheaper than the provincial average.
+ * But the break-even rests on these lines, so one at under half its benchmark
+ * is worth a second look — a month typed for a year, a single invoice, a line
+ * left half-filled. A blank line is not here: it is reported as missing.
+ */
+export function costLinesFarBelowBenchmark(
+  lines: Partial<Record<CostLineKey, number | string | null | undefined>>,
+  year: number,
+  share = FAR_BELOW_BENCHMARK,
+): LowCostLine[] {
+  const bench = abCowCostLines(year)
+  const out: LowCostLine[] = []
+  for (const key of COST_LINE_KEYS) {
+    const raw = lines[key]
+    const typed = raw === '' ? null : num(raw)
+    if (typed == null || !(bench[key] > 0)) continue
+    if (typed < bench[key] * share) out.push({ key, label: COST_LINE_LABELS[key], typed, benchmark: bench[key] })
+  }
+  return out
+}
 
 /** Says Manitoba in so many words: the figure is easy to mistake for Alberta's. */
 export const COW_CALF_BENCHMARK_SOURCE =

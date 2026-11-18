@@ -146,7 +146,7 @@ export function CropPlanterSettings({
           <div className="mt-3 space-y-3">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {FIELDS.map((f) => (
-                <label key={f.key} className="text-[11px] font-medium text-gray-500">
+                <label key={f.key} className="text-xs font-medium text-gray-500">
                   {f.label}
                   {f.unit ? <span className="text-gray-400"> ({f.unit})</span> : null}
                   <input
@@ -157,14 +157,14 @@ export function CropPlanterSettings({
                     className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
                   />
                   {HELP[f.key] && (
-                    <span className="mt-0.5 block text-[10px] font-normal text-gray-400">
+                    <span className="mt-0.5 block text-xs font-normal text-gray-400">
                       {HELP[f.key]}
                     </span>
                   )}
                 </label>
               ))}
             </div>
-            <label className="block text-[11px] font-medium text-gray-500">
+            <label className="block text-xs font-medium text-gray-500">
               Notes
               <input
                 value={draft.notes ?? profile?.notes ?? ''}
@@ -173,7 +173,7 @@ export function CropPlanterSettings({
                 className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
               />
             </label>
-            <p className="text-[11px] text-gray-500">
+            <p className="text-xs text-gray-500">
               Leave a box empty where there is no figure. A range left with only one end filled is
               treated as a single number, not a range.
             </p>

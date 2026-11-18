@@ -262,8 +262,8 @@ export function BooksFixedCosts({ year, locked, setting }: { year: number; locke
                     <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 py-1">
                       <span className="min-w-0 flex-1 text-gray-800">
                         {a.name}
-                        {c.changed && <span className="ml-1 rounded bg-emerald-50 px-1 text-[10px] text-emerald-800">changed</span>}
-                        {c.guessed && <span className="ml-1 rounded bg-amber-50 px-1 text-[10px] text-amber-900">check</span>}
+                        {c.changed && <span className="ml-1 rounded bg-emerald-50 px-1 text-xs text-emerald-800">changed</span>}
+                        {c.guessed && <span className="ml-1 rounded bg-amber-50 px-1 text-xs text-amber-900">check</span>}
                       </span>
                       <span className="w-24 text-right tabular-nums text-gray-700">{money0(total(a))}</span>
                       <Select
@@ -275,7 +275,7 @@ export function BooksFixedCosts({ year, locked, setting }: { year: number; locke
                         ariaLabel={`${a.name}: part`}
                       />
                       {c.changed && (
-                        <button type="button" onClick={() => setCategory.mutate({ account: a, category: null })} className="text-[11px] text-gray-500 underline">
+                        <button type="button" onClick={() => setCategory.mutate({ account: a, category: null })} className="text-xs text-gray-500 underline">
                           Undo
                         </button>
                       )}

@@ -101,7 +101,7 @@ export function FieldInputsCard({ fieldId, acres }: { fieldId: string; acres: nu
                     </span>
                   )}
                   {l.unknownUnits.length > 0 && (
-                    <span className="ml-1.5 rounded bg-amber-100 px-1 text-[10px] text-amber-800">
+                    <span className="ml-1.5 rounded bg-amber-100 px-1 text-xs text-amber-800">
                       unknown unit {l.unknownUnits.join(', ')}
                     </span>
                   )}

@@ -144,8 +144,8 @@ function columns(u: UnitSystem, power: PowerPrices): Col[] {
         ) : (
           <span className="whitespace-nowrap" title={r.yieldFrom}>
             {yieldFmt(r.yield)} <span className="text-gray-400">{r.yieldUnit}</span>
-            {r.yieldKind === 'estimate' && <span className="ml-1 rounded bg-amber-50 px-1 text-[10px] text-amber-800">est.</span>}
-            {r.yieldSuspect && <span className="ml-1 rounded bg-red-50 px-1 text-[10px] text-red-800">unit?</span>}
+            {r.yieldKind === 'estimate' && <span className="ml-1 rounded bg-amber-50 px-1 text-xs text-amber-800">est.</span>}
+            {r.yieldSuspect && <span className="ml-1 rounded bg-red-50 px-1 text-xs text-red-800">unit?</span>}
           </span>
         ),
     },
@@ -466,7 +466,7 @@ export function WaterSeasonReview({ year }: { year: number }) {
                 </tfoot>
               </table>
             </div>
-            <div className="space-y-1 border-t border-gray-100 px-3 py-2 text-[11px] text-gray-500">
+            <div className="space-y-1 border-t border-gray-100 px-3 py-2 text-xs text-gray-500">
               <HelpNote
                 summary={
                   <>

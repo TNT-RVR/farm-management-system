@@ -186,8 +186,8 @@ export function IrrigationOverview({
                       ) : (
                         <span className="text-gray-400">no balance</span>
                       )}
-                      {r.done && r.status && <span className="mt-0.5 block text-[10px] text-gray-400">model: {STATUS_LABEL[r.status] ?? r.status}</span>}
-                      {r.statusAsOf && <span className="mt-0.5 block text-[10px] text-gray-400">as of {md(r.statusAsOf)}</span>}
+                      {r.done && r.status && <span className="mt-0.5 block text-xs text-gray-400">model: {STATUS_LABEL[r.status] ?? r.status}</span>}
+                      {r.statusAsOf && <span className="mt-0.5 block text-xs text-gray-400">as of {md(r.statusAsOf)}</span>}
                     </td>
                     <td className="px-3 py-1.5 text-right">
                       <Depth mm={r.totalMm} u={u} strong />
@@ -197,12 +197,12 @@ export function IrrigationOverview({
                     </td>
                     <td className="px-3 py-1.5 text-right">
                       <Depth mm={r.grossMm} u={u} />
-                      {r.unlogged && <span className="block text-[10px] text-amber-700">{r.unlogged}</span>}
+                      {r.unlogged && <span className="block text-xs text-amber-700">{r.unlogged}</span>}
                       {/* The allowance, in brief — the field's Water allowance
                           card in its Detailed View has the full working. */}
                       {r.verdict && r.verdict !== 'unknown' && (
                         <span
-                          className={cn('mt-0.5 inline-block whitespace-nowrap rounded px-1 text-[10px]', VERDICT[r.verdict].cls)}
+                          className={cn('mt-0.5 inline-block whitespace-nowrap rounded px-1 text-xs', VERDICT[r.verdict].cls)}
                           title={`${VERDICT[r.verdict].label} — see Water allowance in the field's Detailed View`}
                         >
                           {r.pct != null ? `${Math.round(r.pct)}% of allowance` : VERDICT[r.verdict].label}

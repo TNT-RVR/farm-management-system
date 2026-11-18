@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { feedValues, groupInput, monthlyCold, seasonPlan, withReserve, type FeedTestRow, type FeedTypeRow, type HerdCountRow, type PlanGroup } from './winter-feeding'
+import {
+  feedValues,
+  groupInput,
+  monthlyCold,
+  seasonPlan,
+  stalksNote,
+  withReserve,
+  type FeedTestRow,
+  type FeedTypeRow,
+  type HerdCountRow,
+  type PlanGroup,
+  type PlanStubble,
+} from './winter-feeding'
 import { coldUplift, tdnFromAdf, type FeedValue } from './cattle-nutrition'
 
 const type = (over: Partial<FeedTypeRow> = {}): FeedTypeRow =>
@@ -88,5 +100,32 @@ describe('seasonPlan', () => {
     const s = run([cows])
     expect(s.runsOut.get('hay')).toBeDefined()
     expect(s.bindingFeed).toBe('hay')
+  })
+
+  const withStalks = (stubble: PlanStubble[]) =>
+    seasonPlan({
+      groups: [cows],
+      settings: { calvingMonth: 4, calvingDay: 1, coat: 'winter', sheltered: false, muddy: false, reservePct: 15 },
+      from: new Date(2026, 11, 1),
+      to: new Date(2027, 2, 1),
+      coldByMonth: new Map(),
+      stubble,
+      onHand: new Map([['hay', 200_000]]),
+    })
+  const field = (id: string, cowDays: number, over: Partial<PlanStubble> = {}): PlanStubble => ({ id, name: id, groupId: 'cows', start: null, cowDays, state: 'open', ...over })
+
+  it('grazes no more stalks than the fields carry', () => {
+    // 100 head: 3,548 is 35.48 days, 1,272 is 12.72. Whole days off each field
+    // used to overrun both, 4,888 grazed under fields of 4,820.
+    const s = withStalks([field('a', 3548), field('b', 1272)])
+    expect(s.stubbleCowDays).toBeCloseTo(4820, 6)
+    expect(s.stubbleLeftCowDays).toBeCloseTo(0, 6)
+    expect(stalksNote(s)).toBe('stalks carry 4,820 cow-days')
+  })
+  it('says what is still standing at turnout', () => {
+    const s = withStalks([field('a', 3548), field('b', 1272, { groupId: null })])
+    expect(s.stubbleCowDays).toBeCloseTo(3548, 6)
+    expect(stalksNote(s)).toBe('stalks carry 4,820 cow-days, 1,272 not grazed by turnout')
+    expect(stalksNote({ stubbleCowDays: 0, stubbleLeftCowDays: 0 })).toBeNull()
   })
 })

@@ -12,6 +12,7 @@ import { usePartnerPreview, usePartnerPreviewControls } from '@/lib/partner-view
 import { isPartnerPath } from '@/lib/partner'
 import { CropYearSwitcher } from './CropYearSwitcher'
 import { NotificationBell } from './NotificationBell'
+import { PageSkeleton } from '@/components/Skeleton'
 
 // bar: also on the phone's bottom bar, which has room for four; the rest are
 // reached from the home tiles there. group: a heading above it in the sidebar.
@@ -133,7 +134,7 @@ export function PartnerShell() {
         <nav className="hidden w-52 shrink-0 space-y-1 border-r border-gray-200 bg-white p-3 overflow-y-auto md:block print:hidden">
           {links.map(({ to, label, icon: Icon, group }) => (
             <div key={to}>
-              {group && <p className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-gray-400">{group}</p>}
+              {group && <p className="px-3 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-400">{group}</p>}
               <NavLink to={to} className={link(to, false)}>
                 <Icon className="h-4 w-4 shrink-0" />
                 {label}
@@ -146,7 +147,7 @@ export function PartnerShell() {
           <OfflineBanner />
           <UpdateReadyBanner />
           <ErrorBoundary key={pathname}>
-            <Suspense fallback={<div className="p-6 text-sm text-gray-400">Loading…</div>}>
+            <Suspense fallback={<PageSkeleton />}>
               <Outlet />
             </Suspense>
           </ErrorBoundary>

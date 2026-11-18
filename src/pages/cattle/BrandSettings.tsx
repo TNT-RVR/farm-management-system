@@ -100,8 +100,8 @@ export function BrandSettings({ isManager }: { isManager: boolean }) {
                     key={f.key as string}
                     className={
                       f.wide
-                        ? 'text-[11px] font-medium text-gray-500 sm:col-span-3'
-                        : 'text-[11px] font-medium text-gray-500'
+                        ? 'text-xs font-medium text-gray-500 sm:col-span-3'
+                        : 'text-xs font-medium text-gray-500'
                     }
                   >
                     {f.label}
@@ -112,7 +112,7 @@ export function BrandSettings({ isManager }: { isManager: boolean }) {
                       className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm disabled:bg-gray-50"
                     />
                     {f.hint && (
-                      <span className="mt-0.5 block text-[10px] font-normal text-gray-400">
+                      <span className="mt-0.5 block text-xs font-normal text-gray-400">
                         {f.hint}
                       </span>
                     )}

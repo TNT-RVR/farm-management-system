@@ -2,7 +2,7 @@
  * Manure hauling: what the custom hauler charged, and what doing it ourselves
  * would cost, on the same road distances.
  *
- * CUSTOM. N & K Custom bill Tridrive hours (a truck that hauls and spreads),
+ * CUSTOM. The custom hauler bills Tridrive hours (a truck that hauls and spreads),
  * so the cost of a field is hours × rate, and the hours depend on the haul:
  * each load is a fixed stretch of loading and spreading plus the drive out
  * and back. Two invoice lines at two distances are enough to separate the
@@ -119,7 +119,7 @@ export const OWN_MANURE_TRACTORS: { label: string; match: RegExp }[] = [
 
 /**
  * Defaults. Width and speed are Sam's (60 ft, 8 mph, "varies based on need
- * in that area"). The spreader's size is not known yet, so a load is N & K's
+ * in that area"). The spreader's size is not known yet, so a load is the custom hauler's
  * own average until it is; the repair and ownership figures are placeholders
  * too. The tractor's burn comes from what Deere logged for the tractors
  * above (tractorFuel), and this figure only when Deere has none.
@@ -234,4 +234,35 @@ export function tractorFuel(rows: TractorPass[], tractors = OWN_MANURE_TRACTORS)
       .map(([kind, k]) => ({ kind, lph: k.litres / (k.minutes / 60), hours: k.minutes / 60, passes: k.passes }))
       .sort((a, b) => b.hours - a.hours),
   }
+}
+
+/**
+ * What is wrong with a hauling invoice line as typed, or null when it can be
+ * saved. A line once saved −100 t and −3 loads with no date, and "−1.3 t/ac"
+ * followed it about (batch 4 page walk, 18 Nov 2026).
+ */
+export function invoiceLineProblem(f: {
+  work_date: string
+  hours: string
+  rate: string
+  amount: string
+  loads: string
+  tonnes: string
+}): string | null {
+  const boxes: [string, string][] = [
+    ['Hours', f.hours],
+    ['$/h', f.rate],
+    ['Amount', f.amount],
+    ['Loads', f.loads],
+    ['Tonnes', f.tonnes],
+  ]
+  for (const [label, raw] of boxes) {
+    if (raw.trim() === '') continue
+    const v = Number(raw)
+    if (!Number.isFinite(v)) return `${label} has to be a number.`
+    if (v < 0) return `${label} cannot be negative.`
+  }
+  if (f.loads.trim() !== '' && !Number.isInteger(Number(f.loads))) return 'Loads has to be a whole number.'
+  if (!f.work_date) return 'Needs the work date.'
+  return null
 }

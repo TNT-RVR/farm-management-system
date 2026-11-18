@@ -15,7 +15,7 @@ export function UpdateReadyBanner() {
   }, [])
   if (!ready) return null
   return (
-    <div className="flex items-center justify-between gap-2 border-b border-brand-200 bg-brand-50 px-3 py-1.5 text-[12px] text-brand-900 print:hidden">
+    <div className="flex items-center justify-between gap-2 border-b border-brand-200 bg-brand-50 px-3 py-1.5 text-xs text-brand-900 print:hidden">
       <span>
         <b>A new version of the app is ready.</b> It loads as soon as this form is saved or closed.
       </span>

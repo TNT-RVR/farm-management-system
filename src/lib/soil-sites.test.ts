@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { nextCode, sitesForYear, type SampleSite } from './soil-sites'
+import { nextCode, sampleIsSite, sitesForYear, type SampleSite } from './soil-sites'
+
+describe('sampleIsSite', () => {
+  it('matches the site code with or without the depth letter', () => {
+    expect(sampleIsSite('1', '1')).toBe(true)
+    expect(sampleIsSite('1A', '1')).toBe(true)
+    expect(sampleIsSite(' 1b ', '1')).toBe(true)
+    expect(sampleIsSite('S2A', 's2')).toBe(true)
+  })
+  it('does not match another site or a blank', () => {
+    expect(sampleIsSite('11', '1')).toBe(false)
+    expect(sampleIsSite('1AB', '1')).toBe(false)
+    expect(sampleIsSite('2A', '1')).toBe(false)
+    expect(sampleIsSite(null, '1')).toBe(false)
+    expect(sampleIsSite('1A', ' ')).toBe(false)
+  })
+})
 
 const site = (over: Partial<SampleSite>): SampleSite =>
   ({

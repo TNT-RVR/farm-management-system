@@ -13,7 +13,7 @@ import {
 import { Link } from 'react-router-dom'
 import { useOperatingSettings, useSaveOperatingSetting } from '@/lib/hauling-data'
 import { usePlateMutations, usePlates } from '@/lib/plates'
-import { depthText, midpoint, populationText, usePlanterProfiles } from '@/lib/planter-profiles'
+import { depthText, midpoint, populationOffTarget, populationText, usePlanterProfiles } from '@/lib/planter-profiles'
 import { applyVarietyToPlanter, hasPlanterOverrides, varietySettingFor } from '@/lib/crop-variety-settings'
 import { useCropVarietySettings } from '@/lib/crop-variety-settings-data'
 import {
@@ -268,7 +268,7 @@ export function PlanterCalculator() {
           disc goes with beans, and everything it fills stays typeable. */}
       <div className="mt-3 rounded-md border border-brand-200 bg-brand-50/60 p-2.5">
         <div className="flex flex-wrap items-end gap-2">
-          <label className="text-[11px] font-medium text-gray-600">
+          <label className="text-xs font-medium text-gray-600">
             Set up for
             <Select
               value={cropId}
@@ -283,7 +283,7 @@ export function PlanterCalculator() {
             />
           </label>
           {cropId && varietiesWithSheet(cropId).length > 0 && (
-            <label className="text-[11px] font-medium text-gray-600">
+            <label className="text-xs font-medium text-gray-600">
               Variety
               <Select
                 value={variety}
@@ -299,7 +299,7 @@ export function PlanterCalculator() {
             </label>
           )}
           {cropSetup && (
-            <p className="flex-1 text-[11px] text-gray-600">
+            <p className="flex-1 text-xs text-gray-600">
               {[
                 cropSetup.depth_setting ? `Depth ${cropSetup.depth_setting}` : null,
                 depthText(cropSetup),
@@ -322,14 +322,14 @@ export function PlanterCalculator() {
           {cropId && (
             <Link
               to={`/crops/${cropId}`}
-              className="text-[11px] font-medium text-brand-700 hover:underline"
+              className="text-xs font-medium text-brand-700 hover:underline"
             >
               Edit these settings →
             </Link>
           )}
         </div>
         {missingFromProfile.length > 0 && (
-          <p className="mt-1.5 text-[11px] text-gray-500">
+          <p className="mt-1.5 text-xs text-gray-500">
             This crop&rsquo;s sheet does not set {missingFromProfile.join(', ')} — left blank rather
             than carried over from the last crop.{' '}
             <Link to={`/crops/${cropId}`} className="font-medium text-brand-700 hover:underline">
@@ -339,7 +339,7 @@ export function PlanterCalculator() {
           </p>
         )}
         {cropSetup && cropSetup.plate_holes != null && !plate && (
-          <p className="mt-1.5 text-[11px] text-amber-800">
+          <p className="mt-1.5 text-xs text-amber-800">
             No plate on the list has {cropSetup.plate_holes} holes — add{' '}
             {cropSetup.disc_number ?? 'the disc'} below and it will be picked automatically.
           </p>
@@ -412,7 +412,7 @@ export function PlanterCalculator() {
         {plate && isManager && (
           <button
             onClick={() => setEditingPlate((v) => !v)}
-            className="text-[11px] font-medium text-brand-700 hover:underline"
+            className="text-xs font-medium text-brand-700 hover:underline"
           >
             {editingPlate ? 'Cancel' : `Edit ${plate.name}`}
           </button>
@@ -420,7 +420,7 @@ export function PlanterCalculator() {
         {plate && isManager && (
           <button
             onClick={() => retire.mutate(plate.id)}
-            className="text-[11px] text-gray-400 hover:text-red-700 hover:underline"
+            className="text-xs text-gray-400 hover:text-red-700 hover:underline"
             title="Retire this plate — past calibrations keep their meaning"
           >
             Retire {plate.name}
@@ -484,16 +484,21 @@ export function PlanterCalculator() {
           />
         </Field>
       </div>
-      <p className="mt-1 text-[11px] text-gray-400">
+      <p className="mt-1 text-xs text-gray-400">
         Type into either — the other follows. Currently driven by{' '}
         <b>{driver === 'population' ? 'population' : 'seed spacing'}</b>.
       </p>
+      {populationOffTarget(derived.population, cropSetup) && (
+        <p className="mt-1 text-xs text-amber-800" role="alert">
+          {populationOffTarget(derived.population, cropSetup)}
+        </p>
+      )}
 
       {/* Calibration — the answer somebody walks out to check. */}
       <div className="mt-4 rounded-lg border border-brand-200 bg-brand-50 p-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h3 className="text-sm font-semibold text-brand-900">Plate check</h3>
-          <label className="text-[11px] text-brand-900">
+          <label className="text-xs text-brand-900">
             <input
               type="number"
               value={turns}
@@ -538,7 +543,7 @@ export function PlanterCalculator() {
         />
       </dl>
       {rpm != null && rpm > 30 && (
-        <p className="mt-1 text-[11px] text-amber-800">
+        <p className="mt-1 text-xs text-amber-800">
           Past about 30 rpm most plate meters start skipping and doubling. Either slow down, or fit
           a plate with more holes for the same population.
         </p>
@@ -560,7 +565,7 @@ export function PlanterCalculator() {
             />
           </Field>
           <div>
-            <span className="text-[11px] font-medium text-gray-500">
+            <span className="text-xs font-medium text-gray-500">
               Ground speed<span className="ml-1 font-normal text-gray-400">mph</span>
             </span>
             <div className="mt-0.5 flex">
@@ -641,7 +646,7 @@ function Field({
 }) {
   return (
     <label className={cn('block', className)}>
-      <span className={cn('text-[11px] font-medium', active ? 'text-brand-800' : 'text-gray-500')}>
+      <span className={cn('text-xs font-medium', active ? 'text-brand-800' : 'text-gray-500')}>
         {label}
         {unit && <span className="ml-1 font-normal text-gray-400">{unit}</span>}
       </span>
@@ -653,7 +658,7 @@ function Field({
 function Out({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
   return (
     <div className="rounded-md bg-gray-50 px-2.5 py-1.5">
-      <dt className="text-[11px] text-gray-500">{label}</dt>
+      <dt className="text-xs text-gray-500">{label}</dt>
       <dd
         className={cn(
           'text-sm font-semibold tabular-nums',
@@ -687,7 +692,7 @@ function EditPlate({
   return (
     <div className="mt-2 rounded-md border border-brand-200 bg-brand-50/60 p-2.5">
       <div className="flex flex-wrap items-end gap-2">
-        <label className="text-[11px] font-medium text-gray-500">
+        <label className="text-xs font-medium text-gray-500">
           Name
           <input
             value={name}
@@ -695,7 +700,7 @@ function EditPlate({
             className="mt-0.5 block w-40 rounded-md border border-gray-300 px-2 py-1 text-sm"
           />
         </label>
-        <label className="text-[11px] font-medium text-gray-500">
+        <label className="text-xs font-medium text-gray-500">
           Holes
           <input
             type="number"
@@ -704,7 +709,7 @@ function EditPlate({
             className="mt-0.5 block w-20 rounded-md border border-gray-300 px-2 py-1 text-right text-sm tabular-nums"
           />
         </label>
-        <label className="min-w-[8rem] flex-1 text-[11px] font-medium text-gray-500">
+        <label className="min-w-[8rem] flex-1 text-xs font-medium text-gray-500">
           Notes
           <input
             value={notes}
@@ -726,13 +731,13 @@ function EditPlate({
         </button>
       </div>
       {Number(holes) !== plate.holes && Number(holes) > 0 && (
-        <p className="mt-1 text-[11px] text-amber-800">
+        <p className="mt-1 text-xs text-amber-800">
           Changing the hole count changes what every calibration off this plate means. Worth
           counting the holes before saving.
         </p>
       )}
       {update.isError && (
-        <p className="mt-1 text-[11px] text-red-700">{(update.error as Error).message}</p>
+        <p className="mt-1 text-xs text-red-700">{(update.error as Error).message}</p>
       )}
     </div>
   )
@@ -753,7 +758,7 @@ function AddPlate({
   return (
     <div className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2.5">
       <div className="flex flex-wrap items-end gap-2">
-        <label className="text-[11px] font-medium text-gray-500">
+        <label className="text-xs font-medium text-gray-500">
           Name
           <input
             value={name}
@@ -762,7 +767,7 @@ function AddPlate({
             className="mt-0.5 block w-36 rounded-md border border-gray-300 px-2 py-1 text-sm"
           />
         </label>
-        <label className="text-[11px] font-medium text-gray-500">
+        <label className="text-xs font-medium text-gray-500">
           Holes
           <input
             type="number"
@@ -771,7 +776,7 @@ function AddPlate({
             className="mt-0.5 block w-20 rounded-md border border-gray-300 px-2 py-1 text-right text-sm tabular-nums"
           />
         </label>
-        <label className="min-w-[8rem] flex-1 text-[11px] font-medium text-gray-500">
+        <label className="min-w-[8rem] flex-1 text-xs font-medium text-gray-500">
           Notes
           <input
             value={notes}
@@ -801,7 +806,7 @@ function AddPlate({
         </button>
       </div>
       {add.isError && (
-        <p className="mt-1 text-[11px] text-red-700">{(add.error as Error).message}</p>
+        <p className="mt-1 text-xs text-red-700">{(add.error as Error).message}</p>
       )}
     </div>
   )

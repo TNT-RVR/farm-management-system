@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import type { ExportColumn } from '@/hooks/useExport'
 import { ExportButton } from '@/components/ExportButton'
 import { exportTable, titleFromFilename } from '@/lib/export-table'
-import { CardList, RowCard } from '@/components/RowCards'
+import { CardList, RowCard, SummaryLine } from '@/components/RowCards'
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD } from '@/lib/table-style'
 
@@ -49,7 +49,29 @@ type Props<Row> = {
    * give way first. Only for tables whose columns can wrap.
    */
   fitWidth?: boolean
+  /**
+   * Keep the first column in place while the rest scrolls sideways, so a
+   * figure far to the right is still read against the field it belongs to
+   * (design review, Nov 2026: the plan's margin columns sit past the edge of
+   * a 1440px window). For wide tables whose first column names the row.
+   */
+  stickyFirstColumn?: boolean
+  /**
+   * Tighter cells (8px each side, not 12) for a wide table of figures: on
+   * fourteen columns that is 112px, enough to bring one more column into view.
+   */
+  compact?: boolean
+  /**
+   * The phone card's figures as one line instead of a label for each column
+   * (see RowCards' SummaryLine): for a row whose figures carry their own units.
+   * A column keyed `actions` still shows, at the card's top right.
+   */
+  phoneSummary?: (row: Row) => React.ReactNode
 }
+
+/** The pinned first cell: opaque, so the columns slide underneath it. */
+const STICKY_TD = 'sticky left-0 z-[1] bg-white shadow-[1px_0_0_#f3f4f6]'
+const STICKY_TH = 'sticky left-0 z-[2] bg-brand-700'
 
 /**
  * One row as a card, for a phone (Sam, 27 Oct 2026: the financials "are not
@@ -62,15 +84,20 @@ function TableRowCard<Row>({
   row,
   columns,
   onClick,
+  summary,
 }: {
   row: Row
   columns: DataTableColumn<Row>[]
   onClick?: () => void
+  summary?: (row: Row) => React.ReactNode
 }) {
   const [first, ...rest] = columns
+  const actions = summary ? columns.find((c) => c.key === 'actions') : undefined
   return (
     <RowCard
       heading={first.render ? first.render(row) : (first.value(row) ?? '—')}
+      summary={summary ? <SummaryLine>{summary(row)}</SummaryLine> : undefined}
+      actions={actions?.render?.(row) ?? undefined}
       facts={rest.map((c) => ({
         key: c.key,
         label: c.label,
@@ -92,7 +119,11 @@ export function DataTable<Row>({
   renderAfter,
   tableOnPhone,
   fitWidth,
+  stickyFirstColumn,
+  compact,
+  phoneSummary,
 }: Props<Row>) {
+  const pad = compact ? 'px-2 py-2' : 'px-3 py-2'
   return (
     <>
       {/* Export sits above the card, top right, in the same shape as the
@@ -119,6 +150,7 @@ export function DataTable<Row>({
               row={row}
               columns={columns}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
+              summary={phoneSummary}
             />
           ))}
         </CardList>
@@ -130,8 +162,8 @@ export function DataTable<Row>({
         <table className={cn('text-sm', fitWidth ? 'w-full table-auto' : 'w-max min-w-full')}>
           <thead className={TABLE_HEAD}>
             <tr>
-              {columns.map((c) => (
-                <th key={c.key} className={cn('px-3 py-2 font-medium', c.className)}>
+              {columns.map((c, i) => (
+                <th key={c.key} className={cn(pad, 'font-medium', c.className, stickyFirstColumn && i === 0 && STICKY_TH)}>
                   {c.label}
                 </th>
               ))}
@@ -151,11 +183,19 @@ export function DataTable<Row>({
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
                   className={cn(
                     'border-b border-gray-100 last:border-0',
-                    onRowClick && 'cursor-pointer hover:bg-gray-50',
+                    onRowClick && 'group cursor-pointer hover:bg-gray-50',
                   )}
                 >
-                  {columns.map((c) => (
-                    <td key={c.key} className={cn('px-3 py-2', c.className)}>
+                  {columns.map((c, i) => (
+                    <td
+                      key={c.key}
+                      className={cn(
+                        pad,
+                        c.className,
+                        stickyFirstColumn && i === 0 && STICKY_TD,
+                        stickyFirstColumn && i === 0 && onRowClick && 'group-hover:bg-gray-50',
+                      )}
+                    >
                       {c.render ? c.render(row) : (c.value(row) ?? '—')}
                     </td>
                   ))}

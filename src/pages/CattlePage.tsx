@@ -14,6 +14,7 @@ import { combineHerdCounts, useHerdCountMutations, useHerdCounts } from '@/lib/c
 import { useCropYear } from '@/lib/crop-year'
 import { useFeedPlan } from '@/lib/feed'
 import { cn } from '@/lib/utils'
+import { dbErrorMessage } from '@/lib/db-error'
 import { InfoPopover } from '@/components/InfoPopover'
 import { SETUP_LINKS } from '@/lib/setup-links'
 import { TabSuspense } from '@/components/TabSuspense'
@@ -97,10 +98,23 @@ function HerdCountsCard({ isManager, ranchId }: { isManager: boolean; ranchId: s
     .filter((c) => !excluded.has(c.id))
     .reduce((s, c) => s + (c.background_head ?? c.head_count), 0)
 
+  // A herd change that is refused says so. These used to close the editor
+  // whatever happened: a group typed with −5 head vanished without a word.
+  const [formError, setFormError] = useState<string | null>(null)
+  const writeError = add.error ?? update.error ?? remove.error
+  const headOf = (s: string): number | null => {
+    const n = Number(s)
+    return s.trim() !== '' && Number.isFinite(n) && n >= 0 ? Math.round(n) : null
+  }
+
   const save = (id: string) => {
-    const n = Number(draft)
-    if (Number.isFinite(n) && n >= 0) update.mutate({ id, patch: { head_count: Math.round(n) } })
-    setEditing(null)
+    const n = headOf(draft)
+    if (n == null) {
+      setFormError('Head has to be a number, 0 or more.')
+      return
+    }
+    setFormError(null)
+    update.mutate({ id, patch: { head_count: n } }, { onSuccess: () => setEditing(null) })
   }
 
   return (
@@ -158,11 +172,11 @@ function HerdCountsCard({ isManager, ranchId }: { isManager: boolean; ranchId: s
               {c.class_name}
             </span>
             {plan && excluded.has(c.id) && (
-              <span className="text-[11px] text-gray-400">not on winter feed</span>
+              <span className="text-xs text-gray-400">not on winter feed</span>
             )}
             {c.background_head != null && (
               <label
-                className="order-last flex w-full items-center gap-1 text-[11px] text-gray-500 md:order-none md:w-auto"
+                className="order-last flex w-full items-center gap-1 text-xs text-gray-500 md:order-none md:w-auto"
                 title="At side until the weaning date (Cattle settings); this many are kept to background after it and the rest sold."
               >
                 at side · keep
@@ -209,7 +223,7 @@ function HerdCountsCard({ isManager, ranchId }: { isManager: boolean; ranchId: s
               <>
                 {collars?.has(c.class_name) && collars.get(c.class_name) !== c.head_count && (
                   <span
-                    className="text-[11px] text-gray-400"
+                    className="text-xs text-gray-400"
                     title="Head in this ranch's collar mob at the last eShepherd import. Animals without a collar are not in it."
                   >
                     collars {collars.get(c.class_name)!.toLocaleString('en-CA')}
@@ -274,17 +288,29 @@ function HerdCountsCard({ isManager, ranchId }: { isManager: boolean; ranchId: s
             <button
               onClick={() => {
                 const name = newRow.class_name.trim()
-                if (!name) return
-                add.mutate({ class_name: name, head_count: Number(newRow.head_count) || 0 })
-                setNewRow({ class_name: '', head_count: '' })
-                setAdding(false)
+                if (!name) return setFormError('Name the group first.')
+                const head = newRow.head_count.trim() === '' ? 0 : headOf(newRow.head_count)
+                if (head == null) return setFormError('Head has to be a number, 0 or more.')
+                setFormError(null)
+                add.mutate(
+                  { class_name: name, head_count: head },
+                  {
+                    onSuccess: () => {
+                      setNewRow({ class_name: '', head_count: '' })
+                      setAdding(false)
+                    },
+                  },
+                )
               }}
               className="rounded-md bg-brand-700 px-3 py-1 text-sm font-semibold text-white hover:bg-brand-800"
             >
               Add
             </button>
             <button
-              onClick={() => setAdding(false)}
+              onClick={() => {
+                setAdding(false)
+                setFormError(null)
+              }}
               className="rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
             >
               Cancel
@@ -298,6 +324,11 @@ function HerdCountsCard({ isManager, ranchId }: { isManager: boolean; ranchId: s
             <Plus className="h-3.5 w-3.5" /> Add group
           </button>
         ))}
+      {(formError || writeError) && (
+        <p role="alert" className="mt-2 text-xs text-red-700">
+          {formError ?? dbErrorMessage(writeError)}
+        </p>
+      )}
     </div>
   )
 }
@@ -547,7 +578,7 @@ function CattleBody({
           )}
           {ranchScoped && (
             <div className="flex items-center gap-2 md:ml-auto md:shrink-0">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+              <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
                 Ranch
               </span>
               <div className="flex flex-wrap rounded-md border border-gray-200 p-0.5">

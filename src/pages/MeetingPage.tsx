@@ -484,7 +484,7 @@ export function MeetingPage() {
                     <VersusBit v={y.score.vsGoal} what="goal" />
                   </span>
                   {y.score.actual!.abnormal != null && (
-                    <span className="basis-full text-[11px] font-medium text-amber-800">{abnormalText(y.score.actual!.abnormal)}</span>
+                    <span className="basis-full text-xs font-medium text-amber-800">{abnormalText(y.score.actual!.abnormal)}</span>
                   )}
                 </Link>
               </li>
@@ -594,7 +594,7 @@ export function MeetingPage() {
                   {saveNote.isPending ? 'Saving…' : 'Save'}
                 </button>
                 {note?.updated_at && draft === null && (
-                  <span className="text-[11px] text-gray-400">
+                  <span className="text-xs text-gray-400">
                     Saved {new Date(note.updated_at).toLocaleString('en-CA')}
                     {note.updated_by && nameOf(note.updated_by)
                       ? ` by ${nameOf(note.updated_by)}`
@@ -602,7 +602,7 @@ export function MeetingPage() {
                   </span>
                 )}
                 {saveNote.isError && (
-                  <span className="text-[11px] text-red-700">
+                  <span className="text-xs text-red-700">
                     {(saveNote.error as Error).message}
                   </span>
                 )}
@@ -641,7 +641,7 @@ export function MeetingPage() {
               >
                 <p
                   className={cn(
-                    'text-[11px] font-semibold uppercase tracking-wide',
+                    'text-xs font-semibold uppercase tracking-wide',
                     isToday ? 'text-brand-800' : 'text-gray-500',
                   )}
                 >
@@ -653,7 +653,7 @@ export function MeetingPage() {
                   {dayEvents.map((e, i) => (
                     <li
                       key={`e${i}`}
-                      className="rounded bg-brand-50 px-1.5 py-1 text-[11px] leading-snug text-brand-900"
+                      className="rounded bg-brand-50 px-1.5 py-1 text-xs leading-snug text-brand-900"
                     >
                       {e.title}
                     </li>
@@ -662,14 +662,14 @@ export function MeetingPage() {
                     <li key={t.id}>
                       <Link
                         to={`/tasks/${t.id}`}
-                        className="block rounded bg-gray-100 px-1.5 py-1 text-[11px] leading-snug text-gray-700 hover:bg-gray-200"
+                        className="block rounded bg-gray-100 px-1.5 py-1 text-xs leading-snug text-gray-700 hover:bg-gray-200"
                       >
                         ☑ {t.title}
                       </Link>
                     </li>
                   ))}
                   {dayEvents.length === 0 && dayTasks.length === 0 && (
-                    <li className="px-1.5 py-1 text-[11px] text-gray-300">—</li>
+                    <li className="px-1.5 py-1 text-xs text-gray-300">—</li>
                   )}
                 </ul>
               </div>
@@ -721,7 +721,7 @@ function Section({
         <h2 className="text-sm font-semibold text-gray-800">{title}</h2>
         <span
           className={cn(
-            'rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums',
+            'rounded-full px-1.5 py-0.5 text-xs font-semibold tabular-nums',
             tone === 'warn' && count > 0
               ? 'bg-amber-100 text-amber-900'
               : 'bg-gray-100 text-gray-600',
@@ -821,7 +821,7 @@ function DayWeather({ day }: { day: ForecastDay | undefined }) {
   return (
     <div
       className={cn(
-        'mt-1 flex items-center gap-1.5 rounded px-1.5 py-1 text-[11px]',
+        'mt-1 flex items-center gap-1.5 rounded px-1.5 py-1 text-xs',
         wet ? 'bg-sky-50 text-sky-900' : 'bg-gray-50 text-gray-600',
       )}
       title={wmo(day.code).label}
@@ -837,7 +837,7 @@ function DayWeather({ day }: { day: ForecastDay | undefined }) {
         <span className="ml-auto tabular-nums">
           {Math.round(day.pop ?? 0)}%
           {(day.precip ?? 0) > 0 && (
-            <span className="ml-0.5 text-[10px]">{(day.precip ?? 0).toFixed(1)}mm</span>
+            <span className="ml-0.5 text-xs">{(day.precip ?? 0).toFixed(1)}mm</span>
           )}
         </span>
       )}

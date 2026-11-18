@@ -60,7 +60,7 @@ function RegionBadge({ region }: { region: string }) {
   return (
     <span
       className={cn(
-        'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium',
+        'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium',
         REGION_COLOR[region] ?? REGION_COLOR.other,
       )}
     >
@@ -175,7 +175,7 @@ function PaperRows({
                   )}
                   <span>{p.title}</span>
                   {p.home === false && (
-                    <span className="mt-0.5 shrink-0 rounded bg-gray-100 px-1.5 text-[11px] text-gray-500">
+                    <span className="mt-0.5 shrink-0 rounded bg-gray-100 px-1.5 text-xs text-gray-500">
                       also filed here
                     </span>
                   )}
@@ -266,7 +266,7 @@ function Shelf({ section }: { section: Section }) {
             f.heading ? (
               <li
                 key={f.slug}
-                className="px-2 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-gray-400"
+                className="px-2 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-400"
               >
                 {f.name}
               </li>

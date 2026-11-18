@@ -78,7 +78,7 @@ export function TruckForecastCard({ cropYear }: { cropYear: number }) {
           )}
           {showDone && done.map((r) => <ForecastRow key={`${r.fieldId}:${r.cropId}`} r={r} />)}
           {unknown.length > 0 && (
-            <li className="px-3 py-2 text-[11px] text-gray-500">
+            <li className="px-3 py-2 text-xs text-gray-500">
               {/* A split field's areas can share a crop: one line each field and crop. */}
               No forecast for {[...new Set(unknown.map((r) => `${r.fieldName} ${r.cropName} (${r.why})`))].join(', ')}.
             </li>
@@ -103,7 +103,7 @@ function ForecastRow({ r }: { r: FieldTruckForecast }) {
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
         <div className={cn('h-full rounded-full', f.done ? 'bg-green-600' : 'bg-brand-600')} style={{ width: `${f.done ? 100 : pct}%` }} />
       </div>
-      <p className="mt-0.5 text-[11px] text-gray-500">
+      <p className="mt-0.5 text-xs text-gray-500">
         {f.weighed} of about {f.totalTrucks} truck{f.totalTrucks === 1 ? '' : 's'} weighed · {bu(f.weighedBu)} of {bu(r.forecastBu ?? 0)} forecast
       </p>
     </li>

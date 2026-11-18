@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { matchParcel, parcelKey, passReason, scoutPassed, seedCompanyOf, verdictsFor, SCOUT_COMPANIES, type ScoutReport } from './scout-reports'
+import {
+  isCompanyOf,
+  matchParcel,
+  parcelKey,
+  passReason,
+  scoutCompanies,
+  scoutPassed,
+  seedCompanyOf,
+  verdictsFor,
+  SCOUT_COMPANIES,
+  type ScoutReport,
+} from './scout-reports'
 
 const report = (o: Partial<ScoutReport>): ScoutReport =>
   ({
@@ -34,7 +45,10 @@ describe('whether a field passed', () => {
   })
 
   it('only Corteva’s rule is on the record; the others are assumed', () => {
-    expect(SCOUT_COMPANIES.find((c) => c.key === 'corteva')!.rule).toMatch(/Kathryn Bilcik/)
+    // No person is named in it: this rule is published with the public copy.
+    expect(SCOUT_COMPANIES.find((c) => c.key === 'corteva')!.rule).toMatch(
+      /from Corteva, 12 November 2026/,
+    )
     expect(SCOUT_COMPANIES.filter((c) => c.key !== 'corteva').every((c) => c.rule == null)).toBe(true)
   })
 })
@@ -121,6 +135,29 @@ describe('a field’s standing with every company', () => {
 
   it('keeps the years apart', () => {
     expect(verdictsFor(rows, 'f', 2026, SCOUT_COMPANIES)[0].passed).toBe(false)
+  })
+})
+
+describe('the company tabs', () => {
+  it('folds two keys that display the same name into one tab', () => {
+    const rows = [
+      report({ id: '1', field_id: 'f', company: 'corteva', rating: 'D' }),
+      report({ id: '2', field_id: 'g', company: 'Corteva', rating: 'A' }),
+      report({ id: '3', company: 'ridgeline' }),
+      report({ id: '4', company: 'Ridgeline' }),
+    ]
+    const companies = scoutCompanies(rows)
+    expect(companies.map((c) => c.label)).toEqual(['Corteva', 'BASF', 'Bayer', 'Nutrien', 'Ridgeline'])
+    expect(companies[0].keys).toEqual(['corteva', 'Corteva'])
+    expect(companies[4].keys).toEqual(['Ridgeline', 'ridgeline'])
+    expect(isCompanyOf(companies[0], 'Corteva')).toBe(true)
+    // A report under the second key still reaches the field's verdict.
+    expect(verdictsFor(rows, 'g', 2027, companies)[0].passed).toBe(true)
+  })
+
+  it('does not change the shared list it starts from', () => {
+    scoutCompanies([report({ company: 'Corteva' })])
+    expect(SCOUT_COMPANIES[0].keys).toBeUndefined()
   })
 })
 

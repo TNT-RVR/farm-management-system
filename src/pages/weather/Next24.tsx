@@ -94,7 +94,7 @@ export default function Next24({ data, showSpray = true }: { data: RanchWeather;
         <div className="flex min-w-max">
           {rows.map(({ h, spray }, i) => (
             <div key={h.time} className={cn('w-[4.6rem] shrink-0 border-r border-gray-100 px-1.5 py-2 text-center last:border-r-0', i % 2 === 1 && 'bg-gray-50/60')}>
-              <p className="text-[11px] font-semibold text-gray-700">{i === 0 ? 'Now' : hourLabel(h.time)}</p>
+              <p className="text-xs font-semibold text-gray-700">{i === 0 ? 'Now' : hourLabel(h.time)}</p>
               <WeatherIcon kind={wxKind(h.code, isNightHour(h.time))} className="mx-auto h-8 w-8" title={wmo(h.code).label} />
               <p className="text-lg font-black tabular-nums text-gray-900">{r(h.temp)}°</p>
               {/* Humidity, big, with a fill bar */}
@@ -102,10 +102,10 @@ export default function Next24({ data, showSpray = true }: { data: RanchWeather;
               <div className="mx-auto mt-0.5 h-1.5 w-10 overflow-hidden rounded-full bg-gray-200">
                 <div className={cn('h-full', rhBar(h.rh ?? 0))} style={{ width: `${Math.min(100, h.rh ?? 0)}%` }} />
               </div>
-              <p className="mt-1 text-[11px] text-gray-600">
+              <p className="mt-1 text-xs text-gray-600">
                 {r(h.wind)} {windDirLabel(h.windDir)}
               </p>
-              <p className={cn('text-[11px]', (h.pop ?? 0) >= 40 ? 'font-semibold text-sky-700' : 'text-gray-400')}>{r(h.pop)}% rain</p>
+              <p className={cn('text-xs', (h.pop ?? 0) >= 40 ? 'font-semibold text-sky-700' : 'text-gray-400')}>{r(h.pop)}% rain</p>
               {showSpray && <div className={cn('mx-auto mt-1 h-2 w-full rounded-sm', sprayCellClass(spray, spray.ok && !spray.bees))} title={spray.ok ? (spray.bees ? 'sprayable, bees flying' : 'sprayable, bees home') : spray.reasons.join(', ')} />}
             </div>
           ))}
@@ -167,7 +167,7 @@ function ChartCard({ title, note, children }: { title: string; note?: string; ch
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-3">
       <p className="text-sm font-semibold text-gray-800">{title}</p>
-      {note && <p className="text-[11px] text-gray-500">{note}</p>}
+      {note && <p className="text-xs text-gray-500">{note}</p>}
       <div className="mt-1 h-48">
         <ResponsiveContainer>{children}</ResponsiveContainer>
       </div>

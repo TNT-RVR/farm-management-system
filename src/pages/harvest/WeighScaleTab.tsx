@@ -18,6 +18,8 @@ import { usePartnerLoads } from '@/lib/partner-view'
 import { shortDay } from '@/lib/field-state'
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { TableSkeleton } from '@/components/Skeleton'
+import { dbErrorMessage } from '@/lib/db-error'
 
 const kg = (v: number | null) => (v == null ? '—' : `${Math.round(v).toLocaleString('en-CA')} kg`)
 
@@ -38,7 +40,8 @@ const COLUMNS: { key: TicketSort; label: string; num?: boolean }[] = [
  * trailer and driver figures are on the Stats tab.
  */
 export function WeighScaleTab({ cropYear }: { cropYear: number }) {
-  const { data: loads } = useBinLoads()
+  // Still fetching is not "none": the count and the empty line wait for the answer.
+  const { data: loads, isLoading: loadsLoading, error: loadsError } = useBinLoads()
   const { data: fields } = useFields()
   const { data: bins } = useBins()
   const { data: sites } = useDeliverySites()
@@ -169,7 +172,13 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
         <div className="space-y-2 border-b border-gray-200 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-gray-900">
-              Scale tickets ({shownRows.length}) <span className="font-normal text-gray-500">· {kg(total)} net</span>
+              Scale tickets
+              {!loadsLoading && !loadsError && (
+                <>
+                  {' '}
+                  ({shownRows.length}) <span className="font-normal text-gray-500">· {kg(total)} net</span>
+                </>
+              )}
             </h2>
             <div className="flex items-center gap-2">
               <ExportButton label="Export the tickets shown" onExport={exportShown} />
@@ -231,8 +240,15 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
           </div>
         </div>
 
-        {!shownRows.length ? (
-          <p className="px-3 py-6 text-center text-sm text-gray-400">No tickets match.</p>
+        {loadsLoading ? (
+          <TableSkeleton rows={6} columns={7} className="m-3" />
+        ) : loadsError ? (
+          <p className="px-3 py-6 text-center text-sm text-red-700">{dbErrorMessage(loadsError, 'The scale tickets could not be loaded.')}</p>
+        ) : !shownRows.length ? (
+          <p className="px-3 py-6 text-center text-sm text-gray-400">
+            {/* None recorded is a different fact from none matching (batch 2 test, 17 Nov 2026). */}
+            {filtered || hidePartner ? 'No tickets match.' : year === 'all' ? 'No tickets recorded yet.' : `No tickets recorded for ${cropYear}.`}
+          </p>
         ) : (
           <>
             {/* A computer: the columns, a tap on a heading sorts. */}

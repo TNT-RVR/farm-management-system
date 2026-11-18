@@ -144,6 +144,8 @@ export default function App() {
         <Route path="/fields/:id/notes" element={<FieldDetailPage section="notes" />} />
         <Route path="/fields/:id/scouting" element={<FieldDetailPage section="scouting" />} />
         <Route path="/fields/:id/scout-reports" element={<FieldDetailPage section="scout-reports" />} />
+        {/* Finance access only; the page redirects anyone else to Overview. */}
+        <Route path="/fields/:id/money" element={<FieldDetailPage section="money" />} />
         <Route path="/fields/:id/settings" element={<FieldDetailPage section="settings" />} />
         <Route path="/fields/:id/work" element={<FieldWorkPage />} />
         <Route path="/fields/:id/activity" element={<FieldActivityPage />} />

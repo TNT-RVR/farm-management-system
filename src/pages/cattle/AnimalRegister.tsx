@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowDownUp, Check, Download, Loader2, Tags, Upload, X }
 import { HelpNote } from '@/components/HelpNote'
 import { InfoPopover } from '@/components/InfoPopover'
 import { Fold } from '@/components/Fold'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 import { RecordEditModal, type EditField } from '@/components/RecordEditor'
 import { askConfirm } from '@/components/askConfirm'
 import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
@@ -460,7 +461,7 @@ function BulkBar({
       >
         Put in this mob
       </button>
-      <span className="text-[11px] text-brand-900">or</span>
+      <span className="text-xs text-brand-900">or</span>
       {ranches.map((r) => (
         <button
           key={r.id}
@@ -510,7 +511,68 @@ function AnimalTable({
   selectable: boolean
 }) {
   return (
-    <div className="overflow-x-auto">
+    <>
+    {/* A phone in the corral reads one animal a card: the tag, then what it
+        is and where, on one line (design review, Nov 2026: eleven columns
+        were 55 % off the side of a 375 px screen). The table is unchanged
+        from `sm` up. */}
+    <CardList empty="No animals here." isEmpty={rows.length === 0}>
+      {rows.map((a) => {
+        const r = a as unknown as Record<string, unknown>
+        const tag = (r.vid as string) || null
+        const bits = ['stock_class', 'mob', 'breed', 'pregnancy_status']
+          .map((k) => COLUMNS.find((c) => c.key === k)!.cell(r))
+          .filter(Boolean)
+        const born = r.birth_date as string | null
+        return (
+          <RowCard
+            key={a.id}
+            onClick={() => onOpen(a)}
+            heading={
+              tag ? (
+                <Link to={`/cattle/${a.id}`} onClick={(e) => e.stopPropagation()} className="text-brand-700">
+                  {tag}
+                </Link>
+              ) : (
+                <span className="text-gray-400">No tag</span>
+              )
+            }
+            actions={
+              selectable && (
+                <input
+                  type="checkbox"
+                  checked={picked.has(a.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => onToggle(a.id)}
+                  aria-label={`Pick ${tag ?? a.id}`}
+                  className="h-5 w-5 rounded border-gray-300"
+                />
+              )
+            }
+            facts={[]}
+            summary={
+              <SummaryLine>
+                {bits.map((b, i) => (
+                  <span key={i} className="contents">
+                    {i > 0 && <Dot />}
+                    <span>{b}</span>
+                  </span>
+                ))}
+                {bits.length > 0 && <Dot />}
+                <span className={cn(!a.ranch_id && 'text-amber-700')}>{ranchName(a.ranch_id) ?? 'needs a ranch'}</span>
+                {born && (
+                  <>
+                    <Dot />
+                    <span>born {born}</span>
+                  </>
+                )}
+              </SummaryLine>
+            }
+          />
+        )
+      })}
+    </CardList>
+    <div className="hidden overflow-x-auto sm:block">
       <table className="w-full text-sm">
         <thead className={TABLE_HEAD}>
           <tr>
@@ -590,6 +652,7 @@ function AnimalTable({
         </tbody>
       </table>
     </div>
+    </>
   )
 }
 
@@ -707,7 +770,7 @@ function UploadArchive({ isManager }: { isManager: boolean }) {
                 </p>
               </div>
               {u.undone_at ? (
-                <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+                <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
                   Put back
                 </span>
               ) : (

@@ -291,7 +291,7 @@ export function BinDetail({
         label: monitorFlags.length ? (
           <span className="flex items-center gap-1">
             Monitoring
-            <span className="rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-900">{monitorFlags.length}</span>
+            <span className="rounded bg-amber-100 px-1 text-xs font-semibold text-amber-900">{monitorFlags.length}</span>
           </span>
         ) : (
           'Monitoring'
@@ -469,7 +469,7 @@ export function BinDetail({
                     type="button"
                     disabled={dismiss.isPending}
                     onClick={() => dismiss.mutate({ id: a.id, note: 'Air put on' })}
-                    className="rounded border border-red-300 px-1.5 py-0.5 text-[11px] hover:bg-red-100"
+                    className="rounded border border-red-300 px-1.5 py-0.5 text-xs hover:bg-red-100"
                   >
                     Air is on it
                   </button>
@@ -477,7 +477,7 @@ export function BinDetail({
                     type="button"
                     disabled={dismiss.isPending}
                     onClick={() => dismiss.mutate({ id: a.id, note: 'Dismissed without air' })}
-                    className="rounded border border-red-300 px-1.5 py-0.5 text-[11px] hover:bg-red-100"
+                    className="rounded border border-red-300 px-1.5 py-0.5 text-xs hover:bg-red-100"
                   >
                     Dismiss — no air needed
                   </button>
@@ -583,7 +583,7 @@ export function BinDetail({
                         <Td>
                           {m.moved_at}
                           {load?.full_at && (
-                            <span className="block text-[10px] text-gray-500">
+                            <span className="block text-xs text-gray-500">
                               in {weighTime(load.full_at, false)}
                               {weighedOutAt(load) ? ` · out ${weighTime(load.empty_at, false)}` : ''}
                             </span>
@@ -602,7 +602,7 @@ export function BinDetail({
                           {Math.round(Math.abs(signed)).toLocaleString('en-CA')}
                           {/* A load that filled this bin and went on into another (Sam, 20 Oct 2026). */}
                           {load?.overflow_bin_id && share && (
-                            <span className="block text-[10px] font-normal text-gray-500">
+                            <span className="block text-xs font-normal text-gray-500">
                               {share.part === 'first'
                                 ? `of ${bu(load.bushels)}; rest to ${(allBins ?? []).find((b) => b.id === load.overflow_bin_id)?.name ?? 'another bin'}`
                                 : `of ${bu(load.bushels)}; after ${(allBins ?? []).find((b) => b.id === load.bin_id)?.name ?? 'another bin'} filled`}
@@ -623,7 +623,7 @@ export function BinDetail({
                               ) : (
                                 <>
                                   {kg(k)}
-                                  <span className="block text-[10px] font-normal text-gray-400">calculated</span>
+                                  <span className="block text-xs font-normal text-gray-400">calculated</span>
                                 </>
                               )
                             })()
@@ -703,7 +703,7 @@ export function BinDetail({
                         <Td>{changedWhen(e.at)}</Td>
                         <Td>
                           {e.what}
-                          {e.on && <span className="block text-[10px] text-gray-400">{e.on}</span>}
+                          {e.on && <span className="block text-xs text-gray-400">{e.on}</span>}
                         </Td>
                         <Td>{e.crop ?? '—'}</Td>
                         <Td num className={e.direction === 'out' ? 'text-red-700' : 'text-green-800'}>

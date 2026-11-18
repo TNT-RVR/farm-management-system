@@ -96,13 +96,13 @@ export function EquipmentWarranty({ e, canEdit }: { e: Equipment; canEdit: boole
           <dl className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
             {e.warranty_expires_on && (
               <div>
-                <dt className="text-[11px] text-gray-400">Expires</dt>
+                <dt className="text-xs text-gray-400">Expires</dt>
                 <dd className="text-gray-800">{longDate(e.warranty_expires_on)}</dd>
               </div>
             )}
             {e.warranty_hours != null && (
               <div>
-                <dt className="text-[11px] text-gray-400">Hour limit</dt>
+                <dt className="text-xs text-gray-400">Hour limit</dt>
                 <dd className="text-gray-800">
                   {e.warranty_hours.toLocaleString('en-CA')} h{' '}
                   {w.hoursLeft == null ? (
@@ -119,13 +119,13 @@ export function EquipmentWarranty({ e, canEdit }: { e: Equipment; canEdit: boole
             )}
             {e.warranty_provider && (
               <div>
-                <dt className="text-[11px] text-gray-400">Carried by</dt>
+                <dt className="text-xs text-gray-400">Carried by</dt>
                 <dd className="text-gray-800">{e.warranty_provider}</dd>
               </div>
             )}
             {e.warranty_starts_on && (
               <div>
-                <dt className="text-[11px] text-gray-400">In service</dt>
+                <dt className="text-xs text-gray-400">In service</dt>
                 <dd className="text-gray-800">{longDate(e.warranty_starts_on)}</dd>
               </div>
             )}

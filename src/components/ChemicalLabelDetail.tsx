@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils'
 import { cropGrazingSummary, type GrazingRule } from '@/lib/grazing-restrictions'
 import { useLabelGrazingRules } from '@/lib/grazing-restrictions-hooks'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { HeadTip } from '@/components/HeadTip'
 
 const METHOD_LABEL: Record<string, string> = {
   ground: 'Ground rig only',
@@ -66,9 +67,9 @@ function Fact({
 }) {
   return (
     <div>
-      <dt className="flex items-center gap-1 text-[11px] text-gray-500">
+      <dt className="flex items-center gap-1 text-xs text-gray-500">
         <Icon className="h-3 w-3" /> {label}
-        {edited && <span className="text-[10px] text-brand-700">edited</span>}
+        {edited && <span className="text-xs text-brand-700">edited</span>}
       </dt>
       {/* "not stated" claims the label was read and is silent on this. Until it
           has been read, the honest answer is that we do not know. */}
@@ -114,7 +115,7 @@ function CropRow({
       <tr className="bg-brand-50/40">
         <td colSpan={7} className="px-3 py-2">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <label className="text-[11px] text-gray-500">
+            <label className="text-xs text-gray-500">
               Crop *
               <input
                 className={inputCls}
@@ -122,7 +123,7 @@ function CropRow({
                 onChange={(e) => setD({ ...d, crop: e.target.value })}
               />
             </label>
-            <label className="text-[11px] text-gray-500">
+            <label className="text-xs text-gray-500">
               Pest
               <input
                 className={inputCls}
@@ -130,7 +131,7 @@ function CropRow({
                 onChange={(e) => setD({ ...d, pest: e.target.value })}
               />
             </label>
-            <label className="text-[11px] text-gray-500">
+            <label className="text-xs text-gray-500">
               Rate
               <input
                 className={inputCls}
@@ -139,7 +140,7 @@ function CropRow({
                 onChange={(e) => setD({ ...d, rate: e.target.value })}
               />
             </label>
-            <label className="text-[11px] text-gray-500">
+            <label className="text-xs text-gray-500">
               Days to harvest
               <input
                 type="number"
@@ -149,7 +150,7 @@ function CropRow({
                 onChange={(e) => setD({ ...d, preharvest_interval_days: e.target.value })}
               />
             </label>
-            <label className="text-[11px] text-gray-500">
+            <label className="text-xs text-gray-500">
               Days before replanting
               <input
                 type="number"
@@ -159,7 +160,7 @@ function CropRow({
                 onChange={(e) => setD({ ...d, replant_interval_days: e.target.value })}
               />
             </label>
-            <label className="text-[11px] text-gray-500 sm:col-span-3">
+            <label className="text-xs text-gray-500 sm:col-span-3">
               Crops that must not follow
               <input
                 className={inputCls}
@@ -302,8 +303,8 @@ function CropTable({
             <th className={cn(TABLE_TH, 'text-right')}>Days to harvest</th>
             <th className={cn(TABLE_TH, 'text-right')}>Days to replant</th>
             <th className={TABLE_TH}>Cannot follow</th>
-            <th className={TABLE_TH} title="After a spray, from the label: how long before livestock may graze the crop or be fed it. * = the label does not name this crop; its general line is used.">
-              Grazing / feeding
+            <th className={TABLE_TH}>
+              Grazing / feeding<HeadTip title="Grazing / feeding">After a spray, from the label: how long before livestock may graze the crop or be fed it. * = the label does not name this crop; its general line is used.</HeadTip>
             </th>
             <th />
           </tr>
@@ -527,13 +528,13 @@ export function ChemicalLabelDetail({
       )}
       {!editing && label?.reentry_note && (
         <p className="rounded bg-amber-50 px-2 py-1 text-sm text-amber-900">
-          <span className="text-[11px] text-amber-700">Re-entry depends on the task: </span>
+          <span className="text-xs text-amber-700">Re-entry depends on the task: </span>
           {label.reentry_note}
         </p>
       )}
       {!editing && label?.grazing_restriction && (
         <p className="rounded bg-amber-50 px-2 py-1 text-sm text-amber-900">
-          <span className="text-[11px] text-amber-700">Grazing / feeding: </span>
+          <span className="text-xs text-amber-700">Grazing / feeding: </span>
           {readable(label.grazing_restriction)}
         </p>
       )}
@@ -563,7 +564,7 @@ export function ChemicalLabelDetail({
           {editing ? (
             <div className="rounded-lg bg-brand-50/40 p-2.5">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <label className="text-[11px] text-gray-500">
+                <label className="text-xs text-gray-500">
                   Water volume
                   <input
                     className={inputCls}
@@ -572,7 +573,7 @@ export function ChemicalLabelDetail({
                     onChange={(e) => setD({ ...d, water_volume: e.target.value })}
                   />
                 </label>
-                <label className="text-[11px] text-gray-500">
+                <label className="text-xs text-gray-500">
                   How it may be applied
                   <select
                     className={inputCls}
@@ -585,7 +586,7 @@ export function ChemicalLabelDetail({
                     <option value="both">Ground or aerial</option>
                   </select>
                 </label>
-                <label className="text-[11px] text-gray-500">
+                <label className="text-xs text-gray-500">
                   Rainfast (hours)
                   <input
                     type="number"
@@ -596,7 +597,7 @@ export function ChemicalLabelDetail({
                     onChange={(e) => setD({ ...d, rainfast_hours: e.target.value })}
                   />
                 </label>
-                <label className="text-[11px] text-gray-500">
+                <label className="text-xs text-gray-500">
                   Before irrigation (hours)
                   <input
                     type="number"
@@ -607,7 +608,7 @@ export function ChemicalLabelDetail({
                     onChange={(e) => setD({ ...d, irrigation_hours: e.target.value })}
                   />
                 </label>
-                <label className="text-[11px] text-gray-500">
+                <label className="text-xs text-gray-500">
                   Re-entry (hours)
                   <input
                     type="number"
@@ -618,7 +619,7 @@ export function ChemicalLabelDetail({
                     onChange={(e) => setD({ ...d, reentry_hours: e.target.value })}
                   />
                 </label>
-                <label className="text-[11px] text-gray-500 sm:col-span-2">
+                <label className="text-xs text-gray-500 sm:col-span-2">
                   Re-entry qualification (if the label gives one)
                   <input
                     className={inputCls}
@@ -627,7 +628,7 @@ export function ChemicalLabelDetail({
                     onChange={(e) => setD({ ...d, reentry_note: e.target.value })}
                   />
                 </label>
-                <label className="text-[11px] text-gray-500 sm:col-span-2">
+                <label className="text-xs text-gray-500 sm:col-span-2">
                   Grazing / feeding restriction
                   <input
                     className={inputCls}
@@ -713,11 +714,11 @@ export function ChemicalLabelDetail({
 
           <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
             <div>
-              <dt className="text-[11px] text-gray-500">Registrant</dt>
+              <dt className="text-xs text-gray-500">Registrant</dt>
               <dd className="text-gray-900">{readable(chemical.registrant) || '—'}</dd>
             </div>
             <div>
-              <dt className="text-[11px] text-gray-500">Registration</dt>
+              <dt className="text-xs text-gray-500">Registration</dt>
               <dd className="text-gray-900">
                 {chemical.registration_number}
                 {chemical.registration_status && ` · ${readable(chemical.registration_status).toLowerCase()}`}
@@ -725,11 +726,11 @@ export function ChemicalLabelDetail({
               </dd>
             </div>
             <div className="sm:col-span-2">
-              <dt className="text-[11px] text-gray-500">Registered sites of use</dt>
+              <dt className="text-xs text-gray-500">Registered sites of use</dt>
               <dd className="text-gray-700">{readable(chemical.sites_of_use) || '—'}</dd>
             </div>
             <div className="sm:col-span-2">
-              <dt className="text-[11px] text-gray-500">Pests on the registration</dt>
+              <dt className="text-xs text-gray-500">Pests on the registration</dt>
               <dd className="text-gray-700">{readable(chemical.pests) || '—'}</dd>
             </div>
           </dl>
@@ -771,7 +772,7 @@ export function ChemicalLabelDetail({
                 <span className="font-normal text-gray-400">({label.label_pages ?? '?'} pages)</span>
               </button>
               {showText && (
-                <pre className="mt-1.5 max-h-96 overflow-auto whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 p-2.5 text-[11px] leading-relaxed text-gray-700">
+                <pre className="mt-1.5 max-h-96 overflow-auto whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 p-2.5 text-xs leading-relaxed text-gray-700">
                   {label.label_text}
                 </pre>
               )}

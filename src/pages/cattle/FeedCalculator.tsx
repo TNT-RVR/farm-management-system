@@ -19,6 +19,7 @@ import {
   planSettings,
   rationLines,
   seasonInputs,
+  stalksNote,
   seasonPlan,
   todayConditions,
   usableInYard,
@@ -33,6 +34,7 @@ import {
   type Settings,
 } from '@/lib/winter-feeding'
 import { stubbleCowDays } from '@/lib/cattle-nutrition'
+import { weightFor } from '@/lib/animal-units'
 import { cn } from '@/lib/utils'
 import { FeedRation } from './FeedRation'
 import { FeedInfo } from './feed/FeedInfo'
@@ -200,7 +202,7 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
       },
       stubbleCowDays: (stubble ?? [])
         .filter((s) => s.herd_count_id === g.id && s.snow_state !== 'crust')
-        .reduce((sum, s) => sum + stubbleCowDays(Number(s.acres), Number(s.yield_bu), Number(s.weather_loss_pct), Number(g.avg_weight_lb)).cowDays, 0),
+        .reduce((sum, s) => sum + stubbleCowDays(Number(s.acres), Number(s.yield_bu), Number(s.weather_loss_pct), weightFor(g).lb).cowDays, 0),
     }))
   // Why the rations on file don't fit the yard.
   const yardProblems: string[] = []
@@ -322,7 +324,7 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
               const up = d.t != null && d.w != null ? coldUplift(d.t, d.w, settings.coat, settings.sheltered) : 0
               const wet = (d.rain ?? 0) > 1 && (d.t ?? 0) > -2
               return (
-                <span key={d.date} className={cn('rounded-md border px-2 py-0.5 text-[11px] tabular-nums', up > 0.3 ? 'border-red-200 bg-red-50 text-red-800' : up > 0 ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-gray-200 bg-white text-gray-600')}>
+                <span key={d.date} className={cn('rounded-md border px-2 py-0.5 text-xs tabular-nums', up > 0.3 ? 'border-red-200 bg-red-50 text-red-800' : up > 0 ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-gray-200 bg-white text-gray-600')}>
                   {new Date(d.date + 'T00:00:00').toLocaleDateString('en-CA', { weekday: 'short' })} {d.t != null ? `${n0(d.t)}°` : '—'} {d.w != null ? `${n0(d.w)} km/h` : ''} {up > 0 ? `+${n0(up * 100)}%` : ''}
                   {wet && ' · rain: wet coats?'}
                 </span>
@@ -387,7 +389,7 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
             </span>
           </div>
           {coldByMonth.size > 0 && (
-            <p className="px-3 pt-2 text-[11px] text-gray-500">
+            <p className="px-3 pt-2 text-xs text-gray-500">
               Average cold allowance by month:{' '}
               {[10, 11, 12, 1, 2, 3, 4, 5]
                 .filter((m) => coldByMonth.has(m))
@@ -403,6 +405,14 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
               </Link>
             </p>
           )}
+          {/* No ration on any group: an empty table under its headings and "0 t
+              of dry matter eaten" read as a finding. Say what is missing. */}
+          {![...season.needLb.values()].some((lb) => lb > 0) && season.extraGrainLb <= 1 ? (
+            <p className="px-3 py-5 text-center text-xs text-gray-500">
+              No ration on file for any group yet. Set one on a group above and the season&apos;s need shows here.
+            </p>
+          ) : (
+          <>
           <CardList>
             {[...season.needLb]
               .filter(([, lb]) => lb > 0)
@@ -472,7 +482,7 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
                       <tr key={id}>
                         <td className="px-3 py-1.5 text-gray-900">{v?.name ?? '?'}</td>
                         <td className="px-2 py-1.5 text-right tabular-nums">
-                          {tonnes(need)} t<span className="block text-[10px] text-gray-400">{yardAmount(need, v?.unit, v?.lbPerBale)}</span>
+                          {tonnes(need)} t<span className="block text-xs text-gray-400">{yardAmount(need, v?.unit, v?.lbPerBale)}</span>
                         </td>
                         <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{tonnes(reserved)} t</td>
                         <td className="px-2 py-1.5 text-right tabular-nums">{have == null ? <span className="text-xs text-gray-400">not counted</span> : `${tonnes(have)} t`}</td>
@@ -500,7 +510,7 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
             summary={
               <>
                 {n0(season.dmLb / 2204.62)} t of dry matter eaten, waste on top
-                {season.stubbleCowDays > 0 && ` · stalks carry ${n0(season.stubbleCowDays)} cow-days`}
+                {stalksNote(season) && ` · ${stalksNote(season)}`}
               </>
             }
             title="How the season is worked out"
@@ -510,6 +520,8 @@ export function FeedCalculator({ isManager, ranchId, onTotals }: { isManager: bo
               what is left × (1 − storage loss still to come).
             </p>
           </HelpNote>
+          </>
+          )}
         </section>
       )}
 

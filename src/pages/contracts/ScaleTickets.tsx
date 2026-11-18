@@ -25,6 +25,7 @@ import { TicketPhotoButton, useTicketPhotoIndex } from './TicketPhoto'
 import { askConfirm } from '@/components/askConfirm'
 import { HelpNote } from '@/components/HelpNote'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { HeadTip } from '@/components/HeadTip'
 
 /**
  * Scale tickets, in from the truck.
@@ -258,20 +259,20 @@ export function ScaleTickets({
         <span className="text-gray-500">
           {[crops?.find((x) => x.id === t.crop_id)?.name, t.buyer].filter(Boolean).join(' · ') ||
             '—'}
-          <span className="block text-[10px] text-gray-400">no contract</span>
+          <span className="block text-xs text-gray-400">no contract</span>
         </span>
       ),
       ticket: (
         <>
           {t.ticket_no ?? '—'}
           {t.receipt_no && (
-            <span className="block text-[10px] text-gray-400">
+            <span className="block text-xs text-gray-400">
               receipt {t.receipt_no}
               {t.grade ? ` · ${t.grade}` : ''}
             </span>
           )}
           {t.bin_load_id && (
-            <span className="block text-[10px] text-green-700">
+            <span className="block text-xs text-green-700">
               settles the farm load of{' '}
               {(loads ?? []).find((l) => l.id === t.bin_load_id)?.loaded_on ?? '—'}
             </span>
@@ -329,7 +330,7 @@ export function ScaleTickets({
       scale: (
         <>
           {n(l.net_kg == null ? null : Number(l.net_kg))} kg
-          <span className="block text-[11px] text-gray-500">
+          <span className="block text-xs text-gray-500">
             {n(l.bushels == null ? null : Number(l.bushels), 1)} bu
           </span>
         </>
@@ -485,7 +486,7 @@ export function ScaleTickets({
                 className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums"
               />
               {unit === 'bu' && read.net_lb != null && lbPerBushel(crop?.name) && (
-                <span className="mt-0.5 block text-[11px] text-gray-400">
+                <span className="mt-0.5 block text-xs text-gray-400">
                   {n(read.net_lb)} lb ÷ {lbPerBushel(crop?.name)} ={' '}
                   {n(read.net_lb / lbPerBushel(crop?.name)!, 1)} bu
                 </span>
@@ -507,13 +508,13 @@ export function ScaleTickets({
                 ]}
               />
               {binId && unit !== 'bu' && (
-                <span className="mt-0.5 block text-[11px] text-gray-400">
+                <span className="mt-0.5 block text-xs text-gray-400">
                   Bins are counted in bushels, so a bean load is recorded but the bin is not drawn
                   down.
                 </span>
               )}
               {binId && unit === 'bu' && (
-                <label className="mt-1 flex items-center gap-1 text-[11px] text-gray-500">
+                <label className="mt-1 flex items-center gap-1 text-xs text-gray-500">
                   <input
                     type="checkbox"
                     checked={drawBin}
@@ -597,9 +598,8 @@ export function ScaleTickets({
                 <th className="px-3 py-2 text-right font-medium">Net lb</th>
                 <th
                   className="px-3 py-2 text-right font-medium"
-                  title="Dockage: what the plant cleaned out of the net, and the clean weight left — what is paid on."
                 >
-                  Clean-out
+                  Clean-out<HeadTip title="Clean-out">Dockage: what the plant cleaned out of the net, and the clean weight left — what is paid on.</HeadTip>
                 </th>
                 <th className="px-3 py-2 text-right font-medium">Clean lb</th>
                 <th className="px-3 py-2 text-right font-medium">Moist.</th>

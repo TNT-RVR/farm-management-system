@@ -220,7 +220,7 @@ export function DateField({
 
           <div className="mt-1 grid grid-cols-7 gap-0.5">
             {DAY_NAMES.map((d, i) => (
-              <div key={i} className="py-1 text-center text-[10px] font-medium text-gray-400">
+              <div key={i} className="py-1 text-center text-xs font-medium text-gray-400">
                 {d}
               </div>
             ))}

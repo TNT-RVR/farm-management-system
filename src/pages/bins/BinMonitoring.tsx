@@ -15,6 +15,7 @@ import { rowClick } from '@/components/RecordEditor'
 import { cn } from '@/lib/utils'
 import { askConfirm } from '@/components/askConfirm'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { HeadTip } from '@/components/HeadTip'
 
 type Crop = { id: string; name: string; moisture_dry_max: number | string | null }
 
@@ -192,11 +193,11 @@ export function BinMonitoring({
                     {/* What it was read on, said on the row itself when that is
                         no longer what is in the bin. */}
                     {fromOldCrop(r) && (
-                      <span className="block text-[10px] font-medium text-amber-700" title="Taken before this bin was emptied and refilled">
+                      <span className="block text-xs font-medium text-amber-700" title="Taken before this bin was emptied and refilled">
                         {readingCrop(r)?.name ?? 'another crop'}, since shipped
                       </span>
                     )}
-                    {r.source === 'screenshot' && <span className="block text-[10px] text-gray-400">from screenshot</span>}
+                    {r.source === 'screenshot' && <span className="block text-xs text-gray-400">from screenshot</span>}
                   </td>
                   {Array.from({ length: Math.max(...readings.map((x) => x.levels.length), 1) }, (_, i) => {
                     const l = r.levels.find((x) => x.level === i + 1)
@@ -207,7 +208,7 @@ export function BinMonitoring({
                         ) : (
                           <>
                             <span className="block text-gray-900">{l.moisture_pct != null ? `${l.moisture_pct}%` : '—'}</span>
-                            <span className="block text-[10px] text-gray-500">
+                            <span className="block text-xs text-gray-500">
                               {l.temp_c != null ? `${l.temp_c}°` : ''}
                               {l.rh_pct != null ? ` · ${l.rh_pct}% RH` : ''}
                               {l.air ? ' · air' : ''}
@@ -509,7 +510,7 @@ function ReadingForm({
               <th className={TABLE_TH}>Temp °C</th>
               <th className={TABLE_TH}>{mode === 'rh' ? 'RH %' : 'Moisture %'}</th>
               <th className={cn(TABLE_TH, 'text-right')}>Moisture</th>
-              <th className={TABLE_TH} title="The sensor is in the headspace, not buried in the grain. Left out of the reading.">Above grain</th>
+              <th className={TABLE_TH}>Above grain<HeadTip title="Above grain">The sensor is in the headspace, not buried in the grain. Left out of the reading.</HeadTip></th>
               <th />
             </tr>
           </thead>
@@ -531,13 +532,13 @@ function ReadingForm({
                       <span className="font-semibold text-gray-900">
                         {l.moisture_pct}%
                         {mode === 'rh' && moistureFor(crop?.name, l.rh_pct, l.temp_c)?.outside && (
-                          <span className="block text-[10px] font-normal text-amber-700" title="Outside the temperatures this crop's equation was fitted over">
+                          <span className="block text-xs font-normal text-amber-700" title="Outside the temperatures this crop's equation was fitted over">
                             estimate
                           </span>
                         )}
                       </span>
                     ) : outside ? (
-                      <span className="text-[10px] text-amber-700">outside the table</span>
+                      <span className="text-xs text-amber-700">outside the table</span>
                     ) : (
                       <span className="text-gray-300">—</span>
                     )}

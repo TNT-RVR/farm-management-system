@@ -49,7 +49,7 @@ const AVERAGE = { color: '#64748b', width: 1.5, dash: '5 4' }
  */
 function RainLegend({ payload }: { payload?: readonly LegendPayload[] }) {
   return (
-    <ul className="flex flex-wrap items-center justify-center gap-x-4 gap-y-0.5 text-[11px] text-gray-600">
+    <ul className="flex flex-wrap items-center justify-center gap-x-4 gap-y-0.5 text-xs text-gray-600">
       {(payload ?? []).map((p) => {
         const key = String(p.dataKey)
         const avg = key === 'avg'
@@ -150,7 +150,7 @@ export function RainGraph({
       {zoomed && (
         <button
           onClick={reset}
-          className="absolute right-1 top-0 z-10 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
+          className="absolute right-1 top-0 z-10 rounded-md border border-gray-200 bg-white px-2 py-0.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
         >
           Reset zoom
         </button>

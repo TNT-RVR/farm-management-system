@@ -9,6 +9,7 @@ import { TABLE_HEAD } from '@/lib/table-style'
 import { money, n0 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { grossMargins, switchGain, type CowCalf, type LandEnterprise } from '@/lib/gross-margin'
+import { HeadTip } from '@/components/HeadTip'
 
 /**
  * What an acre earns under each use.
@@ -264,7 +265,40 @@ export function GrossMarginPage() {
           </button>
         }
       >
-        <div className="overflow-x-auto">
+        {/* A phone: a card a crop, the boxes two across, rather than a
+            six-column table two screens wide (batch 2 test, 17 Nov 2026). */}
+        <ul className="space-y-2 sm:hidden">
+          {crops.map((r) => (
+            <li key={r.key} className="rounded-md border border-gray-200 p-2">
+              <div className="flex items-center gap-2">
+                <input value={r.label} aria-label="Crop" onChange={(e) => setCrop(r.key, 'label')(e.target.value)} className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-sm font-medium" />
+                <button type="button" onClick={() => setCrops((rows) => rows.filter((x) => x.key !== r.key))} aria-label={`Remove ${r.label}`} className="p-1 text-gray-400 hover:text-red-600">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-500">
+                {(
+                  [
+                    ['acres', 'Acres', 'any'],
+                    ['directPerAcre', 'Direct $/ac', 'any'],
+                    ['yieldPerAcre', 'Yield', '0.1'],
+                    ['pricePerUnit', '$/unit', '0.25'],
+                  ] as const
+                ).map(([k, label, step]) => (
+                  <label key={k} className="block">
+                    {label}
+                    <input type="number" inputMode="decimal" step={step} value={r[k]} onChange={(e) => setCrop(r.key, k)(e.target.value)} className="mt-0.5 w-full rounded border border-gray-300 px-2 py-1 text-right text-sm tabular-nums text-gray-900" />
+                  </label>
+                ))}
+                <label className="block">
+                  Unit
+                  <input value={r.unit} onChange={(e) => setCrop(r.key, 'unit')(e.target.value)} className="mt-0.5 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-900" />
+                </label>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="hidden overflow-x-auto sm:block">
           <table className="w-full text-sm">
             <thead className={TABLE_HEAD}>
               <tr>
@@ -320,8 +354,8 @@ export function GrossMarginPage() {
               <th className="px-2 py-2 text-right font-medium">Direct costs</th>
               <th className="px-2 py-2 text-right font-medium">Gross margin</th>
               <th className="px-2 py-2 text-right font-medium">$/ac</th>
-              <th className="px-2 py-2 text-right font-medium" title="Gross margin as a share of revenue">
-                Ratio
+              <th className="px-2 py-2 text-right font-medium">
+                Ratio<HeadTip title="Ratio">Gross margin as a share of revenue</HeadTip>
               </th>
             </tr>
           </thead>
@@ -379,7 +413,15 @@ export function GrossMarginPage() {
               className="w-20 rounded border border-gray-300 px-2 py-0.5 text-right tabular-nums"
             />{' '}
             acres from <span className="font-medium">{worst.label}</span> to <span className="font-medium">{best.label}</span> would change the
-            gross margin by <span className="font-medium">{money(move.gain, 0)}</span> — {money(move.to - move.from, 0)} an acre.
+            gross margin by <span className="font-medium">{money(move.gain, 0)}</span> — {money(move.to - move.from, 0)} an acre
+            {move.capped ? (
+              <>
+                {' '}
+                on <span className="font-medium">{n0(move.acres)} acres</span>, all it has (capped there).
+              </>
+            ) : (
+              '.'
+            )}
           </p>
         )}
       </div>

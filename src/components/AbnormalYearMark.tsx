@@ -54,7 +54,7 @@ export function AbnormalYearMark({
   if (!marked && !canEdit) return null
   return (
     <span
-      className={cn('inline-flex flex-wrap items-center gap-1 text-[11px]', className)}
+      className={cn('inline-flex flex-wrap items-center gap-1 text-xs', className)}
       onClick={(e) => e.stopPropagation()}
     >
       {marked && <span className="font-medium text-amber-800">{abnormalText(reason)}</span>}

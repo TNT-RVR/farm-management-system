@@ -894,12 +894,16 @@ export function PastureMap({
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
           <Satellite className="h-4 w-4 text-gray-400" /> Pastures
         </h3>
-        <span className="text-xs text-gray-500">
-          {(pastures ?? []).length} paddocks ·{' '}
-          {Math.round((pastures ?? []).reduce((s, p) => s + (p.area_acres ?? 0), 0)).toLocaleString(
-            'en-CA',
-          )}{' '}
-          ac
+        {/* The shapes' own area, which can differ from the acres typed on the
+            Grazing tab (the figure the grass sums use). Said, so the two are
+            not read as one number disagreeing with itself. */}
+        <span
+          className="text-xs text-gray-500"
+          title="Area of the shapes drawn on the map. The Grazing tab works from each paddock's own acres, which can differ a little."
+        >
+          {isLoading || !pastures
+            ? 'Loading paddocks…'
+            : `${pastures.length} paddock${pastures.length === 1 ? '' : 's'} · ${Math.round(pastures.reduce((s, p) => s + (p.area_acres ?? 0), 0)).toLocaleString('en-CA')} ac as drawn`}
         </span>
       </div>
 
@@ -934,7 +938,7 @@ export function PastureMap({
             <div className="max-h-[60vh] w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
               <div className="mb-1.5 flex items-center justify-between gap-2">
                 {/* GatesPanel heads itself, so it would be titled twice. */}
-                <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
                   {openRail === 'gates' ? '' : rail.find((r) => r.key === openRail)?.label}
                 </p>
                 <button
@@ -991,7 +995,7 @@ export function PastureMap({
                           key={val}
                           onClick={() => setNdviScale(val)}
                           className={cn(
-                            'rounded px-2 py-0.5 text-[11px] font-medium',
+                            'rounded px-2 py-0.5 text-xs font-medium',
                             ndviScale === val
                               ? 'bg-brand-700 text-white'
                               : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
@@ -1003,7 +1007,7 @@ export function PastureMap({
                     </div>
                   )}
                   {fillMode === 'ndvi' && (
-                    <p className="mt-1 text-[11px] text-gray-500">
+                    <p className="mt-1 text-xs text-gray-500">
                       {ndviScale === 'shared'
                         ? 'One ramp across every paddock — colours compare between them.'
                         : 'Each paddock on its own range — shows variation inside one, not between.'}
@@ -1021,7 +1025,7 @@ export function PastureMap({
                     <ul className="mt-2 space-y-0.5">
                       {((dormant ? ['dormant', 'red', 'grey'] : ['green', 'yellow', 'red', 'grey']) as Light[]).map(
                         (l) => (
-                          <li key={l} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                          <li key={l} className="flex items-center gap-1.5 text-xs text-gray-600">
                             <span
                               className="inline-block h-2.5 w-2.5 rounded-sm"
                               style={{ backgroundColor: LIGHT_COLOUR[l] }}
@@ -1046,7 +1050,7 @@ export function PastureMap({
                       {([['Never imaged', NO_DATA_COLOUR]] as [string, string][])
                         .concat(NDVI_RAMP.map(([l, c]) => [`NDVI ≤ ${l}`, c]))
                         .map(([label, colour]) => (
-                          <li key={label} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                          <li key={label} className="flex items-center gap-1.5 text-xs text-gray-600">
                             <span
                               className="inline-block h-2.5 w-2.5 rounded-sm"
                               style={{ backgroundColor: colour }}
@@ -1054,13 +1058,13 @@ export function PastureMap({
                             {label}
                           </li>
                         ))}
-                      <li className="text-[11px] text-gray-400">
+                      <li className="text-xs text-gray-400">
                         NDVI — bare ground through heavy canopy
                       </li>
                     </ul>
                   )}
                   {fillMode === 'off' && (
-                    <p className="mt-1.5 text-[11px] text-gray-500">
+                    <p className="mt-1.5 text-xs text-gray-500">
                       Paddocks drawn as outlines only.
                     </p>
                   )}
@@ -1110,7 +1114,7 @@ export function PastureMap({
                           ],
                         ] as [string, string, number | null][]
                       ).map(([colour, label, acres]) => (
-                        <li key={label} className="flex items-baseline gap-1.5 text-[11px] text-gray-600">
+                        <li key={label} className="flex items-baseline gap-1.5 text-xs text-gray-600">
                           <span
                             className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
                             style={{ backgroundColor: colour }}
@@ -1126,7 +1130,7 @@ export function PastureMap({
                           </span>
                         </li>
                       ))}
-                      <li className="text-[11px] text-gray-400">
+                      <li className="text-xs text-gray-400">
                         Counted from drinks inside the paddock's own fence.
                       </li>
                       <li className="pt-1">
@@ -1174,7 +1178,7 @@ export function PastureMap({
                       <button
                         onClick={() => setAddingTrough((v) => !v)}
                         className={cn(
-                          'w-full rounded-md border px-2 py-1 text-[11px] font-medium',
+                          'w-full rounded-md border px-2 py-1 text-xs font-medium',
                           addingTrough
                             ? 'border-orange-500 bg-orange-50 text-orange-800'
                             : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50',
@@ -1186,12 +1190,12 @@ export function PastureMap({
                         onClick={syncFromMyMap}
                         disabled={!myMapGeo || water.addMany.isPending}
                         title="Adds any pin on the My Map's Water layer that is not here yet. Never removes one."
-                        className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        className="w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                       >
                         {water.addMany.isPending ? 'Syncing…' : 'Sync new pins from My Map'}
                       </button>
                       {synced != null && (
-                        <p className="text-[11px] text-gray-500">
+                        <p className="text-xs text-gray-500">
                           {synced === 0
                             ? 'Nothing new on the My Map.'
                             : `${synced} new pin${synced === 1 ? '' : 's'} added.`}
@@ -1218,7 +1222,7 @@ export function PastureMap({
                     />
                     Mineral and salt tubs
                   </label>
-                  <p className="mt-1 text-[11px] text-gray-500">
+                  <p className="mt-1 text-xs text-gray-500">
                     {tubs?.length
                       ? `${tubs.length} placed. Drag a pin to move it; tap one to rename it or take it away.`
                       : 'Where the tubs are, so the next one goes where the cattle are not.'}
@@ -1233,7 +1237,7 @@ export function PastureMap({
                         }
                       }}
                       className={cn(
-                        'mt-2 w-full rounded-md border px-2 py-1 text-[11px] font-medium',
+                        'mt-2 w-full rounded-md border px-2 py-1 text-xs font-medium',
                         addingTub
                           ? 'border-amber-500 bg-amber-50 text-amber-800'
                           : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50',
@@ -1258,7 +1262,7 @@ export function PastureMap({
                     />
                     Quarter sections
                   </label>
-                  <p className="mt-1 text-[11px] text-gray-500">
+                  <p className="mt-1 text-xs text-gray-500">
                     {showGrid && !gridOn
                       ? 'Zoom in to draw it.'
                       : 'The legal quarters, the same grid the crop map draws.'}
@@ -1284,7 +1288,7 @@ export function PastureMap({
                     <>
                       <ul className="mt-1.5 space-y-0.5">
                         {WEEDS.map((w) => (
-                          <li key={w.slug} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                          <li key={w.slug} className="flex items-center gap-1.5 text-xs text-gray-600">
                             <span
                               className="h-2.5 w-4 shrink-0 rounded-sm"
                               style={{ background: w.color }}
@@ -1297,7 +1301,7 @@ export function PastureMap({
                         <button
                           onClick={() => setDrawingWeed(true)}
                           disabled={drawingWeed}
-                          className="mt-2 w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                          className="mt-2 w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                         >
                           Mark a patch
                         </button>
@@ -1334,7 +1338,7 @@ export function PastureMap({
                           {isManager && (
                             <button
                               onClick={() => setEditingLayer(editingLayer === name ? null : name)}
-                              className="ml-auto text-[11px] text-gray-400 underline hover:text-gray-700"
+                              className="ml-auto text-xs text-gray-400 underline hover:text-gray-700"
                             >
                               {editingLayer === name ? 'done' : 'edit'}
                             </button>
@@ -1345,7 +1349,7 @@ export function PastureMap({
                   </ul>
                   {editingLayer && myMapGeo && (
                     <div className="mt-2 rounded-md border border-gray-200 bg-gray-50 p-2">
-                      <p className="text-[11px] text-gray-500">
+                      <p className="text-xs text-gray-500">
                         Tick what this map should draw from “{editingLayer}”. Pipes, pumps, pivots and
                         the irrigated fields start hidden; the My Map itself is not changed.
                       </p>
@@ -1357,17 +1361,17 @@ export function PastureMap({
                             <div className="mt-1 flex flex-wrap gap-1">
                               <button
                                 onClick={() => hiddenMut.set.mutate({ features: feats, hidden: true })}
-                                className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[11px] text-gray-700"
+                                className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-700"
                               >
                                 hide all
                               </button>
                               <button
                                 onClick={() => hiddenMut.set.mutate({ features: feats, hidden: false })}
-                                className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-[11px] text-gray-700"
+                                className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-700"
                               >
                                 show all
                               </button>
-                              <span className="self-center text-[11px] text-gray-500">
+                              <span className="self-center text-xs text-gray-500">
                                 {shownCount} of {feats.length} drawn
                               </span>
                             </div>
@@ -1381,7 +1385,7 @@ export function PastureMap({
                                 }))
                                 .sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name))
                                 .map(({ f, key, name: fname, kind }) => (
-                                  <li key={key} className="flex items-center gap-1.5 text-[11px] text-gray-700">
+                                  <li key={key} className="flex items-center gap-1.5 text-xs text-gray-700">
                                     <input
                                       type="checkbox"
                                       checked={!isHiddenFeature(f, hiddenOverrides)}
@@ -1448,7 +1452,7 @@ export function PastureMap({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-gray-900">{selected.name}</p>
-                <p className="text-[11px] uppercase tracking-wide text-gray-500">
+                <p className="text-xs uppercase tracking-wide text-gray-500">
                   {selected.ranch}
                   {selected.area_acres != null && ` · ${selected.area_acres.toFixed(0)} ac`}
                 </p>
@@ -1464,14 +1468,14 @@ export function PastureMap({
 
             <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
               <div>
-                <dt className="text-[11px] uppercase tracking-wide text-gray-500">Total acres</dt>
+                <dt className="text-xs uppercase tracking-wide text-gray-500">Total acres</dt>
                 <dd className="font-semibold tabular-nums text-gray-900">
                   {selected.area_acres != null ? ac0(selected.area_acres) : <span className="text-gray-300">—</span>}
                 </dd>
               </div>
               <div>
                 <dt
-                  className="text-[11px] uppercase tracking-wide text-gray-500"
+                  className="text-xs uppercase tracking-wide text-gray-500"
                   title="The acres that actually grow grass: the paddock less its waste ground, plus whatever of a crop field inside the fence the herd can take. The same figure the Grazing tab prints."
                 >
                   Grazeable
@@ -1488,7 +1492,7 @@ export function PastureMap({
               </div>
               <div>
                 <dt
-                  className="text-[11px] uppercase tracking-wide text-gray-500"
+                  className="text-xs uppercase tracking-wide text-gray-500"
                   title="NDVI — how green the satellite sees the paddock, from bare ground (near 0) to heavy canopy (near 1)"
                 >
                   Greenness (NDVI)
@@ -1498,7 +1502,7 @@ export function PastureMap({
                 </dd>
               </div>
               <div>
-                <dt className="text-[11px] uppercase tracking-wide text-gray-500">Last look</dt>
+                <dt className="text-xs uppercase tracking-wide text-gray-500">Last look</dt>
                 <dd
                   className={cn(
                     'font-semibold',
@@ -1535,7 +1539,7 @@ export function PastureMap({
 
             {isManager && (
               <div className="mt-2 text-xs">
-                <p className="text-[11px] uppercase tracking-wide text-gray-500">River frontage</p>
+                <p className="text-xs uppercase tracking-wide text-gray-500">River frontage</p>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                   <select
                     value={selectedReach?.river_access ?? 'none'}
@@ -1587,7 +1591,7 @@ export function PastureMap({
             )}
 
             {selected.biomass_kg_dm_ha == null && selected.ndvi != null && (
-              <p className="mt-1.5 text-[11px] text-gray-500">
+              <p className="mt-1.5 text-xs text-gray-500">
                 Biomass in kg/ha needs local calibration first. Until then this ranks and trends
                 rather than measuring.
               </p>
@@ -1679,7 +1683,7 @@ function ImageryDayPicker({
   if (!days.length) return null
   return (
     <div className="mt-2 border-t border-gray-100 pt-2">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Satellite day</p>
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Satellite day</p>
       <div className="mt-1 flex items-center gap-1">
         <button
           type="button"
@@ -1696,7 +1700,7 @@ function ImageryDayPicker({
           onChange={(e) => onPick(e.target.value || null)}
           aria-label="Show the paddocks as the satellite saw them on"
           className={cn(
-            'min-w-0 flex-1 rounded border px-1 py-1 text-[11px]',
+            'min-w-0 flex-1 rounded border px-1 py-1 text-xs',
             asOf ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-gray-300 text-gray-700',
           )}
         >
@@ -1729,12 +1733,12 @@ function ImageryDayPicker({
           </button>
         )}
       </div>
-      <p className="mt-1 text-[11px] text-gray-500">
+      <p className="mt-1 text-xs text-gray-500">
         {shown?.length ? photoDateLabel(shown.map((i) => i.sensed_on)) : 'No picture on file for this day.'}
         {picked && picked.subjects < total ? ` ${total - picked.subjects} paddock(s) show an earlier pass.` : ''}
       </p>
       {asOf && (
-        <p className="mt-1 text-[11px] text-amber-700">
+        <p className="mt-1 text-xs text-amber-700">
           Imagery only. Graze?, the herd and water stay as they are today.
         </p>
       )}
@@ -1788,7 +1792,7 @@ function RingComparison({ pastureId, reach }: { pastureId: string; reach: WaterR
 
   if (!r || !r.same_day) {
     return (
-      <p className="mt-1.5 flex items-center gap-1 text-[11px] text-gray-500">
+      <p className="mt-1.5 flex items-center gap-1 text-xs text-gray-500">
         The rings have not been compared yet
         <InfoPopover title="Comparing the rings">
           <p>
@@ -1816,7 +1820,7 @@ function RingComparison({ pastureId, reach }: { pastureId: string; reach: WaterR
       )}
     >
       <p>{r.finding}</p>
-      <p className="mt-0.5 text-[11px] tabular-nums text-gray-500">
+      <p className="mt-0.5 text-xs tabular-nums text-gray-500">
         NDVI {r.near_water_ndvi} within {near} m against {r.far_water_ndvi} beyond {far} m
         {r.ndvi_gap != null && ` — a gap of ${r.ndvi_gap}`}.
       </p>

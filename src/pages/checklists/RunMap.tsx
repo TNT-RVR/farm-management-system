@@ -254,7 +254,7 @@ function PlacePanel({
         <h2 className="min-w-0 flex-1 font-semibold text-gray-900">
           {place.name}
           {place.category && (
-            <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 align-middle text-[11px] font-medium text-gray-700">
+            <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 align-middle text-xs font-medium text-gray-700">
               <span className="h-2 w-2 rounded-full ring-1 ring-gray-300" style={{ background: place.colour ?? PLAIN_COLOUR }} />
               {place.category}
             </span>
@@ -299,7 +299,7 @@ function PlacePanel({
           </div>
           {/* A change here is a change to next year too, which is the point and
               also the thing worth saying out loud before someone deletes. */}
-          <p className="mt-1 text-[11px] text-gray-400">
+          <p className="mt-1 text-xs text-gray-400">
             {place.template_location_id
               ? 'Renaming, moving or deleting changes next year’s checklist too.'
               : 'This point was added to this year only; it is not on the template.'}
@@ -359,7 +359,7 @@ function PlacePanel({
         />
       </label>
       {place.note_by && place.note_at && (
-        <p className="text-[11px] text-gray-400">
+        <p className="text-xs text-gray-400">
           {userName(place.note_by)} · {new Date(place.note_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}
         </p>
       )}

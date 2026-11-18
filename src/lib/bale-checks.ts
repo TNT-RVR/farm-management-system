@@ -48,6 +48,19 @@ export function readingRisk(r: { temp_c: number | null; moisture_pct: number | n
   return order[Math.max(order.indexOf(t), order.indexOf(m))]
 }
 
+/**
+ * Why a reading is not OK, in a few words — "22% moisture", "58 °C" — so a
+ * cool bale marked Watch beside a warmer one marked OK explains itself. Null
+ * when the reading is OK.
+ */
+export function riskReason(r: { temp_c: number | null; moisture_pct: number | null; bale_form: string | null }): string | null {
+  const parts: string[] = []
+  const t = tempRisk(r.temp_c)
+  if (t && t.level !== 'ok' && r.temp_c != null) parts.push(`${Math.round(r.temp_c)} °C`)
+  if (moistureRisk(r.moisture_pct, r.bale_form)?.level === 'watch') parts.push(`${r.moisture_pct}% moisture`)
+  return parts.length ? parts.join(', ') : null
+}
+
 export const RISK_STYLE: Record<RiskLevel, string> = {
   ok: 'bg-green-100 text-green-800',
   watch: 'bg-amber-100 text-amber-800',

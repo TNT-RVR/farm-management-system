@@ -41,6 +41,7 @@ import { Card, SettingsGroup, input } from './ui'
 import { RouteMap } from './RouteMap'
 import { FieldLink, Sources, n1 } from '../fertilizer/savings/ui'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { HeadTip } from '@/components/HeadTip'
 
 /** The farm's own map centre (Farm setup), which a typed place is checked against. */
 const farmCentre = (): LatLng => {
@@ -56,10 +57,10 @@ const BASIS: Record<Trip['basis'], { label: string; cls: string }> = {
 }
 
 function Method({ t }: { t: Trip | null }) {
-  if (!t) return <span className="text-[11px] text-gray-400">no location</span>
+  if (!t) return <span className="text-xs text-gray-400">no location</span>
   const b = BASIS[t.basis]
   return (
-    <span className={cn('whitespace-nowrap rounded px-1.5 py-px text-[10px] font-medium', b.cls)} title={t.note ?? undefined}>
+    <span className={cn('whitespace-nowrap rounded px-1.5 py-px text-xs font-medium', b.cls)} title={t.note ?? undefined}>
       {b.label}
     </span>
   )
@@ -166,12 +167,12 @@ export function DistancesTab({ isManager }: { isManager: boolean }) {
             <thead className={TABLE_HEAD}>
               <tr>
                 <th className={TABLE_TH}>Field</th>
-                <th className={cn(TABLE_TH, 'text-right')} title="Field work, spraying, every pass: from the shop to the field's entry">
-                  From the shop
+                <th className={cn(TABLE_TH, 'text-right')}>
+                  From the shop<HeadTip title="From the shop">Field work, spraying, every pass: from the shop to the field&apos;s entry</HeadTip>
                 </th>
                 <th className={TABLE_TH} />
-                <th className={cn(TABLE_TH, 'text-right')} title="Grain: from the field's entry to the bins">
-                  To the bins
+                <th className={cn(TABLE_TH, 'text-right')}>
+                  To the bins<HeadTip title="To the bins">Grain: from the field&apos;s entry to the bins</HeadTip>
                 </th>
                 <th className={TABLE_TH} />
                 <th className={TABLE_TH}>Entry</th>
@@ -189,7 +190,7 @@ export function DistancesTab({ isManager }: { isManager: boolean }) {
                     <button type="button" onClick={() => setSelected(f.id)} className="text-left hover:underline" title="Show on the map">
                       {f.name}
                     </button>{' '}
-                    <span className="text-[10px] text-gray-400">
+                    <span className="text-xs text-gray-400">
                       <FieldLink id={f.id} name="work" to="work" />
                     </span>
                   </td>
@@ -209,7 +210,7 @@ export function DistancesTab({ isManager }: { isManager: boolean }) {
                     <Method t={binsT} />
                     {isManager && bins && end && <ManualKm from={binsKey} to={fieldKey(f.id)} fromPt={bins} toPt={end} trip={binsT} />}
                   </td>
-                  <td className={cn('px-3 py-1 text-[11px]', basis === 'pin' ? 'text-green-700' : 'text-gray-400')}>{basis ? ENTRY_LABEL[basis] ?? basis : '—'}</td>
+                  <td className={cn('px-3 py-1 text-xs', basis === 'pin' ? 'text-green-700' : 'text-gray-400')}>{basis ? ENTRY_LABEL[basis] ?? basis : '—'}</td>
                   {elevators.map((s) => {
                     const e = trip(fieldKey(f.id), siteKey(s.id))
                     return (
@@ -355,7 +356,7 @@ function ManualKm({ from, to, fromPt, toPt, trip }: { from: string; to: string; 
   const [min, setMin] = useState('')
   if (!open)
     return (
-      <button type="button" onClick={() => setOpen(true)} className="relative ml-1.5 text-[11px] text-brand-700 underline decoration-dotted after:absolute after:-inset-2 after:content-[''] sm:after:content-none">
+      <button type="button" onClick={() => setOpen(true)} className="relative ml-1.5 text-xs text-brand-700 underline decoration-dotted after:absolute after:-inset-2 after:content-[''] sm:after:content-none">
         {trip?.basis === 'manual' ? 'change' : 'type'}
       </button>
     )
@@ -367,16 +368,16 @@ function ManualKm({ from, to, fromPt, toPt, trip }: { from: string; to: string; 
         type="button"
         disabled={!(Number(km) > 0) || set.isPending}
         onClick={() => set.mutate({ from, to, fromPt, toPt, km: Number(km), minutes: min.trim() ? Number(min) : null }, { onSuccess: () => setOpen(false) })}
-        className="rounded bg-brand-700 px-1.5 py-0.5 text-[11px] font-semibold text-white disabled:opacity-50"
+        className="rounded bg-brand-700 px-1.5 py-0.5 text-xs font-semibold text-white disabled:opacity-50"
       >
         Save
       </button>
       {trip?.basis === 'manual' && (
-        <button type="button" onClick={() => set.mutate({ from, to, fromPt, toPt, km: null, minutes: null }, { onSuccess: () => setOpen(false) })} className="text-[11px] underline">
+        <button type="button" onClick={() => set.mutate({ from, to, fromPt, toPt, km: null, minutes: null }, { onSuccess: () => setOpen(false) })} className="text-xs underline">
           back to the router
         </button>
       )}
-      <button type="button" onClick={() => setOpen(false)} className="text-[11px] text-gray-500 underline">
+      <button type="button" onClick={() => setOpen(false)} className="text-xs text-gray-500 underline">
         cancel
       </button>
     </span>
@@ -416,7 +417,7 @@ function PlaceCard({
         )}
       </p>
       {place?.note && <p className="mt-0.5 text-xs text-amber-700">{place.note}</p>}
-      <p className="mt-1 text-[11px] text-gray-400">{hint} Drag its pin on the map, or paste a location.</p>
+      <p className="mt-1 text-xs text-gray-400">{hint} Drag its pin on the map, or paste a location.</p>
       {isManager && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste lat, lng or a Google Maps link" className={cn(input, 'min-w-0 flex-1 basis-56 text-xs')} />
@@ -456,7 +457,7 @@ function TrailSpeedCard({ isManager }: { isManager: boolean }) {
         defaults={{ kmh: TRAIL_KMH_DEFAULT }}
         isManager={isManager}
       />
-      <p className="mt-1 text-[11px] text-gray-400">Times change on the next “Check now” or the morning run.</p>
+      <p className="mt-1 text-xs text-gray-400">Times change on the next “Check now” or the morning run.</p>
     </Card>
   )
 }
@@ -517,7 +518,7 @@ function FarmYardsCard({ bins, isManager }: { bins: FarmPlace | null; isManager:
         ))}
         {adding && <FarmYardRow yard={null} bins={bins} isManager={isManager} onDone={() => setAdding(false)} />}
       </ul>
-      <p className="mt-2 text-[11px] text-gray-400">Where feed is unloaded and stays. Drag its Y pin on the map above onto the yard, or paste a Google Maps link.</p>
+      <p className="mt-2 text-xs text-gray-400">Where feed is unloaded and stays. Drag its Y pin on the map above onto the yard, or paste a Google Maps link.</p>
     </Card>
   )
 }

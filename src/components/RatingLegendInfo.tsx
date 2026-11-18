@@ -30,7 +30,7 @@ export function RatingLegendInfo({
           <span key={i.rating} className="flex items-center gap-1.5 text-xs text-gray-600">
             <span
               className={cn(
-                'rounded border px-1.5 py-0.5 text-[11px] font-semibold tabular-nums',
+                'rounded border px-1.5 py-0.5 text-xs font-semibold tabular-nums',
                 i.rating === 'ok' ? 'border-gray-200 text-gray-700' : 'border-transparent',
                 classes[i.rating],
               )}

@@ -121,7 +121,7 @@ export function HarvestReadiness({ cropYear }: { cropYear: number }) {
         chart.
       </p>
       {records.length > 0 && (
-        <p className="mb-1 text-[11px] text-gray-500">
+        <p className="mb-1 text-xs text-gray-500">
           Record so far: {records.map((r) => `${r.crop} ±${r.mae.toFixed(1)} pts over ${r.n} reading${r.n === 1 ? '' : 's'}`).join(' · ')}
         </p>
       )}
@@ -133,7 +133,7 @@ export function HarvestReadiness({ cropYear }: { cropYear: number }) {
         {showHarvested && done.map((id) => <ReadinessRow key={id} fieldId={id} name={name(id)} cropYear={cropYear} harvested />)}
       </ul>
       {done.length > 0 && (
-        <button type="button" onClick={() => setShowHarvested(!showHarvested)} className="mt-1 text-[11px] text-gray-500 underline">
+        <button type="button" onClick={() => setShowHarvested(!showHarvested)} className="mt-1 text-xs text-gray-500 underline">
           {showHarvested ? 'Hide' : 'Show'} {done.length} harvested field{done.length === 1 ? '' : 's'}
         </button>
       )}
@@ -182,7 +182,7 @@ function ReadinessRow({
           <span className="font-medium text-gray-800">{name}</span>
           {data?.cropName && <span className="text-gray-500"> · {data.cropName}</span>}
           {harvesting && (
-            <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">harvesting</span>
+            <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">harvesting</span>
           )}
         </span>
         {last && <span className="shrink-0 tabular-nums text-gray-600">{last.pct.toFixed(1)}%</span>}

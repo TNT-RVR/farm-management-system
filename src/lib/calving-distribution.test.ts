@@ -6,8 +6,10 @@ import {
   breakEvenOpenCows,
   cycleMidpointDays,
   cycleWeaningWeights,
+  distributionProblems,
   firstCalfAgeDays,
   lbPerCycleSlipped,
+  marketCalfPricePerLb,
   sharesFromCounts,
   valueOfDistribution,
   type DistributionInputs,
@@ -160,5 +162,44 @@ describe('breakEvenOpenCows', () => {
   it('is nothing when the tighter season is not worth anything to begin with', () => {
     // Comparing a distribution against itself: no gain, so no room at all.
     expect(breakEvenOpenCows(farm, mine, { ...mine, key: 'same' })).toBe(0)
+  })
+})
+
+describe('inputs that cannot be priced', () => {
+  it('is happy with the worked example', () => {
+    expect(distributionProblems(farm)).toEqual([])
+  })
+
+  it('refuses a weaning day before the first calf instead of weaning minus-pound calves', () => {
+    const early = { ...farm, weaningOn: '2026-01-01' }
+    expect(cycleWeaningWeights(early)).toBeNull()
+    expect(distributionProblems(early).join(' ')).toMatch(/before the first calf/)
+    // Nothing priced: no weights, so no scenario carries a weight.
+    expect(valueOfDistribution(early, [mine]).results[0].avgWeaningWeightLb).toBe(0)
+  })
+
+  it('refuses a weaning day before the last cycle with calves is born', () => {
+    // 60 days after the first calf: cycle four's calves (day 73.5) are not born yet.
+    expect(distributionProblems({ ...farm, weaningOn: '2026-04-16' }).join(' ')).toContain('Day 64+')
+    // With no calves in cycle four, the third cycle is the one that counts.
+    expect(distributionProblems({ ...farm, weaningOn: '2026-04-16', born: [55, 20, 15, 0] })).toEqual([])
+  })
+
+  it('refuses negative calves rather than reading them as 0%', () => {
+    const neg = { ...farm, born: [-50, 20, 15, 10] }
+    expect(sharesFromCounts(neg.born)).toBeNull()
+    expect(distributionProblems(neg).join(' ')).toContain('negative (Days 1–21)')
+  })
+
+  it('starts the calf price from the market: steers and heifers averaged, either alone, else nothing', () => {
+    expect(marketCalfPricePerLb(5.15, 5.04)).toBeCloseTo(5.095, 6)
+    expect(marketCalfPricePerLb(null, 5.04)).toBe(5.04)
+    expect(marketCalfPricePerLb(undefined, null)).toBeNull()
+    expect(marketCalfPricePerLb(0, Number.NaN)).toBeNull()
+  })
+
+  it('refuses a negative loss, and more lost than born', () => {
+    expect(distributionProblems({ ...farm, calfDeathLoss: -4 }).join(' ')).toContain('lost to weaning can’t be negative')
+    expect(distributionProblems({ ...farm, calfDeathLoss: 101 }).join(' ')).toContain('More calves lost than were born')
   })
 })

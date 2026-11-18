@@ -39,7 +39,7 @@ function Basis({ b, title }: { b: { basis: ResolvedPrice['basis'] | ResolvedCost
   const t = basisBadge(b)
   if (!t) return null
   return (
-    <span title={title} className={cn('ml-1 rounded px-1 py-0.5 text-[10px] uppercase tracking-wide', t === 'forecast' ? 'bg-sky-100 text-sky-800' : t === 'market' ? 'bg-gray-100 text-gray-500' : 'bg-amber-50 text-amber-700')}>
+    <span title={title} className={cn('ml-1 rounded px-1 py-0.5 text-xs uppercase tracking-wide', t === 'forecast' ? 'bg-sky-100 text-sky-800' : t === 'market' ? 'bg-gray-100 text-gray-500' : 'bg-amber-50 text-amber-700')}>
       {t}
     </span>
   )
@@ -176,7 +176,7 @@ export function CropsPage() {
           <span title={`${normal}\n${r.expected.label}`}>
             {(Math.round(r.expected.value * 10) / 10).toLocaleString('en-CA')} {r.yield_unit}/ac
             <KgAside value={r.expected.value} unit={r.yield_unit} lbPerBu={r.test_weight_lb_per_bu} />
-            <span className={`ml-1 text-[10px] uppercase ${r.expected.basis === 'goal' ? 'text-amber-700' : 'text-gray-400'}`}>
+            <span className={`ml-1 text-xs uppercase ${r.expected.basis === 'goal' ? 'text-amber-700' : 'text-gray-400'}`}>
               {r.expected.basis === 'goal' ? 'crop default' : r.expected.basis === 'farm' ? 'farm avg' : 'field avg'}
             </span>
           </span>

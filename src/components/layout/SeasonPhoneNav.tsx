@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { ChevronDown, Menu as MenuIcon, Plus, Search } from 'lucide-react'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -89,7 +89,7 @@ function MoreSheet({ onClose, onSearch }: { onClose: () => void; onSearch?: () =
         type="button"
         onClick={() => setAllOpen((o) => !o)}
         aria-expanded={allOpen}
-        className="mt-2 flex items-center gap-1.5 border-t border-gray-100 px-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-gray-400"
+        className="mt-2 flex items-center gap-1.5 border-t border-gray-100 px-2 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-400"
       >
         <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', !allOpen && '-rotate-90')} />
         All views
@@ -98,7 +98,7 @@ function MoreSheet({ onClose, onSearch }: { onClose: () => void; onSearch?: () =
         everything.map((i) => (
           <div key={i.view.key} className="flex items-center">
             <MenuItemLink item={i} match={match} onNavigate={onClose} className="flex-1" />
-            <span className="shrink-0 pr-2 text-[10px] text-gray-400">{MENU_SECTION_BY_KEY.get(i.home)?.label}</span>
+            <span className="shrink-0 pr-2 text-xs text-gray-400">{MENU_SECTION_BY_KEY.get(i.home)?.label}</span>
           </div>
         ))}
     </div>
@@ -108,7 +108,15 @@ function MoreSheet({ onClose, onSearch }: { onClose: () => void; onSearch?: () =
 /** The Add (+) list: the forms filled in standing up, those this person may open. */
 function AddSheet({ onClose }: { onClose: () => void }) {
   const menu = useMenu('phone')
+  const { pathname } = useLocation()
+  // Standing on a field's page, a scouting report is almost always about that
+  // field: it goes first and opens with the field already picked, instead of
+  // the same generic list everywhere (design review, Nov 2026). Only scouting
+  // takes a field today (ScoutingPage reads ?field=); the others are unchanged.
+  const fieldId = /^\/fields\/([^/]+)/.exec(pathname)?.[1] ?? null
   const adds = QUICK_ADDS.filter((a) => menu.canSee({ to: a.to }))
+    .map((a) => (fieldId && a.key === 'scouting' ? { ...a, to: `${a.to}&field=${encodeURIComponent(fieldId)}`, here: true } : { ...a, here: false }))
+    .sort((x, y) => Number(y.here) - Number(x.here))
   return (
     <ul className="p-1">
       {adds.map((a) => {
@@ -119,7 +127,10 @@ function AddSheet({ onClose }: { onClose: () => void }) {
               <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-50 text-brand-700">
                 <Icon className="h-4 w-4" />
               </span>
-              {a.label}
+              <span>
+                {a.label}
+                {a.here && <span className="block text-xs font-normal text-gray-500">On this field</span>}
+              </span>
             </Link>
           </li>
         )
@@ -144,6 +155,17 @@ export function SeasonPhoneNav() {
   const [open, setOpen] = useState<BarTool | null>(null)
   const close = () => setOpen(null)
   const hasSearch = menu.bar.some((s) => s.key === 'search')
+  // Escape closes whichever sheet is open — a phone with a keyboard, or the
+  // app on a narrow computer window, had no way out but tapping the button
+  // again (design review, Nov 2026).
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
 
   return (
     <>

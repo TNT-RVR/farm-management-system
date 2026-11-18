@@ -112,6 +112,12 @@ describe('allUnits', () => {
     expect(rows.find((r) => r.unit === 'bu')?.value).toBeNull()
   })
 
+  it('keeps the bushels typed in when no crop is chosen, blanking only the weights', () => {
+    const rows = allUnits(1000, 'bu', null)
+    expect(rows.find((r) => r.unit === 'bu')?.value).toBe(1000)
+    expect(rows.find((r) => r.unit === 't')?.value).toBeNull()
+  })
+
   it('fills bushels in once the crop is known', () => {
     const rows = allUnits(1, 't', 60)
     expect(rows.find((r) => r.unit === 'bu')?.value).toBeCloseTo(36.7437, 3)

@@ -31,6 +31,7 @@ import { dbErrorMessage } from '@/lib/db-error'
 import { SavedViews } from '@/components/SavedViews'
 import { GoalCell, VersusCell } from '@/components/YieldScoreCells'
 import { CROP_DEFAULT } from '@/lib/forecast'
+import { TableSkeleton } from '@/components/Skeleton'
 
 function SourceBadge({ label, title: why }: { label: string; title?: string }) {
   // Harvest yields stand out from estimates; a pre-clean one is flagged,
@@ -55,7 +56,7 @@ function SourceBadge({ label, title: why }: { label: string; title?: string }) {
         ? 'Harvest yield after clean-out'
         : undefined)
   return (
-    <span title={title} className={`ml-1 rounded px-1 py-0.5 text-[10px] uppercase tracking-wide ${tone}`}>
+    <span title={title} className={`ml-1 rounded px-1 py-0.5 text-xs uppercase tracking-wide ${tone}`}>
       {label}
     </span>
   )
@@ -134,6 +135,25 @@ function VarietyCell({
  * own place under Crops now.
  */
 // Farm costs is the fixed expense every budget here carries, so it is set here.
+/**
+ * The plan's columns as the row is read: what is grown, then yield × price −
+ * cost = margin, then the detail behind the yield (design review, Nov 2026).
+ *
+ * In the report's own order the money came last, and with the inline boxes
+ * the table ran to 1,750px — at a 1440px window every money column was past
+ * the edge, on the page called Financials. Columns not named here keep their
+ * relative order after these, so a new column still shows up.
+ */
+const PLAN_SCREEN_ORDER = ['field', 'acres', 'crop', 'variety', 'yield', 'price', 'cost_ac', 'margin_ac', 'margin_total']
+function moneyFirst<C extends { key: string }>(columns: C[]): C[] {
+  const rank = (k: string) => {
+    const i = PLAN_SCREEN_ORDER.indexOf(k)
+    return i < 0 ? PLAN_SCREEN_ORDER.length : i
+  }
+  // Array.prototype.sort is stable, so the unnamed columns keep their order.
+  return [...columns].sort((a, b) => rank(a.key) - rank(b.key))
+}
+
 const PLAN_TABS = ['plan', 'budget', 'breakeven', 'benchmark', 'actuals', 'field work', 'farm costs'] as const
 type PlanTab = (typeof PLAN_TABS)[number]
 
@@ -226,9 +246,9 @@ export function PlannerPage() {
 
   /** Saving… / Saved / why it was refused, beside the crop that changed. */
   const cropSaveMark = (fieldId: string) => {
-    if (setCrop.isPending && setCrop.variables?.row.field.id === fieldId) return <span className="ml-1 text-[11px] text-gray-500">Saving…</span>
+    if (setCrop.isPending && setCrop.variables?.row.field.id === fieldId) return <span className="ml-1 text-xs text-gray-500">Saving…</span>
     if (saveNote?.id !== fieldId) return null
-    return <span className={cn("ml-1 text-[11px]", saveNote.bad ? "text-red-700" : "text-gray-500")}>{saveNote.text}</span>
+    return <span className={cn("ml-1 text-xs", saveNote.bad ? "text-red-700" : "text-gray-500")}>{saveNote.text}</span>
   }
 
   const zoneMut = useCropZoneMutations()
@@ -333,7 +353,7 @@ export function PlannerPage() {
                   zoneMut.update.mutate({ id: r.zoneId, patch: { acres: v } })
                 }
               }}
-              className="w-24 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums"
+              className="w-20 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums"
             />
             <SourceBadge label="zone" />
           </div>
@@ -360,7 +380,7 @@ export function PlannerPage() {
                   patchPlan.mutate({ row: r, patch: { planned_acres: v } })
                 }
               }}
-              className="w-24 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums"
+              className="w-20 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums"
             />
             {r.acresSource && r.acresSource !== 'plan' && <SourceBadge label={r.acresSource} />}
           </div>
@@ -379,7 +399,7 @@ export function PlannerPage() {
               value={r.crop?.id ?? ''}
               size="sm"
               ariaLabel="Zone crop"
-              className="max-w-40"
+              className="max-w-36"
               onChange={(v) =>
                 r.zoneId && v && zoneMut.update.mutate({ id: r.zoneId, patch: { crop_id: v } })
               }
@@ -389,7 +409,7 @@ export function PlannerPage() {
               ]}
             />
             <span
-              className="rounded bg-gray-100 px-1 py-0.5 text-[10px] font-medium text-gray-500"
+              className="rounded bg-gray-100 px-1 py-0.5 text-xs font-medium text-gray-500"
               title="Crop zone — crop and acres edit here; the drawn area edits on the map"
             >
               split
@@ -403,7 +423,7 @@ export function PlannerPage() {
             value={r.crop?.id ?? ''}
             size="sm"
             ariaLabel="Crop"
-            className="max-w-44"
+            className="max-w-32"
             onChange={(v) => setCrop.mutate({ row: r, cropId: v })}
             options={[
               { value: '', label: '—' },
@@ -470,12 +490,12 @@ export function PlannerPage() {
                   const patch = parsed.kind === 'range' || hadRange ? next : { yield_per_acre_override: next.yield_per_acre_override }
                   if (!same) patchPlan.mutate({ row: r, patch })
                 }}
-                className="w-24 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums"
+                className="w-20 rounded-md border border-gray-200 px-2 py-1 text-right text-sm tabular-nums"
               />
               {r.yieldSource && <SourceBadge label={r.yieldSource === 'goal' ? CROP_DEFAULT : r.yieldSource} title={r.yieldNote || undefined} />}
             </div>
             {r.cutPct > 0 && r.yieldPerAcre != null && (
-              <span className="mt-0.5 text-[11px] font-medium tabular-nums text-amber-800">
+              <span className="mt-0.5 text-xs font-medium tabular-nums text-amber-800">
                 {(Math.round(r.yieldPerAcre * 10) / 10).toLocaleString('en-CA')} after cut
               </span>
             )}
@@ -496,16 +516,21 @@ export function PlannerPage() {
           <Link
             to={`/fields/${r.field.id}#yield-cuts`}
             className={cn(
-              'inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium',
+              'inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium',
               r.cutPct > 0 ? 'bg-amber-100 text-amber-900 hover:bg-amber-200' : 'bg-gray-100 text-gray-500',
             )}
+            // The reason is free text ("Hail in August: 8% loss on the crop
+            // insurance…") and printed in the cell it made this one column
+            // 402px wide, pushing every money column off the right edge of a
+            // 1440px window (design review, Nov 2026). The cell says how much;
+            // why is in the tooltip and on the field the chip opens.
             title={
               r.cutPct > 0
-                ? `Estimate cut from ${r.yieldBeforeCut != null ? Math.round(r.yieldBeforeCut * 10) / 10 : '—'} to ${r.yieldPerAcre != null ? Math.round(r.yieldPerAcre * 10) / 10 : '—'} ${r.crop?.yield_unit ?? ''}/ac — open the field to change it`
-                : 'Harvested off the scale: the loss is already in the yield, so the cut is not applied'
+                ? `${cutLabel(r.cut)}. Estimate cut from ${r.yieldBeforeCut != null ? Math.round(r.yieldBeforeCut * 10) / 10 : '—'} to ${r.yieldPerAcre != null ? Math.round(r.yieldPerAcre * 10) / 10 : '—'} ${r.crop?.yield_unit ?? ''}/ac — open the field to change it`
+                : `${r.cut.reason}. Harvested off the scale: the loss is already in the yield, so the cut is not applied`
             }
           >
-            {r.cutPct > 0 ? cutLabel(r.cut) : `${r.cut.reason} — harvested, not applied`}
+            {r.cutPct > 0 ? `−${Math.round(r.cutPct * 10) / 10}%` : 'harvested'}
           </Link>
         ) : (
           ''
@@ -530,7 +555,7 @@ export function PlannerPage() {
               {money2(r.pricePerUnit)}/{r.crop.yield_unit}
               {r.priceSource === 'contract' && (
                 <span
-                  className="rounded bg-green-100 px-1 py-0.5 text-[10px] uppercase text-green-700"
+                  className="rounded bg-green-100 px-1 py-0.5 text-xs uppercase text-green-700"
                   title="From a signed contract"
                 >
                   ctr
@@ -565,7 +590,7 @@ export function PlannerPage() {
         r.plan || r.isZone ? (
           <span className={r.marginPerAcre < 0 ? 'text-red-600' : ''}>
             {money2(r.marginPerAcre)}
-            {r.dealNote && <span className="block text-[10px] font-normal text-gray-400">{r.dealNote}</span>}
+            {r.dealNote && <span className="block text-xs font-normal text-gray-400">{r.dealNote}</span>}
           </span>
         ) : (
           ''
@@ -640,7 +665,7 @@ export function PlannerPage() {
       className: 'text-right tabular-nums',
       render: (b) =>
         b.cutQuantity > 0 ? (
-          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-900" title={`${b.cutCount} field${b.cutCount === 1 ? '' : 's'} cut for hail or disease`}>
+          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900" title={`${b.cutCount} field${b.cutCount === 1 ? '' : 's'} cut for hail or disease`}>
             −{Math.round(b.cutQuantity).toLocaleString('en-CA')} {b.crop.yield_unit}
           </span>
         ) : (
@@ -666,7 +691,7 @@ export function PlannerPage() {
   return (
     <div className="p-4 md:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <h1 className="text-lg font-semibold text-gray-900">Financials · {cropYear}</h1>
+        <h1 className="text-lg font-semibold text-gray-900">Crop financials · {cropYear}</h1>
         {/* The tab bar can shrink (min-w-0), so its ▾ takes the tabs that do
             not fit instead of the row pushing the whole page sideways; on a
             phone it takes a line of its own (Sam, 27 Oct 2026). */}
@@ -737,7 +762,7 @@ export function PlannerPage() {
           <div key={label} className="rounded-lg border border-gray-200 bg-white p-3">
             <p className="text-xs text-gray-500">{label}</p>
             <p className="mt-0.5 text-lg font-bold text-gray-900">{val}</p>
-            {sub && <p className={cn('text-[11px] tabular-nums', label === 'Projected revenue' ? 'text-amber-800' : 'text-gray-500')}>{sub}</p>}
+            {sub && <p className={cn('text-xs tabular-nums', label === 'Projected revenue' ? 'text-amber-800' : 'text-gray-500')}>{sub}</p>}
           </div>
         ))}
       </div>
@@ -754,7 +779,7 @@ export function PlannerPage() {
       ) : tab === 'farm costs' ? (
         <FarmCostsTab year={cropYear} locked={isLocked} />
       ) : !loaded ? (
-        <p className="text-sm text-gray-500">Loading…</p>
+        <TableSkeleton rows={10} columns={9} />
       ) : tab === 'plan' ? (
         <>
           <div className="mb-2 flex items-center gap-2">
@@ -788,9 +813,11 @@ export function PlannerPage() {
           )}
           <DataTable
             rows={shownRows}
-            columns={planColumns}
+            columns={moneyFirst(planColumns)}
             rowKey={(r) => r.zoneId ?? r.field.id}
             exportFilename={`crop-plan-${cropYear}`}
+            stickyFirstColumn
+            compact
           />
         </>
       ) : tab === 'budget' ? (

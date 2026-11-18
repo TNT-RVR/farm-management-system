@@ -57,7 +57,7 @@ export function HandEventActions({ e, u }: { e: HandEvent; u: UnitSystem }) {
         disabled={del.isPending}
         confirm={`Delete the ${conv.depth(e.gross_mm, u, dp)} ${unit} logged by hand on ${md(e.date)}? It comes out of the balance at the next model run.`}
       />
-      {del.isError && <span className="text-[11px] text-red-700">{(del.error as Error).message}</span>}
+      {del.isError && <span className="text-xs text-red-700">{(del.error as Error).message}</span>}
       {editing && (
         <RecordEditModal
           title={`Pass logged by hand — ${md(e.date)}`}

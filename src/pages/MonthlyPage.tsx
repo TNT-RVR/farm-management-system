@@ -77,7 +77,7 @@ function CompletedTab() {
           <ul className="divide-y divide-gray-100 rounded-md border border-gray-100 bg-white">
             {g.items.map(({ copy, job }) => (
               <li key={copy.id} className="flex flex-wrap items-baseline gap-x-3 px-2 py-1.5 text-sm">
-                <span className={cn('rounded px-1.5 text-[11px] font-semibold', copy.state === 'done' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600')}>
+                <span className={cn('rounded px-1.5 text-xs font-semibold', copy.state === 'done' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600')}>
                   {copy.state === 'done' ? 'Done' : 'Skipped'}
                 </span>
                 <span className="min-w-0 flex-1 basis-48 font-medium text-gray-900">

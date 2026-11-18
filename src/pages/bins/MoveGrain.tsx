@@ -200,7 +200,7 @@ export function MoveGrain({
                   setAmount(String(Math.round(source.bushels * 100) / 100))
                   setUnit('bu')
                 }}
-                className="text-[11px] text-brand-700 underline hover:text-brand-800"
+                className="text-xs text-brand-700 underline hover:text-brand-800"
               >
                 Move all {Math.round(source.bushels).toLocaleString()} bu
               </button>

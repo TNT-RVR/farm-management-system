@@ -5,7 +5,7 @@ import { rowClick, type EditField } from '@/components/RecordEditor'
 import { Select } from '@/components/Select'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { withCurrent } from '@/lib/record-detail'
-import { useProductPurchases, useJdProducts, useRetailerName } from '@/lib/products'
+import { useProductPurchases, useJdProducts, useRetailerName, useRetailers } from '@/lib/products'
 import { canonicalProduct, totalsByProduct } from '@/lib/fertilizer-plan'
 import { parseAnalysis } from '@/lib/fertilizer-analysis'
 import {
@@ -19,6 +19,8 @@ import { buyWindow, productPositions, quoteRequestText, serviceTotals } from '@/
 import { useDtnArticles, useFertMutations, useFertRows, useSaveFertSetting, type Booking, type InventoryRow, type Program, type Quote } from '@/lib/fert-savings/data'
 import { InvoiceViewer } from '@/components/InvoiceViewer'
 import { cn } from '@/lib/utils'
+import { dbErrorMessage } from '@/lib/db-error'
+import { localDate } from '@/lib/date-range'
 import { useReportSaving, useSavings } from './context'
 import { S } from './sources'
 import { useBrand } from '@/lib/farm-setup'
@@ -33,7 +35,11 @@ const productOptions = STRAIGHTS.map((s) => ({ value: s.key, label: s.label }))
 const labelOf = (key: string) => straightByKey(key)?.label ?? key
 const today = () => new Date().toISOString().slice(0, 10)
 const rowCls = 'cursor-pointer hover:bg-gray-50'
-const errOf = (...e: (unknown | null)[]) => (e.find(Boolean) as Error | undefined)?.message ?? null
+const day = (iso: string) => localDate(iso).toLocaleDateString('en-CA', { day: 'numeric', month: 'short', year: 'numeric' })
+const errOf = (...e: (unknown | null)[]) => {
+  const first = e.find(Boolean)
+  return first ? dbErrorMessage(first) : null
+}
 
 /*
  * The forms a booking, quote and count open to (Sam, 7 Oct 2026: every row
@@ -135,7 +141,8 @@ function usePositions() {
       const t = r.unit === 't' ? Number(r.quantity) : r.unit === 'kg' ? Number(r.quantity) / 1000 : d ? (Number(r.quantity) * d) / 1000 : 0
       return { product: r.product, tonnes: t }
     })
-    const booked = (bookings ?? []).map((b) => ({ product: b.product, tonnes: Number(b.tonnes) }))
+    // A delivered booking is on the yard by now, so it counts once, as on hand.
+    const booked = (bookings ?? []).filter((b) => !b.delivered).map((b) => ({ product: b.product, tonnes: Number(b.tonnes) }))
     const invoiced: { product: string; tonnes: number }[] = []
     const byId = new Map((products?.products ?? []).map((p) => [p.id, p]))
     for (const l of purchases?.rows ?? []) {
@@ -208,7 +215,7 @@ export function BuyWindowCard() {
               {bw ? (
                 <span
                   className={cn(
-                    'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase',
+                    'rounded px-1.5 py-0.5 text-xs font-semibold uppercase',
                     bw.state === 'cheap' ? 'bg-green-100 text-green-800' : bw.state === 'dear' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-600',
                   )}
                 >
@@ -291,13 +298,13 @@ export function NutrientCostCard() {
             <tr key={c.key} className={cn(best && 'bg-green-50/60')}>
               <td className={td}>
                 {c.label}
-                {c.enhanced && <span className="ml-1 text-[10px] text-gray-400">enhanced</span>}
-                {c.ownEquipment && <span className="ml-1 text-[10px] text-gray-400">needs a toolbar we do not run</span>}
+                {c.enhanced && <span className="ml-1 text-xs text-gray-400">enhanced</span>}
+                {c.ownEquipment && <span className="ml-1 text-xs text-gray-400">needs a toolbar we do not run</span>}
               </td>
               <td className={tdNum}>{money(c.perTonne)}/t</td>
               <td className={td}>
                 {c.source === 'ICI invoice' ? `${retailerName} invoice` : c.source}
-                {c.on ? <span className="block text-[10px] text-gray-400">{c.on}</span> : null}
+                {c.on ? <span className="block text-xs text-gray-400">{c.on}</span> : null}
                 {c.source === 'DTN US retail' && <AdderNote straightKey={c.key} />}
               </td>
               <td className={tdNum}>{d && d.key !== c.key ? '—' : d ? `${money(d.perTonne)}/t` : '—'}</td>
@@ -400,7 +407,7 @@ export function BlendPremiumCard() {
               <td className={td}>
                 {r.on}
                 {r.invoice ? (
-                  <button type="button" onClick={() => setInvoice(r.invoice)} className="block text-[10px] text-brand-700 underline decoration-dotted">
+                  <button type="button" onClick={() => setInvoice(r.invoice)} className="block text-xs text-brand-700 underline decoration-dotted">
                     {r.invoice}
                   </button>
                 ) : null}
@@ -408,7 +415,7 @@ export function BlendPremiumCard() {
               <td className={tdNum}>{n1(r.tonnes)}</td>
               <td className={tdNum}>{money(r.paid)}</td>
               <td className={tdNum}>
-                {r.straights != null ? money(r.straights) : <span className="text-[10px] text-gray-400">no {r.missing.map(labelOf).join(', ')} price then</span>}
+                {r.straights != null ? money(r.straights) : <span className="text-xs text-gray-400">no {r.missing.map(labelOf).join(', ')} price then</span>}
               </td>
               <td className={cn(tdNum, r.straights != null && r.paid - r.straights > 0 && 'text-red-700')}>{r.straights != null ? money(r.paid - r.straights) : '—'}</td>
               <td className={tdNum}>{r.straights != null ? money((r.paid - r.straights) * r.tonnes) : '—'}</td>
@@ -425,25 +432,32 @@ export function BlendPremiumCard() {
 
 export function NeedVsBookedCard() {
   const { inputs } = useSavings()
-  const retailerName = useRetailerName()
   const positions = usePositions()
   const m = useFertMutations('fert_bookings')
   const { data: bookings } = useFertRows('fert_bookings', inputs.cropYear)
-  const [f, setF] = useState({ product: '46-0-0', tonnes: '', price: '', supplier: retailerName, on: today() })
+  // Blank means the busiest retailer on the invoices. Never the placeholder
+  // word "Retailer": that saved as the supplier when the invoices had not loaded.
+  const { data: retailers } = useRetailers()
+  const knownRetailer = retailers?.[0]?.name || null
+  const [f, setF] = useState({ product: '46-0-0', tonnes: '', price: '', supplier: '', on: today() })
+  const supplier = f.supplier.trim() || knownRetailer
   const { profile } = useAuth()
   const isMgr = hasManagerAccess(profile?.role)
   const [opened, setOpened] = useState<Booking | null>(null)
   const left = positions.reduce((s, p) => s + (p.toBook ?? 0), 0)
+  const over = positions.reduce((s, p) => s + (p.over ?? 0), 0)
+  // A price is optional, but one typed has to be a number of 0 or more: "eight hundred" used to save as no price.
+  const priceBad = f.price.trim() !== '' && !(Number(f.price) >= 0)
   useReportSaving(4, null)
   return (
     <ToolCard
       n={4}
-      warn={left > 0}
+      warn={left > 0 || over > 0.05}
       sources={[S.requirements, S.pricing]}
       title="Need versus booked"
       why="What the requirements need, against what is on the yard, booked and invoiced — so the booking matches the need."
       saving={null}
-      note={positions.length ? `${n1(left)} t still to book` : 'no requirements yet'}
+      note={positions.length ? `${n1(left)} t still to book${over > 0.05 ? ` · ${n1(over)} t more than the need` : ''}` : 'no requirements yet'}
     >
       {!positions.length ? (
         <Empty>No requirements for {inputs.cropYear} yet: they come from the soil-test recommendations.</Empty>
@@ -456,41 +470,49 @@ export function NeedVsBookedCard() {
               <td className={tdNum}>{p.onHand ? `${n1(p.onHand)} t` : '—'}</td>
               <td className={tdNum}>{p.booked ? `${n1(p.booked)} t` : '—'}</td>
               <td className={tdNum}>{p.invoiced ? `${n1(p.invoiced)} t` : '—'}</td>
-              <td className={cn(tdNum, (p.toBook ?? 0) > 0 && 'font-semibold text-amber-800')}>{p.toBook == null ? '—' : `${n1(p.toBook)} t`}</td>
+              <td className={cn(tdNum, ((p.toBook ?? 0) > 0 || (p.over ?? 0) > 0.05) && 'font-semibold text-amber-800')}>
+                {p.toBook == null ? '—' : (p.over ?? 0) > 0.05 ? `${n1(p.over!)} t over` : `${n1(p.toBook)} t`}
+              </td>
             </tr>
           ))}
         </Table>
       )}
       <div className="mt-3 flex flex-wrap items-end gap-2 rounded-md bg-gray-50 p-2">
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           Product
           <Select value={f.product} onChange={(v) => setF({ ...f, product: v })} options={productOptions} size="sm" className="mt-0.5 w-48" ariaLabel="Product" />
         </label>
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           Tonnes
           <input value={f.tonnes} onChange={(e) => setF({ ...f, tonnes: e.target.value })} inputMode="decimal" className={cn(input, 'mt-0.5 block w-20 text-right')} />
         </label>
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           $/tonne
           <input value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} inputMode="decimal" className={cn(input, 'mt-0.5 block w-24 text-right')} />
         </label>
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           With
-          <input value={f.supplier} onChange={(e) => setF({ ...f, supplier: e.target.value })} className={cn(input, 'mt-0.5 block w-24')} />
+          <input
+            value={f.supplier}
+            onChange={(e) => setF({ ...f, supplier: e.target.value })}
+            placeholder={knownRetailer ?? 'Who with'}
+            className={cn(input, 'mt-0.5 block w-24')}
+          />
         </label>
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           Booked on
           <DateField value={f.on} onChange={(v) => setF({ ...f, on: v })} className={cn(input, 'mt-0.5 block')} />
         </label>
         <button
           className={button}
-          disabled={!(Number(f.tonnes) > 0) || m.add.isPending}
+          disabled={!(Number(f.tonnes) > 0) || priceBad || !supplier || m.add.isPending}
           onClick={() =>
+            supplier &&
             m.add.mutate(
               {
                 crop_year: inputs.cropYear,
                 product: f.product,
-                supplier: f.supplier || retailerName,
+                supplier,
                 tonnes: Number(f.tonnes),
                 price_per_tonne: f.price ? Number(f.price) : null,
                 booked_on: f.on,
@@ -502,14 +524,20 @@ export function NeedVsBookedCard() {
           <Plus className="h-3.5 w-3.5" /> Record a booking
         </button>
       </div>
+      {priceBad && <p className="mt-1 text-xs text-amber-800">The price has to be a number of 0 or more, or left blank.</p>}
+      {!supplier && Number(f.tonnes) > 0 && <p className="mt-1 text-xs text-amber-800">Say who the booking is with.</p>}
+      {m.add.error && <p className="mt-1 text-xs text-red-700">{dbErrorMessage(m.add.error)}</p>}
+      {positions.some((p) => p.over != null) && bookings?.some((b) => b.delivered) && (
+        <p className="mt-1 text-xs text-gray-500">Delivered bookings count as on hand, not booked.</p>
+      )}
       {!!bookings?.length && (
         <Table head={['Booked', 'Product', 'Tonnes', '$/t', 'With', '']} className="mt-2">
           {bookings.map((b) => (
             <tr key={b.id} className={rowCls} onClick={rowClick(() => setOpened(b))}>
-              <td className={td}>{b.booked_on}</td>
+              <td className={td}>{day(b.booked_on)}</td>
               <td className={td}>
                 {labelOf(b.product)}
-                {b.delivered && <span className="ml-1 text-[10px] text-green-700">delivered</span>}
+                {b.delivered && <span className="ml-1 text-xs text-green-700">delivered</span>}
               </td>
               <td className={tdNum}>{n1(Number(b.tonnes))}</td>
               <td className={tdNum}>{b.price_per_tonne == null ? '—' : money(Number(b.price_per_tonne))}</td>
@@ -599,7 +627,7 @@ export function QuoteSheetCard() {
     >
       {text ? (
         <>
-          <pre className="whitespace-pre-wrap rounded-md bg-gray-50 p-2.5 font-mono text-[11px] text-gray-800">{text}</pre>
+          <pre className="whitespace-pre-wrap rounded-md bg-gray-50 p-2.5 font-mono text-xs text-gray-800">{text}</pre>
           <div className="mt-2 flex gap-2">
             <button
               className={ghost}
@@ -622,27 +650,27 @@ export function QuoteSheetCard() {
       )}
 
       <div className="mt-3 flex flex-wrap items-end gap-2 rounded-md bg-gray-50 p-2">
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           Product
           <Select value={f.product} onChange={(v) => setF({ ...f, product: v })} options={productOptions} size="sm" className="mt-0.5 w-48" ariaLabel="Product" />
         </label>
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           Supplier
           <input value={f.supplier} onChange={(e) => setF({ ...f, supplier: e.target.value })} placeholder={`${retailerName}, Nutrien…`} className={cn(input, 'mt-0.5 block w-28')} />
         </label>
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           $/tonne
           <input value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} inputMode="decimal" className={cn(input, 'mt-0.5 block w-24 text-right')} />
         </label>
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           Quoted
           <DateField value={f.on} onChange={(v) => setF({ ...f, on: v })} className={cn(input, 'mt-0.5 block')} />
         </label>
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           Good until
           <DateField value={f.valid} onChange={(v) => setF({ ...f, valid: v })} className={cn(input, 'mt-0.5 block')} />
         </label>
-        <label className="flex items-center gap-1 text-[11px] text-gray-500">
+        <label className="flex items-center gap-1 text-xs text-gray-500">
           <input type="checkbox" checked={f.delivered} onChange={(e) => setF({ ...f, delivered: e.target.checked })} /> delivered
         </label>
         <button
@@ -687,9 +715,9 @@ export function QuoteSheetCard() {
       {!!quotes?.length && (
         <div className="mt-1 flex flex-wrap gap-1">
           {quotes.map((q) => (
-            <span key={q.id} className="inline-flex items-center gap-1 rounded bg-gray-100 text-[10px] text-gray-600">
+            <span key={q.id} className="inline-flex items-center gap-1 rounded bg-gray-100 text-xs text-gray-600">
               <button type="button" onClick={() => setOpened(q)} className="rounded py-0.5 pl-1.5 hover:text-gray-900 hover:underline" title="Open this quote">
-                {q.supplier} · {labelOf(q.product)} · {money(Number(q.price_per_tonne))} · {q.quoted_on}
+                {q.supplier} · {labelOf(q.product)} · {money(Number(q.price_per_tonne))} · {day(q.quoted_on)}
                 {q.valid_until && ` · good to ${q.valid_until}`}
               </button>
               {isMgr && (
@@ -785,14 +813,14 @@ export function ProgramsCard() {
               <tr key={p.id} className={rowCls} onClick={rowClick(() => setOpened(p))}>
                 <td className={td}>
                   {p.name}
-                  <span className="block text-[10px] text-gray-400">{p.supplier}</span>
+                  <span className="block text-xs text-gray-400">{p.supplier}</span>
                 </td>
                 <td className={tdNum}>
                   {[p.discount_pct ? `${p.discount_pct}%` : null, p.discount_per_tonne ? `${money(Number(p.discount_per_tonne))}/t` : null].filter(Boolean).join(' + ') || '—'}
                 </td>
                 <td className={cn(td, p.status === 'open' && d <= 7 && d >= 0 && 'font-semibold text-amber-800')}>
-                  {p.deadline}
-                  {p.status === 'open' && <span className="block text-[10px] text-gray-400">{d < 0 ? 'passed' : `${d} days`}</span>}
+                  {day(p.deadline)}
+                  {p.status === 'open' && <span className="block text-xs text-gray-400">{d < 0 ? 'passed' : `${d} days`}</span>}
                 </td>
                 <td className={td}>{p.terms ?? '—'}</td>
                 {/* Its menu is portalled, but React still bubbles the pick up to the row. */}
@@ -985,7 +1013,7 @@ export function InventoryCard() {
                 {n1(Number(r.quantity))} {r.unit}
               </td>
               <td className={td}>{r.location ?? '—'}</td>
-              <td className={td}>{r.counted_on}</td>
+              <td className={td}>{day(r.counted_on)}</td>
               <td className="px-3 py-1 text-right">
                 {isMgr && <RowDelete onDelete={() => m.remove.mutate(r.id)} confirm={`Delete the ${labelOf(r.product)} count of ${r.counted_on}?`} label="Delete count" />}
               </td>

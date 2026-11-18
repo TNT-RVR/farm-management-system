@@ -17,7 +17,7 @@ export function SettingRow({ k, picked, value, onChange }: { k: SettingKey; pick
         <span className="block text-sm font-medium text-gray-900">
           {s.label} {picked && <span className="font-mono">{settingText(k, picked.value)}</span>} <span className="text-xs text-gray-400">{s.unit}</span>
         </span>
-        {picked && <span className="block text-[11px] text-gray-500">{picked.why}</span>}
+        {picked && <span className="block text-xs text-gray-500">{picked.why}</span>}
       </span>
       <input
         type={IN_INCHES.includes(k) ? 'text' : 'number'}

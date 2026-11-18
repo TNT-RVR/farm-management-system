@@ -196,8 +196,10 @@ export function seedRowPCap(crop: string | null | undefined): { cap: number; not
  * the target over a few years. Lb P2O5 per +1 ppm Olsen is about 20 on coarse
  * soil and 37 on clay loam (Manitoba data); medium soil takes the middle.
  */
+export const P_BUILD_TARGET_OLSEN = 15
+
 export function pBuildRate(args: { olsenPpm: number; targetOlsen?: number; removal: number; texture?: string | null; years?: number }): number {
-  const target = args.targetOlsen ?? 15
+  const target = args.targetOlsen ?? P_BUILD_TARGET_OLSEN
   if (args.olsenPpm >= target) return Math.round(args.removal)
   const t = (args.texture ?? '').toLowerCase()
   const buffer = /sand/.test(t) ? 20 : /clay/.test(t) ? 37 : 28

@@ -58,6 +58,7 @@ import { AccessMatrix } from '@/pages/settings/AccessMatrix'
 import { AnydoCard } from '@/pages/settings/AnydoCard'
 import { TaskWidgetCard } from '@/pages/settings/TaskWidgetCard'
 import { ProfilePicture } from '@/pages/settings/ProfilePicture'
+import { ThemeCard } from '@/pages/settings/ThemeCard'
 import { SignatureCard } from '@/pages/settings/SignatureCard'
 import { askConfirm } from '@/components/askConfirm'
 // The partner
@@ -752,6 +753,7 @@ function MyAccount({ head }: { head: ViewHead }) {
                   </button>
                 </div>
               </div>
+              <ThemeCard />
               <div className="flex justify-between py-1">
                 <span className="text-gray-500">Email</span>
                 <span className="font-medium text-gray-900">{profile?.email ?? '—'}</span>
@@ -970,7 +972,7 @@ const UPSTREAM_REPO = 'https://github.com/TNT-RVR/farm-management-system'
  */
 function BuiltOn() {
   return (
-    <p className="px-4 pb-6 pt-2 text-center text-[11px] leading-relaxed text-gray-400 md:px-6 print:hidden">
+    <p className="px-4 pb-6 pt-2 text-center text-xs leading-relaxed text-gray-400 md:px-6 print:hidden">
       Built with the free, open-source{' '}
       <a href={UPSTREAM_REPO} target="_blank" rel="noopener noreferrer" className="underline decoration-gray-300 underline-offset-2 hover:text-gray-600">
         Farm Management System

@@ -12,6 +12,7 @@ import { useFieldSoilReports } from '@/lib/soilTests'
 import { RATE_RAMP, rateColour } from './RxZoneMap'
 import {
   nextCode,
+  sampleIsSite,
   sitesForYear,
   useSampleSiteMutations,
   useSampleSites,
@@ -120,7 +121,7 @@ export function SamplingMap({
   const resultFor = (site: SampleSite) => {
     for (const r of reports ?? []) {
       if (r.crop_year !== (site.crop_year ?? r.crop_year)) continue
-      const hit = r.samples.find((s) => s.sample_code?.trim() === site.code.trim())
+      const hit = r.samples.find((s) => sampleIsSite(s.sample_code, site.code))
       if (hit) return { report: r, sample: hit }
     }
     return null
@@ -367,7 +368,7 @@ export function SamplingMap({
             </div>
           )}
           {showZones && zonePolys.length > 0 && (
-            <div className="absolute bottom-3 left-3 rounded-md border border-gray-200 bg-white/95 px-2.5 py-2 text-[11px] shadow">
+            <div className="absolute bottom-3 left-3 rounded-md border border-gray-200 bg-white/95 px-2.5 py-2 text-xs shadow">
               <p className="mb-1 font-medium text-gray-700">{shownProduct} — target rate</p>
               <div className="flex items-center gap-1">
                 <span className="tabular-nums text-gray-500">{n1(min)}</span>
@@ -428,7 +429,7 @@ export function SamplingMap({
                                 patch: { crop_year: s.crop_year == null ? cropYear : null },
                               })
                             }
-                            className="rounded px-1.5 py-0.5 text-[11px] text-gray-500 hover:bg-gray-100"
+                            className="rounded px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-100"
                             title={
                               s.crop_year == null
                                 ? 'Currently a benchmark — shown every year'

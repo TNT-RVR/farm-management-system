@@ -8,8 +8,12 @@ import { normalizeLld } from './geo/lld'
  * Every autumn the seed canola companies walk the quarters they are thinking
  * of contracting for next year and grade them. The grade is the gate: a field
  * the company failed cannot carry its seed canola, whatever the rotation says
- * about it. Kathryn Bilcik of Corteva, 12 November 2026: "we are willing to
- * grow on A's and B's."
+ * about it. Corteva, 12 November 2026: "we are willing to grow on A's and
+ * B's."
+ *
+ * Who at a company said a thing belongs in a contact record, not in a line of
+ * source: this file is published with the public copy, and a named person
+ * carrying a dated quote against their employer's name does not belong there.
  *
  * Most of the quarters a company scouts are not ours — they are the
  * neighbours' land we might take on — so a report is keyed by the legal land
@@ -66,7 +70,15 @@ export type ScoutCompany = {
    * page says so rather than letting an assumption read as the company's rule.
    */
   rule: string | null
+  /**
+   * Every `company` key this tab covers. Set by `scoutCompanies` when two keys
+   * display the same name, so they share one tab; otherwise just `key`.
+   */
+  keys?: string[]
 }
+
+/** Whether a report belongs under this company (any of its folded keys). */
+export const isCompanyOf = (c: ScoutCompany, companyKey: string) => (c.keys ?? [c.key]).includes(companyKey)
 
 /**
  * The companies the farm grows seed canola for, in the order Sam listed them
@@ -74,7 +86,7 @@ export type ScoutCompany = {
  * `company` is free text — and gets a tab of its own at the end.
  */
 export const SCOUT_COMPANIES: ScoutCompany[] = [
-  { key: 'corteva', label: 'Corteva', pass: ['A', 'B'], rule: 'Corteva grows on A and B fields — Kathryn Bilcik, 12 November 2026.' },
+  { key: 'corteva', label: 'Corteva', pass: ['A', 'B'], rule: 'Corteva grows on A and B fields — from Corteva, 12 November 2026.' },
   { key: 'basf', label: 'BASF', pass: ['A', 'B'], rule: null },
   { key: 'bayer', label: 'Bayer', pass: ['A', 'B'], rule: null },
   { key: 'nutrien', label: 'Nutrien', pass: ['A', 'B'], rule: null },
@@ -254,11 +266,23 @@ export function useSetScoutField() {
 /** The years on record, newest first. */
 export const scoutYears = (rows: ScoutReport[]) => [...new Set(rows.map((r) => r.crop_year))].sort((a, b) => b - a)
 
-/** The companies on record, the four known ones first and in order. */
+/**
+ * The companies on record, the four known ones first and in order.
+ *
+ * Two keys that display the same name (a company recorded under two keys)
+ * fold into one entry, so the page never shows two tabs with one label.
+ */
 export function scoutCompanies(rows: ScoutReport[]): ScoutCompany[] {
   const seen = new Set(rows.map((r) => r.company))
   const extra = [...seen].filter((k) => !SCOUT_COMPANIES.some((c) => c.key === k)).sort()
-  return [...SCOUT_COMPANIES, ...extra.map(companyOf)]
+  const out: ScoutCompany[] = []
+  for (const c of [...SCOUT_COMPANIES, ...extra.map(companyOf)]) {
+    const label = c.label.trim().toLowerCase()
+    const same = out.find((o) => o.label.trim().toLowerCase() === label)
+    if (same) same.keys = [...(same.keys ?? [same.key]), c.key]
+    else out.push({ ...c, keys: [c.key] })
+  }
+  return out
 }
 
 export type FieldVerdict = {
@@ -275,7 +299,7 @@ export type FieldVerdict = {
  */
 export function verdictsFor(rows: ScoutReport[], fieldId: string, year: number, companies: ScoutCompany[]): FieldVerdict[] {
   return companies.map((c) => {
-    const report = rows.find((r) => r.field_id === fieldId && r.crop_year === year && r.company === c.key) ?? null
+    const report = rows.find((r) => r.field_id === fieldId && r.crop_year === year && isCompanyOf(c, r.company)) ?? null
     return { company: c.key, report, passed: report ? scoutPassed(report) : null }
   })
 }

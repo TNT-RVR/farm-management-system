@@ -23,6 +23,7 @@ import { CleanSplit } from '@/components/CleanSplit'
 import { abnormalIndex, abnormalKey, useAbnormalYears } from '@/lib/abnormal-yields'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { KgAside } from '@/components/KgAside'
+import { HeadTip } from '@/components/HeadTip'
 
 const SOURCE_LABEL: Record<string, string> = {
   scale: 'Scale loads',
@@ -375,7 +376,7 @@ export function FieldYieldHistory({
               )}
             </div>
           )}
-          {!thisYear && season.last && <p className="mt-1 text-[11px] text-gray-500">Recording…</p>}
+          {!thisYear && season.last && <p className="mt-1 text-xs text-gray-500">Recording…</p>}
         </div>
       )}
 
@@ -400,11 +401,11 @@ export function FieldYieldHistory({
                   <th className={TABLE_TH}>Year</th>
                   <th className={TABLE_TH}>Crop</th>
                   <th className={cn(TABLE_TH, 'text-right')}>Acres</th>
-                  <th className={cn(TABLE_TH, 'text-right')} title="Field-run, before cleaning">Pre-clean / ac</th>
-                  <th className={cn(TABLE_TH, 'text-right')} title="Field-run, before cleaning">Pre-clean total</th>
-                  <th className={cn(TABLE_TH, 'text-right')} title="The plant's dockage. Type this and the clean figures follow.">Dockage %</th>
-                  <th className={cn(TABLE_TH, 'text-right')} title="What was left after cleaning">Clean / ac</th>
-                  <th className={cn(TABLE_TH, 'text-right')} title="What was left after cleaning">Clean total</th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Pre-clean / ac<HeadTip title="Pre-clean / ac">Field-run, before cleaning</HeadTip></th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Pre-clean total<HeadTip title="Pre-clean total">Field-run, before cleaning</HeadTip></th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Dockage %<HeadTip title="Dockage %">The plant&apos;s dockage. Type this and the clean figures follow.</HeadTip></th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Clean / ac<HeadTip title="Clean / ac">What was left after cleaning</HeadTip></th>
+                  <th className={cn(TABLE_TH, 'text-right')}>Clean total<HeadTip title="Clean total">What was left after cleaning</HeadTip></th>
                   <th className={TABLE_TH}>From</th>
                   {canEdit && <th className="px-3" />}
                 </tr>
@@ -424,7 +425,7 @@ export function FieldYieldHistory({
                         <td className="px-3 py-1.5">{l.crop_year}</td>
                         <td className="px-3 py-1.5">
                           {cropName(l.crop_id)}
-                          <span className="ml-1.5 rounded bg-brand-50 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-800">crop area</span>
+                          <span className="ml-1.5 rounded bg-brand-50 px-1 py-0.5 text-xs font-semibold uppercase tracking-wide text-brand-800">crop area</span>
                           {(l.yield_per_acre != null || markOf(l.crop_year, l.crop_id) != null) && (
                             <AbnormalYearMark
                               className="mt-0.5 flex"
@@ -458,7 +459,7 @@ export function FieldYieldHistory({
                       <td className="px-3 py-1.5">{h.crop_year}</td>
                       <td className="px-3 py-1.5">
                         {cropName(h.crop_id)}
-                        {h.variety && <span className="block text-[11px] text-gray-400">{h.variety}</span>}
+                        {h.variety && <span className="block text-xs text-gray-400">{h.variety}</span>}
                         <TraitBadge t={canolaTrait?.(h.crop_id, h.variety) ?? null} />
                         {/* A planned figure (Farm at Hand's goal, the rotation sheet) is no harvest to mark. */}
                         {h.crop_id &&
@@ -493,7 +494,7 @@ export function FieldYieldHistory({
                       <td className="px-3 py-1.5 text-right whitespace-nowrap">
                         {cell(h, 'clean_total', 'w-24')}
                         {h.clean_total != null && h.actual_yield_total != null && Number(h.actual_yield_total) > 0 && (
-                          <span className="block text-[11px] text-gray-500">
+                          <span className="block text-xs text-gray-500">
                             {(((Number(h.clean_total) - Number(h.actual_yield_total)) / Number(h.actual_yield_total)) * 100).toFixed(1)}% clean-out
                           </span>
                         )}
@@ -502,7 +503,7 @@ export function FieldYieldHistory({
                         {h.yield_override ? (
                           <>
                             <span className="font-medium text-amber-800">Typed over the scale</span>
-                            <span className="block text-[11px]">
+                            <span className="block text-xs">
                               Scale: {num(h.scale_total)} {unit}
                               {h.scale_acres ? `, ${num(Number(h.scale_total) / Number(h.scale_acres), 1)} ${unit}/ac` : ''}
                               {h.scale_wet_total != null ? ` dry (${num(h.scale_wet_total)} as weighed)` : ''}
@@ -512,7 +513,7 @@ export function FieldYieldHistory({
                                 type="button"
                                 disabled={resetToScale.isPending}
                                 onClick={() => resetToScale.mutate(h.id, { onError: (e) => setError((e as Error).message) })}
-                                className="mt-0.5 text-[11px] text-brand-700 underline decoration-dotted"
+                                className="mt-0.5 text-xs text-brand-700 underline decoration-dotted"
                               >
                                 Use the scale figure
                               </button>
@@ -521,7 +522,7 @@ export function FieldYieldHistory({
                         ) : h.source === 'scale' && h.scale_at ? (
                           <>
                             <span className="font-medium text-green-800">Scale</span>
-                            <span className="block text-[11px]">{h.scale_loads} loads</span>
+                            <span className="block text-xs">{h.scale_loads} loads</span>
                           </>
                         ) : (
                           SOURCE_LABEL[h.source] ?? h.source
@@ -657,14 +658,14 @@ function TraitBadge({ t }: { t: { trait: HerbicideTrait | null; from: string | n
   if (!t) return null
   if (!t.trait)
     return (
-      <span className="mt-0.5 block text-[10px] text-gray-400" title="Set the trait on the company's canola crop (Crops), or record the company in the variety">
+      <span className="mt-0.5 block text-xs text-gray-400" title="Set the trait on the company's canola crop (Crops), or record the company in the variety">
         herbicide trait not known
       </span>
     )
   return (
     <span
       className={cn(
-        'mt-0.5 inline-block rounded px-1.5 py-px text-[10px] font-semibold',
+        'mt-0.5 inline-block rounded px-1.5 py-px text-xs font-semibold',
         TRAIT_BADGE[t.trait],
       )}
       title={`${TRAIT_LABEL[t.trait]}${t.from ? ` (from ${t.from})` : ''}`}
@@ -675,5 +676,5 @@ function TraitBadge({ t }: { t: { trait: HerbicideTrait | null; from: string | n
 }
 
 function PlanMark({ label, amber = false }: { label: string; amber?: boolean }) {
-  return <span className={cn('mt-0.5 block text-[10px] font-medium', amber ? 'text-amber-700' : 'text-green-700')}>{label}</span>
+  return <span className={cn('mt-0.5 block text-xs font-medium', amber ? 'text-amber-700' : 'text-green-700')}>{label}</span>
 }

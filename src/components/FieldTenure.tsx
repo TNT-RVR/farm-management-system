@@ -166,7 +166,7 @@ export function FieldTenure({
               placeholder="e.g. potato, carrot"
               className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
             />
-            <span className="mt-0.5 block text-[10px] text-gray-400">Sprays Deere tags with this crop are theirs, not our cost.</span>
+            <span className="mt-0.5 block text-xs text-gray-400">Sprays Deere tags with this crop are theirs, not our cost.</span>
           </label>
           <label className="text-xs text-gray-500">
             Notes
@@ -198,7 +198,7 @@ export function FieldTenure({
             {yearRow?.rented_to ? ` to ${yearRow.rented_to}` : ''}
           </span>
         </label>
-        <p className="mt-0.5 text-[11px] text-gray-500">
+        <p className="mt-0.5 text-xs text-gray-500">
           Sprays recorded on it that year stay on its history for the rotation, but are not counted as our cost.
         </p>
       </div>

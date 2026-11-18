@@ -177,7 +177,7 @@ export function YardPlanner({
             <button type="button" onClick={() => setPlan(null)} className="text-xs text-gray-500">
               Close
             </button>
-            <span className="text-[11px] text-gray-400">Replaces each group&apos;s ration; the daily amounts then follow the weather and the calving date.</span>
+            <span className="text-xs text-gray-400">Replaces each group&apos;s ration; the daily amounts then follow the weather and the calving date.</span>
           </div>
         </div>
       )}

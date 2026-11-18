@@ -158,7 +158,7 @@ export function TaskWidgetCard() {
               value={manual}
               onFocus={(e) => e.currentTarget.select()}
               rows={6}
-              className="w-full rounded-md border border-amber-200 bg-white p-2 font-mono text-[11px] text-gray-800"
+              className="w-full rounded-md border border-amber-200 bg-white p-2 font-mono text-xs text-gray-800"
             />
           )}
           {manual && <p>Copying was blocked: select all of the text above and copy it.</p>}

@@ -127,7 +127,7 @@ export function CostOfGainWorksheet({
           </p>
 
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Feed, a head a day, from their ration</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Feed, a head a day, from their ration</p>
             {worked.feeds.length === 0 && (
               <p className="text-xs text-amber-700">
                 No ration set for this group on the Feed tab.{' '}
@@ -165,7 +165,7 @@ export function CostOfGainWorksheet({
                         aria-label={`${f.name} price a tonne`}
                       />
                       /t as fed
-                      {f.priceNote && <span className="text-[10px] text-gray-400" title={f.priceNote}>{f.priceFrom}</span>}
+                      {f.priceNote && <span className="text-xs text-gray-400" title={f.priceNote}>{f.priceFrom}</span>}
                     </label>
                   )}
                 </li>
@@ -206,7 +206,7 @@ export function CostOfGainWorksheet({
               {money(worked.result.total)} ÷ {Math.round(worked.result.gainLb)} lb ={' '}
               <b className="tabular-nums">{worked.result.perLb != null ? `$${worked.result.perLb.toFixed(2)}/lb` : '—'}</b>
               {worked.result.perLb != null && isManager && (
-                <button type="button" onClick={() => onUse(worked.result.perLb!)} className="ml-2 rounded border border-brand-300 px-1.5 py-0.5 text-[11px] font-semibold text-brand-800 hover:bg-brand-50">
+                <button type="button" onClick={() => onUse(worked.result.perLb!)} className="ml-2 rounded border border-brand-300 px-1.5 py-0.5 text-xs font-semibold text-brand-800 hover:bg-brand-50">
                   Use this
                 </button>
               )}

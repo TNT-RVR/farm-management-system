@@ -116,8 +116,8 @@ export function SpreadingTab({ isManager }: { isManager: boolean }) {
                 <th className={cn(TABLE_TH, 'text-right')}>Hours</th>
                 <th className={cn(TABLE_TH, 'text-right')}>Drive $/ac</th>
                 <th className={cn(TABLE_TH, 'text-right')}>Total $/ac</th>
-                <th className={cn(TABLE_TH, 'text-right')}>Field</th>
-                <th className={cn(TABLE_TH, 'text-right')}>vs custom</th>
+                <th className={cn(TABLE_TH, 'text-right')}>Whole field $</th>
+                <th className={cn(TABLE_TH, 'text-right')}>vs custom $/ac</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -138,7 +138,7 @@ export function SpreadingTab({ isManager }: { isManager: boolean }) {
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-[11px] text-gray-400">One trip from the shop to the field's entry and back per field, with the tractor's road burn and speed from the Fuel tab (“anything else”).</p>
+        <p className="mt-2 text-xs text-gray-400">One trip from the shop to the field's entry and back per field, with the tractor's road burn and speed from the Fuel tab (“anything else”).</p>
       </Card>
     </div>
   )

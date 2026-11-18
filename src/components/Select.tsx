@@ -142,7 +142,7 @@ export function Select({
                 {o.group && o.group !== options[i - 1]?.group && (
                   <li
                     role="presentation"
-                    className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400"
+                    className="px-2.5 pb-0.5 pt-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400"
                   >
                     {o.group}
                   </li>

@@ -273,7 +273,7 @@ function RotationRules({
                                   | null,
                               })
                             }}
-                            className="w-2 text-[10px] leading-none text-gray-500 hover:text-gray-900 disabled:opacity-0"
+                            className="w-2 text-xs leading-none text-gray-500 hover:text-gray-900 disabled:opacity-0"
                           >
                             {p && p !== 'no_go' ? MARK[p] : ''}
                           </button>

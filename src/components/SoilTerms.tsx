@@ -81,7 +81,7 @@ export function HorizonTable({
 
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-200">
-      <table className="w-full text-[11px]">
+      <table className="w-full text-xs">
         <thead className={TABLE_HEAD}>
           <tr>
             {shown.map((c) => (

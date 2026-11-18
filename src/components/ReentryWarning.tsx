@@ -235,7 +235,7 @@ export function ReentryPanel() {
                 <p className="text-xs">{headline(f)}</p>
               </div>
               {f.state === 'restricted' && (
-                <span className="shrink-0 rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+                <span className="shrink-0 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
                   {describeWait(f.status.hoursLeft)}
                 </span>
               )}

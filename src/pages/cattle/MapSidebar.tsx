@@ -96,7 +96,7 @@ function WhereTheCattleAre({
           {collars && (
             <button
               onClick={() => setImporting(true)}
-              className="flex items-center gap-1 rounded border border-white/40 px-1.5 py-0.5 text-[11px] font-medium hover:bg-white/10"
+              className="flex items-center gap-1 rounded border border-white/40 px-1.5 py-0.5 text-xs font-medium hover:bg-white/10"
             >
               <FileUp className="h-3 w-3" /> Import
             </button>

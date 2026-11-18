@@ -49,7 +49,7 @@ export function SatelliteSyncCard() {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
           <Satellite className="h-4 w-4 text-gray-400" /> Satellite sync
-          <span className="rounded bg-amber-200 px-1.5 text-[10px] font-medium uppercase text-amber-900">
+          <span className="rounded bg-amber-200 px-1.5 text-xs font-medium uppercase text-amber-900">
             temporary
           </span>
         </h3>

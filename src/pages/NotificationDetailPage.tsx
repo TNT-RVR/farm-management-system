@@ -126,7 +126,7 @@ export function NotificationDetailPage() {
           tone === 'act' ? 'border-amber-300 bg-amber-50' : tone === 'notice' ? 'border-sky-200 bg-sky-50' : 'border-emerald-200 bg-emerald-50',
         )}
       >
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{digestItems ? 'Daily digest' : guide.name}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{digestItems ? 'Daily digest' : guide.name}</p>
         <h1 className="mt-0.5 flex items-start gap-2 text-lg font-semibold text-gray-900">
           {tone === 'act' ? <TriangleAlert className="mt-1 h-5 w-5 shrink-0 text-amber-600" /> : <CheckCircle2 className="mt-1 h-5 w-5 shrink-0 text-emerald-600" />}
           {n.title}
@@ -182,7 +182,7 @@ export function NotificationDetailPage() {
               <div key={i} className="text-sm">
                 <p className="font-medium text-gray-900">
                   {f.source}{' '}
-                  <span className={cn('rounded px-1.5 py-0.5 text-[11px]', f.problem === 'gone' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800')}>
+                  <span className={cn('rounded px-1.5 py-0.5 text-xs', f.problem === 'gone' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800')}>
                     {f.problem === 'gone' ? 'gone' : f.problem === 'over' ? 'over guideline' : f.problem === 'restricted' ? 'restricted' : 'changed'}
                   </span>
                 </p>
@@ -194,7 +194,7 @@ export function NotificationDetailPage() {
                 )}
                 {f.note && <p className="text-xs text-gray-600">{f.note}</p>}
                 {(f.added?.length || f.removed?.length) ? (
-                  <pre className="mt-1 max-h-60 overflow-auto rounded bg-gray-50 p-2 text-[11px] leading-snug">
+                  <pre className="mt-1 max-h-60 overflow-auto rounded bg-gray-50 p-2 text-xs leading-snug">
                     {(f.removed ?? []).map((l) => `− ${l}`).join('\n')}
                     {f.removed?.length && f.added?.length ? '\n' : ''}
                     {(f.added ?? []).map((l) => `+ ${l}`).join('\n')}
@@ -276,7 +276,7 @@ export function NotificationDetailPage() {
         {otherDetails != null && (
           <div>
             <p className="font-semibold text-gray-800">Details</p>
-            <pre className="mt-1 max-h-60 overflow-auto rounded bg-gray-50 p-2 text-[11px]">{JSON.stringify(otherDetails, null, 2)}</pre>
+            <pre className="mt-1 max-h-60 overflow-auto rounded bg-gray-50 p-2 text-xs">{JSON.stringify(otherDetails, null, 2)}</pre>
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2">
@@ -291,7 +291,7 @@ export function NotificationDetailPage() {
             </button>
           </div>
         </div>
-        <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded border border-gray-200 bg-white p-2 font-mono text-[11px] leading-snug text-gray-700">{report}</pre>
+        <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded border border-gray-200 bg-white p-2 font-mono text-xs leading-snug text-gray-700">{report}</pre>
       </TechnicalDetails>
       {!isAdmin && (
         <button type="button" onClick={() => void copy()} className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800">

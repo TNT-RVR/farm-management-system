@@ -22,16 +22,18 @@ select v.ranch::uuid, extract(year from current_date)::int + y.ahead, v.herd::uu
        make_date(extract(year from current_date)::int + y.ahead, v.to_m, v.to_d),
        v.head, case when y.ahead = 1 then v.note end, v.sort
 from (values
+  -- Head is left blank: the planner takes the group's own count and adds the
+  -- calves at side itself. Typing the pairs (104) counted the calves twice.
   -- Willow Ridge: the summer rotation through the four paddocks.
-  ('0de30000-0000-4000-8000-000000000402', '0de30000-0000-4000-8000-000000000425', '0de30000-0000-4000-8000-000000000411',  5, 20,  6, 25, 104, 'Turn out when the native grass is at three leaves, not by the calendar.', 1),
-  ('0de30000-0000-4000-8000-000000000402', '0de30000-0000-4000-8000-000000000425', '0de30000-0000-4000-8000-000000000412',  6, 25,  7, 20, 104, 'Bulls in on the move out of here.', 2),
-  ('0de30000-0000-4000-8000-000000000402', '0de30000-0000-4000-8000-000000000425', '0de30000-0000-4000-8000-000000000413',  7, 20,  8, 25, 104, null, 3),
-  ('0de30000-0000-4000-8000-000000000402', '0de30000-0000-4000-8000-000000000425', '0de30000-0000-4000-8000-000000000414',  8, 25, 10,  1, 104, 'Last on the bush quarter: it was grazed hard this year and wants the rest.', 4),
+  ('0de30000-0000-4000-8000-000000000402', '0de30000-0000-4000-8000-000000000425', '0de30000-0000-4000-8000-000000000411',  5, 20,  6, 25, null::int, 'Turn out when the native grass is at three leaves, not by the calendar.', 1),
+  ('0de30000-0000-4000-8000-000000000402', '0de30000-0000-4000-8000-000000000425', '0de30000-0000-4000-8000-000000000412',  6, 25,  7, 20, null::int, 'Bulls in on the move out of here.', 2),
+  ('0de30000-0000-4000-8000-000000000402', '0de30000-0000-4000-8000-000000000425', '0de30000-0000-4000-8000-000000000413',  7, 20,  8, 25, null::int, null, 3),
+  ('0de30000-0000-4000-8000-000000000402', '0de30000-0000-4000-8000-000000000425', '0de30000-0000-4000-8000-000000000414',  8, 25, 10,  1, null::int, 'Last on the bush quarter: it was grazed hard this year and wants the rest.', 4),
   -- Home Ranch: two passes on the yard pasture, then the hay aftermath.
-  ('0de30000-0000-4000-8000-000000000401', '0de30000-0000-4000-8000-000000000421', '0de30000-0000-4000-8000-000000000415',  5, 15,  6, 20, 197, null, 1),
-  ('0de30000-0000-4000-8000-000000000401', '0de30000-0000-4000-8000-000000000421', '0de30000-0000-4000-8000-000000000416',  6, 20,  8, 10, 197, 'Water is the dugout here — check the solar pump before they go in.', 2),
-  ('0de30000-0000-4000-8000-000000000401', '0de30000-0000-4000-8000-000000000421', '0de30000-0000-4000-8000-000000000415',  8, 10,  9, 20, 197, 'Second pass once it has come back.', 3),
-  ('0de30000-0000-4000-8000-000000000401', '0de30000-0000-4000-8000-000000000421', '0de30000-0000-4000-8000-000000000417',  9, 20, 11,  5, 225, 'Bred heifers join the pairs on the aftermath.', 4)
+  ('0de30000-0000-4000-8000-000000000401', '0de30000-0000-4000-8000-000000000421', '0de30000-0000-4000-8000-000000000415',  5, 15,  6, 20, null::int, null, 1),
+  ('0de30000-0000-4000-8000-000000000401', '0de30000-0000-4000-8000-000000000421', '0de30000-0000-4000-8000-000000000416',  6, 20,  8, 10, null::int, 'Water is the dugout here — check the solar pump before they go in.', 2),
+  ('0de30000-0000-4000-8000-000000000401', '0de30000-0000-4000-8000-000000000421', '0de30000-0000-4000-8000-000000000415',  8, 10,  9, 20, null::int, 'Second pass once it has come back.', 3),
+  ('0de30000-0000-4000-8000-000000000401', '0de30000-0000-4000-8000-000000000421', '0de30000-0000-4000-8000-000000000417',  9, 20, 11,  5, null::int, 'Bred heifers join the pairs on the aftermath.', 4)
 ) as v(ranch, herd, pasture, from_m, from_d, to_m, to_d, head, note, sort)
 cross join (values (0), (1)) as y(ahead);
 

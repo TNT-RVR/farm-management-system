@@ -187,12 +187,12 @@ export function MoistureTestDetail({ test, onClose }: { test: MoistureTest; onCl
             <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 p-2">
               <p className="text-xs font-medium text-gray-700">Readings off the meter</p>
               <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <label className="text-[11px] text-gray-500">
+                <label className="text-xs text-gray-500">
                   Grain temp °C
                   <input inputMode="decimal" value={temp} onChange={(e) => setTemp(e.target.value)} className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900" />
                 </label>
                 {readings.map((v, i) => (
-                  <label key={i} className="text-[11px] text-gray-500">
+                  <label key={i} className="text-xs text-gray-500">
                     Dial reading {i + 1}
                     <input
                       inputMode="decimal"
@@ -210,7 +210,7 @@ export function MoistureTestDetail({ test, onClose }: { test: MoistureTest; onCl
                 </button>
               )}
               {!test.meter_readings?.length && test.meter_reading != null && (
-                <p className="mt-1 text-[11px] text-gray-500">This test was saved with only the average of its readings ({test.meter_reading}), so that stands as reading 1.</p>
+                <p className="mt-1 text-xs text-gray-500">This test was saved with only the average of its readings ({test.meter_reading}), so that stands as reading 1.</p>
               )}
               {readingsChanged && converted?.ok && (
                 <p className="mt-1.5 text-sm text-gray-800">
@@ -222,7 +222,7 @@ export function MoistureTestDetail({ test, onClose }: { test: MoistureTest; onCl
             </div>
           )}
           {isManager && (
-            <p className="mt-2 text-[11px] text-gray-500">
+            <p className="mt-2 text-xs text-gray-500">
               The grade follows the moisture and the crop. A moisture typed in here, not read off the chart, is marked typed in.
             </p>
           )}

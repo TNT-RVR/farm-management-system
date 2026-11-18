@@ -42,7 +42,7 @@ export function AddRanchForm({ onDone }: { onDone?: () => void }) {
       className="space-y-2"
     >
       <div className="grid gap-2 sm:grid-cols-3">
-        <label className="text-[11px] font-medium text-gray-500">
+        <label className="text-xs font-medium text-gray-500">
           Ranch name
           <input
             value={name}
@@ -51,7 +51,7 @@ export function AddRanchForm({ onDone }: { onDone?: () => void }) {
             className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
           />
         </label>
-        <label className="text-[11px] font-medium text-gray-500 sm:col-span-2">
+        <label className="text-xs font-medium text-gray-500 sm:col-span-2">
           Location (optional)
           <LatLngInput value={place} onChange={setPlace} placeholder="52.2, -113.9 or a Google Maps link" className="mt-0.5 py-1" />
         </label>

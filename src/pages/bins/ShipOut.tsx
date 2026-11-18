@@ -228,7 +228,7 @@ export function ShipOut({ from, cropYear, onClose }: { from: BinRow; cropYear: n
                 />
               )}
               {planned && dest && JSON.stringify(planned) === JSON.stringify(dest) && (
-                <p className="mt-1 text-[11px] text-gray-500">From the field&apos;s haul plan.</p>
+                <p className="mt-1 text-xs text-gray-500">From the field&apos;s haul plan.</p>
               )}
             </div>
 
@@ -239,7 +239,7 @@ export function ShipOut({ from, cropYear, onClose }: { from: BinRow; cropYear: n
               <span className="text-xs text-gray-500">The truck that took it (optional)</span>
               <div className="mt-1 grid grid-cols-2 gap-2">
                 <label className="block">
-                  <span className="text-[11px] text-gray-500">Driver</span>
+                  <span className="text-xs text-gray-500">Driver</span>
                   <Select
                     value={driverId}
                     ariaLabel="Driver"
@@ -269,7 +269,7 @@ export function ShipOut({ from, cropYear, onClose }: { from: BinRow; cropYear: n
                   )}
                 </label>
                 <label className="block">
-                  <span className="text-[11px] text-gray-500">Truck</span>
+                  <span className="text-xs text-gray-500">Truck</span>
                   <Select
                     value={truck}
                     ariaLabel="Truck"
@@ -278,7 +278,7 @@ export function ShipOut({ from, cropYear, onClose }: { from: BinRow; cropYear: n
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[11px] text-gray-500">Weigh in (full)</span>
+                  <span className="text-xs text-gray-500">Weigh in (full)</span>
                   <input
                     type="number"
                     min="0"
@@ -292,7 +292,7 @@ export function ShipOut({ from, cropYear, onClose }: { from: BinRow; cropYear: n
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[11px] text-gray-500">Weigh out (empty)</span>
+                  <span className="text-xs text-gray-500">Weigh out (empty)</span>
                   <input
                     type="number"
                     min="0"
@@ -309,7 +309,7 @@ export function ShipOut({ from, cropYear, onClose }: { from: BinRow; cropYear: n
               {halfWeighed && <p className="mt-1 text-xs text-amber-900">Both weights or neither — one on its own says nothing.</p>}
               {backwards && <p className="mt-1 text-xs text-amber-900">The full weight has to be more than the empty one.</p>}
               {weighed && scaleBu != null && (
-                <p className="mt-1 text-[11px] text-gray-600">
+                <p className="mt-1 text-xs text-gray-600">
                   Net {Math.round(gross - tare).toLocaleString()} kg · {Math.round(scaleBu).toLocaleString()} bu off the scale, which is what leaves the bin.
                 </p>
               )}

@@ -31,6 +31,7 @@ import {
   SETTINGS,
   SYMPTOMS,
   judgeLoss,
+  lossCheckProblem,
   lossFromPan,
   lossValue,
   recomputeLossCheck,
@@ -321,11 +322,13 @@ function SetupTab({
             <tr>
               <th className="px-3 py-2 font-medium">Setting</th>
               <th className="px-3 py-2 text-right font-medium">Start here</th>
-              <th className="px-3 py-2 text-right font-medium">
+              {/* On a phone: three columns that fit, last year left out and the
+                  range under the setting's name (design review, Nov 2026). */}
+              <th className="hidden px-3 py-2 text-right font-medium sm:table-cell">
                 {last ? last.crop_year : 'Last year'}
               </th>
               <th className="px-3 py-2 text-right font-medium">{cropYear} — what we ran</th>
-              <th className="px-3 py-2 font-medium">Usual range</th>
+              <th className="hidden px-3 py-2 font-medium sm:table-cell">Usual range</th>
             </tr>
           </thead>
           <tbody>
@@ -349,14 +352,21 @@ function SetupTab({
                         </p>
                       </InfoPopover>
                     </span>
-                    <span className="block text-xs text-gray-400">{s.unit}</span>
+                    <span className="block text-xs text-gray-400">
+                      {s.unit}
+                      <span className="sm:hidden">
+                        {' · usual '}
+                        {IN_INCHES.includes(s.key) ? `${inchText(lo)}–${inchText(hi)}` : `${lo}–${hi}`}
+                        {outside && <span className="ml-1 text-amber-700">⚠ outside</span>}
+                      </span>
+                    </span>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-500">
                     {asText(s.key, starts[s.key].value)}
                     {starts[s.key].source === 'manual' && <BookBadge />}
-                    {IN_INCHES.includes(s.key) && <span className="block text-[11px] text-gray-400">{starts[s.key].value} mm</span>}
+                    {IN_INCHES.includes(s.key) && <span className="block text-xs text-gray-400">{starts[s.key].value} mm</span>}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                  <td className="hidden px-3 py-2 text-right tabular-nums text-gray-500 sm:table-cell">
                     {last?.[s.key] != null ? asText(s.key, Number(last[s.key])) : '—'}
                   </td>
                   <td className="px-3 py-2 text-right">
@@ -376,10 +386,10 @@ function SetupTab({
                     />
                     {/* Typed as a fraction ("15/16", "1 1/8"); the mm under it is what is kept. */}
                     {IN_INCHES.includes(s.key) && n != null && Number.isFinite(n) && (
-                      <span className="block text-[11px] text-gray-400">{n} mm</span>
+                      <span className="block text-xs text-gray-400">{n} mm</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-xs text-gray-500 tabular-nums">
+                  <td className="hidden px-3 py-2 text-xs text-gray-500 tabular-nums sm:table-cell">
                     {IN_INCHES.includes(s.key) ? `${inchText(lo)}–${inchText(hi)}` : `${lo}–${hi}`}
                     {outside && (
                       <span className="ml-1 text-amber-700" title="Outside the usual range">
@@ -395,7 +405,7 @@ function SetupTab({
       </div>
 
       {/* The caveat is about this crop's numbers, so it stays in view. */}
-      {caveat && <p className="text-[11px] text-amber-800">{caveat}</p>}
+      {caveat && <p className="text-xs text-amber-800">{caveat}</p>}
       <HelpNote
         summary={
           showBook
@@ -459,7 +469,7 @@ function FixTab({ crop }: { crop: CombineCropKey }) {
             >
               {sym.label}
               {sym.crops?.includes(crop) && (
-                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800">
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold uppercase text-amber-800">
                   watch in {crop}
                 </span>
               )}
@@ -480,7 +490,7 @@ function FixTab({ crop }: { crop: CombineCropKey }) {
                     const setting = SETTINGS.find((s) => s.key === f.setting)
                     return (
                       <li key={i} className="flex gap-2.5 text-sm">
-                        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-[11px] font-semibold text-gray-600">
+                        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600">
                           {i + 1}
                         </span>
                         <span className="min-w-0">
@@ -618,6 +628,8 @@ function LossTab({
     eff.acres ? num(eff.acres) : null,
   )
   const verdict = judgeLoss(result.pctOfYield, baseline.targetLossPct)
+  // An impossible figure is said once, in place of the answer, not half-clamped.
+  const problem = lossCheckProblem(form)
   const fieldName = (id: string | null) => fields?.find((f) => f.id === id)?.name ?? '—'
 
   return (
@@ -667,7 +679,7 @@ function LossTab({
             </label>
           )}
           {fieldDefaults && (
-            <p className="-mt-1 text-[11px] text-gray-500">
+            <p className="-mt-1 text-xs text-gray-500">
               {fieldDefaults.cropName ?? `No ${cropYear} crop planned`}
               {eff.yieldBu && ` · ${eff.yieldBu} bu/ac`}
               {eff.price && ` · $${eff.price}/bu`}
@@ -712,6 +724,7 @@ function LossTab({
             value={form.grams}
             onChange={(v) => set('grams', v)}
             hint="Clean the chaff off and weigh just the grain."
+            error={problem?.startsWith('Pan weight') ? problem : undefined}
           />
         </div>
 
@@ -755,7 +768,9 @@ function LossTab({
         <div
           className={cn(
             'rounded-lg border p-4',
-            verdict === 'high'
+            problem
+              ? 'border-gray-200 bg-white'
+              : verdict === 'high'
               ? 'border-red-300 bg-red-50'
               : verdict === 'watch'
                 ? 'border-amber-300 bg-amber-50'
@@ -763,11 +778,13 @@ function LossTab({
           )}
         >
           <p className="text-3xl font-bold tabular-nums text-gray-900">
-            {result.buPerAcre.toFixed(2)}{' '}
+            {problem ? '—' : result.buPerAcre.toFixed(2)}{' '}
             <span className="text-base font-medium text-gray-600">bu/ac lost</span>
           </p>
-          <p className="mt-1 text-sm text-gray-700">
-            {result.pctOfYield != null ? (
+          <p className={cn('mt-1 text-sm', problem ? 'font-medium text-red-700' : 'text-gray-700')}>
+            {problem ? (
+              problem
+            ) : result.pctOfYield != null ? (
               <>
                 <strong>{result.pctOfYield.toFixed(1)}%</strong> of the crop — target for{' '}
                 {baseline.label.toLowerCase()} is {baseline.targetLossPct}%.{' '}
@@ -781,6 +798,7 @@ function LossTab({
               'Enter a yield to see this as a share of the crop.'
             )}
           </p>
+          {!problem && (
           <p className="mt-2 text-xs text-gray-600">
             {gramsPerSqFt.toFixed(2)} g/sq ft in the pan ·{' '}
             {num(form.header) > 0 ? (gramsPerSqFt * (num(form.discharge) / num(form.header))).toFixed(2) : '0.00'} g/sq ft averaged over the {form.header || '?'} ft cut
@@ -793,6 +811,7 @@ function LossTab({
               </>
             )}
           </p>
+          )}
         </div>
 
         {canEdit && (
@@ -819,7 +838,7 @@ function LossTab({
               </label>
             </div>
             <button
-              disabled={!form.grams || !form.fieldId || saveCheck.isPending}
+              disabled={!form.grams || !form.fieldId || !!problem || saveCheck.isPending}
               onClick={() =>
                 saveCheck.mutate(
                   {
@@ -896,7 +915,7 @@ function LossTab({
                       </span>
                     </span>
                     {settingsLine(c, ['rotor_rpm', 'concave_mm', 'fan_rpm', 'chaffer_mm', 'sieve_mm', 'ground_speed_mph']) && (
-                      <span className="block truncate text-[11px] text-gray-400">{settingsLine(c, ['rotor_rpm', 'concave_mm', 'fan_rpm', 'chaffer_mm', 'sieve_mm', 'ground_speed_mph'])}</span>
+                      <span className="block truncate text-xs text-gray-400">{settingsLine(c, ['rotor_rpm', 'concave_mm', 'fan_rpm', 'chaffer_mm', 'sieve_mm', 'ground_speed_mph'])}</span>
                     )}
                     {(c.notes || (c.source && c.source !== 'unknown')) && (
                       <span className="block truncate text-xs text-gray-400">
@@ -1081,7 +1100,7 @@ function BookBadge() {
   return (
     <span
       title={`New Holland CR operator’s manual, ${ROTOR_IN} in rotor`}
-      className="ml-1 inline-block rounded bg-brand-50 px-1 text-[9px] font-semibold uppercase tracking-wide text-brand-700 align-middle"
+      className="ml-1 inline-block rounded bg-brand-50 px-1 text-xs font-semibold uppercase tracking-wide text-brand-700 align-middle"
     >
       book
     </span>
@@ -1226,7 +1245,7 @@ function BookTab({ crop }: { crop: CombineCropKey }) {
                 ))}
               </tbody>
             </table>
-            <p className="px-2 py-1.5 text-[11px] text-gray-500">
+            <p className="px-2 py-1.5 text-xs text-gray-500">
               Concave and sieves in inches (the manual gives mm). ¹ intermediate concave wires out, only half needed.
             </p>
           </div>
@@ -1246,7 +1265,7 @@ function BookTab({ crop }: { crop: CombineCropKey }) {
             <ol className="space-y-1.5">
               {LOSS_SITES.map((l) => (
                 <li key={l.n} className="flex gap-2.5">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-[11px] font-semibold text-gray-600">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600">
                     {l.n}
                   </span>
                   <span>
@@ -1309,7 +1328,7 @@ function BookTab({ crop }: { crop: CombineCropKey }) {
         >
           Changing from grain to corn
           {crop === 'corn' && (
-            <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800">
+            <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold uppercase text-amber-800">
               this crop
             </span>
           )}
@@ -1332,7 +1351,7 @@ function BookTab({ crop }: { crop: CombineCropKey }) {
                 </ul>
               </div>
             ))}
-            <p className="text-[11px] text-gray-500">
+            <p className="text-xs text-gray-500">
               Page numbers are the manual’s. Going back to grain is the same list in reverse, plus
               the humped grain pan insert back in.
             </p>
@@ -1348,6 +1367,7 @@ function Field({
   value,
   onChange,
   hint,
+  error,
   autoFocus,
   placeholder,
 }: {
@@ -1355,6 +1375,8 @@ function Field({
   value: string
   onChange: (v: string) => void
   hint?: string
+  /** What is wrong with the figure, in red under the box. */
+  error?: string
   autoFocus?: boolean
   /** The default that applies while the box is blank. */
   placeholder?: string
@@ -1373,7 +1395,8 @@ function Field({
           className="w-28 rounded-md border border-gray-300 px-2 py-1 text-right text-sm tabular-nums text-gray-900"
         />
       </span>
-      {hint && <span className="mt-0.5 block text-[11px] text-gray-400">{hint}</span>}
+      {error && <span className="mt-0.5 block text-xs font-medium text-red-700">{error}</span>}
+      {hint && <span className="mt-0.5 block text-xs text-gray-400">{hint}</span>}
     </label>
   )
 }

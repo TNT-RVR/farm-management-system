@@ -198,7 +198,7 @@ export function YieldImport({
               </table>
             </div>
             {!column && (
-              <p className="mt-1 text-[11px] text-amber-700">No column looks like yield — pick it by hand.</p>
+              <p className="mt-1 text-xs text-amber-700">No column looks like yield — pick it by hand.</p>
             )}
           </div>
         )}
@@ -218,7 +218,7 @@ export function YieldImport({
           </label>
         )}
         {chosen && hasScaleTotal && (
-          <p className="text-[11px] text-gray-500">
+          <p className="text-xs text-gray-500">
             The map keeps this file’s pattern and scales it to the scale total, so the unit does not matter.
           </p>
         )}

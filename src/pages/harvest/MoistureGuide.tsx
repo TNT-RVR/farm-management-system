@@ -136,7 +136,8 @@ export function MoistureGuide({ compact = false }: { compact?: boolean }) {
         <HelpNote className="mt-1 text-xs" summary="Canadian Grain Commission charts, via 919.ca." title="Where the charts come from">
           Published by the Canadian Grain Commission and supplied free by Dimo&rsquo;s Labtronics at
           919.ca. These are the ones for what we grow; the calculator reads the numbers straight out
-          of them.
+          of them. The PDFs here are reference copies, not official versions, and the Commission
+          reissues them: the current ones are at grainscanada.gc.ca.
         </HelpNote>
         <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
           {CHARTS.map((c) => (

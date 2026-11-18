@@ -59,7 +59,7 @@ export function BriefingSection({ weekOf }: { weekOf: string }) {
           <div className="flex items-center gap-2 print:hidden">
             {stock && (
               <span
-                className="text-[11px] text-gray-400"
+                className="text-xs text-gray-400"
                 title={`Facts suited to ${monthName} that have not been read out. Nothing repeats, so they get used up — more are written automatically once this falls below ${STOCK_PER_MONTH}. ${stock.remaining} unread in the library altogether.`}
               >
                 {stock.left} left for {monthName}
@@ -69,7 +69,7 @@ export function BriefingSection({ weekOf }: { weekOf: string }) {
               onClick={another}
               disabled={!fact || skipFact.isPending}
               title="Hand this week to a different fact. This one goes back in the pool."
-              className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-0.5 text-[11px] text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+              className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50 disabled:opacity-40"
             >
               <SkipForward className="h-3 w-3" /> another
             </button>
@@ -99,7 +99,7 @@ export function BriefingSection({ weekOf }: { weekOf: string }) {
             <div className="mt-2 flex flex-wrap items-baseline gap-2">
               <span
                 className={cn(
-                  'rounded px-1.5 py-0.5 text-[11px] font-medium',
+                  'rounded px-1.5 py-0.5 text-xs font-medium',
                   TOPIC_STYLE[fact.topic],
                 )}
               >
@@ -120,7 +120,7 @@ export function BriefingSection({ weekOf }: { weekOf: string }) {
                  was checked against and a way to bin it. One press and it is
                  out of the pool for good and the week picks again — which is
                  what makes an automatically written library safe to read out. */
-              <div className="mt-1.5 flex items-center gap-3 text-[11px] text-gray-400 print:hidden">
+              <div className="mt-1.5 flex items-center gap-3 text-xs text-gray-400 print:hidden">
                 {fact.sourceUrl && (
                   <a
                     href={fact.sourceUrl}
@@ -148,7 +148,7 @@ export function BriefingSection({ weekOf }: { weekOf: string }) {
               /* The library ships with the app so a fact is always available,
                  but the record of what has been used does not — so offline it
                  cannot promise this one is new. Better said than assumed. */
-              <p className="mt-1.5 text-[11px] text-gray-400">
+              <p className="mt-1.5 text-xs text-gray-400">
                 Offline — this suits the month, but it may be one already read out.
               </p>
             )}
@@ -164,7 +164,7 @@ export function BriefingSection({ weekOf }: { weekOf: string }) {
           <button
             onClick={() => refresh.mutate()}
             disabled={refresh.isPending}
-            className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-0.5 text-[11px] text-gray-500 hover:bg-gray-50 disabled:opacity-50 print:hidden"
+            className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-50 disabled:opacity-50 print:hidden"
           >
             <RefreshCw className={cn('h-3 w-3', refresh.isPending && 'animate-spin')} />
             refresh
@@ -188,7 +188,7 @@ export function BriefingSection({ weekOf }: { weekOf: string }) {
                   <span>{n.title}</span>
                   <ExternalLink className="mt-1 h-3 w-3 shrink-0 text-gray-300 group-hover:text-brand-700 print:hidden" />
                 </a>
-                <p className="text-[11px] text-gray-400">
+                <p className="text-xs text-gray-400">
                   {n.source}
                   {n.published_at && ` · ${howFresh(n.published_at)}`}
                   {/* Why it was picked. The score is a keyword sum, so it can
@@ -212,7 +212,7 @@ export function BriefingSection({ weekOf }: { weekOf: string }) {
           <p className="mt-2 text-xs text-red-600">{(refresh.error as Error).message}</p>
         )}
         {refresh.isSuccess && !refresh.isPending && (
-          <p className="mt-2 text-[11px] text-gray-400">
+          <p className="mt-2 text-xs text-gray-400">
             Read {refresh.data?.stored ?? 0} relevant items
             {refresh.data?.failed?.length ? `; ${refresh.data.failed.length} feed(s) refused` : ''}.
           </p>

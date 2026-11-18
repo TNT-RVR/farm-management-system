@@ -64,7 +64,7 @@ export function MoveAlertSettings({ ranch, isManager }: { ranch: Ranch; isManage
           <button
             onClick={() => save({ move_alerts_on: !ranch.move_alerts_on })}
             className={cn(
-              'rounded border px-2 py-0.5 text-[11px] font-semibold',
+              'rounded border px-2 py-0.5 text-xs font-semibold',
               ranch.move_alerts_on ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 text-gray-500',
             )}
           >
@@ -125,7 +125,7 @@ export function MoveAlertSettings({ ranch, isManager }: { ranch: Ranch; isManage
         />
         <span>
           Count the calves at side with the cows until weaning
-          <span className="block text-[11px] text-gray-500">
+          <span className="block text-xs text-gray-500">
             Calves wear no collars, so each cow in a mob is given a calf at the calves&apos; AU from the Herd tab
             {ranch.weaning_date
               ? `, until weaning on ${new Date(ranch.weaning_date + 'T00:00:00').toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })}.`

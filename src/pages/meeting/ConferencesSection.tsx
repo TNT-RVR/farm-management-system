@@ -30,7 +30,7 @@ function Row({ item, showDeadline }: { item: MeetingItem; showDeadline?: boolean
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <span className="font-medium text-gray-900">{e.name}</span>
         {e.status !== 'watching' && (
-          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
             {e.status}
           </span>
         )}
@@ -112,7 +112,7 @@ export function ConferencesSection() {
       <div className="flex items-center gap-1.5">
         <CalendarDays className="h-4 w-4 text-gray-400" />
         <h2 className="text-sm font-semibold text-gray-800">Conferences</h2>
-        <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-gray-600">
+        <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-gray-600">
           {soon.length + later.length}
         </span>
         <Link to="/events" className="ml-auto text-xs text-brand-700 hover:underline print:hidden">

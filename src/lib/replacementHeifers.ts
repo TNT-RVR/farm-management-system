@@ -29,6 +29,8 @@ export type SaleOption = {
   costPerHead: number
   /** Net per head after the gain cost and death loss while holding. */
   netPerHead: number | null
+  /** Share still alive at the sale after the post-weaning death loss (1 at weaning). Set by priceSaleOptions. */
+  survive?: number
 }
 
 export type HeiferInputs = {
@@ -66,6 +68,11 @@ export type HeiferPlan = {
   marginPerCow: number
   /** A bred heifer's working life, in today's dollars. */
   pvCow: number
+  /** How the open heifers (1 − pregPct) are sold: as yearlings, else the best option when yearlings have no price. */
+  openSoldAs: SaleOption | null
+  /** What those opens bring, per heifer kept: (1 − preg) × that option's net. Part of valueKept. */
+  openSoldPerHeifer: number
+  /** preg × pvCow + openSoldPerHeifer − devCostPerHeifer. */
   valueKept: number
   valueSold: number
   /** Each heifer kept instead of sold: positive means keeping pays. */
@@ -104,10 +111,10 @@ export const HOLD_MONTHS: Record<SaleOption['key'], number> = { weaning: 0, wint
  */
 export function priceSaleOptions(options: (Omit<SaleOption, 'netPerHead'> & { monthsHeld?: number })[], lossPctPerYear: number): SaleOption[] {
   return options.map((o) => {
-    if (o.pricePerLb == null) return { ...o, netPerHead: null }
     const months = o.monthsHeld ?? HOLD_MONTHS[o.key] ?? 0
     const survive = Math.pow(1 - Math.min(100, Math.max(0, lossPctPerYear)) / 100, months / 12)
-    return { ...o, netPerHead: o.weightLb * o.pricePerLb * survive - o.costPerHead }
+    if (o.pricePerLb == null) return { ...o, survive, netPerHead: null }
+    return { ...o, survive, netPerHead: o.weightLb * o.pricePerLb * survive - o.costPerHead }
   })
 }
 
@@ -135,7 +142,8 @@ export function planHeifers(inp: HeiferInputs): HeiferPlan {
   pvCow += inp.cullCowValue / Math.pow(1 + r, inp.productiveYears)
   const preg = inp.pregPct / 100
   // Kept: most calve and join the herd; the open ones go as yearlings.
-  const valueKept = preg * pvCow + (1 - preg) * (yearling?.netPerHead ?? 0) - inp.devCostPerHeifer
+  const openSoldPerHeifer = (1 - preg) * (yearling?.netPerHead ?? 0)
+  const valueKept = preg * pvCow + openSoldPerHeifer - inp.devCostPerHeifer
   const valueSold = best?.netPerHead ?? 0
   const gain = valueKept - valueSold
 
@@ -179,7 +187,7 @@ export function planHeifers(inp: HeiferInputs): HeiferPlan {
         netVsSellAll: overCost == null ? null : keep * gain - overCost,
       }
     })
-  return { best, marginPerCow, pvCow, valueKept, valueSold, gainPerHeiferKept: gain, maintain, recommended, reason, rows }
+  return { best, marginPerCow, pvCow, openSoldAs: yearling, openSoldPerHeifer, valueKept, valueSold, gainPerHeiferKept: gain, maintain, recommended, reason, rows }
 }
 
 // ── The assumptions someone typed ───────────────────────────────────────────

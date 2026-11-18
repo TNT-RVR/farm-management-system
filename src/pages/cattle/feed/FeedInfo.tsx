@@ -20,7 +20,7 @@ export function FeedInfo({ k, label }: { k: HelpKey; label?: string }) {
             </ul>
           </div>
         )}
-        {'source' in h && h.source && <p className="text-[11px] text-gray-400">Source: {h.source}</p>}
+        {'source' in h && h.source && <p className="text-xs text-gray-400">Source: {h.source}</p>}
       </div>
     </InfoPopover>
   )

@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { useJdProducts, useRetailerName } from '@/lib/products'
 import { useAllBoundaries, useFields } from '@/lib/queries'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
-import { L_PER_US_GAL, currentAcres, inPacks, shedStock, type InvAdjustment, type InvOp, type InvPurchase, type StockLine } from '@/lib/chem-inventory'
+import { L_PER_US_GAL, currentAcres, inPacks, shedStock, shownStock, type InvAdjustment, type InvOp, type InvPurchase, type StockLine } from '@/lib/chem-inventory'
 import { InfoPopover } from '@/components/InfoPopover'
 import { cn } from '@/lib/utils'
 import { askConfirm } from '@/components/askConfirm'
@@ -147,6 +147,10 @@ export function InventoryTab() {
 
   const show = (v: number, unit: string | null) =>
     unit === 'L' && gallons ? `${qtyFmt(v / L_PER_US_GAL)} gal` : `${qtyFmt(v)} ${unit ?? ''}`
+  /** A column figure that `shownStock` has already rounded in the unit shown. */
+  const shownAs = (v: number, unit: string | null) =>
+    `${v.toLocaleString('en-CA', { maximumFractionDigits: 1 })} ${unit === 'L' && gallons ? 'gal' : (unit ?? '')}`
+  const perUnit = (unit: string | null) => (unit === 'L' && gallons ? L_PER_US_GAL : 1)
 
   if (isLoading) return <p className="py-8 text-center text-sm text-gray-400">Adding up the invoices and the sprayer…</p>
   if (error) return <p className="text-sm text-red-700">{(error as Error).message}</p>
@@ -223,6 +227,8 @@ export function InventoryTab() {
           <tbody className="divide-y divide-gray-100">
             {shown.map((l) => {
               const isOpen = open === l.product.id
+              // Columns as printed; On hand is worked out from them so they subtract.
+              const s = shownStock(l, perUnit(l.product.unit))
               return (
                 <Fragment key={l.product.id}>
                   <tr className="hover:bg-gray-50">
@@ -231,18 +237,18 @@ export function InventoryTab() {
                         {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
                         {l.product.name}
                       </button>
-                      <span className="ml-5 block text-[11px] text-gray-400">
+                      <span className="ml-5 block text-xs text-gray-400">
                         {l.lastBought ? `last bought ${l.lastBought}` : 'no invoice on record'}
                         {l.countedOn && ` · counted ${l.countedOn}`}
                       </span>
                     </td>
                     <td className={cn('px-3 py-2 text-right font-semibold tabular-nums', !l.lastBought ? 'text-gray-400' : l.onHand < -0.05 ? 'text-red-700' : 'text-gray-900')}>
-                      {!l.lastBought && !l.countedOn ? 'count it' : show(l.onHand, l.product.unit)}
+                      {!l.lastBought && !l.countedOn ? 'count it' : shownAs(s.onHand, l.product.unit)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-600">{inPacks(l.onHand, l.packSize, l.packUnit) ?? '—'}</td>
-                    <td className="hidden px-3 py-2 text-right tabular-nums text-gray-600 sm:table-cell">{show(l.bought, l.product.unit)}</td>
-                    <td className="hidden px-3 py-2 text-right tabular-nums text-gray-600 sm:table-cell">{show(l.used, l.product.unit)}</td>
-                    <td className="hidden px-3 py-2 text-right tabular-nums text-gray-600 md:table-cell">{Math.abs(l.adjusted) > 0.05 ? show(l.adjusted, l.product.unit) : '—'}</td>
+                    <td className="hidden px-3 py-2 text-right tabular-nums text-gray-600 sm:table-cell">{shownAs(s.bought, l.product.unit)}</td>
+                    <td className="hidden px-3 py-2 text-right tabular-nums text-gray-600 sm:table-cell">{shownAs(s.used, l.product.unit)}</td>
+                    <td className="hidden px-3 py-2 text-right tabular-nums text-gray-600 md:table-cell">{s.adjusted !== 0 ? shownAs(s.adjusted, l.product.unit) : '—'}</td>
                     <td className="px-3 py-2 text-right">{isMgr && <StockEdit line={l} />}</td>
                   </tr>
                   {isOpen && (
@@ -266,7 +272,7 @@ export function InventoryTab() {
                                 )}
                               </span>
                               {/* Where the line came from (Sam, 7 Oct 2026): only the hand-made ones are edited here. */}
-                              <span className="hidden w-32 shrink-0 truncate text-[11px] text-gray-400 sm:inline">
+                              <span className="hidden w-32 shrink-0 truncate text-xs text-gray-400 sm:inline">
                                 {e.kind === 'bought'
                                   ? `${retailerName} invoice`
                                   : e.kind === 'used'

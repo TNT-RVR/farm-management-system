@@ -24,7 +24,7 @@ const OWN_FIELDS: NumberField<keyof OwnManureSettings>[] = [
   { key: 'widthFt', label: 'Spread width', unit: 'ft' },
   { key: 'speedMph', label: 'Spreading speed', unit: 'mph', hint: 'varies with what the field needs' },
   { key: 'efficiency', label: 'Field efficiency', unit: '0–1', hint: 'share of the time actually spreading' },
-  { key: 'tonnesPerLoad', label: 'Spreader holds', unit: 't', hint: 'not known yet — N & K’s load until the spreader is picked' },
+  { key: 'tonnesPerLoad', label: 'Spreader holds', unit: 't', hint: 'not known yet — the custom hauler’s load until the spreader is picked' },
   { key: 'turnMin', label: 'Hook-up and waiting', unit: 'min a load' },
   { key: 'roadKmh', label: 'Tractor on the road', unit: 'km/h', hint: 'loaded spreader behind' },
   { key: 'tractorLph', label: 'Tractor diesel', unit: 'L/h', hint: 'default: what Deere logged for the tractor' },
@@ -36,7 +36,7 @@ const OWN_FIELDS: NumberField<keyof OwnManureSettings>[] = [
 
 /**
  * What a ton of the farm's own manure is worth on each field, and what it
- * costs to put it there — custom, at what N & K Custom actually charged, and
+ * costs to put it there — custom, at what the custom hauler actually charged, and
  * doing it ourselves.
  *
  * Only the nutrients the field needs count: phosphate on a field that tests
@@ -65,7 +65,7 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
     return { n: c.n?.perLb ?? null, p2o5: c.p2o5?.perLb ?? null, k2o: c.k2o?.perLb ?? null }
   }, [priced.current])
 
-  // N & K's rate, fitted to what they billed at what distance.
+  // The custom hauler's rate, fitted to what they billed at what distance.
   const custom = useMemo(
     () =>
       fitCustomModel(
@@ -123,13 +123,16 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
         const o = t && tonnes > 0 ? ownCost(own, tonnes, t, basics.dieselPerL, basics.wage, TONS_PER_ACRE) : null
         const best = [c?.perTonne, o?.perTonne].filter((x): x is number => x != null)
         const cost = best.length ? Math.min(...best) : null
-        return { f, needs, fromRec, hasSoil: !!s, t, gross: v.gross, c, o, net: cost != null ? v.gross - cost : null }
+        // Net is worked from the two figures printed beside it (to the cent),
+        // so the row subtracts the way a reader checks it.
+        const cents = (x: number) => Math.round(x * 100) / 100
+        return { f, needs, fromRec, hasSoil: !!s, t, gross: v.gross, c, o, net: cost != null ? cents(cents(v.gross) - cents(cost)) : null }
       })
       .filter((x) => x.fromRec || x.hasSoil)
       .sort((a, b) => (b.net ?? -1e9) - (a.net ?? -1e9))
   }, [fields, requirements, soil, price, src, nShare, trip, acresOf, custom, own, basics])
 
-  // N & K's real jobs, priced again as if we had done them: same field, same
+  // The custom hauler's real jobs, priced again as if we had done them: same field, same
   // tonnes, the same rate an acre.
   const jobs = useMemo(
     () =>
@@ -167,7 +170,7 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
             S.market,
             S.pricing,
             { label: 'Distance: from the shop to the field entry', to: '/fuel?tab=distances' },
-            { label: 'Custom rate: N & K invoices, below' },
+            { label: 'Custom rate: hauling invoices, below' },
           ]}
         />
         <HelpNote
@@ -193,7 +196,7 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
             title="The custom-hauling rate"
           >
             <p>
-            <strong>Custom, from N & K's invoices:</strong> ${custom.rate.toFixed(2)}/h for a Tridrive, {custom.tonnesPerLoad.toFixed(1)} t a load,{' '}
+            <strong>Custom, from the hauling invoices:</strong> ${custom.rate.toFixed(2)}/h for a Tridrive, {custom.tonnesPerLoad.toFixed(1)} t a load,{' '}
             {Math.round(custom.fixedHours * 60)} min a load loading and spreading, and the road at {Math.round(1 / custom.hoursPerKm)} km/h
             {custom.fitted ? ` (fitted to ${custom.lines} invoice lines at different distances)` : ' (road speed assumed — only one invoice distance)'}. Their invoice
             says the rate rises with fuel.
@@ -223,7 +226,7 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
                   </td>
                   <td className="px-3 py-1 text-gray-600">
                     {[needs.n && 'N', needs.p && 'P', needs.k && 'K'].filter(Boolean).join(' ') || 'nothing'}
-                    <span className="block text-[10px] text-gray-400">{fromRec ? 'from the recommendation' : 'from the soil test'}</span>
+                    <span className="block text-xs text-gray-400">{fromRec ? 'from the recommendation' : 'from the soil test'}</span>
                   </td>
                   <td className="px-3 py-1 text-right tabular-nums">{money(gross, 2)}</td>
                   <td className={cn('px-3 py-1 text-right tabular-nums', t?.basis === 'straight' && 'text-amber-700')} title={t?.note ?? undefined}>
@@ -258,14 +261,14 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
         </HelpNote>
         {jobs.length > 0 && (
           <div className="mt-3">
-            <h3 className="text-xs font-semibold text-gray-700">Against what N &amp; K actually billed</h3>
+            <h3 className="text-xs font-semibold text-gray-700">Against what the custom hauler actually billed</h3>
             <div className="mt-1 overflow-x-auto rounded-lg border border-gray-200">
               <table className="w-full text-xs">
                 <thead className={TABLE_HEAD}>
                   <tr>
                     <th className={TABLE_TH}>Job</th>
                     <th className={cn(TABLE_TH, 'text-right')}>Tonnes</th>
-                    <th className={cn(TABLE_TH, 'text-right')}>N &amp; K billed</th>
+                    <th className={cn(TABLE_TH, 'text-right')}>Hauler billed</th>
                     <th className={cn(TABLE_TH, 'text-right')}>Ourselves</th>
                     <th className={cn(TABLE_TH, 'hidden text-right md:table-cell')}>Tractor hours</th>
                     <th className={cn(TABLE_TH, 'text-right')}>Difference</th>
@@ -276,7 +279,7 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
                     <tr key={j.id}>
                       <td className="px-3 py-1 text-gray-700">
                         {j.fieldId ? <FieldLink id={j.fieldId} name={j.name} to="soil" /> : j.name}
-                        {j.on && <span className="block text-[10px] text-gray-400">{j.on}</span>}
+                        {j.on && <span className="block text-xs text-gray-400">{j.on}</span>}
                       </td>
                       <td className="px-3 py-1 text-right tabular-nums">{n1(j.tonnes)}</td>
                       <td className="px-3 py-1 text-right tabular-nums">{money(j.billed)}</td>
@@ -285,7 +288,8 @@ export function ManureValue({ year, isManager }: { year: number; isManager: bool
                       </td>
                       <td className="hidden px-3 py-1 text-right tabular-nums text-gray-600 md:table-cell">{j.o ? n1(j.o.tractorHours) : '—'}</td>
                       <td className={cn('px-3 py-1 text-right tabular-nums', j.o && j.o.total < j.billed ? 'text-green-800' : 'text-red-700')}>
-                        {j.o ? (j.o.total < j.billed ? `${money(j.billed - j.o.total)} cheaper ourselves` : `${money(j.o.total - j.billed)} dearer ourselves`) : '—'}
+                        {/* From the two whole-dollar figures printed beside it. */}
+                        {j.o ? (j.o.total < j.billed ? `${money(Math.round(j.billed) - Math.round(j.o.total))} cheaper ourselves` : `${money(Math.round(j.o.total) - Math.round(j.billed))} dearer ourselves`) : '—'}
                       </td>
                     </tr>
                   ))}

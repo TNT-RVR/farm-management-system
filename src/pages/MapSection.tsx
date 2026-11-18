@@ -30,7 +30,12 @@ export function MapSection() {
   const [tab, setTab] = useTab<Tab>('map', tabs)
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-gray-200 bg-white px-2 py-1">
+      {/* One line, scrolling sideways on a phone rather than wrapping: the
+          wrap put Compare and the date on a second row and took ~35px off the
+          map (design review, Nov 2026). */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-gray-200 bg-white px-2 py-1">
+        {/* Only the tabs scroll; the date stays pinned on the right. */}
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
         {tabs.length > 1 && tabs.map((t) => (
           <button
             key={t}
@@ -38,7 +43,7 @@ export function MapSection() {
             onClick={() => setTab(t)}
             aria-pressed={tab === t}
             className={cn(
-              'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium',
+              'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium',
               tab === t ? 'bg-brand-800 text-white' : 'text-gray-600 hover:bg-gray-100',
             )}
           >
@@ -54,6 +59,7 @@ export function MapSection() {
             {t === 'map' ? 'Map' : t === 'topography' ? 'Topography' : t === 'compare' ? 'Compare' : 'Profit / Loss'}
           </button>
         ))}
+        </div>
         {(tab === 'map' || tab === 'compare') && <MapDatePicker />}
       </div>
       <div className="min-h-0 flex-1">
@@ -86,23 +92,44 @@ function MapDatePicker() {
   const day = new Date(`${today}T12:00:00`)
   day.setDate(day.getDate() - 1)
   const yesterday = day.toLocaleDateString('en-CA')
+  // A pill that reads "Today" or the day, in the same shape as the tabs, with
+  // the real date box laid invisibly over it (design review, Nov 2026: the bare
+  // box showed yyyy-mm-dd in the tab row). Tapping it opens the phone's own
+  // picker; a computer gets the same picker from showPicker().
+  const shown = on
+    ? new Date(`${on}T12:00:00`).toLocaleDateString('en-CA', {
+        month: 'short',
+        day: 'numeric',
+        ...(on.slice(0, 4) === today.slice(0, 4) ? {} : { year: 'numeric' }),
+      })
+    : 'Today'
   return (
     <div
       className={cn(
-        'ml-auto flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs',
+        'ml-auto flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium',
         on ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-gray-200 text-gray-600',
       )}
       title="See the satellite photo, NDVI, FieldNET and AIMM layers as they were on a past day"
     >
-      <CalendarDays className="h-3.5 w-3.5 shrink-0" />
-      <input
-        type="date"
-        value={on ?? today}
-        max={yesterday}
-        aria-label="Show the map as it was on"
-        onChange={(e) => set(asOfDay(e.target.value, today))}
-        className="w-[7.5rem] bg-transparent text-xs focus:outline-none"
-      />
+      <label className="relative flex cursor-pointer items-center gap-1 whitespace-nowrap">
+        <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+        {shown}
+        <input
+          type="date"
+          value={on ?? today}
+          max={yesterday}
+          aria-label="Show the map as it was on"
+          onChange={(e) => set(asOfDay(e.target.value, today))}
+          onClick={(e) => {
+            try {
+              e.currentTarget.showPicker?.()
+            } catch {
+              // Older browsers: the box itself still opens on a tap.
+            }
+          }}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        />
+      </label>
       {on && (
         <button type="button" onClick={() => set(null)} aria-label="Back to today" title="Back to today" className="rounded p-0.5 hover:bg-amber-100">
           <X className="h-3 w-3" />

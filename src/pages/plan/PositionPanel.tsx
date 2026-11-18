@@ -2,7 +2,8 @@ import { DateField } from '@/components/DateField'
 import { ScaleTickets } from '@/pages/contracts/ScaleTickets'
 import { useState } from 'react'
 import { Modal } from '@/components/Modal'
-import { useDeleteContract, useSaveContract, type Contract } from '@/lib/contracts'
+import { contractProblems, useDeleteContract, useSaveContract, type Contract } from '@/lib/contracts'
+import { dbErrorMessage } from '@/lib/db-error'
 import { useContacts } from '@/lib/sales'
 import type { Database } from '@/lib/database.types'
 import { money as fmtMoney } from '@/lib/format'
@@ -84,6 +85,15 @@ export function ContractEditor({
 
   const bushels = numOrNull(d.bushels)
   const price = numOrNull(d.price_per_unit)
+  const delivered = deliveredFromTickets ? undefined : (numOrNull(d.delivered_bu) ?? 0)
+  const problems = contractProblems({
+    cropId: d.crop_id || null,
+    bushels,
+    pricePerUnit: price,
+    deliveredBu: delivered,
+    deliveryStart: d.delivery_start || null,
+    deliveryEnd: d.delivery_end || null,
+  })
 
   return (
     <Modal
@@ -224,6 +234,12 @@ export function ContractEditor({
           </section>
         )}
 
+        {/* Why Save is not available, rather than a button that just sits
+            there: this dialog used to save minus a hundred bushels at minus
+            five dollars as a contract worth a positive $500. */}
+        {problems.length > 0 && <p className="text-xs text-gray-500">{problems.join(' ')}</p>}
+        {save.isError && <p className="text-xs text-red-600">{dbErrorMessage(save.error)}</p>}
+
         <div className="flex items-center justify-between gap-2">
           {existing && isManager ? (
             <button
@@ -247,8 +263,9 @@ export function ContractEditor({
               Cancel
             </button>
             <button
-              disabled={save.isPending}
+              disabled={save.isPending || problems.length > 0}
               onClick={async () => {
+                if (problems.length) return
                 await save.mutateAsync({
                   id: existing?.id,
                   crop_year: cropYear,

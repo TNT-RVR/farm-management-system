@@ -11,10 +11,12 @@ import type { Database } from '@/lib/database.types'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { n0, n1 } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { dbErrorMessage } from '@/lib/db-error'
 import {
   REGION_LABEL,
   computeIndicators,
   consistencyWarnings,
+  impossibleFigures,
   inputsEntered,
   type IndicatorInputs,
   type IndicatorRow,
@@ -66,6 +68,8 @@ const fmt = (r: IndicatorRow, v: number | null): string => {
       return `${n0(v)} d`
     case 'lb':
       return `${n0(v)} lb`
+    case 'lbPerDay':
+      return `${n1(v)} lb/day`
     case 'ratio':
       return `${n1(v)} : 1`
     default:
@@ -82,7 +86,7 @@ export function CowCalfIndicatorsPage() {
   const ranchList = useMemo(() => [...(ranches ?? [])].sort((a, b) => a.sort_order - b.sort_order), [ranches])
   const ranch = ranchId || ranchList[0]?.id || ''
 
-  const { data: saved, isFetching } = useQuery({
+  const { data: saved, isLoading } = useQuery({
     queryKey: ['cow_calf_indicators', ranch, year],
     enabled: Boolean(ranch),
     queryFn: async () => {
@@ -110,7 +114,7 @@ export function CowCalfIndicatorsPage() {
         years={years}
         region={region}
         setRegion={setRegion}
-        loading={isFetching}
+        loading={isLoading}
         saved={saved ?? null}
       />
       {/*
@@ -177,7 +181,9 @@ function PageHeaderRow({
           className="w-40"
           ariaLabel="Benchmark region"
         />
-        <span className="text-xs text-gray-500">{loading ? 'loading…' : `${entered.entered} of ${entered.total} figures saved`}</span>
+        <span className="text-xs text-gray-500">
+          {loading ? 'loading…' : saved ? `${entered.entered} of ${entered.total} figures saved` : 'No scorecard saved for this year'}
+        </span>
       </div>
     </>
   )
@@ -236,6 +242,7 @@ function Scorecard({
 
   const rows = useMemo(() => computeIndicators(inputs, region), [inputs, region])
   const warnings = useMemo(() => consistencyWarnings(inputs), [inputs])
+  const problems = useMemo(() => impossibleFigures(inputs), [inputs])
 
   const set = (col: string) => (v: string) => {
     setForm((f) => ({ ...f, [col]: v }))
@@ -248,15 +255,28 @@ function Scorecard({
         <div className="flex justify-end">
           <button
             type="button"
-            disabled={!dirty || save.isPending}
+            disabled={!dirty || save.isPending || problems.length > 0}
             onClick={() => save.mutate()}
             className={cn(
               'rounded px-3 py-1.5 text-sm font-medium',
-              dirty && !save.isPending ? 'bg-brand-700 text-white hover:bg-brand-800' : 'bg-gray-100 text-gray-400',
+              dirty && !save.isPending && problems.length === 0 ? 'bg-brand-700 text-white hover:bg-brand-800' : 'bg-gray-100 text-gray-400',
             )}
           >
-            {save.isPending ? 'Saving…' : dirty ? 'Save' : 'Saved'}
+            {save.isPending ? 'Saving…' : dirty ? 'Save' : saved ? 'Saved' : 'Nothing saved yet'}
           </button>
+        </div>
+      )}
+
+      {(problems.length > 0 || save.error) && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3">
+          {problems.length > 0 && <p className="mb-1 text-sm font-medium text-red-900">Fix these before saving:</p>}
+          {problems.map((w) => (
+            <p key={w} className="flex items-start gap-2 text-sm text-red-900">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              {w}
+            </p>
+          ))}
+          {save.error && problems.length === 0 && <p className="text-sm text-red-900">{dbErrorMessage(save.error)}</p>}
         </div>
       )}
 
@@ -306,7 +326,7 @@ function Scorecard({
                   <td className="px-2 py-1.5">
                     {r.gold ? <span className="mr-1 text-amber-600" title="One of the BCRC's four GOLD indicators">★</span> : null}
                     {r.label}
-                    {r.missing ? <span className="block text-[11px] text-gray-400">needs {r.missing}</span> : null}
+                    {r.missing ? <span className="block text-xs text-gray-400">needs {r.missing}</span> : null}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(r, r.value)}</td>
                   <td

@@ -158,7 +158,7 @@ export function AccessMatrix() {
           <span className="inline-flex flex-col items-center gap-0.5">
             <Switch on={on} color={colour(i).on} label={`${label}: ${on ? 'open' : 'hidden'} for ${u.full_name}`} disabled={!isAdmin || setAccess.isPending} onChange={(v) => toggle(u, paths, v)} />
             {/* A folded section still says when a sub-section is off, so the fold never hides a restriction. */}
-            {off > 0 && <span className="text-[10px] font-medium text-amber-700">{off} off inside</span>}
+            {off > 0 && <span className="text-xs font-medium text-amber-700">{off} off inside</span>}
           </span>
         </td>
       )
@@ -181,7 +181,7 @@ export function AccessMatrix() {
             Always everything (admin):
             {admins.map((u) => (
               <span key={u.id} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-700">
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-700 text-[9px] font-bold text-white">{initials(u.full_name)}</span>
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-700 text-xs font-bold text-white">{initials(u.full_name)}</span>
                 {u.full_name}
               </span>
             ))}
@@ -234,15 +234,15 @@ export function AccessMatrix() {
                         <div className="flex flex-col items-center gap-1">
                           <span className={cn('flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm', c.badge)}>{initials(u.full_name)}</span>
                           <span className="whitespace-nowrap text-xs font-semibold text-white">{u.full_name}</span>
-                          <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-medium capitalize', c.soft, c.text)}>{u.role}</span>
+                          <span className={cn('rounded-full px-1.5 py-0.5 text-xs font-medium capitalize', c.soft, c.text)}>{u.role}</span>
                           <span className="h-1 w-16 overflow-hidden rounded-full bg-brand-900" title={`${open} of ${ALL_PATHS.length} sections open`}>
                             <span className={cn('block h-full', c.bar)} style={{ width: `${(open / ALL_PATHS.length) * 100}%` }} />
                           </span>
-                          <span className="text-[10px] tabular-nums text-brand-200">
+                          <span className="text-xs tabular-nums text-brand-200">
                             {open} of {ALL_PATHS.length}
                           </span>
                           {isAdmin && hidden > 0 && (
-                            <button type="button" onClick={() => toggle(u, ALL_PATHS, true)} className={cn('text-[10px] font-medium underline', c.text)}>
+                            <button type="button" onClick={() => toggle(u, ALL_PATHS, true)} className={cn('text-xs font-medium underline', c.text)}>
                               all on
                             </button>
                           )}
@@ -267,7 +267,7 @@ export function AccessMatrix() {
                               <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform', open && 'rotate-90')} />
                               <Icon className="h-4 w-4 shrink-0 text-brand-700" />
                               <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                              <span className="rounded-full bg-gray-100 px-1.5 text-[10px] font-normal text-gray-500">{(item.children ?? []).length}</span>
+                              <span className="rounded-full bg-gray-100 px-1.5 text-xs font-normal text-gray-500">{(item.children ?? []).length}</span>
                             </button>
                           ) : (
                             <span className="flex items-center gap-2 pl-[22px] font-medium text-gray-900">

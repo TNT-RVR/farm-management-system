@@ -134,7 +134,7 @@ export function BenchmarkTab({ budget }: { budget: BudgetLine[] }) {
                     >
                       <td className="px-3 py-2 font-medium text-gray-900">
                         {l.crop}
-                        <span className="ml-1.5 text-[11px] font-normal text-gray-400">
+                        <span className="ml-1.5 text-xs font-normal text-gray-400">
                           vs {b.crop}
                         </span>
                       </td>
@@ -300,8 +300,8 @@ function BenchBreakdown({
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <p className={cn('text-[11px] font-medium', CARD_HEAD)}>{title}</p>
-      <table className="w-full text-[11px]">
+      <p className={cn('text-xs font-medium', CARD_HEAD)}>{title}</p>
+      <table className="w-full text-xs">
         <tbody>
           {lines.map(([label, v]) => (
             <tr key={label} className="border-t border-gray-100">

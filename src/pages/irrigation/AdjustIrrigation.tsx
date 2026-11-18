@@ -146,11 +146,11 @@ function EventRow({ e, u, dp }: { e: Ev; u: UnitSystem; dp: number }) {
             Save
           </button>
           {adjusted && (
-            <button type="button" onClick={() => save.mutate(null)} disabled={save.isPending} className="text-[11px] text-gray-500 underline hover:text-gray-800">
+            <button type="button" onClick={() => save.mutate(null)} disabled={save.isPending} className="text-xs text-gray-500 underline hover:text-gray-800">
               undo
             </button>
           )}
-          {save.isError && <span className="text-[11px] text-red-700">{(save.error as Error).message}</span>}
+          {save.isError && <span className="text-xs text-red-700">{(save.error as Error).message}</span>}
         </form>
         {/* Outside the form: Enter in the edit dialog must not submit the correction. */}
         <span className="mt-1 flex flex-wrap items-center gap-1 empty:hidden">

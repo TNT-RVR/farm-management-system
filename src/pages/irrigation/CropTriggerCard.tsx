@@ -72,7 +72,7 @@ const PHASE_OPTIONS = (sheet: CropSheet) => [
 
 /** A cell's label, shown only when the row is stacked on a phone. */
 function Lbl({ children }: { children: ReactNode }) {
-  return <span className="block text-[10px] uppercase tracking-wide text-gray-400 sm:hidden">{children}</span>
+  return <span className="block text-xs uppercase tracking-wide text-gray-400 sm:hidden">{children}</span>
 }
 
 function Row({ r, isManager }: { r: TriggerRow; isManager: boolean }) {
@@ -91,14 +91,14 @@ function Row({ r, isManager }: { r: TriggerRow; isManager: boolean }) {
         <span className="block text-gray-500">{r.cropName ?? 'no crop planned'}</span>
         {r.sheet ? (
           <SheetLink sheet={r.sheet}>
-            <span className="text-[11px]">
+            <span className="text-xs">
               {r.sheet.crop_label} sheet{r.sheet.published ? `, ${r.sheet.published}` : ''}
             </span>
           </SheetLink>
         ) : (
           r.nearSheet && (
             <SheetLink sheet={r.nearSheet}>
-              <span className="text-[11px]">nearest: the {r.nearSheet.crop_label.toLowerCase()} sheet</span>
+              <span className="text-xs">nearest: the {r.nearSheet.crop_label.toLowerCase()} sheet</span>
             </SheetLink>
           )
         )}
@@ -109,7 +109,7 @@ function Row({ r, isManager }: { r: TriggerRow; isManager: boolean }) {
         {r.stage ? (
           <>
             <span className="font-medium text-gray-700">{r.stage.stage_label}</span>
-            <span className="block text-[11px] text-gray-400">
+            <span className="block text-xs text-gray-400">
               {r.stageSource === 'by_hand' ? 'set by hand' : 'from the planting date'}
             </span>
             {r.stage.note && (
@@ -133,7 +133,7 @@ function Row({ r, isManager }: { r: TriggerRow; isManager: boolean }) {
           <>
             <span className="font-semibold text-gray-900">{Math.round(r.pct)}%</span>
             {r.availMm != null && r.capacityMm != null && (
-              <span className="block text-[11px] text-gray-400">
+              <span className="block text-xs text-gray-400">
                 {Math.round(r.availMm)} of {Math.round(r.capacityMm)} mm
                 {r.trackedDepthCm != null && ` · ${r.trackedDepthCm} cm`}
               </span>
@@ -150,10 +150,10 @@ function Row({ r, isManager }: { r: TriggerRow; isManager: boolean }) {
           <>
             <span className="font-medium text-gray-700">{trigger}%</span>
             {floor != null && floor !== trigger && (
-              <span className="block text-[11px] text-gray-500">floor {floor}%</span>
+              <span className="block text-xs text-gray-500">floor {floor}%</span>
             )}
             {depthDiffers && (
-              <span className="block text-[11px] text-amber-700">
+              <span className="block text-xs text-amber-700">
                 read at {r.stage!.monitor_depth_cm} cm
               </span>
             )}
@@ -170,17 +170,17 @@ function Row({ r, isManager }: { r: TriggerRow; isManager: boolean }) {
             <span className="text-gray-500">Done for the season</span>
             {/* Still say why the stage and trigger are blank: otherwise the two
                 em-dashes beside a finished field look like a fault. */}
-            {r.gap && <span className="mt-0.5 block text-[11px] text-gray-400">{r.gap}</span>}
+            {r.gap && <span className="mt-0.5 block text-xs text-gray-400">{r.gap}</span>}
           </>
         ) : r.verdict ? (
           <>
             <span className={cn('inline-block rounded px-1.5 py-0.5 font-medium', VERDICT_COLOR[r.verdict])}>
               {VERDICT_LABEL[r.verdict]}
             </span>
-            {sentence && <span className="mt-0.5 block text-[11px] text-gray-500">{sentence}</span>}
+            {sentence && <span className="mt-0.5 block text-xs text-gray-500">{sentence}</span>}
           </>
         ) : (
-          <span className="text-[11px] text-gray-500">{r.gap ?? '—'}</span>
+          <span className="text-xs text-gray-500">{r.gap ?? '—'}</span>
         )}
         {isManager && r.sheet && r.seasonId && (
           <Select
@@ -206,8 +206,8 @@ function SheetDetail({ sheets }: { sheets: CropSheet[] }) {
         <div key={s.id} className="rounded-md border border-gray-200 p-2.5">
           <p className="text-sm font-semibold text-gray-800">
             <SheetLink sheet={s}>{s.crop_label}</SheetLink>
-            {s.agdex && <span className="ml-1.5 text-[11px] font-normal text-gray-400">Agdex {s.agdex}</span>}
-            {s.published && <span className="ml-1.5 text-[11px] font-normal text-gray-400">{s.published}</span>}
+            {s.agdex && <span className="ml-1.5 text-xs font-normal text-gray-400">Agdex {s.agdex}</span>}
+            {s.published && <span className="ml-1.5 text-xs font-normal text-gray-400">{s.published}</span>}
           </p>
           <p className="mt-0.5 text-xs text-gray-600">
             {s.season_mm_low != null && (
@@ -230,12 +230,12 @@ function SheetDetail({ sheets }: { sheets: CropSheet[] }) {
             )}
             root zone <b>{s.root_zone_cm} cm</b>
           </p>
-          {s.root_note && <p className="mt-0.5 text-[11px] text-gray-500">{s.root_note}</p>}
-          {s.final_note && <p className="mt-0.5 text-[11px] text-gray-500">Last pass: {s.final_note}</p>}
-          {s.establish_note && <p className="mt-0.5 text-[11px] text-gray-500">{s.establish_note}</p>}
+          {s.root_note && <p className="mt-0.5 text-xs text-gray-500">{s.root_note}</p>}
+          {s.final_note && <p className="mt-0.5 text-xs text-gray-500">Last pass: {s.final_note}</p>}
+          {s.establish_note && <p className="mt-0.5 text-xs text-gray-500">{s.establish_note}</p>}
 
           <div className="mt-1.5 overflow-x-auto">
-            <table className="w-full min-w-[420px] text-[11px]">
+            <table className="w-full min-w-[420px] text-xs">
               <thead className={TABLE_HEAD}>
                 <tr>
                   <th className={TABLE_TH}>Stage</th>
@@ -267,7 +267,7 @@ function SheetDetail({ sheets }: { sheets: CropSheet[] }) {
               bodyClassName="p-0"
             >
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[420px] text-[11px]">
+                <table className="w-full min-w-[420px] text-xs">
                   <thead className={TABLE_HEAD}>
                     <tr>
                       <th className={TABLE_TH}>Texture</th>
@@ -479,7 +479,7 @@ export function CropTriggerCard({ year, isManager }: { year: number; isManager: 
             </tbody>
           </table>
           <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-            <p className="text-[11px] text-gray-400">
+            <p className="text-xs text-gray-400">
               From the balance as of {asOf ? fmtDay(asOf) : '—'}.
               {leftOut > 0 && (
                 <>
@@ -494,7 +494,7 @@ export function CropTriggerCard({ year, isManager }: { year: number; isManager: 
               <button
                 type="button"
                 onClick={() => setShowAll((v) => !v)}
-                className="rounded-md border border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
+                className="rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
               >
                 {showAll ? 'Only the fields that need something' : `Show every field (${rows.length})`}
               </button>

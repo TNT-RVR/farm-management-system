@@ -176,6 +176,29 @@ describe('totalsByProduct', () => {
   it('ignores fields with no assessment', () => {
     expect(totalsByProduct([buildRequirement('x', 'X', null, 10, null)])).toEqual([])
   })
+
+  it('totals the whole pounds the field lines print, so the lines add up to it', () => {
+    // 134.615 lb/ac of MAP on 14, 19 and 22 ac prints 1,885, 2,558 and 2,962
+    // = 7,405; the unrounded sum, 7,403.85, would print 7,404.
+    const line = rec({ nutrient: 'P2O5', product: '11-52-0 MAP', lb_per_ac: 70, product_lb_per_ac: 134.615 })
+    const map = [
+      buildRequirement('a', 'A', null, 14, [line]),
+      buildRequirement('b', 'B', null, 19, [line]),
+      buildRequirement('c', 'C', null, 22, [line]),
+    ]
+    const printed = map.flatMap((r) => r.lines!.map((l) => l.productLbTotal!))
+    expect(totalsByProduct(map)[0].totalLb).toBe(printed.reduce((a, b) => a + b, 0))
+    expect(totalsByProduct(map)[0].totalLb).toBe(7405)
+  })
+
+  it('counts a field with two lines of one product once', () => {
+    const topDress = [
+      buildRequirement('a', 'A', null, 100, [rec({ lb_per_ac: 46 }), rec({ lb_per_ac: 23, timing: 'flag leaf' })]),
+      buildRequirement('b', 'B', null, 100, [rec({ lb_per_ac: 46 })]),
+    ]
+    expect(totalsByProduct(topDress)[0].fields).toBe(2)
+    expect(totalsByNutrient(topDress)[0].fields).toBe(2)
+  })
 })
 
 describe('microTotals', () => {

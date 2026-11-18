@@ -23,6 +23,8 @@ import {
   type ContractRow,
   type ContractStatus,
 } from '@/lib/sales'
+import { contractProblems } from '@/lib/contracts'
+import { dbErrorMessage } from '@/lib/db-error'
 import { money, money2 } from '@/lib/planner'
 import { Select } from '@/components/Select'
 import { cn } from '@/lib/utils'
@@ -115,6 +117,17 @@ export function ContractsPage() {
     delivery_start: '',
     delivery_end: '',
   })
+  const newProblems = useMemo(
+    () =>
+      contractProblems({
+        cropId: form.crop_id || null,
+        bushels: form.bushels.trim() ? Number(form.bushels) : null,
+        pricePerUnit: form.price_per_unit.trim() ? Number(form.price_per_unit) : null,
+        deliveryStart: form.delivery_start || null,
+        deliveryEnd: form.delivery_end || null,
+      }),
+    [form],
+  )
 
   const cropName = (id: string | null) => crops?.find((c) => c.id === id)?.name ?? '—'
   const cropUnit = (id: string | null) => crops?.find((c) => c.id === id)?.yield_unit ?? ''
@@ -157,7 +170,7 @@ export function ContractsPage() {
     ticketed.has(c.id) ? (
       <span title="Worked out from the scale tickets and weighed loads for this contract">
         <span className="tabular-nums">{Math.round(c.delivered_bu).toLocaleString()}</span>
-        <span className="block text-[10px] text-gray-400">from tickets</span>
+        <span className="block text-xs text-gray-400">from tickets</span>
       </span>
     ) : isManager && !isPast ? (
       <input
@@ -266,6 +279,7 @@ export function ContractsPage() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault()
+                  if (newProblems.length) return
                   create.mutate(
                     {
                       crop_year: cropYear,
@@ -369,11 +383,24 @@ export function ContractsPage() {
                 <div className="flex items-end">
                   <button
                     type="submit"
-                    className="rounded-md bg-brand-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800"
+                    disabled={newProblems.length > 0 || create.isPending}
+                    className="rounded-md bg-brand-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
                   >
-                    Add
+                    {create.isPending ? 'Saving…' : 'Add'}
                   </button>
                 </div>
+                {/* Say what is wrong rather than leaving a dead button: a blank
+                    contract used to save, and counted. */}
+                {newProblems.length > 0 && (
+                  <p className="col-span-2 text-xs text-gray-500 sm:col-span-4">
+                    {newProblems.join(' ')}
+                  </p>
+                )}
+                {create.isError && (
+                  <p className="col-span-2 text-xs text-red-600 sm:col-span-4">
+                    {dbErrorMessage(create.error)}
+                  </p>
+                )}
               </form>
             </Modal>
           )}

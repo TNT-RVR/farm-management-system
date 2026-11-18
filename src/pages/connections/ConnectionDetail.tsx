@@ -29,7 +29,7 @@ function Section({ title, right, children }: { title: string; right?: React.Reac
   return (
     <section>
       <div className="mb-1.5 flex items-center gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{title}</h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</h3>
         {right && <div className="ml-auto">{right}</div>}
       </div>
       {children}

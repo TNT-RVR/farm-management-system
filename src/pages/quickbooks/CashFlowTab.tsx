@@ -230,7 +230,7 @@ export function CashFlowTab({ realm }: { realm: string }) {
 function Stat({ label, value, bad }: { label: string; value: string; bad?: boolean }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-      <div className="truncate text-[11px] text-gray-500">{label}</div>
+      <div className="truncate text-xs text-gray-500">{label}</div>
       <div className={cn('text-base font-semibold tabular-nums', bad ? 'text-red-700' : 'text-gray-900')}>{value}</div>
     </div>
   )

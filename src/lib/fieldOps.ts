@@ -118,6 +118,12 @@ const UNIT_LABEL: Record<string, string> = {
   'g1ac-1': 'g/ac',
   'seeds1ac-1': 'seeds/ac',
   'bu1ac-1': 'bu/ac',
+  // The metric export's per-hectare rates (applied.ts).
+  'l1ha-1': 'L/ha',
+  'ml1ha-1': 'mL/ha',
+  'kg1ha-1': 'kg/ha',
+  'g1ha-1': 'g/ha',
+  'seeds1ha-1': 'seeds/ha',
   gal: 'gal',
   l: 'L',
 }

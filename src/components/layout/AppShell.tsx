@@ -27,6 +27,7 @@ import { DriveBackupScheduler } from '@/components/DriveBackupScheduler'
 // The partner's frame
 import { usePartnerView } from '@/lib/partner-view'
 import { PartnerShell } from './PartnerShell'
+import { PageSkeleton } from '@/components/Skeleton'
 
 /** Ctrl+K (⌘K), or / when not typing in a box, opens the search from anywhere. */
 function useSearchShortcut(open: () => void) {
@@ -260,7 +261,7 @@ function StaffShell() {
             <InstallBanner />
             <ErrorBoundary key={pathname}>
               {/* Pages load on first open (App.tsx); the shell stays put meanwhile. */}
-              <Suspense fallback={<div className="p-6 text-sm text-gray-400">Loading…</div>}>
+              <Suspense fallback={<PageSkeleton />}>
                 <Outlet />
               </Suspense>
             </ErrorBoundary>

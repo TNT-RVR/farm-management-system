@@ -32,7 +32,7 @@ function useLegalFacts() {
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
   const f = useLegalFacts()
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8 text-[15px] leading-relaxed text-gray-800 [&_h2]:mt-6 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-brand-800 [&_li]:my-1 [&_p]:my-2">
+    <main className="mx-auto max-w-3xl px-4 py-8 text-base leading-relaxed text-gray-800 [&_h2]:mt-6 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-brand-800 [&_li]:my-1 [&_p]:my-2">
       <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
       <p className="text-sm text-gray-500">
         {f.app} · {f.farm} · Effective {EFFECTIVE}

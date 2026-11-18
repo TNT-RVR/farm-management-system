@@ -4,13 +4,16 @@ import { ArrowRight, Calculator, RotateCcw } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   AB_COW_CALF_COP_SOURCE,
+  COST_LINE_KEYS,
   COW_CALF_BENCHMARK_COSTS,
   DEFAULT_CULL_PCT,
   abCowCostLines,
   abCowCostPerYear,
+  costLinesFarBelowBenchmark,
   useCattleCosts,
   useSaveCattleCosts,
   type CattleCosts,
+  type CostLineKey,
 } from '@/lib/cattleEconomics'
 import { cn } from '@/lib/utils'
 import { useFarmSettings } from '@/lib/farm-setup'
@@ -155,6 +158,14 @@ function CostForm({
     })()
 
   const total = COST_ROWS.reduce((s, r) => s + (numOrNull(current[r.key] ?? '') ?? 0), 0)
+  // Lines far under their benchmark line: flagged beside the box, and listed
+  // under "What this depends on" once saved.
+  const lowLines = new Set<string>(
+    costLinesFarBelowBenchmark(
+      Object.fromEntries(COST_LINE_KEYS.map((k) => [k, numOrNull(current[k] ?? '')])) as Partial<Record<CostLineKey, number | null>>,
+      year,
+    ).map((l) => l.key),
+  )
   const asCosts: CattleCosts = {
     id: '',
     ranch,
@@ -238,11 +249,12 @@ function CostForm({
       <div className="mt-3 space-y-1.5">
         {COST_ROWS.map((r) => {
           const benchValue = bench[r.key] as number | undefined
+          const low = lowLines.has(r.key)
           return (
             <label key={r.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
               <span className="w-full shrink-0 text-gray-700 sm:w-44">
                 {r.label}
-                {r.hint && <span className="block text-[11px] text-gray-400">{r.hint}</span>}
+                {r.hint && <span className="block text-xs text-gray-400">{r.hint}</span>}
               </span>
               <input
                 className={field}
@@ -254,10 +266,18 @@ function CostForm({
               />
               {benchValue != null && (
                 <span
-                  className="text-[11px] text-gray-400"
+                  className="text-xs text-gray-400"
                   title={`Alberta's benchmark total for ${year}, split across the five lines in the proportions of the only published Prairie budget that has line items`}
                 >
                   benchmark {money(benchValue)}
+                </span>
+              )}
+              {low && (
+                <span
+                  className="text-xs font-medium text-amber-700"
+                  title="Fine if this is what a cow really costs here. The break-even rests on it, so check it is a whole year for one cow, not a month or a single bill."
+                >
+                  under half the benchmark
                 </span>
               )}
             </label>
@@ -268,7 +288,7 @@ function CostForm({
       <p className="mt-2 rounded-md bg-gray-50 px-2 py-1.5 text-sm">
         <span className="text-gray-500">Total per cow</span>{' '}
         <span className="font-semibold tabular-nums text-gray-900">{money(total)}</span>
-        <span className="ml-2 text-[11px] text-gray-400">benchmark {money(benchTotal)}</span>
+        <span className="ml-2 text-xs text-gray-400">benchmark {money(benchTotal)}</span>
       </p>
       {/* A whole year of a cow is never a tenth of a published budget. Figures
           that far under are usually something else typed into the wrong box —
@@ -350,7 +370,7 @@ function CostForm({
           onChange={(v) => setD({ ...current, calf_yardage_per_day: v })}
         />
       </div>
-      <p className="mt-1 text-[11px] text-gray-500">
+      <p className="mt-1 text-xs text-gray-500">
         Cull cows today:{' '}
         {cull.perCwt != null ? (
           <>

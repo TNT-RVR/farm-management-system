@@ -144,7 +144,7 @@ export function ProfitLossFarm({
             <p className="mt-1 text-gray-800">
               {hover.netPerAcre != null ? `Net ${money(hover.netPerAcre)}/ac` : `No yield yet · ${money(hover.costPerAcre)}/ac spent`}
             </p>
-            <p className="mt-1 text-[11px] text-gray-400">Click for the 5 m map</p>
+            <p className="mt-1 text-xs text-gray-400">Click for the 5 m map</p>
           </div>
         )}
       </div>
@@ -220,10 +220,10 @@ export function ProfitLossFarm({
                 >
                   <span className="min-w-0">
                     <span className="block truncate text-gray-800">{b.name}</span>
-                    <span className="block truncate text-[10px] text-gray-400">
+                    <span className="block truncate text-xs text-gray-400">
                       {b.cropName ?? 'no crop'} · {b.acres.toFixed(1)} ac
                       {b.unpriced > 0 && ` · ${b.unpriced} unpriced`}
-                      {b.deal && <span className="block text-[10px] text-sky-700">{b.deal}</span>}
+                      {b.deal && <span className="block text-xs text-sky-700">{b.deal}</span>}
                     </span>
                   </span>
                   <span className={cn('shrink-0 tabular-nums', b.netPerAcre == null ? 'text-gray-400' : b.netPerAcre < 0 ? 'text-red-700' : 'text-green-800')}>
@@ -235,7 +235,7 @@ export function ProfitLossFarm({
             {!books.length && !isLoading && <li className="py-2 text-gray-500">No fields with crops or passes this year.</li>}
           </ul>
           {books.some((b) => b.unpriced > 0) && (
-            <p className="mt-2 flex items-start gap-1 text-[11px] leading-snug text-amber-700">
+            <p className="mt-2 flex items-start gap-1 text-xs leading-snug text-amber-700">
               <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               Some fields have inputs with no price, left out of their totals. Open the field to type the price in.
             </p>

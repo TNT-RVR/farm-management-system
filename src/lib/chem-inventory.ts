@@ -265,11 +265,30 @@ export const L_PER_US_GAL = 3.785411784
 /** "4.6 jugs", "0.3 tote", or null when the pack is unknown. */
 export function inPacks(qty: number, packSize: number | null, packUnit: string | null): string | null {
   if (!packSize || !(packSize > 0)) return null
-  const packs = qty / packSize
+  // Judge singular on the figure printed: 0.98 of a jug reads "1 jug".
+  const packs = Math.round((qty / packSize) * 10) / 10
   const unit = (packUnit ?? 'pack').toLowerCase()
   const noun = unit === 'metric' ? 'tonne' : unit
   const plural = Math.abs(packs) === 1 || noun === 'each' ? noun : noun.endsWith('s') ? noun : `${noun}s`
   return `${packs.toLocaleString('en-CA', { maximumFractionDigits: 1 })} ${plural}`
+}
+
+/** A stock figure as Inventory prints it: one decimal under 10, whole above. */
+export const roundShown = (v: number) => (Math.abs(v) < 10 ? Math.round(v * 10) / 10 : Math.round(v)) || 0
+
+/**
+ * The four Inventory columns as printed, in the unit shown (`per` converts:
+ * litres per US gallon, or 1). Bought, Sprayed and Counted are each rounded
+ * the way the page prints them, and On hand is worked out from those printed
+ * figures, so the columns always subtract on screen: 80 − 70 reads 10, not
+ * the 9.9 the unrounded 70.1 sprayed would give.
+ */
+export function shownStock(l: Pick<StockLine, 'bought' | 'used' | 'adjusted'>, per = 1) {
+  const bought = roundShown(l.bought / per)
+  const used = roundShown(l.used / per)
+  const adjusted = roundShown(l.adjusted / per)
+  const onHand = Math.round((bought - used + adjusted) * 10) / 10 || 0
+  return { bought, used, adjusted, onHand }
 }
 
 /**

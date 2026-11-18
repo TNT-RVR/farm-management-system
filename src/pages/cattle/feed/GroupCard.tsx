@@ -20,6 +20,7 @@ import { FeedInfo } from './FeedInfo'
 import { FromHerdChip, Num, WarningList, n0, n1, tonnes, yardAmount } from './bits'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { CardList, RowCard } from '@/components/RowCards'
+import { HeadTip } from '@/components/HeadTip'
 
 const GROWING: FeedClass[] = ['backgrounder', 'heifer_calf']
 
@@ -100,9 +101,9 @@ export function GroupCard({
       name: (
         <>
           {v?.name ?? '?'}
-          {notUsed.has(r.feed_type_id) && <span className="ml-1 rounded bg-amber-50 px-1 text-[10px] text-amber-800">not usually fed here</span>}
+          {notUsed.has(r.feed_type_id) && <span className="ml-1 rounded bg-amber-50 px-1 text-xs text-amber-800">not usually fed here</span>}
           {v && (
-            <span className={cn('ml-1 rounded px-1 text-[10px]', v.source === 'test' ? 'bg-emerald-50 text-emerald-800' : 'bg-gray-100 text-gray-500')}>
+            <span className={cn('ml-1 rounded px-1 text-xs', v.source === 'test' ? 'bg-emerald-50 text-emerald-800' : 'bg-gray-100 text-gray-500')}>
               {v.source === 'test' ? 'tested' : 'book'} {n0(v.tdnPct)}% energy
             </span>
           )}
@@ -151,7 +152,7 @@ export function GroupCard({
             <span className="font-normal text-gray-500">· {group.background_head ?? group.head_count} head · {weightFor(group).missing ? <span className="text-amber-700" title="No weight entered — fed at the class's typical weight">~{n0(weightFor(group).lb)} lb (typical)</span> : <>{n0(Number(group.avg_weight_lb))} lb</>} · {result?.need.stage ?? CLASS_LABEL[group.feed_class]}</span>
           </p>
           {group.background_head != null && (
-            <p className="mt-0.5 text-[11px] text-gray-500">
+            <p className="mt-0.5 text-xs text-gray-500">
               {group.head_count} at side now{weaningDate ? `, fed through the cows until weaning on ${new Date(weaningDate + 'T00:00:00').toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}` : ''}; {group.background_head} kept to background are fed from then. Set both on the Herd tab.
             </p>
           )}
@@ -329,7 +330,7 @@ export function GroupCard({
                 Ration <FeedInfo k="share" />
                 {group.ration_note && <span className="font-normal text-gray-400">— {group.ration_note}</span>}
               </p>
-              {Math.abs(shareTotal - 100) > 0.5 && ration.length > 0 && <span className="text-[11px] text-amber-700">shares add to {n0(shareTotal)}% — scaled to 100</span>}
+              {Math.abs(shareTotal - 100) > 0.5 && ration.length > 0 && <span className="text-xs text-amber-700">shares add to {n0(shareTotal)}% — scaled to 100</span>}
             </div>
             <CardList className="rounded-lg border border-gray-200">
               {rationRows.map((r) => (
@@ -351,8 +352,8 @@ export function GroupCard({
                 <thead className={TABLE_HEAD}>
                   <tr>
                     <th className={TABLE_TH}>Feed</th>
-                    <th className={cn(TABLE_TH, 'text-right')} title="Share of this group's daily dry matter — what it is fed today">
-                      Group share (% of dry matter)
+                    <th className={cn(TABLE_TH, 'text-right')}>
+                      Group share (% of dry matter)<HeadTip title="Group share (% of dry matter)">Share of this group&apos;s daily dry matter — what it is fed today</HeadTip>
                     </th>
                     <th className={cn(TABLE_TH, 'text-right')}>
                       <span className="inline-flex items-center gap-1">Waste <FeedInfo k="waste" /></span>
@@ -390,7 +391,7 @@ export function GroupCard({
               />
             )}
             {isManager && notUsed.size > 0 && (
-              <label className="ml-2 inline-flex items-center gap-1 text-[11px] text-gray-500">
+              <label className="ml-2 inline-flex items-center gap-1 text-xs text-gray-500">
                 <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} className="h-3 w-3" /> show feeds not used at this ranch
               </label>
             )}

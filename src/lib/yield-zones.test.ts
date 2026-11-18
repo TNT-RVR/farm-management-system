@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   YIELD_COLOURS,
+  bandLabel,
   byField,
   fieldSpread,
   midYield,
@@ -57,6 +58,16 @@ describe('yieldBands', () => {
   it('does not pretend to five bands when every zone is the same', () => {
     const flat = [z({ min_yield: 90, max_yield: 90 }), z({ min_yield: 90, max_yield: 90 })]
     expect(yieldBands(flat)).toHaveLength(1)
+  })
+
+  it('labels the end bands open, since they carry the outer 5% too', () => {
+    const bands = yieldBands(spread)
+    const labels = bands.map((_, i) => bandLabel(bands, i))
+    expect(labels[0]).toBe(`under ${bands[0].to}`)
+    expect(labels[labels.length - 1]).toBe(`${bands[bands.length - 1].from} and over`)
+    expect(labels[1]).toBe(`${bands[1].from}–${bands[1].to}`)
+    // A zone past the 95th percentile still takes the top colour.
+    expect(yieldColour(bands, 139)).toBe(bands[bands.length - 1].colour)
   })
 
   it('has nothing to say about no zones', () => {

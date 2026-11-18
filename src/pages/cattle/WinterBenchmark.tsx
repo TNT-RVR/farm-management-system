@@ -104,7 +104,7 @@ export function WinterBenchmark({ ranchId }: { ranchId: string }) {
         ) : (
           <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
             <span>
-              <span className="text-[11px] uppercase tracking-wide text-gray-500">Ours </span>
+              <span className="text-xs uppercase tracking-wide text-gray-500">Ours </span>
               <span className="text-lg font-semibold tabular-nums text-gray-900">{money2(ours.perAud)}</span>
               <span className="text-xs text-gray-500"> /animal unit day</span>
             </span>
@@ -176,7 +176,7 @@ export function WinterBenchmark({ ranchId }: { ranchId: string }) {
                   <Link to={`/research?tab=search&q=${encodeURIComponent(r.paper)}`} className="text-gray-900 underline decoration-dotted hover:decoration-solid">
                     {r.label}
                   </Link>
-                  {!r.ourZone && <span className="ml-1.5 text-[11px] text-amber-700">another zone</span>}
+                  {!r.ourZone && <span className="ml-1.5 text-xs text-amber-700">another zone</span>}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{n1(r.aumPerAcre)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{money0(r.theirPerAcre)}</td>
@@ -195,14 +195,14 @@ export function WinterBenchmark({ ranchId }: { ranchId: string }) {
                   }
                 >
                   {r.timesTheirs == null ? '—' : `${n1(r.timesTheirs)}×`}
-                  <span className="ml-1 text-[11px] text-gray-400">{r.year}$</span>
+                  <span className="ml-1 text-xs text-gray-400">{r.year}$</span>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p className="px-3 py-1.5 text-[11px] text-gray-500">
+      <p className="px-3 py-1.5 text-xs text-gray-500">
         AgriProfit$ cost and returns profiles, published 30 July {SOUTHERN_PROFILES[0].published} from field
         observations over {SOUTHERN_PROFILES[0].observedOver}. Southern Alberta rows are{' '}
         {SOUTHERN_PROFILES[0].zone}. {SOUTHERN_PROFILES[0].observations} swath grazing fields,{' '}
@@ -240,7 +240,7 @@ export function WinterBenchmark({ ranchId }: { ranchId: string }) {
             </tbody>
           </table>
         </div>
-        <p className="px-3 py-1.5 text-[11px] text-gray-500">
+        <p className="px-3 py-1.5 text-xs text-gray-500">
           &ldquo;{DRYLOT_2002.paper}&rdquo;, {DRYLOT_2002.published}: {DRYLOT_2002.swathFields} swath grazing
           fields against {DRYLOT_2002.drylotHerds} cow-calf operations feeding in the pen, {DRYLOT_2002.zone},
           the {DRYLOT_2002.season} season. Our figure goes in the total-cost row only — that is how the feed
@@ -402,7 +402,7 @@ export function WinterBenchmark({ ranchId }: { ranchId: string }) {
                 </tr>
               </tbody>
             </table>
-            <p className="mt-1.5 text-[11px] text-gray-500">
+            <p className="mt-1.5 text-xs text-gray-500">
               Tame grass pasture&rsquo;s own table prints variable 5.46 plus capital 6.10 and then 11.57 as
               the total: the publications round each sub-total before printing it, and the figures are
               carried as published rather than corrected.

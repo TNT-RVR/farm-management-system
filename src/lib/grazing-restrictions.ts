@@ -305,6 +305,33 @@ export function restrictionText(r: Restriction): string {
   return `${what}${when}${r.assumed ? ` — ${r.assumed}` : ''}`
 }
 
+const NOTE_STOP = new Set(['a', 'an', 'the', 'of', 'to', 'and', 'or', 'in', 'on', 'it', 'its', 'for', 'from', 'with', 'by', 'be', 'is', 'are', 'not', 'no', 'do', 'remove', 'treated', 'field', 'fields', 'area', 'areas', 'after', 'spraying', 'application'])
+const noteWords = (s: string) => s.toLowerCase().match(/[a-z0-9]+/g)?.filter((w) => !NOTE_STOP.has(w)) ?? []
+
+/**
+ * The label's qualifier for a line ("hay PHI", "1 application per season",
+ * "seed production"), as the bracket after `restrictionText`, or null when
+ * there is none or it only says the line again. The extraction sometimes
+ * stores the label's whole sentence there ("Lactating dairy animals: 14
+ * days.", "Remove meat animals from treated fields 3 days before
+ * slaughter."); printed after the line, that read as the rule twice over.
+ */
+export function conditionNote(r: Restriction): string | null {
+  const c = r.condition?.trim().replace(/[.;:\s]+$/, '')
+  if (!c) return null
+  // Already in the label quote printed under the line.
+  if (r.quote && r.quote.toLowerCase().includes(c.toLowerCase())) return null
+  const words = noteWords(c)
+  if (!words.length) return null
+  // The line's own words, less its dates (a "1 Dec" must not cover "1 application").
+  let line = restrictionText(r)
+  for (const d of [r.until, r.harvestedOn]) if (d) line = line.split(fmtDay(d)).join(' ')
+  const said = new Set(noteWords(`${line} ${r.days ?? ''} ${r.kind === 'dairy' ? 'lactating dairy animals' : ''} ${r.kind === 'slaughter' ? 'meat animals slaughter' : ''}`))
+  const covered = words.filter((w) => said.has(w)).length
+  if (covered / words.length >= 0.75) return null
+  return c
+}
+
 /** Restrictions in force on `today` that keep animals off or the crop out of the feed (not the slaughter / dairy notes). */
 export const blocking = (rs: Restriction[], today: string) =>
   rs.filter((r) => (r.kind === 'graze' || r.kind === 'feed') && r.until != null && r.until > today)

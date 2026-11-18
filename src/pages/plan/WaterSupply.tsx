@@ -82,7 +82,7 @@ export function WaterSupplyList({ rows }: { rows: Row[] }) {
         .filter((section) => stations.some((x) => x.s.section === section))
         .map((section) => (
         <div key={section}>
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{sectionLabel(section, { river: 'River', district: districtName })}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{sectionLabel(section, { river: 'River', district: districtName })}</p>
           <ul className="mt-0.5 divide-y divide-gray-100">
             {stations.filter((x) => x.s.section === section).map(({ row, s }) => {
               const r = latest.get(s.key)
@@ -218,7 +218,7 @@ function WaterGraph({ station, onClose }: { station: WaterStation; onClose: () =
           </ResponsiveContainer>
         </div>
       )}
-      <p className="mt-2 text-[11px] text-gray-400">
+      <p className="mt-2 text-xs text-gray-400">
         From{' '}
         <a href={pageHref(station)} target="_blank" rel="noreferrer" className="text-sky-700 underline">
           {station.source === 'wiski' ? `Alberta Rivers, station ${station.key}` : `NRCS SNOTEL ${station.key}`}

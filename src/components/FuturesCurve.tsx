@@ -37,7 +37,7 @@ export function FuturesCurve({ series }: { series: MarketSeries }) {
     <div>
       <div className="flex flex-wrap items-baseline gap-x-3">
         <p className="text-sm font-medium text-gray-800">{series.name}</p>
-        <span className="text-[11px] text-gray-400">quoted {data.quoteOn}</span>
+        <span className="text-xs text-gray-400">quoted {data.quoteOn}</span>
         {carry != null && (
           <span
             className={`ml-auto text-xs tabular-nums ${carry >= 0 ? 'text-green-700' : 'text-red-700'}`}

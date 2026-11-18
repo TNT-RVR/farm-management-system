@@ -111,7 +111,7 @@ export function CropPriority({
             <li key={e.key} className="flex items-center gap-2 rounded border border-gray-200 px-2 py-1">
               <span className="w-4 shrink-0 text-xs font-semibold tabular-nums text-gray-500">{at + 1}</span>
               <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800">{e.label}</span>
-              <span className="shrink-0 text-[11px] tabular-nums text-gray-500">
+              <span className="shrink-0 text-xs tabular-nums text-gray-500">
                 {e.max == null ? 'no limit' : `up to ${Math.round(e.max).toLocaleString('en-CA')} ac`}
               </span>
               {isManager && (
@@ -151,7 +151,7 @@ export function CropPriority({
       )}
 
       {renters.length > 0 && (
-        <p className="mt-2 text-[11px] text-gray-500" title={renters.join(', ')}>
+        <p className="mt-2 text-xs text-gray-500" title={renters.join(', ')}>
           {renters.length} renter&apos;s crop{renters.length === 1 ? '' : 's'} sit{renters.length === 1 ? 's' : ''} out — the
           recommender never places one until it is ranked.
         </p>

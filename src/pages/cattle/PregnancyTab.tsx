@@ -57,7 +57,7 @@ function DateSetting({ label, hint, value, canEdit, onSave }: { label: string; h
         {label}: <b className="text-gray-800">{value ? md(value) : 'not set'}</b>
         {state === 'saved' && <span className="font-medium text-emerald-700">✓ saved</span>}
         {canEdit && (
-          <button type="button" onClick={() => { setDraft(value ?? ''); setEditing(true) }} className="rounded border border-gray-300 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50">
+          <button type="button" onClick={() => { setDraft(value ?? ''); setEditing(true) }} className="rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 hover:bg-gray-50">
             {value ? 'Edit' : 'Set'}
           </button>
         )}
@@ -67,10 +67,10 @@ function DateSetting({ label, hint, value, canEdit, onSave }: { label: string; h
     <span className="flex items-center gap-1 text-xs text-gray-500">
       {label}
       <input type="date" value={draft} onChange={(e) => setDraft(e.target.value)} className="rounded border border-gray-300 px-1 py-0.5 text-xs" />
-      <button type="button" disabled={state === 'saving'} onClick={() => void save()} className="rounded bg-brand-700 px-2 py-0.5 text-[11px] font-semibold text-white disabled:opacity-50">
+      <button type="button" disabled={state === 'saving'} onClick={() => void save()} className="rounded bg-brand-700 px-2 py-0.5 text-xs font-semibold text-white disabled:opacity-50">
         {state === 'saving' ? 'Saving…' : 'Save'}
       </button>
-      <button type="button" onClick={() => { setEditing(false); setState('idle') }} className="text-[11px] text-gray-500 hover:underline">
+      <button type="button" onClick={() => { setEditing(false); setState('idle') }} className="text-xs text-gray-500 hover:underline">
         Cancel
       </button>
       {state === 'error' && <span className="text-red-600">didn’t save</span>}
@@ -293,7 +293,7 @@ export function PregnancyTab({ ranchId, ranches, isManager }: { ranchId: string;
                   </>
                 )}
                 {dueByMonth.size > 0 && (
-                  <span className="ml-auto text-[11px] text-gray-500">
+                  <span className="ml-auto text-xs text-gray-500">
                     Due:{' '}
                     {[...dueByMonth]
                       .sort()
@@ -348,7 +348,7 @@ export function PregnancyTab({ ranchId, ranches, isManager }: { ranchId: string;
                           node: (
                             <>
                               {a.info.label}
-                              {a.why && <span className="block text-[11px] text-gray-400">{a.why}</span>}
+                              {a.why && <span className="block text-xs text-gray-400">{a.why}</span>}
                             </>
                           ),
                         },
@@ -387,7 +387,7 @@ export function PregnancyTab({ ranchId, ranches, isManager }: { ranchId: string;
                           </td>
                           <td className="px-2 py-1 text-xs text-gray-700" title={a.info.note}>
                             {a.info.label}
-                            {a.why && <span className="block text-[11px] text-gray-400">{a.why}</span>}
+                            {a.why && <span className="block text-xs text-gray-400">{a.why}</span>}
                           </td>
                           <td
                             className="px-2 py-1 text-xs tabular-nums text-gray-600"

@@ -12,7 +12,7 @@ import { useCropYear } from '@/lib/crop-year'
 import { NDVI_RAMP, useFieldImagery } from '@/lib/pastures'
 import { FIELDNET_LEGEND, IRRIGATION_LEGEND, IRRIGATION_STATUS, LAYER_INFO, NOT_SCHEDULED_COLOUR } from '@/lib/map-layer-info'
 import { SOIL_NO_DATA_COLOUR, SOIL_WATER_BANDS } from '@/lib/soil-landscape'
-import { useYieldZones, yieldBands } from '@/lib/yield-zones'
+import { bandLabel, useYieldZones, yieldBands } from '@/lib/yield-zones'
 import { useLatestBalance } from '@/lib/irrigation'
 import { FN_STATUS_COLOR, FN_STATUS_LABEL, fnStatus, useFieldnetSystems, useFieldnetSystemsOn } from '@/lib/fieldnet'
 import { asOfDay } from '@/lib/map-as-of'
@@ -161,7 +161,7 @@ export function ComparePage() {
                 </button>
               </HoverTip>
             ))}
-            <span className="self-center text-[11px] text-gray-400">up to {MAX_PANES}</span>
+            <span className="self-center text-xs text-gray-400">up to {MAX_PANES}</span>
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -317,7 +317,7 @@ function Caption({ layer, ...p }: DrawProps & { layer: Layer }) {
   if (layer === 'aimm') return <AimmCaption {...p} />
   if (layer === 'fieldnet') return <PivotCaption {...p} />
   if (layer === 'profit') return <ProfitCaption {...p} />
-  if (layer === 'topography') return <p className="text-[11px] text-gray-500">Height against the field&rsquo;s low ground</p>
+  if (layer === 'topography') return <p className="text-xs text-gray-500">Height against the field&rsquo;s low ground</p>
   return null
 }
 
@@ -370,7 +370,7 @@ function RasterCaption({ fieldId, asOf, layer }: DrawProps & { layer: 'photo' | 
   const { data, isLoading } = useFieldImagery(KIND[layer], 'field', asOf)
   const img = data?.find((i) => i.subject_id === fieldId)
   if (isLoading) return null
-  return <p className="text-[11px] text-gray-500">{img ? `Taken ${img.sensed_on}` : 'No image on file'}</p>
+  return <p className="text-xs text-gray-500">{img ? `Taken ${img.sensed_on}` : 'No image on file'}</p>
 }
 
 function useBalance(fieldId: string, asOf: string | null) {
@@ -384,7 +384,7 @@ function AimmDraw({ map, fieldId, shape, asOf }: DrawProps) {
 }
 function AimmCaption({ fieldId, asOf }: DrawProps) {
   const b = useBalance(fieldId, asOf)
-  return <p className="text-[11px] text-gray-500">{b ? `${IRRIGATION_STATUS[b.status ?? 'ok']?.[0] ?? b.status} · ${b.date}` : 'Not scheduled'}</p>
+  return <p className="text-xs text-gray-500">{b ? `${IRRIGATION_STATUS[b.status ?? 'ok']?.[0] ?? b.status} · ${b.date}` : 'Not scheduled'}</p>
 }
 
 function usePivot(fieldId: string, asOf: string | null) {
@@ -421,7 +421,7 @@ function PivotDraw({ map, fieldId, shape, asOf }: DrawProps) {
 }
 function PivotCaption({ fieldId, asOf }: DrawProps) {
   const s = usePivot(fieldId, asOf)
-  return <p className="text-[11px] text-gray-500">{s ? FN_STATUS_LABEL[fnStatus(s)] : 'No pivot on FieldNET'}</p>
+  return <p className="text-xs text-gray-500">{s ? FN_STATUS_LABEL[fnStatus(s)] : 'No pivot on FieldNET'}</p>
 }
 
 /** The field's best height survey, and its colour steps (height against the low ground near it). */
@@ -486,7 +486,7 @@ function ProfitCaption({ fieldId }: DrawProps) {
   const { book } = useFieldNet(fieldId)
   if (!book) return null
   return (
-    <p className="text-[11px] text-gray-500">
+    <p className="text-xs text-gray-500">
       {book.netPerAcre != null ? `Net ${money(book.netPerAcre)}/ac (target prices)` : `No yield yet · ${money(book.costPerAcre)}/ac spent`}
     </p>
   )
@@ -517,7 +517,7 @@ function PaneLegend({ layer, ...p }: DrawProps & { layer: Layer }) {
 
 function LegendShell({ heading, children }: { heading?: string; children: React.ReactNode }) {
   return (
-    <div className="pointer-events-none absolute bottom-2 left-2 z-10 max-w-[85%] rounded-lg border border-white/60 bg-white/85 px-2 py-1.5 text-[11px] text-gray-700 shadow ring-1 ring-black/5 backdrop-blur-md">
+    <div className="pointer-events-none absolute bottom-2 left-2 z-10 max-w-[85%] rounded-lg border border-white/60 bg-white/85 px-2 py-1.5 text-xs text-gray-700 shadow ring-1 ring-black/5 backdrop-blur-md">
       {heading && <p className="mb-1 font-medium text-gray-900">{heading}</p>}
       {children}
     </div>
@@ -548,7 +548,7 @@ function RampLegend({ heading, colours, low, high }: { heading: string; colours:
           <span key={i} className="flex-1" style={{ backgroundColor: c }} />
         ))}
       </div>
-      <div className="mt-0.5 flex w-44 justify-between gap-2 text-[10px] text-gray-500">
+      <div className="mt-0.5 flex w-44 justify-between gap-2 text-xs text-gray-500">
         <span>{low}</span>
         <span className="text-right">{high}</span>
       </div>
@@ -581,7 +581,7 @@ function YieldLegend() {
   const { data } = useYieldZones()
   const bands = yieldBands(data ?? [])
   if (!bands.length) return null
-  return <LegendBox heading="% of the field’s own average" items={bands.map((b) => [`${b.from}–${b.to}`, b.colour] as const)} />
+  return <LegendBox heading="% of the field’s own average" items={bands.map((b, i) => [bandLabel(bands, i), b.colour] as const)} />
 }
 
 const ft = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} ft`

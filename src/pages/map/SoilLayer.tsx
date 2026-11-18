@@ -120,7 +120,7 @@ function SoilDetail({ soil, onClose }: { soil: SoilPolygon; onClose: () => void 
             ] as const
           ).map(([k, v, term]) => (
             <div key={k} className="rounded border border-gray-200 px-2 py-1">
-              <dt className="flex items-center text-[11px] text-gray-500">
+              <dt className="flex items-center text-xs text-gray-500">
                 {k}
                 {term && <SoilTermInfo term={term} />}
               </dt>
@@ -139,7 +139,7 @@ function SoilDetail({ soil, onClose }: { soil: SoilPolygon; onClose: () => void 
 
         {hz.length > 0 && <HorizonTable horizons={hz} compact />}
 
-        <p className="text-[11px] leading-relaxed text-gray-500">
+        <p className="text-xs leading-relaxed text-gray-500">
           One polygon can cover a quarter section and describes the dominant soil, not every acre of
           it. Your own knowledge of the ground beats it.{' '}
           <a

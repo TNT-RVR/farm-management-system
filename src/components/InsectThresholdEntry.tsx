@@ -175,7 +175,7 @@ export function InsectThresholdEntry({
                 className={num}
               />
             </label>
-            <span className="pb-1 text-[11px] text-gray-400">
+            <span className="pb-1 text-xs text-gray-400">
               {Number(value.pricePerTonne) > 0 ? `≈ $${(Number(value.pricePerTonne) / CANOLA_BU_PER_TONNE).toFixed(2)}/bu` : ''}
             </span>
           </>

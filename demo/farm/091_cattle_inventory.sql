@@ -156,13 +156,15 @@ insert into public.notification_settings (user_id, quiet_on, quiet_start, quiet_
   ('0de30000-0000-4000-8000-0000000000a1', true, '22:00', '05:30', '07:00');
 
 -- ── Pasture sprays and their no-grazing days (Cattle → Grazing) ────────────
--- MCPA (example label: 7 days off grass) — the Hay Flat spot-spray three days
--- ago still keeps the cows off it this week.
+-- MCPA (example label: 7 days off grass) — the yard pasture spot-spray three
+-- days ago keeps the cows off it this week; they are on the Hay Flat aftermath
+-- meanwhile. (Until 18 Nov 2026 the spray was on the aftermath itself, with
+-- 225 head standing on it and the Grazing tab rating it at nothing.)
 insert into public.pasture_sprays (pasture_id, applied_on, product, registration_number, notes, created_by) values
   ('0de30000-0000-4000-8000-000000000415', current_date - 128, 'MCPA Ester 600', 'DEMO-1007', 'Thistle and dandelion, whole pasture, 0.5 L/ac.', '0de30000-0000-4000-8000-0000000000a2'),
   ('0de30000-0000-4000-8000-000000000412', current_date - 112, 'MCPA Ester 600', 'DEMO-1007', 'Canada thistle patches along the creek, spot-sprayed by quad — kept 10 m off the water.', '0de30000-0000-4000-8000-0000000000a3'),
   ('0de30000-0000-4000-8000-000000000414', current_date - 400, 'Glyphosate 540', 'DEMO-1001', 'Spot-treated a leafy spurge patch by the bush gate.', '0de30000-0000-4000-8000-0000000000a3'),
-  ('0de30000-0000-4000-8000-000000000417', current_date - 3, 'MCPA Ester 600', 'DEMO-1007', 'Thistle patches on the aftermath before the cows go in.', '0de30000-0000-4000-8000-0000000000a3');
+  ('0de30000-0000-4000-8000-000000000415', current_date - 3, 'MCPA Ester 600', 'DEMO-1007', 'Thistle regrowth by the water while the cows are on the aftermath.', '0de30000-0000-4000-8000-0000000000a3');
 
 -- ── Water points on the pastures (grazing map pins) ────────────────────────
 -- Each pasture's water is the cattle water already mapped inside it or

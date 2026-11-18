@@ -140,6 +140,12 @@ describe('switchGain', () => {
   it('will not move more acres than the use has', () => {
     const all = switchGain(r, 'forage', 'barley', 10_000)!
     expect(all.gain).toBeCloseTo((all.to - all.from) * 750, 6)
+    // and says how many it did move, so the page can print that instead.
+    expect(all.acres).toBe(750)
+    expect(all.capped).toBe(true)
+    const some = switchGain(r, 'forage', 'barley', 100)!
+    expect(some.acres).toBe(100)
+    expect(some.capped).toBe(false)
   })
 
   it('says nothing about a use that is not on the table', () => {

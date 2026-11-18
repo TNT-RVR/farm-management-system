@@ -174,6 +174,18 @@ export function yieldBands(zones: Pick<YieldZone, 'min_yield' | 'max_yield'>[]):
   }))
 }
 
+/**
+ * A band's legend label. The end colours also carry the outer 5% that
+ * `yieldColour` clamps into them, so they read "under 87" and "104 and over"
+ * rather than a closed range the zones run past.
+ */
+export function bandLabel(bands: YieldBand[], i: number): string {
+  const b = bands[i]
+  if (bands.length > 1 && i === 0) return `under ${b.to}`
+  if (bands.length > 1 && i === bands.length - 1) return `${b.from} and over`
+  return b.from === b.to ? `${b.from}` : `${b.from}–${b.to}`
+}
+
 /** Which band a zone falls in. Below the first and above the last clamp to the ends. */
 export function yieldColour(bands: YieldBand[], value: number | null): string {
   if (!bands.length) return '#9ca3af'

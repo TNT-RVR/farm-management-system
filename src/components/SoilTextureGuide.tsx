@@ -133,7 +133,7 @@ function Composition({ t }: { t: Texture }) {
           <div key={p.label} style={{ width: `${p.pct}%`, background: p.color }} />
         ))}
       </div>
-      <p className="mt-1 text-[10px] tabular-nums text-gray-400">
+      <p className="mt-1 text-xs tabular-nums text-gray-400">
         {t.sand}% sand · {t.silt}% silt · {t.clay}% clay
       </p>
     </div>
@@ -143,7 +143,7 @@ function Composition({ t }: { t: Texture }) {
 export function SoilTextureGuide() {
   return (
     <div className="mt-3 border-t border-gray-100 pt-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
         The ribbon test
       </p>
       <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-xs font-normal leading-relaxed text-gray-600">
@@ -172,7 +172,7 @@ export function SoilTextureGuide() {
               <div className="mt-1">
                 <Composition t={t} />
               </div>
-              <dl className="mt-1.5 space-y-1 text-[11px] font-normal leading-snug text-gray-600">
+              <dl className="mt-1.5 space-y-1 text-xs font-normal leading-snug text-gray-600">
                 <div>
                   <dt className="inline font-medium text-gray-500">Ribbon: </dt>
                   <dd className="inline">{t.ribbon}</dd>
@@ -187,11 +187,11 @@ export function SoilTextureGuide() {
                 </div>
               </dl>
               {cap && (
-                <p className="mt-1.5 border-t border-gray-100 pt-1 text-[11px] tabular-nums text-gray-500">
+                <p className="mt-1.5 border-t border-gray-100 pt-1 text-xs tabular-nums text-gray-500">
                   FC {cap.fc} / WP {cap.wp} → <b className="text-gray-700">{avail}% available</b>
                 </p>
               )}
-              <p className="mt-1 text-[11px] font-normal leading-snug text-gray-500">{t.water}</p>
+              <p className="mt-1 text-xs font-normal leading-snug text-gray-500">{t.water}</p>
             </div>
           )
         })}

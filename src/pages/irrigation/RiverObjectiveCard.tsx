@@ -74,7 +74,7 @@ export function RiverObjectiveCard({ segmentSlug = 'oldman-seg4' }: { segmentSlu
           <h3 className="text-sm font-semibold text-gray-900">
             Water conservation objective &mdash; {segment.label}
           </h3>
-          <p className="text-[11px] text-gray-500">{segment.bounds}</p>
+          <p className="text-xs text-gray-500">{segment.bounds}</p>
         </div>
         <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold', SUPPLY_COLOR[verdict])}>
           {SUPPLY_LABEL[verdict]}
@@ -209,7 +209,7 @@ function Figure({
 }) {
   return (
     <div className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5">
-      <p className="flex items-center gap-1 text-[11px] font-medium text-gray-500">
+      <p className="flex items-center gap-1 text-xs font-medium text-gray-500">
         {label}
         {href && (
           <a
@@ -226,7 +226,7 @@ function Figure({
       <p className={cn('tabular-nums text-gray-900', strong ? 'text-xl font-bold' : 'text-lg font-semibold')}>
         {value} <span className="text-xs font-normal text-gray-400">{unit}</span>
       </p>
-      {sub && <p className="truncate text-[11px] text-gray-400" title={sub}>{sub}</p>}
+      {sub && <p className="truncate text-xs text-gray-400" title={sub}>{sub}</p>}
     </div>
   )
 }

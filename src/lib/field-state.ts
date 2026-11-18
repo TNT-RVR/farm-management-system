@@ -59,13 +59,13 @@ export function shortDay(day: string | null | undefined): string | null {
  * watered whatever the flag says, and "off" is the more useful thing to read.
  */
 export function fieldState(f: FieldStateFacts): FieldState {
-  if (!f.cropName) return { key: 'no-crop', label: 'No crop', why: '' }
+  if (!f.cropName) return { key: 'no-crop', label: FIELD_STATE_LABEL['no-crop'], why: '' }
 
   if (f.harvestFinished) {
     const on = shortDay(f.lastLoadOn)
     return {
       key: 'off',
-      label: 'Off',
+      label: FIELD_STATE_LABEL.off,
       why: on ? `Harvest recorded; last load ${on}.` : 'Harvest recorded as finished.',
     }
   }
@@ -74,7 +74,7 @@ export function fieldState(f: FieldStateFacts): FieldState {
     const on = shortDay(f.lastLoadOn)
     return {
       key: 'harvesting',
-      label: 'Harvesting',
+      label: FIELD_STATE_LABEL.harvesting,
       why: on
         ? `Started, nothing says it is off. Last load ${on}.`
         : 'Started, nothing says it is off.',
@@ -85,14 +85,28 @@ export function fieldState(f: FieldStateFacts): FieldState {
     const on = shortDay(f.wateringDoneAt)
     const note = f.wateringDoneNote?.trim()
     const how = f.wateringDoneSource === 'auto' ? (note || 'Worked out by the app') : 'Marked finished'
-    return { key: 'water-off', label: 'Water off', why: on ? `${how} ${on}.` : `${how}.` }
+    return { key: 'water-off', label: FIELD_STATE_LABEL['water-off'], why: on ? `${how} ${on}.` : `${how}.` }
   }
 
   return {
     key: 'growing',
-    label: 'Growing',
+    label: FIELD_STATE_LABEL.growing,
     why: f.irrigated ? 'Still on the irrigation schedule.' : 'In crop; not irrigated.',
   }
+}
+
+/**
+ * The word for each state, in the order a season runs.
+ *
+ * One source, because the Fields filter dropdown offers these and the chip
+ * on the row has to read the same.
+ */
+export const FIELD_STATE_LABEL: Record<FieldStateKey, string> = {
+  'no-crop': 'No crop',
+  growing: 'Growing',
+  'water-off': 'Water off',
+  harvesting: 'Harvesting',
+  off: 'Off',
 }
 
 /** Tailwind classes per state: green for off, amber while the work is on. */

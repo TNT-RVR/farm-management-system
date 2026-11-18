@@ -77,7 +77,7 @@ function SourceConcerns({ label, concerns, clear, tested }: { label: string; con
           <button
             type="button"
             onClick={() => setShowFound((v) => !v)}
-            className="flex items-center gap-1 text-[11px] font-medium text-gray-600 hover:text-gray-900"
+            className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900"
           >
             {showFound ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
             Pesticides found, under or without a guideline ({found.length})
@@ -99,7 +99,7 @@ function SourceConcerns({ label, concerns, clear, tested }: { label: string; con
 function BandLine({ g, value, unit }: { g: Guideline; value: number; unit: string }) {
   const { over, under } = bandsFor(g, value)
   return (
-    <p className="text-[11px] text-gray-600">
+    <p className="text-xs text-gray-600">
       {over.length > 0 && <>Over for {over.join('; ')}. </>}
       {under.length > 0 && <>Under for {under.map((b) => `${b.crops} (${fmtWq(b.max)} ${unit})`).join('; ')}.</>}
     </p>
@@ -114,7 +114,7 @@ function ConcernRow({ c }: { c: Concern }) {
       <p className="flex flex-wrap items-baseline gap-x-2">
         <span className="font-medium text-gray-900">{c.analyte.label}</span>
         {g && (
-          <span className={cn('rounded px-1.5 py-0.5 text-[10px]', g.use === 'irrigation' ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800')}>
+          <span className={cn('rounded px-1.5 py-0.5 text-xs', g.use === 'irrigation' ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800')}>
             over the {USE_LABEL[g.use].toLowerCase()} guideline
           </span>
         )}
@@ -140,13 +140,13 @@ function ConcernRow({ c }: { c: Concern }) {
       </p>
       {g?.bands && <BandLine g={g} value={c.worst.value} unit={unit} />}
       {g && (
-        <p className="text-[11px] text-gray-500">
+        <p className="text-xs text-gray-500">
           {g.why ? `${g.why} ` : ''}
           {g.interim ? 'Interim guideline. ' : ''}Source: {g.source}.
         </p>
       )}
       {c.dlAboveGuideline && (
-        <p className="text-[11px] text-gray-500">
+        <p className="text-xs text-gray-500">
           Some samples were reported as &ldquo;not detected&rdquo; at a lab limit above the guideline, so those cannot say it was under.
         </p>
       )}

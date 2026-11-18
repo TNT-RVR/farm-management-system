@@ -163,8 +163,10 @@ function ScoutForm({ cropYear, initialField = null, spot = null, onClose }: { cr
   const soilProblem = fieldId ? readingProblem(soil, fc, u) : null
 
   const lngLat = usePosition ? (spot ?? here.lngLat) : null
+  // A pin with neither a name nor a field says nothing worth keeping.
+  const needs = !subject.trim() && !fieldId ? 'what was it, or a field' : null
   const submit = async () => {
-    if (soilProblem) return
+    if (soilProblem || needs) return
     // The reading first: it replaces the day's reading, so if the pin then
     // fails to save, pressing Save again does no harm.
     if (soilMm != null) {
@@ -288,15 +290,16 @@ function ScoutForm({ cropYear, initialField = null, spot = null, onClose }: { cr
       {!lngLat && !fieldId && <p className="mt-2 text-xs text-amber-700">With no location and no field, the pin will be in the list but not on the map.</p>}
       {saveSoil.error && <p className="mt-2 text-xs text-red-700">Soil moisture not saved: {(saveSoil.error as Error).message}</p>}
       {save.error && <p className="mt-2 text-xs text-red-700">{(save.error as Error).message}</p>}
-      <div className="mt-2 flex justify-end">
+      <div className="mt-2 flex flex-col items-end gap-1">
         <button
           type="button"
           onClick={() => void submit()}
-          disabled={save.isPending || saveSoil.isPending || !!soilProblem}
+          disabled={save.isPending || saveSoil.isPending || !!soilProblem || !!needs}
           className="rounded-md bg-brand-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
         >
           {save.isPending || saveSoil.isPending ? 'Saving…' : 'Save pin'}
         </button>
+        {needs && <span className="text-xs text-gray-500">Needs {needs}</span>}
       </div>
     </Modal>
   )
@@ -547,7 +550,7 @@ function ScoutMap({
     <div className="relative h-[55vh] overflow-hidden rounded-lg border border-gray-200 lg:h-[70vh]">
       {/* Full height, not absolute inset-0: maplibre-gl.css sets .maplibregl-map to position: relative, which cancels the inset and leaves the map 0 px tall. */}
       <div ref={containerRef} className="h-full w-full" />
-      <div className="absolute bottom-2 left-2 flex gap-2 rounded bg-white/90 px-2 py-1 text-[11px] text-gray-700 shadow">
+      <div className="absolute bottom-2 left-2 flex gap-2 rounded bg-white/90 px-2 py-1 text-xs text-gray-700 shadow">
         {SCOUT_CATEGORIES.map((c) => (
           <span key={c.value} className="flex items-center gap-1">
             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: c.colour }} />

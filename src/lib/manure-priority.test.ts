@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { neediestZones, rankField, rankFields, sinceManure, type FieldSoil } from './manure-priority'
+import { manuredWhen, neediestZones, rankField, rankFields, sinceManure, type FieldSoil } from './manure-priority'
 
 const field = (over: Partial<FieldSoil> = {}): FieldSoil => ({
   fieldId: 'f',
@@ -151,5 +151,18 @@ describe('neediestZones', () => {
 
   it('gives nothing back for a field with no zones', () => {
     expect(neediestZones([])).toEqual([])
+  })
+})
+
+describe('when a field was last manured', () => {
+  it('says the spread’s own month, not the crop year it was filed under', () => {
+    // Schoolhouse: spread 4 Nov 2026 for the 2027 crop read "last manured 2027".
+    expect(manuredWhen({ lastManureYear: 2027, lastManureOn: '2026-11-04' })).toBe('Nov 2026')
+    const r = rankField(field({ lastManureYear: 2027, lastManureOn: '2026-11-04', lastManureAcres: 130 }), 2027)
+    expect(r.reasons.join(' ')).toContain('Manured in Nov 2026')
+  })
+  it('falls back to the crop year with no date, and null when never', () => {
+    expect(manuredWhen({ lastManureYear: 2022, lastManureOn: null })).toBe('2022')
+    expect(manuredWhen({ lastManureYear: null })).toBeNull()
   })
 })

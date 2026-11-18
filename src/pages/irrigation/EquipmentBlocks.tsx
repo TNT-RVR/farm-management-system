@@ -18,7 +18,7 @@ import { askConfirm } from '@/components/askConfirm'
 export function PlateBlock({ title, rows, empty }: { title: string; rows: PlateLine[]; empty: string }) {
   return (
     <div className="min-w-0 flex-1">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{title}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{title}</p>
       {rows.length ? (
         <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
           {rows.map(([k, v]) => (
@@ -136,14 +136,14 @@ export function EquipmentPhotos({
   return (
     <div>
       <div className="flex items-center gap-2">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Photos{photos.length ? ` (${photos.length})` : ''}</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Photos{photos.length ? ` (${photos.length})` : ''}</p>
         {isManager && (
           <>
             <button
               type="button"
               onClick={() => input.current?.click()}
               disabled={add.isPending}
-              className="flex items-center gap-1 rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+              className="flex items-center gap-1 rounded border border-gray-200 bg-white px-1.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
             >
               {add.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImagePlus className="h-3 w-3" />} Add photos
             </button>
@@ -161,7 +161,7 @@ export function EquipmentPhotos({
             />
           </>
         )}
-        {failed && <span className="text-[11px] text-red-600">{(failed as Error).message}</span>}
+        {failed && <span className="text-xs text-red-600">{(failed as Error).message}</span>}
       </div>
       {photos.length === 0 ? (
         <p className="mt-1 text-xs text-gray-400">No photos yet{isManager ? ` — ${emptyHint}` : '.'}</p>
@@ -220,7 +220,7 @@ function Thumb({ photo, urls, onOpen }: { photo: EquipmentPhotoMeta; urls: Photo
           <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
         ) : null}
       </div>
-      <p className="truncate px-1.5 py-1 text-[11px] text-gray-700 group-hover:text-brand-800">{photo.caption || 'Photo'}</p>
+      <p className="truncate px-1.5 py-1 text-xs text-gray-700 group-hover:text-brand-800">{photo.caption || 'Photo'}</p>
     </button>
   )
 }

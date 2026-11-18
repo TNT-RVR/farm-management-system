@@ -248,7 +248,7 @@ function SiteRow({ s }: { s: GasSiteSum }) {
         {s.place && !editing ? (
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="text-gray-900">{s.place}</span>
-            <button type="button" onClick={() => setEditing(true)} className="text-[11px] text-brand-700 hover:underline">
+            <button type="button" onClick={() => setEditing(true)} className="text-xs text-brand-700 hover:underline">
               Rename
             </button>
           </span>
@@ -301,9 +301,9 @@ function BillRow({ b }: { b: GasBillRow }) {
         <span className="text-gray-900">{b.bill_date ?? b.file_name ?? 'Bill'}</span>
         <span className="ml-2 text-xs text-gray-500">{b.status === 'notice' ? 'emailed notice' : period}</span>
         {b.account_number && <span className="ml-2 text-xs text-gray-500">account …{b.account_number.slice(-4)}</span>}
-        {b.source === 'quickbooks' && <span className="ml-1 rounded bg-emerald-50 px-1 text-[10px] text-emerald-800">QuickBooks</span>}
-        {b.budget_plan && <span className="ml-1 rounded bg-sky-50 px-1 text-[10px] text-sky-800">budget plan</span>}
-        {b.adjusted && <span className="ml-1 rounded bg-gray-100 px-1 text-[10px] text-gray-700">adjusted</span>}
+        {b.source === 'quickbooks' && <span className="ml-1 rounded bg-emerald-50 px-1 text-xs text-emerald-800">QuickBooks</span>}
+        {b.budget_plan && <span className="ml-1 rounded bg-sky-50 px-1 text-xs text-sky-800">budget plan</span>}
+        {b.adjusted && <span className="ml-1 rounded bg-gray-100 px-1 text-xs text-gray-700">adjusted</span>}
         {b.error && <span className="block text-xs text-amber-800">{b.error}</span>}
       </span>
       <span className="tabular-nums text-gray-700">{b.total != null ? money0(Number(b.total)) : '—'}</span>

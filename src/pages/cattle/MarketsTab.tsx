@@ -31,16 +31,14 @@ import {
   animalClasses,
   byYear,
   byYearAndClass,
+  CME_FEEDER_LB,
   cwtToLb,
-  derivePrice,
+  forwardBidPerLb,
   scoreHindsight,
   useCattleSales,
-  weightSlide,
 } from '@/lib/cattleMarkets'
 import {
   bandMid,
-  bandPrice,
-  bandKey,
   commodityFor,
   explainHeadline,
   headlinePrice,
@@ -150,25 +148,12 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
     [feederQuotes, OUR_WEIGHT_LB, HEIFER_WEIGHT_LB, today],
   )
 
-  // This week's steer classes, each priced the way the headline prices it, for
-  // moving the CME board onto the farm's weight. Open-topped classes are left
-  // out: they have no middle to slide from.
-  const derived = useMemo(() => {
-    const byBand = new Map<string, AuctionQuote[]>()
-    for (const q of feederQuotes.steers) {
-      if (q.band.hi == null) continue
-      const list = byBand.get(bandKey(q.band)) ?? []
-      list.push(q)
-      byBand.set(bandKey(q.band), list)
-    }
-    const classes = [...byBand.values()]
-      .map((qs) => bandPrice(qs, today))
-      .filter((b): b is NonNullable<typeof b> => b != null)
-      .map((b) => ({ lo: b.band.lo, hi: b.band.hi!, perCwt: b.perCwt }))
-      .sort((a, b) => a.lo - b.lo)
-    if (classes.length === 0) return null
-    return { lightest: classes[0], slide: weightSlide(classes) }
-  }, [feederQuotes, today])
+  // This week's Alberta price for the steer the CME board prices (800 lb),
+  // from the last two weeks' sales only — the basis is measured against it.
+  const contractCash = useMemo(
+    () => headlinePrice(feederQuotes.steers, CME_FEEDER_LB, today),
+    [feederQuotes, today],
+  )
 
   // ── C13: score the lock-in calls already made ────────────────────────────
   //
@@ -217,21 +202,14 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
   }, [feederCurve, cadPerUsd])
 
   const basis = useMemo(() => {
-    // Compared against the heaviest class we have a live quote for, because
-    // that is the one closest to what the CME feeder contract actually is.
-    const byId = bySeries(feederPoints ?? [])
-    let heaviest: { lo: number; value: number } | null = null
-    for (const s of feederSeries) {
-      const band = parseSeriesCode(s.code)?.band
-      const last = [...(byId.get(s.id) ?? [])].reverse().find((p) => p.value != null)
-      if (!band || last?.value == null) continue
-      if (!heaviest || band.lo > heaviest.lo) heaviest = { lo: band.lo, value: last.value }
-    }
-    if (!heaviest || boardCad?.value == null) return null
+    // Measured at the weight the board prices. It used to take the heaviest
+    // class with any quote on file, at any age: a 1,250 lb steer sold two
+    // months earlier, which put the basis a dollar a pound too wide.
+    if (!contractCash || boardCad?.value == null) return null
     // In $/lb like everything else on this tab. Mixing hundredweight and pounds
     // on one screen is what made the chart unreadable in the first place.
-    return sameUnitBasis(cwtToLb(heaviest.value), cwtToLb(boardCad.value), '$/lb')
-  }, [feederSeries, feederPoints, boardCad])
+    return sameUnitBasis(contractCash.perLb, cwtToLb(boardCad.value), '$/lb')
+  }, [contractCash, boardCad])
 
   // Every basis we can reconstruct from the weeks we hold, for "is this normal".
   const basisHistory = useMemo(() => {
@@ -265,31 +243,20 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
   }, [feederSeries, feederPoints, OUR_WEIGHT_LB])
 
   /**
-   * What the sale month's board implies for our calves, at this week's basis.
-   *
-   * The board is for a heavy feeder in US dollars; our calves are light and
-   * Canadian. So it is converted at the day's rate, moved onto our weight with
-   * the same slide the derived price uses, and then the CURRENT basis is
-   * applied — because a buyer bidding forward is doing exactly that arithmetic.
-   * Null unless every piece is there; a forward price built on two guesses is
-   * not a bid, and the strategy card says "needs a forward bid" instead.
+   * What the sale month's board implies for our calves, at this week's basis
+   * and price shape (`forwardBidPerLb`). Null unless every piece is there; a
+   * forward price built on a guess is not a bid, and the strategy card says
+   * "needs a forward bid" instead.
    */
   const forwardPricePerLb = useMemo(() => {
     const pts = feederCurve?.points ?? []
     // The contract nearest the month the calves actually move in (farm setup; December by default).
     const dec = pts.find((p) => p.contract_month.slice(5, 7) === saleMonthCode) ?? pts.at(-1)
-    if (!dec || cadPerUsd == null || basis?.basis == null || !derived?.slide || !derived.lightest) {
-      return null
-    }
-    const boardCwt = dec.value * cadPerUsd
-    // Move the board onto our weight, then add the local basis.
-    const atOurWeight = derivePrice(
-      OUR_WEIGHT_LB,
-      { ...derived.lightest, perCwt: boardCwt },
-      derived.slide,
-    )
-    return cwtToLb(atOurWeight) + basis.basis
-  }, [feederCurve, cadPerUsd, basis, derived, saleMonthCode, OUR_WEIGHT_LB])
+    const nearby = pts[0]
+    const todayAtOurWeight = headline.steers?.perLb
+    if (!dec || !nearby || cadPerUsd == null || todayAtOurWeight == null) return null
+    return forwardBidPerLb(todayAtOurWeight, nearby.value * cadPerUsd, dec.value * cadPerUsd)
+  }, [feederCurve, cadPerUsd, headline, saleMonthCode])
 
   if (salesLoading) return <p className="text-sm text-gray-500">Loading…</p>
 
@@ -513,7 +480,7 @@ export function CattleMarketsTab({ onGoToSettings }: { onGoToSettings?: (ranchId
         <BasisPanel
           title="Alberta against the board"
           point={basis}
-          cashLabel="Alberta cash, heaviest quoted class"
+          cashLabel={`Alberta cash, ${CME_FEEDER_LB} lb steers (what the board prices)`}
           boardLabel={`CME feeder in CAD/lb${boardCad?.month ? ` (${boardCad.month.slice(0, 7)})` : ''}`}
           note={
             cadPerUsd != null
@@ -847,7 +814,7 @@ function TodayStat({ sex, weightLb, h, ranch, source }: { sex: 'steers' | 'heife
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-3">
       <div className="flex items-center gap-1">
-        <p className="text-[11px] uppercase tracking-wide text-gray-500">
+        <p className="text-xs uppercase tracking-wide text-gray-500">
           Today, {weightLb} lb {sex}
         </p>
         {h && (
@@ -868,10 +835,10 @@ function TodayStat({ sex, weightLb, h, ranch, source }: { sex: 'steers' | 'heife
       <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">
         {h ? `${money(h.perLb)}/lb` : '—'}
         {h && (
-          <span className={cn('ml-1.5 rounded px-1 text-[10px] font-medium uppercase', KIND_BADGE[h.kind])}>{h.kind}</span>
+          <span className={cn('ml-1.5 rounded px-1 text-xs font-medium uppercase', KIND_BADGE[h.kind])}>{h.kind}</span>
         )}
       </p>
-      <p className="mt-0.5 text-[11px] text-gray-400">
+      <p className="mt-0.5 text-xs text-gray-400">
         {h ? headlineSub(h) : `none sold near ${weightLb} lb at the four markets in the last two weeks`}
       </p>
     </div>
@@ -891,16 +858,16 @@ function Stat({
 }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-3">
-      <p className="text-[11px] uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
       <p className="mt-0.5 text-xl font-bold tabular-nums text-gray-900">
         {value}
         {tone === 'derived' && value !== '—' && (
-          <span className="ml-1.5 rounded bg-amber-100 px-1 text-[10px] font-medium uppercase text-amber-800">
+          <span className="ml-1.5 rounded bg-amber-100 px-1 text-xs font-medium uppercase text-amber-800">
             derived
           </span>
         )}
       </p>
-      {sub && <p className="mt-0.5 text-[11px] text-gray-400">{sub}</p>}
+      {sub && <p className="mt-0.5 text-xs text-gray-400">{sub}</p>}
     </div>
   )
 }

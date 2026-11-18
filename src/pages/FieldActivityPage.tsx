@@ -119,7 +119,7 @@ export function FieldActivityPage() {
           ))}
         </div>
         {who === 'people' && automatic > 0 && (
-          <span className="text-[11px] text-gray-400">
+          <span className="text-xs text-gray-400">
             {automatic} automatic {automatic === 1 ? 'entry' : 'entries'} hidden — mostly the pivot
             sync writing status
           </span>
@@ -145,7 +145,7 @@ export function FieldActivityPage() {
               Clear
             </button>
           )}
-          <span className="text-[11px] text-gray-400">
+          <span className="text-xs text-gray-400">
             {rows.length} of {audit?.length ?? 0} entries
           </span>
         </div>
@@ -165,7 +165,7 @@ export function FieldActivityPage() {
         <div className="mt-4 space-y-4">
           {byDay.map(([day, entries]) => (
             <section key={day}>
-              <h2 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                 {day}
               </h2>
               <ul className="mt-1 divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">

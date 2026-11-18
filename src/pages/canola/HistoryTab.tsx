@@ -164,15 +164,15 @@ export function HistoryTab() {
                   <tr key={h.id}>
                     <td className="px-3 py-1.5 font-medium text-gray-900">
                       {h.name}
-                      {h.acres != null && <span className="block text-[11px] font-normal text-gray-500">{Math.round(h.acres)} ac</span>}
-                      <span className="block text-[11px] font-normal text-amber-800">
+                      {h.acres != null && <span className="block text-xs font-normal text-gray-500">{Math.round(h.acres)} ac</span>}
+                      <span className="block text-xs font-normal text-amber-800">
                         Last seed canola: {h.lastSeedCanola ? `${h.lastSeedCanola.year}, ${h.lastSeedCanola.label}` : 'none on record'}
                       </span>
                     </td>
                     {h.years.map((y) => (
                       <td key={y.year} className={cn('px-3 py-1.5 align-top', isCanolaCrop(y.crop) ? 'font-semibold text-amber-700' : y.crop ? 'text-gray-800' : 'text-gray-300')}>
                         {y.crop ?? '—'}
-                        {y.from === 'plan' && <span className="block text-[10px] font-normal text-gray-400">planned</span>}
+                        {y.from === 'plan' && <span className="block text-xs font-normal text-gray-400">planned</span>}
                         {canEdit && y.row && <TraitPicker row={y.row} onSet={(trait) => setTrait.mutate({ table: y.row!.record!.table, id: y.row!.record!.id, trait })} />}
                       </td>
                     ))}
@@ -201,7 +201,7 @@ function TraitPicker({ row, onSet }: { row: FieldYear; onSet: (trait: HerbicideT
       value={own ?? ''}
       onChange={(e) => onSet((e.target.value || null) as HerbicideTrait | null)}
       aria-label={`${row.year} herbicide trait`}
-      className="mt-0.5 block rounded border border-amber-300 bg-white px-1 py-0.5 text-[11px] font-normal text-gray-800"
+      className="mt-0.5 block rounded border border-amber-300 bg-white px-1 py-0.5 text-xs font-normal text-gray-800"
     >
       <option value="">Trait?</option>
       {TRAITS.map((t) => (

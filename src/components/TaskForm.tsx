@@ -170,7 +170,7 @@ export function TaskForm({
             <button
               type="button"
               onClick={() => setForm((f) => ({ ...f, field_id: here.fieldId! }))}
-              className="inline-flex items-center gap-0.5 text-[11px] text-brand-700 hover:underline"
+              className="inline-flex items-center gap-0.5 text-xs text-brand-700 hover:underline"
               title={here.inside ? 'You are in this field' : `${Math.round(here.distanceM)} m from it`}
             >
               <MapPin className="h-3 w-3" /> {here.fieldName}
@@ -233,7 +233,7 @@ export function TaskForm({
           {(users ?? []).length === 0 && <span className="text-gray-400">No users on file.</span>}
         </div>
         {form.assignees.length === 0 && (
-          <p className="mt-0.5 text-[11px] text-gray-400">Nobody yet — it will sit unassigned.</p>
+          <p className="mt-0.5 text-xs text-gray-400">Nobody yet — it will sit unassigned.</p>
         )}
       </fieldset>
       <label className="text-xs text-gray-500">
@@ -267,7 +267,7 @@ export function TaskForm({
                 >
                   <Paperclip className="h-3.5 w-3.5 shrink-0 text-gray-400" />
                   <span className="flex-1 truncate">{file.name}</span>
-                  <span className="text-[11px] text-gray-400">
+                  <span className="text-xs text-gray-400">
                     {(file.size / 1024).toFixed(0)} KB
                   </span>
                   <button

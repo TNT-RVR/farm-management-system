@@ -164,7 +164,7 @@ export function LeasesPage() {
                   <td className="px-3 py-2">
                     <div className="font-medium text-gray-900">
                       {l.landlord}
-                      {l.direction === 'out' && <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800">farms our land</span>}
+                      {l.direction === 'out' && <span className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 text-xs font-medium text-sky-800">farms our land</span>}
                     </div>
                     <div className="text-xs text-gray-500">{[l.phone, l.email].filter(Boolean).join(' · ')}</div>
                   </td>

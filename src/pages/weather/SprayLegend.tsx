@@ -16,7 +16,7 @@ export function sprayCellClass(h: Pick<SprayHour, 'ok' | 'bees'>, inWindow: bool
 /** The key to the spray colours. */
 export function SprayLegend({ compact = false }: { compact?: boolean }) {
   return (
-    <div className={cn('flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-600', !compact && 'rounded-lg border border-gray-200 bg-white px-3 py-2')}>
+    <div className={cn('flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600', !compact && 'rounded-lg border border-gray-200 bg-white px-3 py-2')}>
       {!compact && <span className="font-semibold text-gray-700">Spray hours key:</span>}
       {SPRAY_KEY.map((k, i) => (
         <span key={k.label} className="inline-flex items-center gap-1.5">

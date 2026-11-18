@@ -267,11 +267,14 @@ from (values
 ) as v(crop, buyer, ago, price, month, loc)
 join public.crops c on c.name = v.crop;
 
+-- A target's value is stored per bushel (the form converts a tonne price on
+-- the way in): $660/t canola at 50 lb/bu is 14.97, $40/t wheat at 60 lb/bu is
+-- 1.09, $290/t barley at 48 lb/bu is 6.31.
 insert into public.marketing_targets (crop_id, crop_year, mode, value, quantity, series_id, note, active, created_by)
 select c.id, extract(year from current_date)::int, v.mode, v.val, v.qty, v.series::uuid, v.note, true, (select id from public.users order by created_at limit 1)
 from (values
-  ('Canola', 'absolute', 660, 8000, '0de30000-0000-4000-8000-000000000571', 'Sell another 8,000 bu if canola reaches $660/t.'),
-  ('Wheat', 'over_breakeven', 40, 10000, '0de30000-0000-4000-8000-000000000572', 'Price the rest of the wheat once it is $40/t over breakeven.'),
-  ('Barley', 'absolute', 290, 6000, '0de30000-0000-4000-8000-000000000573', 'Feed barley left after the cattle are fed.')
+  ('Canola', 'absolute', 14.97, 8000, '0de30000-0000-4000-8000-000000000571', 'Sell another 8,000 bu if canola reaches $660/t.'),
+  ('Wheat', 'over_breakeven', 1.09, 10000, '0de30000-0000-4000-8000-000000000572', 'Price the rest of the wheat once it is $40/t over breakeven.'),
+  ('Barley', 'absolute', 6.31, 6000, '0de30000-0000-4000-8000-000000000573', 'Feed barley left after the cattle are fed.')
 ) as v(crop, mode, val, qty, series, note)
 join public.crops c on c.name = v.crop;

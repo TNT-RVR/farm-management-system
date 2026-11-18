@@ -7,7 +7,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { useAllFields, useFields } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
-import { scoutPassed, type ScoutCompany, type ScoutReport } from '@/lib/scout-reports'
+import { isCompanyOf, scoutPassed, type ScoutCompany, type ScoutReport } from '@/lib/scout-reports'
 import { Grade, ScoutReportModal } from './ScoutDetail'
 import { MoreLink } from './ScoutCompanyTab'
 
@@ -41,8 +41,7 @@ export function ScoutOverviewTab({
 
   /** Only the companies that walked something this year get a column. */
   const shown = useMemo(() => {
-    const seen = new Set(forYear.map((r) => r.company))
-    return companies.filter((c) => seen.has(c.key))
+    return companies.filter((c) => forYear.some((r) => isCompanyOf(c, r.company)))
   }, [companies, forYear])
 
   const lines = useMemo(() => {
@@ -52,7 +51,7 @@ export function ScoutOverviewTab({
       .map(([fieldId, reports]) => {
         const field = fields?.find((f) => f.id === fieldId)
         const cells = shown.map((c) => {
-          const report = reports.find((r) => r.company === c.key) ?? null
+          const report = reports.find((r) => isCompanyOf(c, r.company)) ?? null
           return { company: c, report, passed: report ? scoutPassed(report) : null }
         })
         const yes = cells.filter((c) => c.passed === true).map((c) => c.company.label)
@@ -92,7 +91,7 @@ export function ScoutOverviewTab({
         </p>
         <HelpNote className="mt-1" summary="A tick means that company will grow seed canola on that field." title="How a field passes">
           Each company walks the quarters it might contract the summer before and grades them A to D. Corteva grows on
-          A and B (Kathryn Bilcik, 12 November 2026); the others have given no rule, so the same one is assumed. A
+          A and B (from Corteva, 12 November 2026); the others have given no rule, so the same one is assumed. A
           field with no grade from a company is marked — rather than failed: nobody has looked at it.
         </HelpNote>
       </div>

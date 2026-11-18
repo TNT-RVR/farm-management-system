@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { isExcludedType, parseCsv, toAgriculturalRows } from '../../netlify/shared/chemicals-sync-core'
-import { englishLabelDocId, labelPdfUrl, mergeMatches } from './chemicals'
+import { englishLabelDocId, foldCropNames, labelPdfUrl, mergeMatches } from './chemicals'
+
+describe('crops sprayed, from two lists', () => {
+  it('folds case and singular/plural into one name', () => {
+    expect(foldCropNames(['Canola', 'canola', 'pea'])).toEqual(['Canola', 'Pea'])
+    expect(foldCropNames(['Barley', 'Wheat', 'barley', 'wheat'])).toEqual(['Barley', 'Wheat'])
+    expect(foldCropNames(['Peas', 'pea'])).toEqual(['Peas'])
+    expect(foldCropNames(['Potatoes', 'potato', ' oats ', 'Oat'])).toEqual(['Oats', 'Potatoes'])
+  })
+  it('skips blanks', () => {
+    expect(foldCropNames([null, undefined, '  ', 'Corn'])).toEqual(['Corn'])
+  })
+})
 
 // The registry extract quotes any field containing a comma and escapes a quote
 // by doubling it. Real product names contain both — `"""103"" SIESTA"` is an

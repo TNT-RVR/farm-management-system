@@ -17,6 +17,8 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Modal } from '@/components/Modal'
+import { askConfirm } from '@/components/askConfirm'
+import { dbErrorMessage } from '@/lib/db-error'
 import { Select, type SelectOption } from '@/components/Select'
 import { DateField } from '@/components/DateField'
 import { useAuth } from '@/lib/auth'
@@ -850,7 +852,7 @@ export function WeighInForm({
           <Check className="h-4 w-4" /> {saved.estimated ? 'About ' : ''}
           {bu(saved.bushels)} {saved.delivery_site_id ? 'to' : 'into'} {binName}
           {saved.estimated && (
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800">
+            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold uppercase text-amber-800">
               estimate
             </span>
           )}
@@ -1002,7 +1004,7 @@ export function WeighInForm({
                   options={cropOptions}
                 />
                 {form.field_id && form.crop_id && varietyOf(form.field_id, form.crop_id) && (
-                  <span className="mt-0.5 block text-[11px] text-gray-400">
+                  <span className="mt-0.5 block text-xs text-gray-400">
                     {varietyOf(form.field_id, form.crop_id)}
                   </span>
                 )}
@@ -1039,7 +1041,7 @@ export function WeighInForm({
                       <option key={n} value={n} />
                     ))}
                   </datalist>
-                  <span className="mt-0.5 block text-[11px] text-gray-400">
+                  <span className="mt-0.5 block text-xs text-gray-400">
                     Kept on this load only; not added to the list of people.
                   </span>
                 </>
@@ -1278,7 +1280,7 @@ export function WeighInForm({
                     />
                   </label>
                 ) : (
-                  <span className={cn(label, 'self-end pb-2 text-[11px] text-gray-400')}>
+                  <span className={cn(label, 'self-end pb-2 text-xs text-gray-400')}>
                     Just the one number the driver sent.
                   </span>
                 )}
@@ -1293,7 +1295,7 @@ export function WeighInForm({
             <div className={cn(label, 'col-span-2')}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span>Going to</span>
-                <span className="inline-flex overflow-hidden rounded-md border border-gray-300 bg-white text-[11px]">
+                <span className="inline-flex overflow-hidden rounded-md border border-gray-300 bg-white text-xs">
                   {(partner ? (['plant'] as const) : (['bin', 'plant'] as const)).map((d) => (
                     <button
                       key={d}
@@ -1321,7 +1323,7 @@ export function WeighInForm({
                     onChange={pickBin}
                     options={binOptions}
                   />
-                  <span className="mt-0.5 block text-[11px] text-gray-400">
+                  <span className="mt-0.5 block text-xs text-gray-400">
                     {!form.field_id
                       ? 'Pick the field first; its planned bin fills in.'
                       : assigned.length === 0
@@ -1346,7 +1348,7 @@ export function WeighInForm({
                       { value: ADD, label: '+ Add a plant or elevator…' },
                     ]}
                   />
-                  <span className="mt-0.5 block text-[11px] text-gray-400">
+                  <span className="mt-0.5 block text-xs text-gray-400">
                     No bin: counted in the field's yield, not in any bin.
                   </span>
                   {/* The plant's statement is sometimes the only weight there
@@ -1369,7 +1371,7 @@ export function WeighInForm({
                     onChange={(v) => set('contract_id', v)}
                     options={contractOptions}
                   />
-                  <span className="mt-0.5 block text-[11px] text-gray-400">
+                  <span className="mt-0.5 block text-xs text-gray-400">
                     {form.contract_id
                       ? "Counts toward the contract now; the plant's ticket takes over when it is recorded."
                       : contractOptions.length > 1
@@ -1448,7 +1450,7 @@ export function WeighInForm({
                   weighed out (Sam, 29 Oct 2026), so drivers do not come to
                   lean on it; the load is marked as a guess. */}
                   {form.emptyGuessed ? (
-                    <span className="mt-1 block rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
+                    <span className="mt-1 block rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
                       Not weighed out: the empty weight is a best guess, and the load is marked so.{' '}
                       {form.tare === '' && previousTare != null && (
                         <button
@@ -1473,7 +1475,7 @@ export function WeighInForm({
                       <button
                         type="button"
                         onClick={() => set('emptyGuessed', true)}
-                        className="mt-0.5 block text-left text-[11px] text-gray-500 underline decoration-dotted"
+                        className="mt-0.5 block text-left text-xs text-gray-500 underline decoration-dotted"
                       >
                         Truck left without weighing empty?
                       </button>
@@ -1563,7 +1565,7 @@ export function WeighInForm({
                           : 'no weights yet'}
                 </span>
               </p>
-              <p className="text-[11px] text-gray-500">
+              <p className="text-xs text-gray-500">
                 {crop ? (
                   lbPerBu ? (
                     `${crop.name} at ${lbPerBu} lb/bu${net != null ? ` · ${Math.round(net * KG_TO_LB).toLocaleString('en-CA')} lb` : ''}`
@@ -1630,7 +1632,7 @@ export function WeighInForm({
                     <button
                       type="button"
                       onClick={() => set('allIn', true)}
-                      className="mt-1.5 text-left text-[11px] text-amber-900 underline decoration-dotted"
+                      className="mt-1.5 text-left text-xs text-amber-900 underline decoration-dotted"
                     >
                       No, it all went into {shortBin(form.bin_id)} (it will show over its max)
                     </button>
@@ -1710,7 +1712,7 @@ export function WeighInForm({
                 <span className="ml-1 text-brand-700 underline decoration-dotted">change</span>
               </button>
               {/* When, from the scale: a time already saved, else "now" on save. */}
-              <p className="text-[11px] text-gray-500">{weighTimeLine(form, tare != null)}</p>
+              <p className="text-xs text-gray-500">{weighTimeLine(form, tare != null)}</p>
               {/* Worth, not sold: the load at the crop's own price, which is
                   set on the crop's page and linked to from here. */}
               {worth && crop && (
@@ -1727,7 +1729,7 @@ export function WeighInForm({
                 </p>
               )}
               {crop && bushels != null && !worth && (
-                <p className="text-[11px] text-gray-400">
+                <p className="text-xs text-gray-400">
                   No price for {crop.name} yet —{' '}
                   <Link to={`/crops/${crop.id}`} className="text-brand-700 underline decoration-dotted">
                     set one
@@ -1735,10 +1737,10 @@ export function WeighInForm({
                   to see what a load is worth.
                 </p>
               )}
-              {rigLine && <p className="text-[11px] text-gray-500">{rigLine}</p>}
+              {rigLine && <p className="text-xs text-gray-500">{rigLine}</p>}
               {/* Who stood at the scale, which is not always who drove. */}
               {(form.weighedInBy || form.weighedOutBy) && (
-                <p className="text-[11px] text-gray-500">
+                <p className="text-xs text-gray-500">
                   {[
                     form.weighedInBy ? `In by ${personName(form.weighedInBy)}` : null,
                     !single && form.weighedOutBy ? `out by ${personName(form.weighedOutBy)}` : null,
@@ -1771,7 +1773,7 @@ export function WeighInForm({
                 className={numBox}
               />
               {reading && (
-                <span className="mt-0.5 block text-[11px] text-gray-400">
+                <span className="mt-0.5 block text-xs text-gray-400">
                   Last {reading.from === 'test' ? 'reading for' : 'load of'}{' '}
                   {cropName(form.crop_id)}: {reading.pct}% ({dayMonth(reading.on)})
                 </span>
@@ -1779,7 +1781,7 @@ export function WeighInForm({
               {crop?.moisture_dry_max != null &&
                 Number(moisture) > Number(crop.moisture_dry_max) &&
                 Number(moisture) < 60 && (
-                  <span className="mt-0.5 block text-[11px] text-amber-700">
+                  <span className="mt-0.5 block text-xs text-amber-700">
                     Wet (dry is {Number(crop.moisture_dry_max)}%): the field yield counts it at{' '}
                     {Math.round(
                       ((100 - Number(moisture)) / (100 - Number(crop.moisture_dry_max))) * 1000,
@@ -1815,7 +1817,7 @@ export function WeighInForm({
                 />
                 <span>
                   <span className="font-semibold">Last load from {fieldNameOf(form.field_id)}</span>
-                  <span className="block text-[11px] opacity-80">
+                  <span className="block text-xs opacity-80">
                     {soFar.loads
                       ? `So far ${soFar.loads} load${soFar.loads === 1 ? '' : 's'}, ${bu(soFar.bushels)}${bushels != null && !editingId ? ` — ${bu(soFar.bushels + bushels)} with this one` : ''}. `
                       : 'The first load from this field. '}
@@ -1917,7 +1919,7 @@ export function WeighInForm({
         )}
       </div>
       {stepNeeds.length > 0 && (
-        <p className="text-[11px] text-gray-500">Needs {stepNeeds.join(', ')}.</p>
+        <p className="text-xs text-gray-500">Needs {stepNeeds.join(', ')}.</p>
       )}
       {save.isError && <p className="text-xs text-red-700">{(save.error as Error).message}</p>}
       {photoError && <p className="text-xs text-red-700">{photoError}</p>}
@@ -1945,7 +1947,7 @@ function StepBar({
   single: boolean
 }) {
   return (
-    <ol className="flex gap-1 text-[11px]">
+    <ol className="flex gap-1 text-xs">
       {STEPS(single).map(([n, text]) => (
         <li key={n} className="flex-1">
           <button
@@ -1996,7 +1998,7 @@ function WeigherBox({
 }) {
   return (
     <span className="mt-1.5 block">
-      <span className="block text-[11px] text-gray-500">{text}</span>
+      <span className="block text-xs text-gray-500">{text}</span>
       <Select
         value={value}
         ariaLabel={text}
@@ -2023,7 +2025,7 @@ function WeighTimeBox({
 }) {
   return (
     <span className="mt-1.5 block">
-      <span className="block text-[11px] text-gray-500">{text}</span>
+      <span className="block text-xs text-gray-500">{text}</span>
       <input
         type="datetime-local"
         value={value}
@@ -2197,14 +2199,14 @@ function ScalePhoto({
           </div>,
           document.body,
         )}
-      {convertError && <span className="basis-full text-[11px] text-red-700">{convertError}</span>}
+      {convertError && <span className="basis-full text-xs text-red-700">{convertError}</span>}
       {reading && (
-        <span className="basis-full text-[11px] text-gray-500">
+        <span className="basis-full text-xs text-gray-500">
           Reading the scale off the photo…
         </span>
       )}
       {readError && (
-        <span className="basis-full text-[11px] text-amber-700">
+        <span className="basis-full text-xs text-amber-700">
           The photo could not be read: {readError} Type the weight in.
         </span>
       )}
@@ -2243,7 +2245,7 @@ function ScaleReadLine({
   // Not agreed, or nothing readable: the photo is kept, the weight is typed.
   if (got == null || !usableRead(read)) {
     return (
-      <span className="basis-full text-[11px] text-amber-700">
+      <span className="basis-full text-xs text-amber-700">
         The photo could not be read for certain, so nothing has been filled in.{note} Type the
         weight in.
       </span>
@@ -2252,7 +2254,7 @@ function ScaleReadLine({
   const same = typed !== '' && Math.abs(Number(typed) - got) < 1
   if (typed === '' || same) {
     return (
-      <span className="basis-full text-[11px] text-gray-500">
+      <span className="basis-full text-xs text-gray-500">
         From the photo: <b className="tabular-nums text-gray-700">{kg(got)}</b>
         {read.unit === 'lb'
           ? ' (the display was in pounds)'
@@ -2265,7 +2267,7 @@ function ScaleReadLine({
     )
   }
   return (
-    <span className="basis-full text-[11px] text-amber-800">
+    <span className="basis-full text-xs text-amber-800">
       The photo reads {kg(got)}, not {kg(Number(typed))}.{doubt}
       {note}{' '}
       {onUse && (
@@ -2316,7 +2318,7 @@ export function OpenLoads({ binId, onFinish }: { binId?: string; onFinish: (l: B
                   name(sites, l.delivery_site_id) ??
                   'bin not picked'}
               </span>
-              <span className="block text-[11px] text-gray-500">
+              <span className="block text-xs text-gray-500">
                 {l.gross_kg != null
                   ? `full ${kg(l.gross_kg)}, needs the empty`
                   : `empty ${kg(l.tare_kg)}, needs the full`}{' '}
@@ -2329,7 +2331,7 @@ export function OpenLoads({ binId, onFinish }: { binId?: string; onFinish: (l: B
               <button
                 type="button"
                 onClick={() => onFinish(l)}
-                className="rounded-md bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-700"
+                className="rounded-md bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-700"
               >
                 Finish
               </button>
@@ -2435,7 +2437,7 @@ export function PastLoads({
                     />
                   )}
                   {l.estimated && (
-                    <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-semibold uppercase text-amber-800">
+                    <span className="ml-1 rounded bg-amber-100 px-1 text-xs font-semibold uppercase text-amber-800">
                       est.
                     </span>
                   )}
@@ -2443,7 +2445,7 @@ export function PastLoads({
                   {l.weight_cleaned && (
                     <span
                       title="This weight is after the plant's clean-out"
-                      className="ml-1 rounded bg-sky-100 px-1 text-[10px] font-semibold uppercase text-sky-800"
+                      className="ml-1 rounded bg-sky-100 px-1 text-xs font-semibold uppercase text-sky-800"
                     >
                       clean
                     </span>
@@ -2564,7 +2566,7 @@ export function FieldYieldNote({ fieldId, cropYear }: { fieldId: string; cropYea
           ? `, ${Number(y.yield_per_acre).toLocaleString('en-CA')} ${unit}/ac${kgAside(y.yield_per_acre, unit)}`
           : ''}
       </p>
-      <p className="mt-0.5 text-[11px] text-green-900/80">
+      <p className="mt-0.5 text-xs text-green-900/80">
         {y.yield_override
           ? `A person's figure is kept; the scale says ${Math.round(Number(y.scale_total ?? 0)).toLocaleString('en-CA')} ${unit}.`
           : `Pre-clean, from ${y.scale_loads ?? 'its'} loads over ${y.acres != null ? `${Number(y.acres).toLocaleString('en-CA')} ac` : 'the seeded acres'}. The plan and marketing position use it, labelled pre-clean, until the yield after clean-out is entered.`}{' '}
@@ -2598,55 +2600,39 @@ export function DeleteLoadButton({
   withText?: boolean
 }) {
   const del = useDeleteBinLoad()
-  const [asking, setAsking] = useState(false)
-  if (asking) {
-    return (
-      <span className="inline-flex items-center gap-1.5">
-        <button
-          type="button"
-          disabled={del.isPending}
-          onClick={() =>
-            del.mutate(load.id, {
-              onSuccess: () => {
-                setAsking(false)
-                onDeleted?.()
-              },
-            })
-          }
-          className="rounded bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-        >
-          {del.isPending ? 'Deleting…' : 'Delete this load'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setAsking(false)}
-          className="text-[11px] text-gray-500 underline"
-        >
-          keep it
-        </button>
-        {del.isError && (
-          <span className="text-[11px] text-red-700">{(del.error as Error).message}</span>
-        )}
-      </span>
+  // A dialog that asks in other words, away from the trigger: the old second
+  // button sat under the first and said the same thing, so a double-click
+  // deleted a ticket unread (batch 2 test, 17 Nov 2026).
+  const ask = async () => {
+    const ok = await askConfirm(
+      load.last_from_field
+        ? "It is the field's last load, so the field's harvest reopens. Its bushels leave the bin."
+        : "Its bushels leave the bin and the field's yield is worked out again.",
+      { title: 'Delete this load?', confirmLabel: 'Yes, delete' },
     )
+    if (ok) del.mutate(load.id, { onSuccess: () => onDeleted?.() })
   }
   return (
-    <button
-      type="button"
-      onClick={() => setAsking(true)}
-      aria-label="Delete this load"
-      title={
-        load.last_from_field
-          ? "Delete this load — it is the field's last, so its harvest reopens"
-          : 'Delete this load'
-      }
-      className={cn(
-        'inline-flex items-center gap-1 rounded text-gray-400 hover:bg-red-50 hover:text-red-600',
-        withText ? 'px-2 py-1 text-xs' : 'p-1',
-      )}
-    >
-      <Trash2 className="h-3.5 w-3.5" />
-      {withText && 'Delete this load'}
-    </button>
+    <span className="inline-flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={ask}
+        disabled={del.isPending}
+        aria-label="Delete this load"
+        title={
+          load.last_from_field
+            ? "Delete this load — it is the field's last, so its harvest reopens"
+            : 'Delete this load'
+        }
+        className={cn(
+          'inline-flex items-center gap-1 rounded text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50',
+          withText ? 'px-2 py-1 text-xs' : 'p-1',
+        )}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+        {withText && (del.isPending ? 'Deleting…' : 'Delete this load')}
+      </button>
+      {del.isError && <span className="text-xs text-red-700">{dbErrorMessage(del.error, 'That load could not be deleted.')}</span>}
+    </span>
   )
 }

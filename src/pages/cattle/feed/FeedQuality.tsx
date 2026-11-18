@@ -75,7 +75,7 @@ export function FeedQuality({
       name: (
         <>
           {ft.name}
-          {ft.is_bedding && <span className="ml-1 rounded bg-gray-100 px-1 text-[10px] text-gray-500">bedding</span>}
+          {ft.is_bedding && <span className="ml-1 rounded bg-gray-100 px-1 text-xs text-gray-500">bedding</span>}
         </>
       ),
       kind: (
@@ -236,7 +236,7 @@ function TestForm({ feed, onDone }: { feed: FeedTypeRow; onDone: () => void }) {
   const estTdn = n(f.tdn) == null && n(f.adf) != null ? tdnFromAdf(cat, n(f.adf)!, n(f.cp), feed.legume) : null
   const nitratePct = n(f.nitrate) == null ? null : f.nitrateUnit === 'ppmN' ? nitrateNPpmToPct(n(f.nitrate)!) : n(f.nitrate)
   const field = (key: keyof typeof f, label: string, ph = '') => (
-    <label className="text-[11px] text-gray-500">
+    <label className="text-xs text-gray-500">
       {label}
       <input value={f[key]} placeholder={ph} onChange={(e) => setF((x) => ({ ...x, [key]: e.target.value }))} inputMode="decimal" className="mt-0.5 w-full rounded border border-gray-300 px-1.5 py-1 text-sm tabular-nums text-gray-900" />
     </label>
@@ -245,7 +245,7 @@ function TestForm({ feed, onDone }: { feed: FeedTypeRow; onDone: () => void }) {
     <div className="mt-2 w-[520px] max-w-full rounded-md border border-emerald-200 bg-emerald-50/40 p-2 text-gray-800">
       <p className="text-xs font-semibold">Lab test for {feed.name} — dry-matter basis</p>
       <div className="mt-1 grid grid-cols-3 gap-2 sm:grid-cols-4">
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           Sampled
           <input type="date" value={f.sampled_on} onChange={(e) => setF((x) => ({ ...x, sampled_on: e.target.value }))} className="mt-0.5 w-full rounded border border-gray-300 px-1.5 py-1 text-sm" />
         </label>
@@ -255,7 +255,7 @@ function TestForm({ feed, onDone }: { feed: FeedTypeRow; onDone: () => void }) {
         {field('tdn', 'TDN %', estTdn != null ? `≈${estTdn.toFixed(1)} from ADF` : 'blank = from ADF')}
         {field('adf', 'ADF %', '35')}
         {field('ndf', 'NDF %', '55')}
-        <label className="text-[11px] text-gray-500">
+        <label className="text-xs text-gray-500">
           Nitrate
           <span className="mt-0.5 flex gap-1">
             <input value={f.nitrate} onChange={(e) => setF((x) => ({ ...x, nitrate: e.target.value }))} inputMode="decimal" className="w-full rounded border border-gray-300 px-1.5 py-1 text-sm tabular-nums" />
@@ -268,7 +268,7 @@ function TestForm({ feed, onDone }: { feed: FeedTypeRow; onDone: () => void }) {
       </div>
       {field('notes', 'Notes', 'lot, field, how many bales cored')}
       {nitratePct != null && (
-        <p className={cn('mt-1 text-[11px]', nitratePct > 1 ? 'text-red-700' : nitratePct >= 0.5 ? 'text-amber-700' : 'text-emerald-700')}>
+        <p className={cn('mt-1 text-xs', nitratePct > 1 ? 'text-red-700' : nitratePct >= 0.5 ? 'text-amber-700' : 'text-emerald-700')}>
           {nitratePct.toFixed(2)}% NO₃ of DM — {nitratePct > 1 ? 'dangerous' : nitratePct >= 0.5 ? 'caution' : 'safe'}
         </p>
       )}

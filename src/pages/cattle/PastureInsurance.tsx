@@ -182,7 +182,7 @@ export function PastureInsurance({ isManager, ranch }: { isManager: boolean; ran
                   {/* Honest status: the button used to read "Filled in" with 0 parcels on the page. */}
                   <span
                     className={cn(
-                      'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium',
+                      'shrink-0 rounded-full px-2 py-0.5 text-xs font-medium',
                       want.length > 0 ? 'bg-amber-100 text-amber-900' : 'bg-green-100 text-green-800',
                     )}
                   >

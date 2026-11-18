@@ -197,7 +197,7 @@ export function HandWorkCard({
             ))}
         </div>
       )}
-      <p className="mt-2 flex items-center gap-1 border-t border-gray-100 pt-2 text-[11px] text-gray-500">
+      <p className="mt-2 flex items-center gap-1 border-t border-gray-100 pt-2 text-xs text-gray-500">
         <PenLine className="h-3 w-3" /> Entered by hand by {names.user(rec.created_by)}
       </p>
 

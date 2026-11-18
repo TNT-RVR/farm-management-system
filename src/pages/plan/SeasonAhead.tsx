@@ -171,17 +171,17 @@ export function SeasonAhead({
                   <span className="min-w-0 flex-1 text-gray-800">{sourceFields(s.key) || s.label}</span>
                   <span
                     className={cn(
-                      'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums',
+                      'shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold tabular-nums',
                       over ? 'bg-red-100 text-red-800' : 'bg-sky-100 text-sky-900',
                     )}
                   >
                     plan needs {s.acres > 0 ? `${(need / s.acres).toFixed(1)}"` : '—'}
                   </span>
                 </div>
-                <p className="text-[10px] text-gray-400">
+                <p className="text-xs text-gray-400">
                   {s.label} · {s.basis}
                 </p>
-                <dl className="mt-0.5 space-y-0.5 text-[11px] text-gray-600">
+                <dl className="mt-0.5 space-y-0.5 text-xs text-gray-600">
                   <div className="flex gap-1.5">
                     <dt className="shrink-0 text-gray-400">Has</dt>
                     <dd className="tabular-nums text-gray-700">{s.acres > 0 && has > 0 ? `${(has / s.acres).toFixed(1)}"` : '—'}</dd>
@@ -220,7 +220,7 @@ export function SeasonAhead({
                 <tr key={s.key}>
                   <td className="px-3 py-1 text-gray-800">
                     {sourceFields(s.key) || s.label}
-                    <span className="block text-[10px] text-gray-400">
+                    <span className="block text-xs text-gray-400">
                       {s.label} · {s.basis}
                     </span>
                   </td>
@@ -228,7 +228,7 @@ export function SeasonAhead({
                   <td className="px-3 py-1 text-right tabular-nums text-gray-700">{s.acres > 0 && has > 0 ? `${(has / s.acres).toFixed(1)}"` : '—'}</td>
                   <td className={cn('px-3 py-1 text-right tabular-nums', over ? 'font-semibold text-red-700' : 'text-gray-800')}>
                     {s.acres > 0 ? `${(need / s.acres).toFixed(1)}"` : '—'}
-                    {over && <span className="block text-[10px]">short {n0((need - has) / 12)} ac-ft</span>}
+                    {over && <span className="block text-xs">short {n0((need - has) / 12)} ac-ft</span>}
                   </td>
                 </tr>
               )
@@ -237,13 +237,13 @@ export function SeasonAhead({
         </table>
         </div>
         {noRight.length > 0 && (
-          <p className="mt-1 rounded bg-gray-50 px-1.5 py-1 text-[11px] text-gray-600">
+          <p className="mt-1 rounded bg-gray-50 px-1.5 py-1 text-xs text-gray-600">
             No {districtName} parcel or licence on file for {noRight.map((id) => fieldNames.get(id)).join(', ')} — not limited here. Add the licence on the
             Irrigation page to bring them into the budget.
           </p>
         )}
 
-        <div className="mt-2 space-y-0.5 border-t border-gray-100 pt-1.5 text-[11px] text-gray-700">
+        <div className="mt-2 space-y-0.5 border-t border-gray-100 pt-1.5 text-xs text-gray-700">
           <WaterSupplyList rows={ctx.waterSupply.filter((w) => w.kind === 'reservoir' || w.kind === 'snow')} />
           {!reservoirs.length && !snow.length && <p className="text-gray-400">No reservoir or snow readings yet{isManager ? ' — refresh the outlook below.' : '.'}</p>}
           {shortYear && (
@@ -307,14 +307,14 @@ export function SeasonAhead({
                   <span className="text-gray-700">
                     {Number(c.lat).toFixed(2)}°, {Number(c.lon).toFixed(2)}°
                   </span>
-                  <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-amber-900">
+                  <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-amber-900">
                     {c.chu_median != null ? `${n0(Number(c.chu_median))} heat units` : 'no heat units'}
                   </span>
                 </div>
-                <p className="text-[10px] text-gray-400">
+                <p className="text-xs text-gray-400">
                   {c.years_from}–{c.years_to}
                 </p>
-                <dl className="mt-0.5 space-y-0.5 text-[11px] text-gray-600">
+                <dl className="mt-0.5 space-y-0.5 text-xs text-gray-600">
                   {c.chu_p20 != null && (
                     <div className="flex gap-1.5">
                       <dt className="shrink-0 text-gray-400">Cool year</dt>
@@ -352,7 +352,7 @@ export function SeasonAhead({
                 <tr key={c.cell_key}>
                   <td className="px-3 py-1 text-gray-700">
                     {Number(c.lat).toFixed(2)}°, {Number(c.lon).toFixed(2)}°
-                    <span className="block text-[10px] text-gray-400">
+                    <span className="block text-xs text-gray-400">
                       {c.years_from}–{c.years_to}
                     </span>
                   </td>
@@ -360,7 +360,7 @@ export function SeasonAhead({
                   <td className="px-3 py-1 text-right tabular-nums text-gray-600">{c.chu_p20 != null ? n0(Number(c.chu_p20)) : '—'}</td>
                   <td className="px-3 py-1 text-right tabular-nums text-gray-600">
                     {c.ffd_median != null ? `${Math.round(Number(c.ffd_median))} d` : '—'}
-                    <span className="block text-[10px] text-gray-400">
+                    <span className="block text-xs text-gray-400">
                       {md(c.spring_frost_median)} – {md(c.fall_frost_median)}
                     </span>
                   </td>
@@ -370,7 +370,7 @@ export function SeasonAhead({
           </table>
           </div>
         )}
-        <div className="mt-2 space-y-0.5 border-t border-gray-100 pt-1.5 text-[11px] text-gray-700">
+        <div className="mt-2 space-y-0.5 border-t border-gray-100 pt-1.5 text-xs text-gray-700">
           {summer ? (
             <>
               <p>
@@ -422,11 +422,11 @@ export function SeasonAhead({
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="min-w-0 flex-1 text-gray-800">
                       {c.name}
-                      {b.ownUse && <span className="ml-1 rounded bg-emerald-50 px-1 text-[10px] text-emerald-800">own feed</span>}
+                      {b.ownUse && <span className="ml-1 rounded bg-emerald-50 px-1 text-xs text-emerald-800">own feed</span>}
                     </span>
                     <span
                       className={cn(
-                        'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums',
+                        'shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold tabular-nums',
                         b.margin != null && b.margin < 0 ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-900',
                       )}
                     >
@@ -434,23 +434,23 @@ export function SeasonAhead({
                     </span>
                   </div>
                   {k && (
-                    <p className={cn('text-[10px]', short && !fm ? 'text-red-700' : 'text-gray-500')}>
+                    <p className={cn('text-xs', short && !fm ? 'text-red-700' : 'text-gray-500')}>
                       {n0(k.bushels)} {b.unit} contracted → {n0(k.acres)} ac{short && !fm ? `, ${n0(short)} ac short` : ''}
                     </p>
                   )}
                   {fm && (
-                    <p className={cn('text-[10px]', short ? 'text-red-700' : 'text-emerald-800')}>
+                    <p className={cn('text-xs', short ? 'text-red-700' : 'text-emerald-800')}>
                       Herd&apos;s {year}–{String(year + 1).slice(2)} winter: {n0(fm.tonnes)} t
                       {fm.acres != null ? ` → ${n0(fm.acres)} ac` : ' — no yield to size the acres'}
                       {short ? `, ${n0(short)} ac short` : ''}
                     </p>
                   )}
                   {sister && (
-                    <p className="text-[10px] text-violet-700" title={sister.note ?? undefined}>
+                    <p className="text-xs text-violet-700" title={sister.note ?? undefined}>
                       {sister.perAcre != null ? `+ $${n0(sister.perAcre)}/ac to a sister company, not in this margin` : sister.note}
                     </p>
                   )}
-                  <dl className="mt-0.5 space-y-0.5 text-[11px] text-gray-600">
+                  <dl className="mt-0.5 space-y-0.5 text-xs text-gray-600">
                     {b.yield != null && (
                       <div className="flex gap-1.5">
                         <dt className="shrink-0 text-gray-400">Yield</dt>
@@ -508,40 +508,40 @@ export function SeasonAhead({
                     <tr key={c.id}>
                       <td className="px-3 py-1 text-gray-800">
                         {c.name}
-                        {b.ownUse && <span className="ml-1 rounded bg-emerald-50 px-1 text-[10px] text-emerald-800">own feed</span>}
+                        {b.ownUse && <span className="ml-1 rounded bg-emerald-50 px-1 text-xs text-emerald-800">own feed</span>}
                         {k && (
-                          <span className={cn('block text-[10px]', short && !fm ? 'text-red-700' : 'text-gray-500')}>
+                          <span className={cn('block text-xs', short && !fm ? 'text-red-700' : 'text-gray-500')}>
                             {n0(k.bushels)} {b.unit} contracted → {n0(k.acres)} ac{short && !fm ? `, ${n0(short)} ac short` : ''}
                           </span>
                         )}
                         {fm && (
-                          <span className={cn('block text-[10px]', short ? 'text-red-700' : 'text-emerald-800')}>
+                          <span className={cn('block text-xs', short ? 'text-red-700' : 'text-emerald-800')}>
                             Herd&apos;s {year}–{String(year + 1).slice(2)} winter: {n0(fm.tonnes)} t
                             {fm.acres != null ? ` → ${n0(fm.acres)} ac` : ' — no yield to size the acres'}
                             {short ? `, ${n0(short)} ac short` : ''}
                           </span>
                         )}
                         {sister && (
-                          <span className="block text-[10px] text-violet-700" title={sister.note ?? undefined}>
+                          <span className="block text-xs text-violet-700" title={sister.note ?? undefined}>
                             {sister.perAcre != null ? `+ $${n0(sister.perAcre)}/ac to a sister company, not in this margin` : sister.note}
                           </span>
                         )}
                       </td>
                       <td className="px-3 py-1 text-right tabular-nums text-gray-700">
                         {b.yield != null ? `${b.yield < 20 ? b.yield.toFixed(1) : n0(b.yield)} ${b.unit}` : '—'}
-                        <span className="block text-[10px] text-gray-400">{b.yieldFrom}</span>
+                        <span className="block text-xs text-gray-400">{b.yieldFrom}</span>
                       </td>
                       <td className="px-3 py-1 text-right tabular-nums text-gray-700">
                         {b.price != null ? `$${b.price < 1 ? b.price.toFixed(3) : b.price.toFixed(2)}` : '—'}
-                        <span className="block text-[10px] text-gray-400">{b.priceFrom}</span>
+                        <span className="block text-xs text-gray-400">{b.priceFrom}</span>
                       </td>
                       <td className="px-3 py-1 text-right tabular-nums text-gray-700">
                         {b.cost != null ? `$${n0(b.cost)}` : '—'}
-                        <span className="block text-[10px] text-gray-400">{b.costFrom}</span>
+                        <span className="block text-xs text-gray-400">{b.costFrom}</span>
                       </td>
                       <td className={cn('px-3 py-1 text-right font-semibold tabular-nums', b.margin != null && b.margin < 0 ? 'text-red-700' : 'text-gray-900')}>
                         {b.margin != null ? `${b.margin < 0 ? '−' : ''}$${n0(Math.abs(b.margin))}` : '—'}
-                        <span className="block text-[10px] font-normal text-gray-400">{marginBasisNote(b)}</span>
+                        <span className="block text-xs font-normal text-gray-400">{marginBasisNote(b)}</span>
                       </td>
                     </tr>
                   )
@@ -552,7 +552,7 @@ export function SeasonAhead({
       </div>
 
       {isManager && (
-        <div className="flex items-center gap-2 text-[11px] text-gray-500 lg:col-span-2">
+        <div className="flex items-center gap-2 text-xs text-gray-500 lg:col-span-2">
           <button type="button" onClick={refresh} className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-2 py-0.5 font-medium text-gray-700 hover:bg-gray-50">
             <RefreshCw className="h-3 w-3" /> Refresh the outlook
           </button>

@@ -4,6 +4,30 @@ import type { Database } from './database.types'
 
 export type Chemical = Database['public']['Tables']['chemicals']['Row']
 
+/** One key for a crop however it is written: "Peas", "pea" and " PEAS " match. */
+const cropFoldKey = (name: string) => {
+  const s = name.trim().toLowerCase().replace(/\s+/g, ' ')
+  if (s.endsWith('oes')) return s.slice(0, -2)
+  return s.endsWith('s') && !s.endsWith('ss') ? s.slice(0, -1) : s
+}
+
+/**
+ * Crop names from two lists (the crop records, capitalised, and the ones
+ * typed by hand off the label, often not) as one list: case and singular or
+ * plural folded together, the first spelling seen kept, capitalised, sorted.
+ * "Canola, canola, pea" becomes "Canola, Pea".
+ */
+export function foldCropNames(names: (string | null | undefined)[]): string[] {
+  const byKey = new Map<string, string>()
+  for (const raw of names) {
+    const name = raw?.trim().replace(/\s+/g, ' ')
+    if (!name) continue
+    const key = cropFoldKey(name)
+    if (!byKey.has(key)) byKey.set(key, name.charAt(0).toUpperCase() + name.slice(1))
+  }
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b, 'en-CA'))
+}
+
 /**
  * The approved label PDF, given Health Canada's id for the document.
  *

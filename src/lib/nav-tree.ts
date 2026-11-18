@@ -129,7 +129,7 @@ const VIEW_LIST: MenuView[] = [
   // Fields
   { key: 'all-fields', label: 'All fields', icon: Wheat, to: '/fields', description: 'Every field: crop, acres, history and notes.' },
   { key: 'crops', label: 'Crops & varieties', icon: Sprout, to: '/crops', description: 'The crops you grow, their varieties and moisture grades.' },
-  { key: 'field-progress', label: 'Field progress', icon: ListChecks, to: '/field-progress', description: 'Which fields are seeded, sprayed and combined.' },
+  { key: 'field-progress', label: 'Seeding & harvest', icon: ListChecks, to: '/field-progress', description: 'Which fields are seeded, sprayed and combined.' },
   { key: 'leases', label: 'Leases', icon: KeyRound, to: '/leases', home: 'financials', description: 'Land leases, rent and renewal dates.' },
 
   // Planting
@@ -148,7 +148,9 @@ const VIEW_LIST: MenuView[] = [
   // beside Isolation: both are what a seed company wants settled before the
   // drill goes in, and the grade here decides which fields may carry the crop.
   { key: 'scout-reports', label: 'Seed canola scout reports', icon: ClipboardCheck, to: '/scout-reports', description: 'Which fields each seed company will grow canola on, and why.' },
-  { key: 'next-year-plan', label: "Next year's plan", icon: Repeat, to: '/plan?tab=plan', home: 'winter', description: 'Which crop goes on which field next year.' },
+  // "Crop plan", the tab it opens, on the page the tile calls Crop financials; it was
+  // "Next year's plan", so one page answered to four names (design review, Nov 2026).
+  { key: 'next-year-plan', label: 'Crop plan', icon: Repeat, to: '/plan?tab=plan', home: 'winter', description: 'Which crop goes on which field next year.' },
 
   // Growing: crop care
   // No ?tab=: every tab on /chemicals is this view, so Inventory and Prices

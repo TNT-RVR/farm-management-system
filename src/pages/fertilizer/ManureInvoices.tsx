@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils'
 import { money, n1 } from './savings/ui'
 import { askConfirm } from '@/components/askConfirm'
 import { CARD_HEAD } from '@/lib/table-style'
+import { dbErrorMessage } from '@/lib/db-error'
+import { invoiceLineProblem } from '@/lib/manure-haul'
 
 const input = 'rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900'
 
@@ -106,16 +108,20 @@ export function ManureInvoices({ isManager }: { isManager: boolean }) {
           )
         })}
       </ul>
-      {del.isError && <p className="px-3 py-1 text-xs text-red-700">{(del.error as Error).message}</p>}
-      {adding && <LineForm apps={apps ?? []} fieldName={nameOf} onDone={() => setAdding(false)} />}
+      {del.isError && <p className="px-3 py-1 text-xs text-red-700">{dbErrorMessage(del.error)}</p>}
+      {adding && <LineForm apps={apps ?? []} fieldName={nameOf} last={latestLine(lines ?? [])} onDone={() => setAdding(false)} />}
     </div>
   )
 }
 
 const str = (v: number | string | null | undefined) => (v == null ? '' : String(v))
 
+/** The most recent line, so a new one starts with the same hauler and rate. */
+const latestLine = (lines: ManureInvoice[]) =>
+  lines.reduce<ManureInvoice | undefined>((best, l) => (!best || (l.work_date ?? '') > (best.work_date ?? '') ? l : best), undefined)
+
 /** Add a billed line, or correct one (`existing`). */
-function LineForm({ apps, fieldName, existing, onDone }: { apps: ManureApplication[]; fieldName: (id: string | null) => string; existing?: ManureInvoice; onDone: () => void }) {
+function LineForm({ apps, fieldName, existing, last, onDone }: { apps: ManureApplication[]; fieldName: (id: string | null) => string; existing?: ManureInvoice; last?: ManureInvoice; onDone: () => void }) {
   const save = useSaveManureInvoice()
   const [f, setF] = useState(() =>
     existing
@@ -132,7 +138,7 @@ function LineForm({ apps, fieldName, existing, onDone }: { apps: ManureApplicati
           tonnes: str(existing.tonnes),
           notes: existing.notes ?? '',
         }
-      : { app: '', hauler: 'N & K Custom Ltd. (Coalhurst AB)', invoice_no: '', invoice_date: '', work_date: '', hours: '', rate: '157.50', amount: '', loads: '', tonnes: '', notes: '' },
+      : { app: '', hauler: last?.hauler ?? '', invoice_no: '', invoice_date: '', work_date: '', hours: '', rate: str(last?.rate_per_hour), amount: '', loads: '', tonnes: '', notes: '' },
   )
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF((x) => ({ ...x, [k]: e.target.value }))
   const n = (v: string) => (v.trim() === '' ? null : Number(v))
@@ -140,6 +146,7 @@ function LineForm({ apps, fieldName, existing, onDone }: { apps: ManureApplicati
   const byHours = (n(f.hours) ?? 0) * (n(f.rate) ?? 0)
   const amount = byHours > 0 ? byHours : (n(f.amount) ?? 0)
   const app = apps.find((a) => a.id === f.app) ?? null
+  const problem = invoiceLineProblem(f)
   return (
     <div className="space-y-2 border-t border-gray-200 bg-gray-50 px-3 py-2">
       <div className="flex flex-wrap gap-2">
@@ -178,8 +185,9 @@ function LineForm({ apps, fieldName, existing, onDone }: { apps: ManureApplicati
       <div className="flex gap-2">
         <button
           type="button"
-          disabled={!(amount > 0) || save.isPending}
+          disabled={!(amount > 0) || !!problem || save.isPending}
           onClick={() =>
+            !problem &&
             save.mutate(
               {
                 id: existing?.id,
@@ -208,7 +216,12 @@ function LineForm({ apps, fieldName, existing, onDone }: { apps: ManureApplicati
         <button type="button" onClick={onDone} className="text-xs text-gray-500 underline">
           cancel
         </button>
-        {save.isError && <span className="text-xs text-red-700">{(save.error as Error).message}</span>}
+        {problem ? (
+          <span className="text-xs text-amber-800">{problem}</span>
+        ) : (
+          !(amount > 0) && <span className="text-xs text-gray-500">Needs hours × $/h, or an amount.</span>
+        )}
+        {save.isError && <span className="text-xs text-red-700">{dbErrorMessage(save.error)}</span>}
       </div>
     </div>
   )

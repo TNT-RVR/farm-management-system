@@ -437,14 +437,14 @@ export function RotationAdvisor({
                   <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{f.name}</span>
                   <span
                     className={cn(
-                      'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold',
+                      'shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold',
                       a.cropId ? 'bg-violet-100 text-violet-900' : 'bg-red-100 text-red-800',
                     )}
                   >
                     {a.cropId ? cropName(a.cropId) : 'none'}
                   </span>
                 </div>
-                <p className="text-[10px] text-gray-400">
+                <p className="text-xs text-gray-400">
                   {n0(f.acres)} ac · {f.irrigated ? 'irrigated' : 'dryland'}
                   {f.sandy && ' · sandy'}
                   {f.ec != null && f.ec >= 1 && ` · EC ${f.ec.toFixed(1)}`}
@@ -470,7 +470,7 @@ export function RotationAdvisor({
                   )}
                 </dl>
                 {why && (
-                  <div className="mt-1 text-[11px] leading-snug text-gray-600">
+                  <div className="mt-1 text-xs leading-snug text-gray-600">
                     {a.note && <span className="block">{a.note}</span>}
                     {(e?.plus ?? []).slice(0, 2).map((p, i) => (
                       <span key={i} className="block text-green-800">
@@ -517,7 +517,7 @@ export function RotationAdvisor({
                 <tr key={a.fieldId}>
                   <td className="px-2 py-1.5 text-gray-900">
                     {f.name}
-                    <span className="block text-[10px] text-gray-400">
+                    <span className="block text-xs text-gray-400">
                       {n0(f.acres)} ac · {f.irrigated ? 'irrigated' : 'dryland'}
                       {f.sandy && ' · sandy'}
                       {f.ec != null && f.ec >= 1 && ` · EC ${f.ec.toFixed(1)}`}
@@ -527,9 +527,9 @@ export function RotationAdvisor({
                   <td className={cn('px-2 py-1.5', planned && planned !== a.cropId ? 'text-amber-700' : 'text-gray-600')}>{planned ? cropName(planned) : '—'}</td>
                   <td className="px-2 py-1.5 font-semibold text-gray-900">
                     {a.cropId ? cropName(a.cropId) : <span className="font-normal text-red-700">none</span>}
-                    {e?.profit != null && <span className="block text-[10px] font-normal text-gray-500">{money(e.profit)}/ac</span>}
+                    {e?.profit != null && <span className="block text-xs font-normal text-gray-500">{money(e.profit)}/ac</span>}
                   </td>
-                  <td className="px-2 py-1.5 text-[11px] leading-snug text-gray-600">
+                  <td className="px-2 py-1.5 text-xs leading-snug text-gray-600">
                     {a.note && <span className="block">{a.note}</span>}
                     {(e?.plus ?? []).slice(0, 2).map((p, i) => (
                       <span key={i} className="block text-green-800">
@@ -560,7 +560,7 @@ export function RotationAdvisor({
       </div>
 
       {isManager && (
-        <p className="flex flex-wrap items-center gap-2 text-[11px] text-gray-600">
+        <p className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
           <label className="inline-flex items-center gap-1">
             <input
               type="checkbox"
@@ -611,12 +611,12 @@ export function RotationAdvisor({
       )}
       {lastDone && (
         <div className="rounded-md border border-violet-200 bg-white p-3">
-          <p className="text-[11px] text-gray-500">
+          <p className="text-xs text-gray-500">
             Written {writtenAt(lastDone.finished_at ?? lastDone.created_at)}
             {lastDone.model && <AdminOnly>{` by ${lastDone.model}`}</AdminOnly>}
           </p>
           {outOfDate && (
-            <p className="mt-1 text-[11px] font-medium text-amber-700">
+            <p className="mt-1 text-xs font-medium text-amber-700">
               The plans or the season figures have changed since this was written. Ask again for advice on the ones shown here.
             </p>
           )}
@@ -665,7 +665,7 @@ export function RotationAdvisor({
                     </dd>
                   </div>
                 </dl>
-                <p className="mt-0.5 text-[10px] text-gray-400">one limit across every crop in the group</p>
+                <p className="mt-0.5 text-xs text-gray-400">one limit across every crop in the group</p>
               </li>
             )
           })}
@@ -677,7 +677,7 @@ export function RotationAdvisor({
               <li key={c.id} className="px-1 py-2">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800">{c.name}</span>
-                  <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-gray-700">
+                  <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-gray-700">
                     Soil {soil.score}
                     {!soil.measured && <span className="font-normal text-gray-400">*</span>}
                   </span>
@@ -828,7 +828,7 @@ export function RotationAdvisor({
                       className="w-24 rounded border border-gray-300 px-1.5 py-0.5 text-right tabular-nums"
                     />
                   </td>
-                  <td colSpan={6} className="px-3 py-1 text-[10px] text-gray-400">one limit across every crop in the group</td>
+                  <td colSpan={6} className="px-3 py-1 text-xs text-gray-400">one limit across every crop in the group</td>
                 </tr>
               )
             })}

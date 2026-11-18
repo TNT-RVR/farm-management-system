@@ -137,13 +137,13 @@ export function TroughSuggest({
   return (
     <div className="mt-1.5">
       <div className="flex items-center gap-1">
-        <span className="text-[11px] text-gray-600">Suggest troughs:</span>
+        <span className="text-xs text-gray-600">Suggest troughs:</span>
         {[1, 2].map((n) => (
           <button
             key={n}
             onClick={() => ask(n)}
             disabled={busy}
-            className="rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             {n}
           </button>
@@ -152,7 +152,7 @@ export function TroughSuggest({
       {picks.length > 0 && (
         <div className="mt-1 space-y-0.5">
           {picks.map((s) => (
-            <p key={s.ord} className="flex items-center gap-1 text-[11px] text-violet-700">
+            <p key={s.ord} className="flex items-center gap-1 text-xs text-violet-700">
               <MapPin className="h-3 w-3 shrink-0" />
               {picks.length > 1 ? `${s.ord}: ` : ''}
               brings in {s.gains_ac.toLocaleString('en-CA')} ac
@@ -163,7 +163,7 @@ export function TroughSuggest({
               onClick={place}
               disabled={busy}
               className={cn(
-                'rounded-md border border-violet-300 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-800',
+                'rounded-md border border-violet-300 bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-800',
                 'hover:bg-violet-100 disabled:opacity-50',
               )}
             >
@@ -171,14 +171,14 @@ export function TroughSuggest({
             </button>
             <button
               onClick={() => setPicks([])}
-              className="rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600 hover:bg-gray-50"
+              className="rounded-md border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
             >
               Clear
             </button>
           </div>
         </div>
       )}
-      {note && <p className="mt-0.5 text-[11px] text-gray-500">{note}</p>}
+      {note && <p className="mt-0.5 text-xs text-gray-500">{note}</p>}
     </div>
   )
 }

@@ -108,3 +108,15 @@ export function nextCode(existing: string[]): string {
   const numbers = existing.map((c) => Number(c.trim())).filter((n) => Number.isInteger(n) && n > 0)
   return String((numbers.length ? Math.max(...numbers) : 0) + 1)
 }
+
+/**
+ * Whether a lab sample belongs to a site. The lab writes the site's code with a
+ * depth letter after it ("1A" is site 1's top core, "1B" the one below), so
+ * site 1 is matched by "1", "1A" or "1B" -- never by "11" or "1AB".
+ */
+export function sampleIsSite(sampleCode: string | null | undefined, siteCode: string): boolean {
+  const sample = (sampleCode ?? '').trim().toUpperCase()
+  const site = siteCode.trim().toUpperCase()
+  if (!sample || !site) return false
+  return sample === site || (sample.length === site.length + 1 && sample.startsWith(site) && /[A-Z]/.test(sample.slice(-1)))
+}

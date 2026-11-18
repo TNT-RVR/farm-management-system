@@ -80,7 +80,7 @@ export function SampleConditionBadge({ value }: { value: string | null | undefin
   return (
     <span
       className={cn(
-        'rounded px-1.5 text-[10px] font-medium',
+        'rounded px-1.5 text-xs font-medium',
         value === 'dirty' ? 'bg-amber-100 text-amber-800' : 'bg-brand-50 text-brand-800',
       )}
     >
@@ -142,7 +142,7 @@ export function MoistureTestNote({ test }: { test: Pick<MoistureTest, 'id' | 'no
               key={o.value}
               type="button"
               onClick={() => save({ sample_condition: on ? null : o.value })}
-              className={cn('rounded px-2 py-0.5 text-[11px] font-medium', on ? (o.value === 'dirty' ? 'bg-amber-500 text-white' : 'bg-brand-700 text-white') : 'text-gray-600 hover:bg-gray-100')}
+              className={cn('rounded px-2 py-0.5 text-xs font-medium', on ? (o.value === 'dirty' ? 'bg-amber-500 text-white' : 'bg-brand-700 text-white') : 'text-gray-600 hover:bg-gray-100')}
             >
               {o.label}
             </button>
@@ -170,14 +170,14 @@ export function MoistureTestNote({ test }: { test: Pick<MoistureTest, 'id' | 'no
           setEditing(false)
         }}
         disabled={update.isPending}
-        className="rounded bg-brand-700 px-2 py-0.5 text-[11px] font-semibold text-white disabled:opacity-50"
+        className="rounded bg-brand-700 px-2 py-0.5 text-xs font-semibold text-white disabled:opacity-50"
       >
         Save
       </button>
-      <button type="button" onClick={() => setEditing(false)} className="text-[11px] text-gray-500 underline">
+      <button type="button" onClick={() => setEditing(false)} className="text-xs text-gray-500 underline">
         Cancel
       </button>
-      {update.isError && <span className="text-[11px] text-red-600">{(update.error as Error).message}</span>}
+      {update.isError && <span className="text-xs text-red-600">{(update.error as Error).message}</span>}
     </span>
   )
 }

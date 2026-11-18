@@ -8,6 +8,7 @@ import { useJdProducts, useProductPurchases } from '../products'
 import { useMarketPrices, useMarketSeries } from '../markets'
 import {
   STRAIGHTS,
+  blendListPrices,
   perLitreToPerTonne,
   straightByKey,
   straightKeyOf,
@@ -246,6 +247,15 @@ export function usePricedStraights() {
   const typedAdder = typedRaw == null || !Number.isFinite(Number(typedRaw)) ? null : Number(typedRaw)
   const dtnSeries = useMemo(() => (series ?? []).filter((s) => s.source === 'dtn' || s.code === 'fx.usdcad'), [series])
   const { data: points } = useMarketPrices(dtnSeries.map((s) => s.id))
+  // Under the Blends tab's key, so a price changed there refreshes this too.
+  const { data: blendRows } = useQuery({
+    queryKey: ['fert_blend_products', 'savings'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('fert_blend_products').select('name, price_per_tonne, active, updated_at')
+      if (error) throw error
+      return data ?? []
+    },
+  })
 
   return useMemo(() => {
     const now = today()
@@ -317,6 +327,8 @@ export function usePricedStraights() {
       if (live) consider({ key, perTonne: Number(q.price_per_tonne), source: 'Quote', on: q.quoted_on })
     }
     for (const d of dtn) if (!current.has(d.key)) current.set(d.key, d)
+    // Last, the Blends tab's own list, so a straight priced there is not "—" here.
+    for (const b of blendListPrices(blendRows ?? [])) if (!current.has(b.key)) current.set(b.key, b)
 
     /** A straight's price on a past date: an ICI line within six months, else DTN within two. */
     const priceAt = (key: string, on: string): { perTonne: number; source: string } | null => {
@@ -343,7 +355,7 @@ export function usePricedStraights() {
       priceAt,
       ready: !!products && !!purchases,
     }
-  }, [products, purchases, quotes, dtnSeries, points, survey, typedAdder])
+  }, [products, purchases, quotes, dtnSeries, points, survey, typedAdder, blendRows])
 }
 
 /* --------------------------------------------------------- field lookups */

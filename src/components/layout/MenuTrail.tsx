@@ -35,7 +35,7 @@ export function MenuTrail() {
           <span className="truncate font-medium text-gray-800">{match.section.label}</span>
         ) : (
           <span className="flex min-w-0 flex-col leading-tight">
-            <span className="truncate text-[11px] text-gray-500">{match.section.label}</span>
+            <span className="truncate text-xs text-gray-500">{match.section.label}</span>
             <span className="truncate font-medium text-gray-800">{match.item.view.label}</span>
           </span>
         )}

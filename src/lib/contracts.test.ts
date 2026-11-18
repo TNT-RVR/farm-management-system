@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cropPositions, realisedVsMarket, type Contract } from './contracts'
+import { contractProblems, cropPositions, realisedVsMarket, type Contract } from './contracts'
 
 const contract = (over: Partial<Contract>): Contract => ({
   id: Math.random().toString(36).slice(2),
@@ -125,5 +125,77 @@ describe('realisedVsMarket', () => {
 
   it('says nothing when nothing was contracted', () => {
     expect(realisedVsMarket(null, [15, 16, 17])).toBeNull()
+  })
+})
+
+describe('contractProblems', () => {
+  const draft = (over: Partial<Parameters<typeof contractProblems>[0]> = {}) => ({
+    cropId: 'canola',
+    bushels: 12000,
+    pricePerUnit: 14.2,
+    deliveryStart: '2026-11-07',
+    deliveryEnd: '2027-01-11',
+    ...over,
+  })
+
+  it('passes a contract somebody actually signed', () => {
+    expect(contractProblems(draft())).toEqual([])
+  })
+
+  it('refuses an entirely empty one, and says everything that is missing', () => {
+    expect(
+      contractProblems({
+        cropId: null,
+        bushels: null,
+        pricePerUnit: null,
+        deliveryStart: null,
+        deliveryEnd: null,
+      }),
+    ).toEqual(['Pick the crop.', 'Put in how much is contracted.'])
+  })
+
+  // -100 bu at -$5.00 saved as a contract worth a positive $500.
+  it('refuses a negative amount and a negative price', () => {
+    expect(contractProblems(draft({ bushels: -100, pricePerUnit: -5 }))).toEqual([
+      'The amount has to be more than zero.',
+      'The price cannot be negative.',
+    ])
+  })
+
+  it('refuses nothing as an amount', () => {
+    expect(contractProblems(draft({ bushels: 0 }))).toEqual([
+      'The amount has to be more than zero.',
+    ])
+  })
+
+  it('lets a contract be unpriced, because grain is sold that way', () => {
+    expect(contractProblems(draft({ pricePerUnit: null }))).toEqual([])
+  })
+
+  it('refuses a negative delivered figure', () => {
+    expect(contractProblems(draft({ deliveredBu: -1 }))).toEqual([
+      'Delivered so far cannot be negative.',
+    ])
+  })
+
+  it('takes a delivered figure of none', () => {
+    expect(contractProblems(draft({ deliveredBu: 0 }))).toEqual([])
+  })
+
+  it('refuses a window that ends before it starts', () => {
+    expect(
+      contractProblems(draft({ deliveryStart: '2027-01-11', deliveryEnd: '2026-11-07' })),
+    ).toEqual(['The delivery window ends before it starts.'])
+  })
+
+  it('takes a window that opens and shuts on the same day', () => {
+    expect(
+      contractProblems(draft({ deliveryStart: '2026-11-07', deliveryEnd: '2026-11-07' })),
+    ).toEqual([])
+  })
+
+  it('says nothing about a window with only one end filled in', () => {
+    expect(contractProblems(draft({ deliveryEnd: null }))).toEqual([])
+    expect(contractProblems(draft({ deliveryStart: null }))).toEqual([])
   })
 })

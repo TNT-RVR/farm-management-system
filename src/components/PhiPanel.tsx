@@ -53,7 +53,7 @@ export function PhiPanel({ cropYear, defaultOpen = false, emptyText, flat = fals
         <CalendarClock className="h-4 w-4 text-gray-500" />
         <span className="font-semibold text-gray-900">Pre-harvest intervals</span>
         {early.length > 0 && (
-          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] font-semibold text-red-800">
+          <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-semibold text-red-800">
             {early.length} harvested early
           </span>
         )}
@@ -96,7 +96,7 @@ export function PhiPanel({ cropYear, defaultOpen = false, emptyText, flat = fals
                     </Link>
                     <span
                       className={cn(
-                        'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums',
+                        'shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold tabular-nums',
                         f.violation ? 'bg-red-100 text-red-800' : notClear ? 'bg-amber-100 text-amber-900' : 'bg-green-100 text-green-800',
                       )}
                     >

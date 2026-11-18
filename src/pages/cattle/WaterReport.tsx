@@ -50,7 +50,7 @@ const VERDICT_STYLE: Record<Verdict, string> = {
 }
 
 /** The pill a verdict is written in, the same shape in the table and in a card. */
-const CHIP = 'rounded-full px-2 py-0.5 text-[11px] font-medium'
+const CHIP = 'rounded-full px-2 py-0.5 text-xs font-medium'
 
 const day = (d: string | null | undefined) =>
   d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }) : '—'
@@ -352,7 +352,7 @@ function TestDetail({
               <tr key={f.param.key} className="align-top">
                 <td className="px-3 py-2">
                   <span className="text-gray-900">{f.param.label}</span>
-                  <span className={cn('ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium', VERDICT_STYLE[f.grade])}>
+                  <span className={cn('ml-1.5 rounded-full px-1.5 py-0.5 text-xs font-medium', VERDICT_STYLE[f.grade])}>
                     {VERDICT_LABEL[f.grade]}
                   </span>
                 </td>
@@ -371,13 +371,13 @@ function TestDetail({
 
       {j.combined.length > 0 && (
         <div className="border-t border-gray-100 px-3 py-2">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
             The combinations the chart insists on
           </p>
           <ul className="mt-1 space-y-1">
             {j.combined.map((c) => (
               <li key={c.key} className="text-xs text-gray-600">
-                <span className={cn('mr-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium', VERDICT_STYLE[c.verdict])}>
+                <span className={cn('mr-1.5 rounded-full px-1.5 py-0.5 text-xs font-medium', VERDICT_STYLE[c.verdict])}>
                   {c.label}
                 </span>
                 {c.detail}
@@ -389,7 +389,7 @@ function TestDetail({
 
       {j.trace.length > 0 && (
         <div className="border-t border-gray-100 px-3 py-2">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
             Against the recommended maximum
           </p>
           <ul className="mt-1 space-y-1">
@@ -405,7 +405,7 @@ function TestDetail({
 
       {standing && (
         <div className="border-t border-gray-100 px-3 py-2">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
             Blue-green algae — a lean, not a threshold
           </p>
           {bloom.lean === 'unknown' ? (
@@ -416,7 +416,7 @@ function TestDetail({
             <p className="mt-1 text-xs text-gray-600">
               <span
                 className={cn(
-                  'mr-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                  'mr-1.5 rounded-full px-1.5 py-0.5 text-xs font-medium',
                   bloom.lean === 'watch' ? 'bg-amber-100 text-amber-900' : 'bg-green-100 text-green-900',
                 )}
               >

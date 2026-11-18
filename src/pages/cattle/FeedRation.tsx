@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { n0 } from '@/lib/format'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { CardList, RowCard } from '@/components/RowCards'
+import { HeadTip } from '@/components/HeadTip'
 
 /**
  * The ranch's winter ration by home-grown feed, and whether the crop plan
@@ -200,12 +201,11 @@ export function FeedRation({
               <th className="px-3 py-2 font-medium">Feed</th>
               <th
                 className="px-3 py-2 text-right font-medium"
-                title="Share of the whole ranch's winter dry matter this feed supplies — plans the crop acres; does not change what any group is fed"
               >
-                Winter share (% of dry matter)
+                Winter share (% of dry matter)<HeadTip title="Winter share (% of dry matter)">Share of the whole ranch&apos;s winter dry matter this feed supplies — plans the crop acres; does not change what any group is fed</HeadTip>
               </th>
-              <th className="px-3 py-2 text-right font-medium" title="Dry matter % of the feed as fed">Dry matter</th>
-              <th className="px-3 py-2 text-right font-medium" title="Dry matter: the feed with its water taken out">Dry matter (t)</th>
+              <th className="px-3 py-2 text-right font-medium">Dry matter<HeadTip title="Dry matter">Dry matter % of the feed as fed</HeadTip></th>
+              <th className="px-3 py-2 text-right font-medium">Dry matter (t)<HeadTip title="Dry matter (t)">Dry matter: the feed with its water taken out</HeadTip></th>
               <th className="px-3 py-2 text-right font-medium">As fed (t)</th>
               <th className="px-3 py-2" />
             </tr>
@@ -292,8 +292,8 @@ export function FeedRation({
               <thead className={TABLE_HEAD}>
                 <tr>
                   <th className="px-3 py-1.5 font-medium">Feed</th>
-                  <th className="px-3 py-1.5 text-right font-medium" title="This ranch's need, tonnes as fed">This ranch</th>
-                  <th className="px-3 py-1.5 text-right font-medium" title="Every ranch's need, tonnes as fed">All ranches</th>
+                  <th className="px-3 py-1.5 text-right font-medium">This ranch<HeadTip title="This ranch">This ranch&apos;s need, tonnes as fed</HeadTip></th>
+                  <th className="px-3 py-1.5 text-right font-medium">All ranches<HeadTip title="All ranches">Every ranch&apos;s need, tonnes as fed</HeadTip></th>
                   <th className="px-3 py-1.5 text-right font-medium">Acres needed</th>
                   <th className="px-3 py-1.5 text-right font-medium">Planned</th>
                   <th className="px-3 py-1.5 text-right font-medium">Grows (t)</th>
@@ -305,7 +305,7 @@ export function FeedRation({
                   <tr key={r.cropId}>
                     <td className="px-3 py-1.5 font-medium text-gray-900">
                       {r.name}
-                      {r.perAcre && <span className="block text-[10px] font-normal text-gray-400">{r.perAcre}</span>}
+                      {r.perAcre && <span className="block text-xs font-normal text-gray-400">{r.perAcre}</span>}
                     </td>
                     <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">{r.ranch}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{r.all}</td>

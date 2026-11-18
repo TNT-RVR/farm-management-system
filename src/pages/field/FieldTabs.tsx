@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { ArrowUpRight } from 'lucide-react'
 import { PillNavTabs } from '@/components/PillTabs'
 import { usePartnerView, usePartnerYears } from '@/lib/partner-view'
+import { canSeeFinances, useAuth } from '@/lib/auth'
 
 /**
  * One field, in sections rather than one long scroll.
@@ -27,6 +28,7 @@ export type FieldSection =
   | 'notes'
   | 'scouting'
   | 'scout-reports'
+  | 'money'
   | 'settings'
 
 /**
@@ -111,6 +113,22 @@ export const FIELD_TABS: { key: FieldSection; label: string; path: string; links
         { to: '/rotation', label: 'Rotation' },
       ],
     },
+    // Owners and whoever has finance access, nobody else: FINANCE_SECTIONS
+    // keeps it off the bar and the page redirects anyone who types the
+    // address. That pair IS the gate on this view -- the database's own
+    // can_see_finances() covers the fixed costs, crop_inputs and the
+    // QuickBooks tables, but product_purchases and crop_prices are readable
+    // by any active user by design, so do not treat RLS as a second lock on
+    // everything shown here.
+    {
+      key: 'money',
+      label: 'Cost & revenue',
+      path: '/money',
+      links: [
+        { to: '/plan', label: 'Financials' },
+        { to: '/map?tab=profit', label: 'Profit / Loss' },
+      ],
+    },
     {
       key: 'settings',
       label: 'Settings',
@@ -118,6 +136,17 @@ export const FIELD_TABS: { key: FieldSection; label: string; path: string; links
       links: [{ to: '/fields', label: 'All fields' }],
     },
   ]
+
+/**
+ * Sections only somebody with finance access may open.
+ *
+ * Listed here rather than checked at each of the three places that need it
+ * (the bar, the page's redirect, the test), so adding a money screen cannot
+ * leave one of them behind.
+ */
+export const FINANCE_SECTIONS: readonly FieldSection[] = ['money']
+
+export const isFinanceSection = (s: FieldSection) => FINANCE_SECTIONS.includes(s)
 
 export const fieldSectionPath = (fieldId: string, section: FieldSection) =>
   section === 'notes'
@@ -140,7 +169,13 @@ export function FieldTabBar({ fieldId, active }: { fieldId: string; active: Fiel
   // A partner records on our field but does not set it up; his
   // company's own fields he does.
   const { partner, own } = usePartnerYears(fieldId)
-  const tabs = FIELD_TABS.filter((t) => !(partner && !own && t.key === 'settings')).map((t) => ({ to: base + t.path, label: t.label, end: t.path === '' }))
+  // What a field cost and made is the owners' and the accountant's. A partner
+  // never sees it on his own field either: his share is his deal, not our books.
+  const { profile } = useAuth()
+  const money = canSeeFinances(profile) && !partner
+  const tabs = FIELD_TABS.filter(
+    (t) => !(partner && !own && t.key === 'settings') && !(isFinanceSection(t.key) && !money),
+  ).map((t) => ({ to: base + t.path, label: t.label, end: t.path === '' }))
   const on = FIELD_TABS.find((t) => t.key === tabFor(active))
   return (
     <nav className="mt-3 print:hidden">

@@ -105,7 +105,7 @@ export function WaterQualityCard({ isManager }: { isManager: boolean }) {
                   <tr key={s.station_id}>
                     <td className="px-3 py-1">
                       {s.name}
-                      {s.for_credit && <span className="ml-1 rounded bg-sky-100 px-1 text-[10px] text-sky-800">in the credit</span>}
+                      {s.for_credit && <span className="ml-1 rounded bg-sky-100 px-1 text-xs text-sky-800">in the credit</span>}
                     </td>
                     <td className="px-3 py-1 whitespace-nowrap text-gray-500">{at ? at.slice(0, 10) : 'none yet'}</td>
                     {WQ_PARAMS.map((p) => {

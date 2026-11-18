@@ -14,7 +14,7 @@ const signed = (v: number) => `${v < 0 ? '−' : '+'}${money(Math.abs(v))}`
  */
 export function AdderNote({ straightKey, className }: { straightKey: string; className?: string }) {
   const { inputs } = useSavings()
-  return <span className={cn('block text-[10px] text-gray-400', className)}>{adderText(inputs.priced.adderOf(straightKey))}</span>
+  return <span className={cn('block text-xs text-gray-400', className)}>{adderText(inputs.priced.adderOf(straightKey))}</span>
 }
 
 export function adderText(a: AdderUsed): string {
@@ -37,7 +37,7 @@ export function AdderMonths({ straightKey }: { straightKey: string }) {
   return (
     <>
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-      <table className="w-full text-[11px]">
+      <table className="w-full text-xs">
         <thead className={TABLE_HEAD}>
           <tr>
             <th className={TABLE_TH}>Month</th>
@@ -51,7 +51,7 @@ export function AdderMonths({ straightKey }: { straightKey: string }) {
             <tr key={m.month} className={cn(!used.has(m.month) && 'text-gray-400', m.flag && 'line-through')} title={m.flag ?? undefined}>
               <td className="px-3 py-0.5">
                 {m.month}
-                <span className="ml-1 text-[10px] text-gray-400">{m.localSource === 'ICI' ? `${farmRetailer()}, ${m.localTonnes!.toFixed(1)} t` : 'survey'}</span>
+                <span className="ml-1 text-xs text-gray-400">{m.localSource === 'ICI' ? `${farmRetailer()}, ${m.localTonnes!.toFixed(1)} t` : 'survey'}</span>
               </td>
               <td className="px-3 py-0.5 text-right tabular-nums">{money(m.local)}</td>
               <td className="px-3 py-0.5 text-right tabular-nums" title={`US$${Math.round(m.dtnUsd)}/ton over ${m.dtnWeeks} week${m.dtnWeeks === 1 ? '' : 's'} at ${m.fx.toFixed(4)}${m.fxBorrowedFrom ? ` (rate from ${m.fxBorrowedFrom})` : ''}`}>
@@ -64,7 +64,7 @@ export function AdderMonths({ straightKey }: { straightKey: string }) {
         </tbody>
       </table>
       </div>
-      <p className="mt-1 text-[10px] text-gray-400">
+      <p className="mt-1 text-xs text-gray-400">
         {a.auto?.perTonne != null ? `The adder is the median of the dark rows (the ${ADDER_WINDOW_MONTHS} months up to the latest): ${signed(a.auto.perTonne)}/t.` : ''}
         {months.some((m) => m.fxBorrowedFrom) ? ' * no exchange rate stored for that month; the nearest day’s was used.' : ''}
         {a.typed ? ` Not in use: ${signed(a.perTonne)}/t is typed in the settings.` : ''}

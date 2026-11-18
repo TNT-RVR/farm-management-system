@@ -20,6 +20,17 @@
  */
 
 import CHART_INDEX from '../data/919-charts/index.json'
+import { isFallow } from './agristability-codes'
+
+/**
+ * Can a moisture reading be taken of this crop? Not of fallow or "Not farmed
+ * by us" (acres, not a crop), nor of a crop that is not ours to harvest (a
+ * renter's potatoes, "Potato (kind not chosen)") — the tester's crop list
+ * offered all three (batch 2 test, 17 Nov 2026).
+ */
+export function isMoistureCrop(c: { name: string; yield_unit?: string | null; counts_for_harvest?: boolean | null }): boolean {
+  return !isFallow(c) && c.counts_for_harvest !== false
+}
 
 // ---- the charts -----------------------------------------------------------
 
@@ -62,6 +73,15 @@ export const CHARTS: ChartSummary[] = CHART_INDEX
 export function chartSummary(key: string | null | undefined): ChartSummary | undefined {
   return key ? CHARTS.find((c) => c.key === key) : undefined
 }
+
+/**
+ * Said wherever we hand out one of the PDFs. They are the Canadian Grain
+ * Commission's, Crown copyright, and the terms we copy them under ask us to
+ * name the source and not pass a copy off as the official version. The
+ * Commission reissues them, so the current one is on its site.
+ */
+export const CHART_CREDIT =
+  'Canadian Grain Commission chart. A reference copy, not an official version: the current one is at grainscanada.gc.ca.'
 
 /** Where the real PDF is served from, for the chart icon. */
 export function chartPdfUrl(key: string): string {

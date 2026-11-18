@@ -181,7 +181,7 @@ function StationCard({
       <div className="flex items-center gap-1.5">
         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
         <p className="truncate text-xs font-semibold text-gray-700">{short}</p>
-        {isHome && <span className="rounded-full bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold text-brand-700">your farm</span>}
+        {isHome && <span className="rounded-full bg-brand-100 px-1.5 py-0.5 text-xs font-semibold text-brand-700">your farm</span>}
         {trend && <TrendIcon delta={trend.deltaPct} />}
         {station && (
           <a
@@ -200,7 +200,7 @@ function StationCard({
         {q != null ? Math.round(q * 10) / 10 : '—'} <span className="text-sm font-normal text-gray-400">m³/s</span>
       </p>
       {components ? (
-        <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px]">
+        <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-xs">
           {components.map((c) => (
             <a
               key={c.station}
@@ -216,7 +216,7 @@ function StationCard({
           ))}
         </div>
       ) : (
-        <p className="truncate text-[11px] text-gray-400">
+        <p className="truncate text-xs text-gray-400">
           {subtext ?? (level != null ? `${level} m` : '—')}
           {trend ? ` · ${trend.deltaPct >= 0 ? '+' : ''}${Math.round(trend.deltaPct)}% / ${trend.hoursBack}h` : ''}
         </p>

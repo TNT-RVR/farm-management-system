@@ -89,10 +89,25 @@ select '0de30000-0000-4000-8000-00000000c302', i.catalog_id,
 from public.handling_items i
 where i.version_id = '0de30000-0000-4000-8000-00000000c301';
 
--- Willow Ridge: four portable pens, panels only.
+-- Willow Ridge: a portable branding pen, 18 panels of 16 ft in a 6 x 3 ring
+-- (about 96 x 48 ft). One 16 ft panel is 0.0000719 deg of longitude and
+-- 0.0000439 deg of latitude here. (Until 18 Nov 2026 the spacing was ten times
+-- that, so 288 ft of panels sprawled over a five-acre "pen".)
 insert into public.handling_items (version_id, catalog_id, lng, lat, rotation, swing_deg)
 select '0de30000-0000-4000-8000-00000000c303', c.id,
-       -113.664400 + (g % 6) * 0.000539, 52.385500 + (g / 6) * 0.000329, case when g % 6 = 5 then 90 else 0 end, 0
+       case
+         when g < 6 then -113.664400 + (g + 0.5) * 0.0000719
+         when g < 12 then -113.664400 + (g - 6 + 0.5) * 0.0000719
+         when g < 15 then -113.664400
+         else -113.664400 + 6 * 0.0000719
+       end,
+       case
+         when g < 6 then 52.385500
+         when g < 12 then 52.385500 + 3 * 0.0000439
+         when g < 15 then 52.385500 + (g - 12 + 0.5) * 0.0000439
+         else 52.385500 + (g - 15 + 0.5) * 0.0000439
+       end,
+       case when g < 12 then 0 else 90 end, 0
 from generate_series(0, 17) g
 join public.handling_catalog c on c.key = 'bar-panel-16' and c.site_id is null;
 
@@ -111,7 +126,7 @@ insert into public.handling_paths (version_id, points, is_closed, label, color, 
    '[[-113.539203, 52.457466], [-113.538961, 52.457466], [-113.538961, 52.457499], [-113.539203, 52.457499]]'::jsonb,
    true, 'Crowding alley, two panels wider', '#fb7185', 2, 'crowding', '{Cows,Bred heifers}'),
   ('0de30000-0000-4000-8000-00000000c303',
-   '[[-113.664400, 52.385500], [-113.661700, 52.385500], [-113.661700, 52.386487], [-113.664400, 52.386487]]'::jsonb,
+   '[[-113.664400, 52.385500], [-113.663969, 52.385500], [-113.663969, 52.385632], [-113.664400, 52.385632]]'::jsonb,
    true, 'Branding pen', '#facc15', 2, 'holding', '{Cows,Calves}');
 
 -- ── What is on hand (Inventory tab) ──────────────────────────────────────

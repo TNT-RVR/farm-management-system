@@ -162,7 +162,7 @@ export function ReportsPage() {
                     <span className="min-w-0 flex-1 truncate text-xs text-gray-400" title={r.what}>
                       {r.what}
                     </span>
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Not built yet</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">Not built yet</span>
                   </li>
                 ))}
               </ul>

@@ -400,7 +400,7 @@ export function OperationCostCalculator() {
                 )}
                 <span className="ml-auto text-sm font-semibold tabular-nums text-gray-900">{money(cost.cost)}</span>
               </div>
-              <p className="mt-1 text-[11px] text-gray-500">
+              <p className="mt-1 text-xs text-gray-500">
                 {cost.quantity != null && (
                   <>
                     {cost.quantity.toLocaleString('en-CA', { maximumFractionDigits: 1 })} {cost.unit}
@@ -472,7 +472,7 @@ export function OperationCostCalculator() {
               />
               <Select value={waterUnit} ariaLabel="Water unit" size="sm" className="w-32" onChange={(v) => { setWaterUnit(v as 'usgal' | 'L'); setWater(null) }} options={[{ value: 'usgal', label: 'US gal/ac' }, { value: 'L', label: 'L/ac' }]} />
               {waterLPerAc && (
-                <span className="text-[11px] text-gray-500">
+                <span className="text-xs text-gray-500">
                   {Math.round(waterLPerAc.l * acres).toLocaleString('en-CA')} L · {waterLPerAc.from}
                   {label.data?.waterVolume ? ` · label: ${label.data.waterVolume}` : ''}
                 </span>
@@ -531,7 +531,7 @@ export function OperationCostCalculator() {
                   <tr key={l.key} className="border-b border-gray-100 align-top last:border-0">
                     <td className="py-1.5 pr-2">
                       <div className="font-medium text-gray-800">{l.label}</div>
-                      <div className="text-[11px] text-gray-500">
+                      <div className="text-xs text-gray-500">
                         {l.note}
                         {linkFor[l.key] && (
                           <Link to={linkFor[l.key]} className="ml-1 inline-flex align-middle text-gray-400 hover:text-brand-700" aria-label={`Where ${l.label.toLowerCase()} comes from`}>
@@ -547,7 +547,7 @@ export function OperationCostCalculator() {
                 <tr className="align-top">
                   <td className="py-1.5 pr-2">
                     <div className="font-medium text-gray-400">Machinery, land &amp; overhead</div>
-                    <div className="text-[11px] text-gray-400">
+                    <div className="text-xs text-gray-400">
                       not added — in the fixed{' '}
                       <Link to="/plan?tab=farm costs" className="underline hover:text-brand-700">
                         {fixed.perAcre != null ? `${money(fixed.perAcre, 2)}/ac` : '$/ac'}
@@ -560,12 +560,12 @@ export function OperationCostCalculator() {
               </tbody>
             </table>
 
-            <div className="mt-2 text-[11px] text-gray-500">
+            <div className="mt-2 text-xs text-gray-500">
               Time: {rate.acPerHour != null ? `${rate.acPerHour.toFixed(1)} ac/h — ${rate.note}` : rate.note}
               {hoursPerDay != null && ` · ${hoursPerDay.toFixed(1)} h a day (${hoursPerDayNote})`}
               {!trip && fieldId && <> · no road distance to this field yet (<Link to="/fuel?tab=distances" className="underline">Distances</Link>)</>}
             </div>
-            {result.missing.length > 0 && <p className="mt-1 text-[11px] text-amber-700">Needs {result.missing.join(', ')}.</p>}
+            {result.missing.length > 0 && <p className="mt-1 text-xs text-amber-700">Needs {result.missing.join(', ')}.</p>}
 
             {fieldId && (
               <div className="mt-3 flex items-center gap-2 border-t border-gray-100 pt-3">

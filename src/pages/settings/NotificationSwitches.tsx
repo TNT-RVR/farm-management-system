@@ -170,7 +170,7 @@ function DeliveryChoice({
   disabled?: boolean
   onChange: (d: Delivery) => void
 }) {
-  if (urgent) return <span className="text-[11px] text-gray-500">Always sent right away</span>
+  if (urgent) return <span className="text-xs text-gray-500">Always sent right away</span>
   return (
     <select
       value={value}
@@ -228,7 +228,7 @@ export function NotificationSwitches() {
                 All off
               </button>
             </div>
-            <div className="flex justify-end gap-3 pt-1 text-[11px] text-gray-400">
+            <div className="flex justify-end gap-3 pt-1 text-xs text-gray-400">
               <span className="w-11 text-center">In the app</span>
               <span className="w-11 text-center">Push</span>
             </div>

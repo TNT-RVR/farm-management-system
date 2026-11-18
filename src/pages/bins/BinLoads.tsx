@@ -142,11 +142,11 @@ export function BinLoadsDialog({
                       <td className="px-2 py-1 tabular-nums text-gray-800">
                         {l.loaded_on}
                         {(l.full_at || weighedOutAt(l)) && (
-                          <span className="block text-[10px] text-gray-500">
+                          <span className="block text-xs text-gray-500">
                             {[l.full_at ? `in ${weighTime(l.full_at, false)}` : null, weighedOutAt(l) ? `out ${weighTime(l.empty_at, l.empty_at!.slice(0, 10) !== l.full_at?.slice(0, 10))}` : null].filter(Boolean).join(' · ')}
                           </span>
                         )}
-                        {l.estimated && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] font-semibold uppercase text-amber-800" title="Not weighed: a best guess. Open the load to put in the real weight.">est.</span>}
+                        {l.estimated && <span className="ml-1 rounded bg-amber-100 px-1 text-xs font-semibold uppercase text-amber-800" title="Not weighed: a best guess. Open the load to put in the real weight.">est.</span>}
                       </td>
                       <td className="px-2 py-1 text-gray-700">
                         <span className="flex items-center gap-1">
@@ -168,7 +168,7 @@ export function BinLoadsDialog({
                             <Flag className="h-3 w-3 text-green-700" fill="currentColor" aria-label="Last load from this field" />
                           ) : null)}
                         </span>
-                        <span className="block text-[10px] text-gray-400">
+                        <span className="block text-xs text-gray-400">
                           {cropName(l.crop_id)}
                           {l.variety ? ` · ${l.variety}` : ''}
                         </span>
@@ -179,21 +179,21 @@ export function BinLoadsDialog({
                           <td className="px-2 py-1 text-right tabular-nums text-gray-600">{kg(l.tare_kg)}</td>
                         </>
                       ) : (
-                        <td colSpan={2} className="px-2 py-1 text-right text-[11px] text-gray-500">
+                        <td colSpan={2} className="px-2 py-1 text-right text-xs text-gray-500">
                           {l.entry_kind === 'bin_total' ? `bin total${l.load_count ? `, ${l.load_count} loads` : ''}` : 'net off the truck'}
                         </td>
                       )}
                       <td className="px-2 py-1 text-right tabular-nums text-gray-800">{kg(loadInBin(l, binId).kg)}</td>
                       <td className="px-2 py-1 text-right tabular-nums font-semibold text-gray-900">
                         {bu(loadInBin(l, binId).bushels)}
-                        <span className="block text-[10px] font-normal text-gray-400">
+                        <span className="block text-xs font-normal text-gray-400">
                           {l.overflow_bin_id ? `${loadInBin(l, binId).part === 'first' ? 'filled the bin' : 'the rest'} of ${bu(l.bushels)} · ` : ''}
                           {Number(l.lb_per_bu)} lb/bu
                         </span>
                       </td>
                       <td className="px-2 py-1 text-gray-600">
                         {l.driver ?? '—'}
-                        {l.truck || l.trailer ? <span className="block text-[10px] text-gray-400">{[l.truck, l.trailer].filter(Boolean).join(' + ')}</span> : null}
+                        {l.truck || l.trailer ? <span className="block text-xs text-gray-400">{[l.truck, l.trailer].filter(Boolean).join(' + ')}</span> : null}
                       </td>
                       {canEdit && (
                         <td className="px-2 py-1 text-right">
@@ -202,11 +202,11 @@ export function BinLoadsDialog({
                               <button
                                 type="button"
                                 onClick={() => del.mutate(l.id, { onSuccess: () => setConfirm(null) })}
-                                className="rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                                className="rounded bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white"
                               >
                                 Delete
                               </button>
-                              <button type="button" onClick={() => setConfirm(null)} className="text-[10px] text-gray-500 underline">
+                              <button type="button" onClick={() => setConfirm(null)} className="text-xs text-gray-500 underline">
                                 keep
                               </button>
                             </span>

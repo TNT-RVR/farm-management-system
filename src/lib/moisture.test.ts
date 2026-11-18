@@ -9,6 +9,7 @@ import {
   bandRanges,
   averageReading,
   gradeFor,
+  isMoistureCrop,
   lookupMoisture,
   needsAir,
   type MoistureBands,
@@ -238,5 +239,14 @@ describe('a floor under dry: beans', () => {
       { grade: 'tough', range: '15.6 to 16.0' },
       { grade: 'wet', range: 'over 16.0' },
     ])
+  })
+})
+
+describe('isMoistureCrop', () => {
+  it('offers grain, not fallow, not land we do not farm, not a renter crop', () => {
+    expect(isMoistureCrop({ name: 'Wheat', yield_unit: 'bu', counts_for_harvest: true })).toBe(true)
+    expect(isMoistureCrop({ name: 'Summer Fallow', yield_unit: 'ac' })).toBe(false)
+    expect(isMoistureCrop({ name: 'Not farmed by us', yield_unit: 'ac', counts_for_harvest: false })).toBe(false)
+    expect(isMoistureCrop({ name: 'Potato (kind not chosen)', yield_unit: 'cwt', counts_for_harvest: false })).toBe(false)
   })
 })

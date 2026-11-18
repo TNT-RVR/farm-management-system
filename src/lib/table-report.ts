@@ -463,6 +463,19 @@ export type PdfOptions = {
   linkBase?: string
 }
 
+/** Space between a section's title baseline and its table: the title's 8 and autoTable's 2. */
+const CONTINUED_ROOM = 10
+
+/** A section's heading: a green tick and the title in bold, its baseline at y. */
+function drawSectionTitle(doc: Doc, title: string, y: number) {
+  doc.setFillColor(...C.brand700)
+  doc.rect(MARGIN, y - 9.5, 2.5, 12, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11.5)
+  doc.setTextColor(...C.brand900)
+  doc.text(pdfSafe(title), MARGIN + 8, y)
+}
+
 export async function tableReportToPdf(r: TableReport, opts: PdfOptions = {}): Promise<Blob> {
   const doc = await tableReportPdfDoc(r, opts)
   return doc.output('blob')
@@ -533,12 +546,7 @@ export async function tableReportPdfDoc(r: TableReport, opts: PdfOptions = {}): 
     }
     let startY = y
     if (s.title) {
-      doc.setFillColor(...C.brand700)
-      doc.rect(MARGIN, y - 9.5, 2.5, 12, 'F')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(11.5)
-      doc.setTextColor(...C.brand900)
-      doc.text(pdfSafe(s.title), MARGIN + 8, y)
+      drawSectionTitle(doc, s.title, y)
       startY = y + 8
     }
     if (s.note) {
@@ -582,7 +590,13 @@ export async function tableReportPdfDoc(r: TableReport, opts: PdfOptions = {}): 
       horizontalPageBreak: s.head.length > 16,
       horizontalPageBreakRepeat: s.head.length > 16 ? 0 : undefined,
       theme: 'plain',
-      margin: { left: MARGIN, right: MARGIN, top: TOP_AFTER_FIRST, bottom: FOOTER_SPACE },
+      // A section that runs over a page says whose rows they are at the top of
+      // the next one (batch 2 test, 17 Nov 2026): room is left above the
+      // repeated column header for "Wheat (continued)".
+      margin: { left: MARGIN, right: MARGIN, top: s.title ? TOP_AFTER_FIRST + CONTINUED_ROOM : TOP_AFTER_FIRST, bottom: FOOTER_SPACE },
+      didDrawPage: (data) => {
+        if (s.title && data.pageNumber > 1) drawSectionTitle(doc, `${s.title} (continued)`, TOP_AFTER_FIRST)
+      },
       columnStyles: Object.fromEntries((widthsFor(s) ?? []).map((w, i) => [i, { cellWidth: w }])),
       styles: {
         font: 'helvetica',

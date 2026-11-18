@@ -245,6 +245,31 @@ export function weightSlide(
   return { centsPerLb: (b.perCwt - a.perCwt) / (midB - midA), from: midA }
 }
 
+/** The steer the CME feeder contract prices: its index is 700–899 lb steers. */
+export const CME_FEEDER_LB = 800
+
+/**
+ * The forward bid for our calves in the sale month, $/lb.
+ *
+ * A buyer bidding forward takes the sale month's board, adds the basis measured
+ * where the board is (an 800 lb steer), and slides that to our weight with this
+ * week's price shape. Holding this week's basis and shape, that comes to this
+ * week's price at our weight moved by the board's change from the nearby
+ * contract to the sale month — which is how it is worked here, so the board is
+ * never read as the price of a calf it does not price.
+ *
+ * Until 18 Nov 2026 the board was put at the lightest auction class's weight
+ * and the basis taken from the heaviest quote on file (a two-month-old 1,250 lb
+ * steer): it read 6.37/lb for 750 lb steers selling at 4.65.
+ */
+export function forwardBidPerLb(
+  todayAtOurWeightPerLb: number,
+  nearbyBoardCadPerCwt: number,
+  saleMonthBoardCadPerCwt: number,
+): number {
+  return todayAtOurWeightPerLb + cwtToLb(saleMonthBoardCadPerCwt - nearbyBoardCadPerCwt)
+}
+
 /** Estimate a lighter class from the lightest quoted one, using that slide. */
 export function derivePrice(
   targetMidLb: number,

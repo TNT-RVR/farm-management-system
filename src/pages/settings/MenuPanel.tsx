@@ -153,7 +153,7 @@ export function MenuPanel() {
           <div className="mb-2 ml-10 space-y-1">
             {s.groups.map((g) => (
               <div key={g.key}>
-                {g.heading && <div className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{g.heading}</div>}
+                {g.heading && <div className="pt-1 text-xs font-semibold uppercase tracking-wide text-gray-400">{g.heading}</div>}
                 {g.items.map((it) => {
                   const VIcon = it.view.icon
                   return (

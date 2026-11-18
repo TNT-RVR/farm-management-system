@@ -174,7 +174,7 @@ export function SaleEditor({
               onChange={(e) => setD({ ...d, total_lb: e.target.value })}
             />
             {impliedLb != null && !d.total_lb && (
-              <span className="mt-0.5 block text-[11px] text-gray-400">
+              <span className="mt-0.5 block text-xs text-gray-400">
                 {impliedLb.toFixed(0)} from head × weight — leave blank to use it
               </span>
             )}

@@ -43,7 +43,8 @@ export function CashFlowTab({ year }: { year: number }) {
     const flow = cashFlow(mapped)
     return {
       ...flow,
-      total: flow.months.reduce((s, m) => s + m.revenue, 0),
+      // The sum of the months as printed, each to the dollar, so the column adds up.
+      total: flow.months.reduce((s, m) => s + Math.round(m.revenue), 0),
     }
   }, [contracts, year, cropNames])
 
@@ -77,7 +78,7 @@ export function CashFlowTab({ year }: { year: number }) {
                   className="flex h-full items-center rounded bg-brand-600 px-2"
                   style={{ width: `${Math.max((m.revenue / peak) * 100, 4)}%` }}
                 >
-                  <span className="truncate text-[10px] font-medium text-white">
+                  <span className="truncate text-xs font-medium text-white">
                     {m.contracts.join(', ')}
                   </span>
                 </div>

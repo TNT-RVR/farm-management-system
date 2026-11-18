@@ -421,7 +421,7 @@ function FeaturePanel({
           <X className="h-4 w-4" />
         </button>
       </div>
-      <p className="text-[11px] text-gray-400">
+      <p className="text-xs text-gray-400">
         {layerName} · {g.type === 'Point' ? 'pin' : g.type === 'LineString' ? 'line' : 'area'}
       </p>
       {pumpIds.length > 0 && (
@@ -478,7 +478,7 @@ function FeaturePanel({
           )}
         </div>
       )}
-      {shape && <p className="mt-1 text-[11px] text-gray-500">Drag the white points; drag a yellow dot to add a bend; tap a point then Delete point.</p>}
+      {shape && <p className="mt-1 text-xs text-gray-500">Drag the white points; drag a yellow dot to add a bend; tap a point then Delete point.</p>}
       {error && <p className="mt-1 text-xs text-red-600">{error.message}</p>}
     </div>
   )
@@ -506,7 +506,7 @@ export function FarmLayersLegend({
     <>
       {layers.map((l) => (
         <li key={l.id}>
-          <label className="flex min-w-0 items-center gap-2 py-0.5 text-[13px]" title="Kept in the app — edit it here">
+          <label className="flex min-w-0 items-center gap-2 py-0.5 text-sm" title="Kept in the app — edit it here">
             <input type="checkbox" checked={active.has(l.id)} onChange={(e) => onToggle(l.id, e.target.checked)} />
             <span className="truncate">{l.name}</span>
           </label>
@@ -515,7 +515,7 @@ export function FarmLayersLegend({
       {isManager && (
         <li>
           {!importing ? (
-            <button onClick={() => setImporting(true)} className="mt-0.5 text-[11px] font-medium text-brand-700 underline">
+            <button onClick={() => setImporting(true)} className="mt-0.5 text-xs font-medium text-brand-700 underline">
               Copy a My Map folder into the app…
             </button>
           ) : (
@@ -537,29 +537,29 @@ function ImportFolder({ taken, onDone }: { taken: string[]; onDone: () => void }
   const count = (geo?.fc.features ?? []).filter((f: Feature) => f.properties?._layer === pick).length
   return (
     <div className="mt-1 space-y-1 rounded border border-gray-200 p-1.5">
-      {isLoading && <p className="text-[11px] text-gray-500">Reading the My Map…</p>}
-      {error && <p className="text-[11px] text-red-600">Couldn&apos;t read the My Map.</p>}
+      {isLoading && <p className="text-xs text-gray-500">Reading the My Map…</p>}
+      {error && <p className="text-xs text-red-600">Couldn&apos;t read the My Map.</p>}
       {options.length > 0 && (
         <>
           <Select size="sm" ariaLabel="My Map folder" value={pick} onChange={setFolder} options={options.map((l) => ({ value: l, label: l }))} />
-          <p className="text-[11px] text-gray-500">
+          <p className="text-xs text-gray-500">
             Copies {count} items into the app. From then on edit them here — Google&apos;s copy of this folder stops showing.
           </p>
           <div className="flex gap-1.5">
             <button
-              className="rounded bg-brand-700 px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+              className="rounded bg-brand-700 px-2 py-1 text-xs font-semibold text-white disabled:opacity-50"
               disabled={!pick || doImport.isPending}
               onClick={() => doImport.mutate({ folder: pick, features: (geo?.fc.features ?? []).filter((f: Feature) => f.properties?._layer === pick) }, { onSuccess: onDone })}
             >
               {doImport.isPending ? 'Copying…' : `Copy “${pick}”`}
             </button>
-            <button className="rounded border border-gray-300 px-2 py-1 text-[11px]" onClick={onDone}>
+            <button className="rounded border border-gray-300 px-2 py-1 text-xs" onClick={onDone}>
               Cancel
             </button>
           </div>
         </>
       )}
-      {doImport.error && <p className="text-[11px] text-red-600">{(doImport.error as Error).message}</p>}
+      {doImport.error && <p className="text-xs text-red-600">{(doImport.error as Error).message}</p>}
     </div>
   )
 }

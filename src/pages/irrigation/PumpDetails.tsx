@@ -114,14 +114,14 @@ export function PumpDetails({
       {pump.notes && <p className="whitespace-pre-line text-xs text-gray-600">{pump.notes}</p>}
 
       <div className="space-y-1.5">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Control panel</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Control panel</p>
         {hasPanel ? (
           <>
             <div className={row}>
               <PlateBlock title="Label" rows={panel.label} empty="Nothing from the label yet." />
               <div className="min-w-0 flex-1">
                 <PlateBlock title="Parts" rows={panel.parts} empty="No parts entered yet." />
-                {panel.partsBasis && <p className="mt-1 text-[11px] italic text-amber-800">{panel.partsBasis}</p>}
+                {panel.partsBasis && <p className="mt-1 text-xs italic text-amber-800">{panel.partsBasis}</p>}
               </div>
             </div>
             {pump.panel_note && <p className="text-xs text-gray-600">{pump.panel_note}</p>}
@@ -132,7 +132,7 @@ export function PumpDetails({
       </div>
 
       <div className="space-y-1.5">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Power meter</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Power meter</p>
         {meter.length ? (
           <>
             <PlateBlock title="Meter" rows={meter} empty="" />

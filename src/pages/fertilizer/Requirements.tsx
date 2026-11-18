@@ -14,6 +14,9 @@ import {
 import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
 import { GuideRate } from '@/pages/fertilizer/GuideRate'
 import { useGuideSoil } from '@/lib/nutrient-guide-query'
+import { usePrescriptions } from '@/lib/fertility-rx'
+import { cropMismatches } from '@/lib/rx-check'
+import { RxAgainstSoilTest } from './RxAgainstSoilTest'
 
 // n1 = tonnes to one place: an order is placed in tenths of a tonne at best, and
 // the second decimal was 2 kg of false precision on a truckload.
@@ -23,7 +26,8 @@ import { cn } from '@/lib/utils'
 
 export function Requirements() {
   const { cropYear } = useCropYear()
-  const { requirements, isLoading } = useRequirements(cropYear)
+  const { requirements, planCrops, isLoading } = useRequirements(cropYear)
+  const { data: rx } = usePrescriptions(cropYear)
   const [expanded, setExpanded] = useState<string | null>(null)
 
   const products = useMemo(() => totalsByProduct(requirements), [requirements])
@@ -50,6 +54,12 @@ export function Requirements() {
     [requirements, manure, soil, cropYear],
   )
   const noAcres = requirements.filter((r) => r.lines != null && r.acres == null)
+  // A prescription with no soil-test programme behind it is not taken on the Rx's word.
+  const rxOnly = useMemo(() => {
+    const has = new Set(requirements.filter((r) => r.lines != null).map((r) => r.fieldId))
+    return [...new Map((rx ?? []).filter((p) => p.field_id && !has.has(p.field_id)).map((p) => [p.field_id, p.field_label])).values()]
+  }, [rx, requirements])
+  const wrongCrop = useMemo(() => cropMismatches(requirements, planCrops), [requirements, planCrops])
 
   if (isLoading) return <p className="py-16 text-center text-sm text-gray-400">Loading…</p>
   if (!requirements.length) {
@@ -79,7 +89,18 @@ export function Requirements() {
           </p>
         </div>
       )}
-      {(awaiting.length > 0 || noAcres.length > 0) && (
+      {wrongCrop.length > 0 && (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <p className="flex items-center gap-1.5 font-medium">
+            <AlertTriangle className="h-3.5 w-3.5" /> Soil test written for a different crop
+          </p>
+          <p className="mt-0.5">
+            {wrongCrop.map((w) => `${w.fieldName} (test: ${w.testCrop}; plan: ${w.planCrops.join(', ')})`).join(' · ')}. Their
+            programmes are for the tested crop, so check them before ordering.
+          </p>
+        </div>
+      )}
+      {(awaiting.length > 0 || noAcres.length > 0 || rxOnly.length > 0) && (
         <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           <p className="flex items-center gap-1.5 font-medium">
             <AlertTriangle className="h-3.5 w-3.5" /> These totals are not the whole farm
@@ -88,6 +109,13 @@ export function Requirements() {
             <p className="mt-1">
               <b>{awaiting.length}</b> field{awaiting.length === 1 ? '' : 's'} have no assessment yet
               and contribute nothing: {awaiting.map((r) => r.fieldName).join(', ')}.
+            </p>
+          )}
+          {rxOnly.length > 0 && (
+            <p className="mt-1">
+              <b>{rxOnly.length}</b> field{rxOnly.length === 1 ? ' has' : 's have'} an agronomist&rsquo;s
+              prescription but no soil test to check it against, so {rxOnly.length === 1 ? 'it is' : 'they are'} not
+              in these totals: {rxOnly.join(', ')}.
             </p>
           )}
           {noAcres.length > 0 && (
@@ -100,22 +128,24 @@ export function Requirements() {
         </div>
       )}
 
+      <RxAgainstSoilTest cropYear={cropYear} requirements={requirements} planCrops={planCrops} guideSoils={guideSoils} />
+
       {/* Product totals — the order sheet. */}
       <div className="overflow-hidden mb-4 rounded-lg border border-gray-200 bg-white">
         <div className={cn('flex items-center gap-1.5', CARD_HEAD)}>
           <Package className="h-4 w-4 text-white" />
           <h3 className="font-medium">Product needed across the farm · {cropYear}</h3>
         </div>
-        {/* Scrolls sideways on a phone rather than squeezing each cell to a
-            word a line. */}
+        {/* On a phone Fields drops out so Tonnes, the figure ordered against,
+            fits on screen instead of behind a sideways scroll. */}
         <div className="overflow-x-auto">
-        <table className="w-full min-w-[480px] table-fixed text-sm">
+        <table className="w-full table-fixed text-sm sm:min-w-[480px]">
           <thead className={TABLE_HEAD}>
             <tr>
               <th className="px-3 py-2 font-medium">Product</th>
-              <th className="px-3 py-2 text-right font-medium" style={{ width: '14%' }}>Fields</th>
-              <th className="px-3 py-2 text-right font-medium" style={{ width: '20%' }}>Total lb</th>
-              <th className="px-3 py-2 text-right font-medium" style={{ width: '20%' }}>Tonnes</th>
+              <th className="hidden px-3 py-2 text-right font-medium sm:table-cell" style={{ width: '14%' }}>Fields</th>
+              <th className="px-3 py-2 text-right font-medium" style={{ width: '24%' }}>Total lb</th>
+              <th className="px-3 py-2 text-right font-medium" style={{ width: '22%' }}>Tonnes</th>
             </tr>
           </thead>
           <tbody>
@@ -126,7 +156,7 @@ export function Requirements() {
                   {(p.missingAcres.length > 0 || p.missingRate.length > 0) && (
                     // Its own line, not trailing the name — inline it reads as
                     // part of the product ("ammonium sulphate rate not…").
-                    <span className="mt-0.5 block text-[11px] font-normal text-amber-700">
+                    <span className="mt-0.5 block text-xs font-normal text-amber-700">
                       {p.missingRate.length > 0 &&
                         `rate not derivable for ${p.missingRate.join(', ')}`}
                       {p.missingRate.length > 0 && p.missingAcres.length > 0 && ' · '}
@@ -134,7 +164,7 @@ export function Requirements() {
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-600">{p.fields}</td>
+                <td className="hidden px-3 py-2 text-right tabular-nums text-gray-600 sm:table-cell">{p.fields}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-gray-900">{n0(p.totalLb)}</td>
                 <td className="px-3 py-2 text-right font-semibold tabular-nums text-gray-900">{n1(p.totalTonnes)}</td>
               </tr>
@@ -152,7 +182,7 @@ export function Requirements() {
           tonnage matching nothing you could buy. */}
       {micros.length > 0 && (
         <div className="mb-4 rounded-lg border border-gray-200 bg-white px-3 py-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
             Micronutrients — as actual nutrient
           </p>
           <div className="mt-1.5 space-y-1">
@@ -179,7 +209,7 @@ export function Requirements() {
       {/* Nutrient totals — how the agronomy is actually discussed. */}
       {nutrients.length > 0 && (
         <div className="mb-4 rounded-lg border border-gray-200 bg-white px-3 py-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
             Actual nutrient across the farm
           </p>
           <div className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1">
@@ -235,7 +265,7 @@ export function Requirements() {
                       {/* Scrolls rather than squeezing: seven columns at phone
                           width is two words a line otherwise. */}
                       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-                      <table className="w-full min-w-[560px] table-fixed text-[11px]">
+                      <table className="w-full min-w-[560px] table-fixed text-xs">
                         <thead className={TABLE_HEAD}>
                           <tr>
                             <th className={TABLE_TH} style={{ width: '10%' }}>Nutrient</th>

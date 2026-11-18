@@ -119,7 +119,7 @@ export function PriceCheckCard() {
               <td className={td}>{nameOf(c.product)}</td>
               <td className={tdNum}>{money(c.charged)}/t</td>
               <td className={tdNum}>
-                {money(c.agreed)}/t<span className="block text-[10px] text-gray-400">{c.agreedFrom}</span>
+                {money(c.agreed)}/t<span className="block text-xs text-gray-400">{c.agreedFrom}</span>
               </td>
               <td className={cn(tdNum, isOvercharge(c) ? 'font-semibold text-red-700' : 'text-gray-500')}>{money(c.over)}/t</td>
               <td className={tdNum}>{c.overTotal != null && isOvercharge(c) ? money(c.overTotal) : '—'}</td>
@@ -186,7 +186,7 @@ export function GrantsCard() {
                 <Link to="/grants" className="text-gray-800 underline decoration-gray-300 decoration-dotted hover:text-brand-800">
                   {g.title}
                 </Link>
-                {g.funder && <span className="block text-[10px] text-gray-400">{g.funder}</span>}
+                {g.funder && <span className="block text-xs text-gray-400">{g.funder}</span>}
               </td>
               <td className={tdNum}>{moneyRange(g.amount_min == null ? null : Number(g.amount_min), g.amount_max == null ? null : Number(g.amount_max))}</td>
               <td className={td}>{g.closes_on ?? 'open'}</td>
@@ -209,7 +209,7 @@ export function GrantsCard() {
 function Stat({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <div className="rounded-md border border-gray-100 bg-gray-50 px-2.5 py-1.5">
-      <p className="text-[10px] uppercase tracking-wide text-gray-400">{label}</p>
+      <p className="text-xs uppercase tracking-wide text-gray-400">{label}</p>
       <p className={cn('text-sm tabular-nums', strong ? 'font-semibold text-green-800' : 'text-gray-800')}>{value}</p>
     </div>
   )
@@ -290,7 +290,7 @@ export function NerpCard() {
                 </td>
                 <td className={tdNum}>{n0(x.r.acres)}</td>
                 <td className={td}>
-                  <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold capitalize', LEVEL_STYLE[x.level])}>{x.level === 'none' ? 'not yet' : x.level}</span>
+                  <span className={cn('rounded px-1.5 py-0.5 text-xs font-semibold capitalize', LEVEL_STYLE[x.level])}>{x.level === 'none' ? 'not yet' : x.level}</span>
                 </td>
                 <td className={td}>{x.missing.join(', ') || 'at the top level'}</td>
               </tr>
@@ -347,7 +347,7 @@ export function SpreadWindowCard() {
       note={today ? `today: ${today.verdict}` : isLoading ? 'reading the forecast…' : 'no forecast'}
       actions={
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1 text-[11px] text-gray-600">
+          <label className="flex items-center gap-1 text-xs text-gray-600">
             <input type="checkbox" checked={nbpt} onChange={(e) => setNbpt(e.target.checked)} />
             Treated urea
           </label>
@@ -371,7 +371,7 @@ export function SpreadWindowCard() {
       ) : (
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 lg:grid-cols-7">
           {shown.map((d, i) => (
-            <div key={d.date} className={cn('rounded-md border px-2 py-1.5 text-[11px]', VERDICT_STYLE[verdicts[i].verdict])}>
+            <div key={d.date} className={cn('rounded-md border px-2 py-1.5 text-xs', VERDICT_STYLE[verdicts[i].verdict])}>
               <p className="font-semibold">
                 {forecastLabel(d.date)} · <span className="capitalize">{verdicts[i].verdict}</span>
               </p>
@@ -455,7 +455,7 @@ export function PrepayCard({ isManager }: { isManager: boolean }) {
             <tr key={p.id}>
               <td className={td}>
                 {p.name}
-                <span className="block text-[10px] text-gray-400">
+                <span className="block text-xs text-gray-400">
                   {p.supplier} · {p.discount_pct != null ? `${n1(Number(p.discount_pct))}%` : ''}
                   {p.discount_per_tonne != null ? ` ${money(Number(p.discount_per_tonne))}/t` : ''}
                 </span>

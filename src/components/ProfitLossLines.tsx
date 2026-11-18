@@ -101,8 +101,8 @@ export function LinesTable({
                 <p className="truncate text-gray-800" title={l.label}>
                   {l.label}
                 </p>
-                <p className="truncate text-[10px] text-gray-400">{l.source}</p>
-                {l.problem && l.total == null && <p className="text-[10px] text-amber-700">{l.problem}</p>}
+                <p className="truncate text-xs text-gray-400">{l.source}</p>
+                {l.problem && l.total == null && <p className="text-xs text-amber-700">{l.problem}</p>}
               </td>
               <td className="py-1 text-right">
                 {/* A crop's price has one home, the crop's own page: shown here,
@@ -189,7 +189,7 @@ export function LinesTable({
           off field 6: "now I cant get it back"). Each one is a button that
           puts it back. */}
       {canEdit && removed.length > 0 && (
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-500">
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
           <span>Taken off:</span>
           {removed.map((r) => (
             <button
@@ -224,7 +224,7 @@ export function LinesTable({
             <Plus className="h-3.5 w-3.5" /> Add {side === 'input' ? 'an input' : 'an output'}
           </button>
         ))}
-      {error && <p className="mt-1 text-[11px] text-red-600">{error.message}</p>}
+      {error && <p className="mt-1 text-xs text-red-600">{error.message}</p>}
 
       </div>
     </section>
@@ -335,15 +335,15 @@ function AddLine({
       />
       <div className="grid grid-cols-3 gap-1.5">
         <label className="space-y-0.5">
-          <span className="text-[10px] text-gray-500">$ per unit</span>
+          <span className="text-xs text-gray-500">$ per unit</span>
           <input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full rounded border border-gray-300 px-1.5 py-1 text-right" />
         </label>
         <label className="space-y-0.5">
-          <span className="text-[10px] text-gray-500">Unit</span>
+          <span className="text-xs text-gray-500">Unit</span>
           <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="ac, lb, L…" className="w-full rounded border border-gray-300 px-1.5 py-1" />
         </label>
         <label className="space-y-0.5">
-          <span className="text-[10px] text-gray-500">Total amount</span>
+          <span className="text-xs text-gray-500">Total amount</span>
           <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" className="w-full rounded border border-gray-300 px-1.5 py-1 text-right" />
         </label>
       </div>

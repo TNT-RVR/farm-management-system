@@ -71,6 +71,30 @@ describe('grassBalance', () => {
     expect(b.cowDays).toBe(215)
   })
 
+  it('counts the calf every cow brings when the calves graze as their own class', () => {
+    const herd = [
+      row({ id: 'c', feed_class: 'cow', class_name: 'Cows', head_count: 10, avg_weight_lb: 1300, graze_start: '2026-05-01', graze_end: '2026-10-31' }),
+      row({ id: 'k', feed_class: undefined, class_name: 'Calves', head_count: 10, avg_weight_lb: 400, graze_start: '2026-05-01', graze_end: '2026-10-31' }),
+    ]
+    const calc = computeHerds(herd, null, null, 2026)
+    const cow = calc.find((h) => h.id === 'c')!
+    const calf = calc.find((h) => h.id === 'k')!
+    const b = grassBalance(10_000, calc)
+    expect(b.perCow).toBeCloseTo((cow.audsRequired + calf.audsRequired) / 10, 6)
+    expect(b.others).toBeCloseTo(0, 6)
+    expect(b.capacityCows).toBeCloseTo(10_000 / b.perCow!, 6)
+  })
+
+  it('says when the other classes alone are over the grass', () => {
+    const herd = [
+      row({ id: 'c', feed_class: 'cow', class_name: 'Cows', head_count: 10, avg_weight_lb: 1300 }),
+      row({ id: 'b', feed_class: 'bull', class_name: 'Bulls', head_count: 50, avg_weight_lb: 2000 }),
+    ]
+    const b = grassBalance(100, computeHerds(herd, null, null, 2026))
+    expect(b.othersOverGrass).toBe(true)
+    expect(b.capacityCows).toBe(0)
+  })
+
   it('has no cow capacity without cows', () => {
     const b = grassBalance(1000, computeHerds([row({ feed_class: 'bull', class_name: 'Bulls' })], null, null, 2026))
     expect(b.capacityCows).toBeNull()

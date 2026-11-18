@@ -26,7 +26,7 @@ import {
   type ManureApplication,
   type ManureType,
 } from '@/lib/manure'
-import { neediestZones, rankFields, type FieldSoil } from '@/lib/manure-priority'
+import { manuredWhen, neediestZones, rankFields, type FieldSoil } from '@/lib/manure-priority'
 import { resolveSoil } from '@/lib/soil-priority'
 import { checkSetback } from '@/lib/aopa'
 import { useWaterFeatures, useWaterSetbacks } from '@/lib/soil-landscape'
@@ -465,6 +465,14 @@ function Ranking({ year }: { year: number }) {
         ecMsCm: s?.ecMsCm ?? null,
         irrigated: irrigated?.has(f.id) ?? null,
         lastManureYear: last?.crop_year ?? null,
+        // The latest date among that crop year's spreads, for saying when.
+        lastManureOn: last
+          ? (mine
+              .filter((a) => a.crop_year === last.crop_year && a.applied_on)
+              .map((a) => a.applied_on!)
+              .sort()
+              .pop() ?? null)
+          : null,
         // Every acre covered that year, not just the biggest spread.
         lastManureAcres: last
           ? mine
@@ -525,7 +533,7 @@ function Ranking({ year }: { year: number }) {
                         <span className="text-amber-700">never</span>
                       ) : (
                         <>
-                          {r.input.lastManureYear}
+                          {manuredWhen(r.input)}
                           {r.input.acres &&
                             r.input.lastManureAcres &&
                             r.input.lastManureAcres < r.input.acres * 0.9 && (
@@ -813,8 +821,10 @@ export function Manure({ isManager = false }: { isManager?: boolean } = {}) {
       <div className="flex flex-wrap items-center gap-3">
         <YearSelect value={year} years={years} onChange={setYear} ariaLabel="Crop year" size="sm" className="w-28" />
         <span className="text-sm text-gray-500">
-          {(apps ?? []).length} spread{(apps ?? []).length === 1 ? '' : 's'} ·{' '}
-          {n1((apps ?? []).reduce((a, x) => a + (x.acres ?? 0), 0))} ac
+          {/* Nothing until it has loaded: "0 spreads" while loading read as a fact. */}
+          {apps
+            ? `${apps.length} spread${apps.length === 1 ? '' : 's'} · ${n1(apps.reduce((a, x) => a + (x.acres ?? 0), 0))} ac`
+            : 'Loading spreads…'}
         </span>
         <button
           onClick={() => setShowSetbacks((v) => !v)}
@@ -1070,7 +1080,7 @@ export function Manure({ isManager = false }: { isManager?: boolean } = {}) {
       <Ranking year={year} />
       <Fold
         title="Custom hauling invoices"
-        summary={`${invoiceLines?.length ?? 0} invoice line${invoiceLines?.length === 1 ? '' : 's'}`}
+        summary={invoiceLines ? `${invoiceLines.length} invoice line${invoiceLines.length === 1 ? '' : 's'}` : 'loading…'}
         storageKey="fert-manure-invoices"
         bodyClassName="p-0"
       >

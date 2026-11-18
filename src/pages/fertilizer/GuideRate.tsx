@@ -76,7 +76,7 @@ export function GuideRate({
             ' Our lab reports sodium-bicarbonate P, which is a different extractant, so treat this rate as indicative rather than the same measurement.'}
         </p>
         {tables.length > 1 && (
-          <table className="mt-2 w-full text-[11px]">
+          <table className="mt-2 w-full text-xs">
             <thead>
               <tr className="text-left text-gray-500">
                 <th className="py-0.5 pr-2 font-medium">Soil test</th>

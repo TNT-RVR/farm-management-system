@@ -31,10 +31,203 @@
   }
 }
 
+/* Typing boxes are 16px on a touch screen (design review, Nov 2026).
+ *
+ * iOS Safari zooms the whole page when you focus a field whose text is under
+ * 16px, and leaves it zoomed. The Grazing tab alone had 35 fields at 11px and
+ * 14px, so every tap on a head count or a weight jumped the layout. A mouse
+ * never triggers it, so desktop keeps the denser sizes each page chose.
+ *
+ * Unlayered on purpose, like the .rvr-head rules below: Tailwind v4 keeps its
+ * utilities in a cascade layer, so this beats a field's own `text-sm`. */
+@media (pointer: coarse) {
+  input:where(:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='submit'], [type='button'], [type='reset'], [type='image'], [type='hidden'])),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* A 44px finger-sized target behind every small icon button on a touch screen
+ * (design review, Nov 2026).
+ *
+ * On the Grazing tab 38 of 41 buttons were under 44px tall and the row pencils
+ * and bins were 14px — with gloves, in a moving truck, beside each other, one
+ * of them a delete. An invisible ::after grows what a finger can hit while the
+ * button looks exactly the same, the trick ColumnHelp and InfoPopover already
+ * use one button at a time. A button that draws its own `after:` is left alone.
+ *
+ * In the base layer on purpose: a button positioned `absolute` (a dialog's
+ * close ×) keeps its own position, because Tailwind's utilities win here, and
+ * an absolute button contains its ::after just as a relative one does. New
+ * code should use components/IconButton rather than lean on this. */
+@layer base {
+  @media (pointer: coarse) {
+    button:is([aria-label], [title]):where(:not([class*='after:'])):has(> svg:only-child) {
+      position: relative;
+    }
+    button:is([aria-label], [title]):where(:not([class*='after:'])):has(> svg:only-child)::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      transform: translate(-50%, -50%);
+    }
+  }
+}
+
 html,
 body,
 #root {
   height: 100%;
+}
+
+/* Dark screen (design review, Nov 2026), for whoever turns it on in
+ * Settings → Profile; see lib/theme.ts. Nobody gets it by default.
+ *
+ * One block instead of a `dark:` class on every element: Tailwind v4 reads
+ * every grey from a variable, so turning the grey scale over turns the whole
+ * app over — dark page, dark cards, light text — and a page written tomorrow
+ * comes out dark without anyone remembering to. White surfaces are a separate
+ * rule because `text-white` reads the same variable as `bg-white`, and the
+ * white words on the green bars and buttons have to stay white.
+ *
+ * What it leaves alone on purpose: the green bars and buttons (they read on
+ * dark as they are), the pale red/amber/green status boxes (still dark text
+ * on a light patch, still readable), maps, photos and charts. Screen only: a
+ * manifest printed from a dark phone still prints black on white.
+ *
+ * Unlayered, like the rules below, so it beats Tailwind's utilities. */
+@media screen {
+  .dark {
+    color-scheme: dark;
+    --color-gray-50: #0d1117;
+    --color-gray-100: #1c222c;
+    --color-gray-200: #2a313c;
+    --color-gray-300: #3a424f;
+    --color-gray-400: #7b8494;
+    --color-gray-500: #9aa3b2;
+    --color-gray-600: #b4bcc8;
+    --color-gray-700: #cdd3dc;
+    --color-gray-800: #e2e6ec;
+    --color-gray-900: #f1f3f6;
+    --color-gray-950: #f8f9fb;
+    --color-brand-50: #0f2417;
+    --color-brand-100: #143020;
+    --color-brand-200: #1d4a2e;
+  }
+  .dark body {
+    background-color: #0d1117;
+    color: #f1f3f6;
+  }
+  .dark .bg-white {
+    background-color: #161b22;
+  }
+  /* See-through white: the map's glass panels, sticky bars. */
+  .dark [class*='bg-white/'] {
+    background-color: rgb(22 27 34 / 0.85);
+  }
+  .dark input:where(:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='submit'], [type='button'], [type='reset'], [type='image'], [type='hidden'])),
+  .dark textarea,
+  .dark select {
+    background-color: #0d1117;
+  }
+  .dark input:where(:disabled, [readonly]):where(:not([type='checkbox'], [type='radio'], [type='range'])),
+  .dark textarea:where(:disabled, [readonly]),
+  .dark select:where(:disabled) {
+    background-color: #1c222c;
+  }
+  /* Green words: dark green is for white paper. Lifted so links and the
+     words on the pale-green bands still read. */
+  .dark .text-brand-700,
+  .dark .text-brand-800,
+  .dark .text-brand-900 {
+    color: #4ade80;
+  }
+  /* The pale status boxes (red deficit, amber warning, green surplus, the
+     violet AI panel): a dark tint of the same hue, and their words lifted to
+     the light end of it. Without this a pale box sat on the dark page with
+     the lightened greys on it, unreadable. */
+  .dark {
+    --color-red-50: color-mix(in oklab, var(--color-red-500) 14%, #161b22);
+    --color-red-100: color-mix(in oklab, var(--color-red-500) 24%, #161b22);
+    --color-red-200: color-mix(in oklab, var(--color-red-500) 40%, #161b22);
+    --color-orange-50: color-mix(in oklab, var(--color-orange-500) 14%, #161b22);
+    --color-orange-100: color-mix(in oklab, var(--color-orange-500) 24%, #161b22);
+    --color-orange-200: color-mix(in oklab, var(--color-orange-500) 40%, #161b22);
+    --color-amber-50: color-mix(in oklab, var(--color-amber-500) 14%, #161b22);
+    --color-amber-100: color-mix(in oklab, var(--color-amber-500) 24%, #161b22);
+    --color-amber-200: color-mix(in oklab, var(--color-amber-500) 40%, #161b22);
+    --color-yellow-50: color-mix(in oklab, var(--color-yellow-500) 14%, #161b22);
+    --color-yellow-100: color-mix(in oklab, var(--color-yellow-500) 24%, #161b22);
+    --color-yellow-200: color-mix(in oklab, var(--color-yellow-500) 40%, #161b22);
+    --color-lime-50: color-mix(in oklab, var(--color-lime-500) 14%, #161b22);
+    --color-lime-100: color-mix(in oklab, var(--color-lime-500) 24%, #161b22);
+    --color-lime-200: color-mix(in oklab, var(--color-lime-500) 40%, #161b22);
+    --color-green-50: color-mix(in oklab, var(--color-green-500) 14%, #161b22);
+    --color-green-100: color-mix(in oklab, var(--color-green-500) 24%, #161b22);
+    --color-green-200: color-mix(in oklab, var(--color-green-500) 40%, #161b22);
+    --color-emerald-50: color-mix(in oklab, var(--color-emerald-500) 14%, #161b22);
+    --color-emerald-100: color-mix(in oklab, var(--color-emerald-500) 24%, #161b22);
+    --color-emerald-200: color-mix(in oklab, var(--color-emerald-500) 40%, #161b22);
+    --color-teal-50: color-mix(in oklab, var(--color-teal-500) 14%, #161b22);
+    --color-teal-100: color-mix(in oklab, var(--color-teal-500) 24%, #161b22);
+    --color-teal-200: color-mix(in oklab, var(--color-teal-500) 40%, #161b22);
+    --color-cyan-50: color-mix(in oklab, var(--color-cyan-500) 14%, #161b22);
+    --color-cyan-100: color-mix(in oklab, var(--color-cyan-500) 24%, #161b22);
+    --color-cyan-200: color-mix(in oklab, var(--color-cyan-500) 40%, #161b22);
+    --color-sky-50: color-mix(in oklab, var(--color-sky-500) 14%, #161b22);
+    --color-sky-100: color-mix(in oklab, var(--color-sky-500) 24%, #161b22);
+    --color-sky-200: color-mix(in oklab, var(--color-sky-500) 40%, #161b22);
+    --color-blue-50: color-mix(in oklab, var(--color-blue-500) 14%, #161b22);
+    --color-blue-100: color-mix(in oklab, var(--color-blue-500) 24%, #161b22);
+    --color-blue-200: color-mix(in oklab, var(--color-blue-500) 40%, #161b22);
+    --color-indigo-50: color-mix(in oklab, var(--color-indigo-500) 14%, #161b22);
+    --color-indigo-100: color-mix(in oklab, var(--color-indigo-500) 24%, #161b22);
+    --color-indigo-200: color-mix(in oklab, var(--color-indigo-500) 40%, #161b22);
+    --color-violet-50: color-mix(in oklab, var(--color-violet-500) 14%, #161b22);
+    --color-violet-100: color-mix(in oklab, var(--color-violet-500) 24%, #161b22);
+    --color-violet-200: color-mix(in oklab, var(--color-violet-500) 40%, #161b22);
+    --color-purple-50: color-mix(in oklab, var(--color-purple-500) 14%, #161b22);
+    --color-purple-100: color-mix(in oklab, var(--color-purple-500) 24%, #161b22);
+    --color-purple-200: color-mix(in oklab, var(--color-purple-500) 40%, #161b22);
+    --color-fuchsia-50: color-mix(in oklab, var(--color-fuchsia-500) 14%, #161b22);
+    --color-fuchsia-100: color-mix(in oklab, var(--color-fuchsia-500) 24%, #161b22);
+    --color-fuchsia-200: color-mix(in oklab, var(--color-fuchsia-500) 40%, #161b22);
+    --color-pink-50: color-mix(in oklab, var(--color-pink-500) 14%, #161b22);
+    --color-pink-100: color-mix(in oklab, var(--color-pink-500) 24%, #161b22);
+    --color-pink-200: color-mix(in oklab, var(--color-pink-500) 40%, #161b22);
+    --color-rose-50: color-mix(in oklab, var(--color-rose-500) 14%, #161b22);
+    --color-rose-100: color-mix(in oklab, var(--color-rose-500) 24%, #161b22);
+    --color-rose-200: color-mix(in oklab, var(--color-rose-500) 40%, #161b22);
+    --color-slate-50: color-mix(in oklab, var(--color-slate-500) 14%, #161b22);
+    --color-slate-100: color-mix(in oklab, var(--color-slate-500) 24%, #161b22);
+    --color-slate-200: color-mix(in oklab, var(--color-slate-500) 40%, #161b22);
+  }
+  .dark .text-red-700, .dark .text-red-800, .dark .text-red-900, .dark .text-red-950 { color: var(--color-red-300); }
+  .dark .text-orange-700, .dark .text-orange-800, .dark .text-orange-900, .dark .text-orange-950 { color: var(--color-orange-300); }
+  .dark .text-amber-700, .dark .text-amber-800, .dark .text-amber-900, .dark .text-amber-950 { color: var(--color-amber-300); }
+  .dark .text-yellow-700, .dark .text-yellow-800, .dark .text-yellow-900, .dark .text-yellow-950 { color: var(--color-yellow-300); }
+  .dark .text-lime-700, .dark .text-lime-800, .dark .text-lime-900, .dark .text-lime-950 { color: var(--color-lime-300); }
+  .dark .text-green-700, .dark .text-green-800, .dark .text-green-900, .dark .text-green-950 { color: var(--color-green-300); }
+  .dark .text-emerald-700, .dark .text-emerald-800, .dark .text-emerald-900, .dark .text-emerald-950 { color: var(--color-emerald-300); }
+  .dark .text-teal-700, .dark .text-teal-800, .dark .text-teal-900, .dark .text-teal-950 { color: var(--color-teal-300); }
+  .dark .text-cyan-700, .dark .text-cyan-800, .dark .text-cyan-900, .dark .text-cyan-950 { color: var(--color-cyan-300); }
+  .dark .text-sky-700, .dark .text-sky-800, .dark .text-sky-900, .dark .text-sky-950 { color: var(--color-sky-300); }
+  .dark .text-blue-700, .dark .text-blue-800, .dark .text-blue-900, .dark .text-blue-950 { color: var(--color-blue-300); }
+  .dark .text-indigo-700, .dark .text-indigo-800, .dark .text-indigo-900, .dark .text-indigo-950 { color: var(--color-indigo-300); }
+  .dark .text-violet-700, .dark .text-violet-800, .dark .text-violet-900, .dark .text-violet-950 { color: var(--color-violet-300); }
+  .dark .text-purple-700, .dark .text-purple-800, .dark .text-purple-900, .dark .text-purple-950 { color: var(--color-purple-300); }
+  .dark .text-fuchsia-700, .dark .text-fuchsia-800, .dark .text-fuchsia-900, .dark .text-fuchsia-950 { color: var(--color-fuchsia-300); }
+  .dark .text-pink-700, .dark .text-pink-800, .dark .text-pink-900, .dark .text-pink-950 { color: var(--color-pink-300); }
+  .dark .text-rose-700, .dark .text-rose-800, .dark .text-rose-900, .dark .text-rose-950 { color: var(--color-rose-300); }
+  .dark .text-slate-700, .dark .text-slate-800, .dark .text-slate-900, .dark .text-slate-950 { color: var(--color-slate-300); }
+  /* The logo is drawn in the monogram's dark green; lifted to read on dark. */
+  .dark img[src*='prairie creek-'] {
+    filter: brightness(1.9) saturate(0.9);
+  }
 }
 
 /* Printing.
@@ -101,7 +294,7 @@ body,
  *
  * Solid white, not a tint, because brand-700 (#15803d) is dark enough that
  * white itself is only 5.02:1: 85% white is 4.09 and 90% is 4.39, both under
- * the 4.5 these 11px lines need. The hierarchy inside the bar comes from size
+ * the 4.5 these 12px lines need. The hierarchy inside the bar comes from size
  * and weight instead — the title above is larger and semibold.
  *
  * Unlayered, like the rule above, so it beats Tailwind's utilities without

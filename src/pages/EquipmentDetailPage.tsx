@@ -57,7 +57,7 @@ function InspectionsTab({ machine }: { machine: { id: string; name: string | nul
 function Field({ label, value }: { label: string; value: string | null }) {
   return (
     <div>
-      <dt className="text-[11px] text-gray-400">{label}</dt>
+      <dt className="text-xs text-gray-400">{label}</dt>
       <dd className={value ? 'text-sm text-gray-800' : 'text-sm text-gray-300'}>
         {value ?? 'not recorded'}
       </dd>
@@ -113,16 +113,16 @@ export function EquipmentDetailPage() {
           <Tractor className="h-5 w-5 text-brand-700" /> {e.name ?? 'Unnamed'}
         </h1>
         {e.category && (
-          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] capitalize text-gray-600">
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs capitalize text-gray-600">
             {e.category}
           </span>
         )}
         {e.archived && (
-          <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[11px] text-gray-700">
+          <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-700">
             {e.is_manual ? 'sold / archived' : 'archived in Deere'}
           </span>
         )}
-        {e.is_manual && <span className="rounded bg-gray-100 px-1.5 text-[10px] text-gray-500">added by hand</span>}
+        {e.is_manual && <span className="rounded bg-gray-100 px-1.5 text-xs text-gray-500">added by hand</span>}
         {canEdit && e.is_manual && (
           <span className="ml-auto">
             <EditButton onClick={() => setEditing(true)} />
@@ -161,7 +161,7 @@ export function EquipmentDetailPage() {
           </dl>
           {/* The sync rewrites these on every run, so an edit here would not last. */}
           {!e.is_manual && canEdit && (
-            <p className="mt-1 text-[11px] text-gray-400">From John Deere: change the name, make, model or serial in Operations Center. Notes, service and warranty are ours.</p>
+            <p className="mt-1 text-xs text-gray-400">From John Deere: change the name, make, model or serial in Operations Center. Notes, service and warranty are ours.</p>
           )}
 
           <div className="overflow-hidden mt-4 rounded-lg border border-gray-200 bg-white">

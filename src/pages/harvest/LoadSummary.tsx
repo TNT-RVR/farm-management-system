@@ -103,7 +103,7 @@ export function LoadSummary({ load: l, onEdit, onClose }: { load: BinLoad; onEdi
                   <span className="text-xs text-gray-500">Estimated value </span>
                   <span className={value != null ? 'text-lg font-semibold tabular-nums text-gray-900' : 'text-xs text-amber-700'}>{valueText}</span>
                 </p>
-                {priceText && <p className="text-[11px] text-gray-500">{priceText}</p>}
+                {priceText && <p className="text-xs text-gray-500">{priceText}</p>}
               </div>
             )}
           </div>

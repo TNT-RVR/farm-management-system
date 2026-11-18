@@ -3,6 +3,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import { SETUP_LINKS } from './setup-links'
 import { isCalfGroup, MAX_PLAUSIBLE_CALF_CROP } from './cow-herd-measures'
+import { DEFAULT_CULL_PCT, costLinesFarBelowBenchmark } from './cattleEconomics'
+import { monthName } from './calf-sale'
 
 /**
  * What the cattle numbers stand on that nobody has measured.
@@ -63,6 +65,13 @@ export type AssumptionData = {
     cull_cow_price_cwt: number | string | null
     weaning_rate_pct: number | string | null
     cow_yardage_per_day: number | string | null
+    /** Blank reads as DEFAULT_CULL_PCT in the break-even's cull credit. */
+    cull_pct?: number | string | null
+    cow_cost_per_head?: number | string | null
+    feed_cost_per_head?: number | string | null
+    pasture_cost_per_head?: number | string | null
+    vet_cost_per_head?: number | string | null
+    other_cost_per_head?: number | string | null
   }[]
   inventory: { ranch_id: string; kind: string; weight_basis: string | null }[]
   baleDefaults: { bale_type: string; lb_per_bale: number | string | null }[]
@@ -84,6 +93,21 @@ const dayMonth = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString
 
 const grazing = (id: string) => `/cattle?tab=grazing&ranch=${id}`
 const feedRecords = (id?: string) => `/feed?tab=records${id ? `&ranch=${id}` : ''}`
+
+/**
+ * Whether calves are set to sell in a month before they are weaned.
+ *
+ * Months wrap at New Year, so "before" is read as within the six months ahead
+ * of the weaning month: a December weaning with a November sale is before it;
+ * an October weaning with a January sale is after (calves held over).
+ */
+export function saleBeforeWeaning(weaningDate: string | null | undefined, saleMonth: number | null | undefined): boolean {
+  if (!weaningDate || saleMonth == null) return false
+  const wean = Number(weaningDate.slice(5, 7))
+  if (!(wean >= 1 && wean <= 12) || !(saleMonth >= 1 && saleMonth <= 12)) return false
+  const ahead = (wean - saleMonth + 12) % 12
+  return ahead >= 1 && ahead <= 6
+}
 
 /** Notes that mark a ration or weight as somebody's placeholder. */
 const GUESS_NOTE = /guess|set what|copied|rescaled|stand[- ]?in/i
@@ -132,10 +156,24 @@ export function listAssumptions(d: AssumptionData, ranchId: string): Assumption[
       if (cull != null) add('cull', `Cull cow price ${money(cull)}/cwt typed — used when no market sold cows`, SETUP_LINKS.cattleCosts(r.id), 'guess')
       const yardage = n(cost.cow_yardage_per_day)
       if (yardage != null) add('yardage', `Yardage ${money(yardage)} a cow a day typed`, SETUP_LINKS.cattleCosts(r.id), 'guess')
+      if (n(cost.cull_pct) == null)
+        add('cull-pct', `Cows culled % blank — ${DEFAULT_CULL_PCT}% assumed for the break-even’s cull credit`, SETUP_LINKS.cattleCosts(r.id), 'guess')
+      // The break-even rests on these lines; one far under its benchmark
+      // line may be right for this ranch, or a month typed for a year.
+      const low = costLinesFarBelowBenchmark(cost, cost.crop_year)
+      if (low.length)
+        add(
+          'costs-low',
+          `Under half the Alberta benchmark: ${list(low.map((l) => `${l.label.toLowerCase()} ${money(l.typed)} vs ${money(l.benchmark)}`))} — fine if true here; the break-even rests on it`,
+          SETUP_LINKS.cattleCosts(r.id),
+          'guess',
+        )
     }
     if (!r.weaning_date) add('weaning', 'No weaning date set', SETUP_LINKS.cattleCosts(r.id), 'missing')
     else if (r.calf_sale_month != null && r.weaning_date.slice(5) === `${String(r.calf_sale_month).padStart(2, '0')}-01`)
       add('weaning', `Weaning date ${dayMonth(r.weaning_date)} is a stand-in — the 1st of the sale month`, SETUP_LINKS.cattleCosts(r.id), 'guess')
+    else if (r.calf_sale_month != null && saleBeforeWeaning(r.weaning_date, r.calf_sale_month))
+      add('sale-month', `Calves sold in ${monthName(r.calf_sale_month)}, before the ${dayMonth(r.weaning_date)} weaning date`, SETUP_LINKS.cattleCosts(r.id), 'guess')
     const blankWeights = [r.steer_sale_weight_lb == null && 'steer', r.heifer_sale_weight_lb == null && 'heifer'].filter(Boolean) as string[]
     if (blankWeights.length) add('sale-weight', `${blankWeights.join(' and ')} sale weight not typed — averaged from past sales`.replace(/^./, (c) => c.toUpperCase()), SETUP_LINKS.cattleCosts(r.id), 'guess')
 
@@ -182,7 +220,9 @@ export async function loadAssumptionData(sb: SupabaseClient, year = new Date().g
     pick<AssumptionData['costs']>(
       sb
         .from('cattle_cost_assumptions')
-        .select('ranch, crop_year, notes, cull_cow_price_cwt, weaning_rate_pct, cow_yardage_per_day')
+        .select(
+          'ranch, crop_year, notes, cull_cow_price_cwt, weaning_rate_pct, cow_yardage_per_day, cull_pct, cow_cost_per_head, feed_cost_per_head, pasture_cost_per_head, vet_cost_per_head, other_cost_per_head',
+        )
         .lte('crop_year', year)
         .order('crop_year', { ascending: false }),
     ),

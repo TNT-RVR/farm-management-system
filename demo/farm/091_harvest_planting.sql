@@ -186,11 +186,11 @@ insert into public.crop_planter_profiles (crop_id, depth_setting, depth_in_min, 
 select c.id, v.depth_setting, v.dmin, v.dmax, v.singulator, v.spacing, v.smin, v.smax, v.mph, v.holes, v.disc, v.rows, 1, v.m2, v.notes,
        '0de30000-0000-4000-8000-0000000000a1', now() - interval '180 days'
   from (values
-    ('Canola', 'Packer setting 2', 0.5, 1.0, 'Small-seed singulator, notch 1', 7.5::numeric, 400000, 450000, 5.0, 72, 'Canola disc 72', 10, 104, 'Drill on 10 in; the planter strip is 30 in at 7.5 in spacing.'),
-    ('Wheat', 'Packer setting 4', 1.0, 1.5, null, null, 1100000, 1300000, 5.5, null, null, 10, 297, 'Into moisture, not deeper than 2 in.'),
-    ('Barley', 'Packer setting 4', 1.0, 1.75, null, null, 1000000, 1200000, 5.5, null, null, 10, 272, null),
-    ('Peas', 'Packer setting 6', 1.5, 2.5, null, null, 330000, 380000, 5.0, null, null, 10, 88, 'Inoculant in tank 4. Seed into moisture even if it means 3 in.'),
-    ('Oats', 'Packer setting 4', 1.0, 1.5, null, null, 1000000, 1200000, 5.5, null, null, 10, 272, null)
+    ('Canola', 'B', 0.5, 1.0, 'Small-seed singulator, notch 1', 7.5::numeric, 400000, 450000, 5.0, 72, 'Canola disc 72', 10, 104, 'Drill on 10 in; the planter strip is 30 in at 7.5 in spacing.'),
+    ('Wheat', 'C', 1.0, 1.5, null, null, 1100000, 1300000, 5.5, null, null, 10, 297, 'Into moisture, not deeper than 2 in.'),
+    ('Barley', 'C', 1.0, 1.75, null, null, 1000000, 1200000, 5.5, null, null, 10, 272, null),
+    ('Peas', 'D', 1.5, 2.5, null, null, 330000, 380000, 5.0, null, null, 10, 88, 'Inoculant in tank 4. Seed into moisture even if it means 3 in.'),
+    ('Oats', 'C', 1.0, 1.5, null, null, 1000000, 1200000, 5.5, null, null, 10, 272, null)
   ) v(crop, depth_setting, dmin, dmax, singulator, spacing, smin, smax, mph, holes, disc, rows, m2, notes)
   join public.crops c on c.name = v.crop;
 
@@ -217,10 +217,12 @@ select v.field::uuid, extract(year from current_date)::int + v.back, coalesce(p.
 -- ── Blend calculator products ──────────────────────────────────────────────
 -- Fractions, not percents (0.46 = 46% N). The first three match the saved blends.
 insert into public.fert_blend_products (name, n, p, k, s, zn, price_per_tonne, price_note, density_lb_ft3, active, sort_order) values
-  ('46-0-0 Urea', 0.46, 0, 0, 0, 0, 820, 'Fall booking price, Prairie Ag Supply (example)', 48, true, 1),
-  ('11-52-0 MAP', 0.11, 0.52, 0, 0, 0, 1080, 'Fall booking price, Prairie Ag Supply (example)', 59, true, 2),
-  ('21-0-0-24 AMS', 0.21, 0, 0, 0.24, 0, 620, 'Fall booking price, Prairie Ag Supply (example)', 60, true, 3),
-  ('0-0-60 Potash', 0, 0, 0.60, 0, 0, 640, 'Fall booking price, Prairie Ag Supply (example)', 62, true, 4),
+  -- Labelled as what they are: the same figures as the Prices tab, not the
+  -- fall booking (that is the 868 on Need versus booked).
+  ('46-0-0 Urea', 0.46, 0, 0, 0, 0, 820, 'Prairie Ag Supply price list (example)', 48, true, 1),
+  ('11-52-0 MAP', 0.11, 0.52, 0, 0, 0, 1080, 'Prairie Ag Supply price list (example)', 59, true, 2),
+  ('21-0-0-24 AMS', 0.21, 0, 0, 0.24, 0, 620, 'Prairie Ag Supply price list (example)', 60, true, 3),
+  ('0-0-60 Potash', 0, 0, 0.60, 0, 0, 640, 'Prairie Ag Supply price list (example)', 62, true, 4),
   ('Polymer-coated urea 44-0-0', 0.44, 0, 0, 0, 0, 930, 'Quote, Sept', 45, true, 5),
   ('12-40-0-10S-1Zn', 0.12, 0.40, 0, 0.10, 0.01, 1160, 'Quote, Sept', 61, true, 6),
   ('16-20-0-13', 0.16, 0.20, 0, 0.13, 0, 790, 'Last spring', 63, false, 7);

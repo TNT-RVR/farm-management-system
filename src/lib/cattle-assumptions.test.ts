@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { listAssumptions, type AssumptionData } from './cattle-assumptions'
+import { listAssumptions, saleBeforeWeaning, type AssumptionData } from './cattle-assumptions'
 
 const GL = 'gl'
 const BI = 'bi'
@@ -93,5 +93,46 @@ describe('listAssumptions', () => {
     const firstGuess = all.findIndex((a) => a.kind === 'guess')
     const lastRanchMissing = all.map((a, i) => (a.kind === 'missing' && a.ranch ? i : -1)).reduce((m, i) => Math.max(m, i), -1)
     expect(lastRanchMissing).toBeLessThan(firstGuess)
+  })
+
+  it('says the cull % is the 12% stand-in until one is typed', () => {
+    const a = listAssumptions(base(), GL).find((x) => x.key === 'gl:cull-pct')!
+    expect(a.label).toMatch(/blank — 12% assumed/)
+    const d = base()
+    d.costs[0].cull_pct = '14'
+    expect(keys(d, GL)).not.toContain('gl:cull-pct')
+  })
+
+  it('points out cost lines under half their Alberta benchmark, neutrally', () => {
+    const d = base()
+    // The demo's figures: 963 a cow, "everything else" 95.
+    Object.assign(d.costs[0], { cow_cost_per_head: '400', feed_cost_per_head: '300', pasture_cost_per_head: '100', vet_cost_per_head: '68', other_cost_per_head: '95' })
+    const a = listAssumptions(d, GL).find((x) => x.key === 'gl:costs-low')!
+    expect(a.kind).toBe('guess')
+    expect(a.label).toMatch(/^Under half the Alberta benchmark: .*everything else \$95 vs/)
+    expect(a.label).toMatch(/fine if true here/)
+    // None typed, none flagged: a blank line is missing, not low.
+    expect(keys(base(), GL)).not.toContain('gl:costs-low')
+  })
+
+  it('says when calves sell before they are weaned', () => {
+    const d = base()
+    d.ranches[0].weaning_date = '2026-12-09'
+    d.ranches[0].calf_sale_month = 11
+    const a = listAssumptions(d, GL).find((x) => x.key === 'gl:sale-month')!
+    expect(a.label).toMatch(/Calves sold in November, before the .*Dec.* weaning date/)
+    d.ranches[0].calf_sale_month = 12
+    expect(keys(d, GL)).not.toContain('gl:sale-month')
+  })
+})
+
+describe('saleBeforeWeaning', () => {
+  it('reads the months round New Year', () => {
+    expect(saleBeforeWeaning('2026-12-09', 11)).toBe(true)
+    expect(saleBeforeWeaning('2026-12-09', 12)).toBe(false)
+    expect(saleBeforeWeaning('2026-10-15', 1)).toBe(false) // held over winter
+    expect(saleBeforeWeaning('2026-01-10', 12)).toBe(true) // December, a month ahead of a January weaning
+    expect(saleBeforeWeaning(null, 11)).toBe(false)
+    expect(saleBeforeWeaning('2026-12-09', null)).toBe(false)
   })
 })

@@ -405,7 +405,7 @@ export function FarmSetupPanel({ part, go }: { part: Part; go: (p: Part) => void
                   value={v.support_email ?? ''}
                   onChange={(e) => set({ support_email: e.target.value })}
                 />
-                <span className="mt-1 block text-[11px] font-normal text-gray-500">
+                <span className="mt-1 block text-xs font-normal text-gray-500">
                   Named on the public privacy and terms pages, and on the QuickBooks card when its
                   connection drops. Anyone can read it.
                 </span>
@@ -664,7 +664,7 @@ export function FarmSetupPanel({ part, go }: { part: Part; go: (p: Part) => void
                       <div className="min-w-0 flex-1">
                         <p
                           className={cn(
-                            f.parent ? 'text-sm font-medium' : 'text-[15px] font-semibold',
+                            f.parent ? 'text-sm font-medium' : 'text-base font-semibold',
                             parentOff ? 'text-gray-400' : 'text-gray-900',
                           )}
                         >

@@ -67,7 +67,7 @@ function EquipmentRow({
         <span className="font-medium text-gray-900">{e.name ?? 'Unnamed'}</span>
         {detail && <span className="text-xs text-gray-500">{detail}</span>}
         {e.is_manual && (
-          <span className="rounded bg-gray-100 px-1.5 text-[10px] text-gray-500">added by hand</span>
+          <span className="rounded bg-gray-100 px-1.5 text-xs text-gray-500">added by hand</span>
         )}
         {/* Only where it is worth acting on. A machine with three years left
             does not need a badge on every scroll past it — it is the ones
@@ -75,7 +75,7 @@ function EquipmentRow({
         {(warranty.state === 'soon' || warranty.state === 'expired') && (
           <span
             className={cn(
-              'flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium',
+              'flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium',
               WARRANTY_STYLE[warranty.state],
             )}
           >
@@ -87,7 +87,7 @@ function EquipmentRow({
         {service && (service.overdue > 0 || service.dueSoon > 0) && (
           <span
             className={cn(
-              'flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium',
+              'flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium',
               service.overdue > 0 ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800',
             )}
           >
@@ -98,13 +98,13 @@ function EquipmentRow({
           </span>
         )}
         {inspectionDue && (
-          <span className="flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+          <span className="flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
             <ClipboardCheck className="h-3 w-3" />
             Inspection due
           </span>
         )}
         {staleSince && (
-          <span className="flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+          <span className="flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">
             <Gauge className="h-3 w-3" />
             {staleHoursLabel(staleSince)}
           </span>
@@ -316,7 +316,7 @@ export function EquipmentPage() {
               <h2 className="flex items-center gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
                 <span
                   className={cn(
-                    'rounded-full px-2 py-0.5 text-[11px] font-medium capitalize',
+                    'rounded-full px-2 py-0.5 text-xs font-medium capitalize',
                     CATEGORY_STYLE[category] ?? 'bg-gray-100 text-gray-600',
                   )}
                 >

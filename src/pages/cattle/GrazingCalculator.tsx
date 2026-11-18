@@ -1,6 +1,6 @@
 import { Fragment, Suspense, useEffect, useMemo, useState } from 'react'
 import { lazyWithRetry } from '@/lib/lazyWithRetry'
-import { ChevronRight, CloudRain, Plus } from 'lucide-react'
+import { ChevronRight, CloudRain, Plus, TriangleAlert } from 'lucide-react'
 import { Select } from '@/components/Select'
 import {
   computeHerds,
@@ -9,6 +9,9 @@ import {
   grazingRain,
   grazingUtilization,
   GRASS_QUALITIES,
+  occupiedWithNoFeed,
+  sumAsShown,
+  useCattleOnNow,
   type PastureCalc,
   type HerdCalc,
   useGrazingHerd,
@@ -51,6 +54,8 @@ import { n0, n1 } from '@/lib/format'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 import { DEFAULT_UTILIZATION } from '@/lib/forage-response'
+import { HeadTip } from '@/components/HeadTip'
+import { ChartSkeleton } from '@/components/Skeleton'
 
 type PasturePatch = Database['public']['Tables']['grazing_pastures']['Update']
 type HerdPatch = Database['public']['Tables']['herd_counts']['Update']
@@ -72,7 +77,7 @@ function Lb({ lb, bold = false }: { lb: number; bold?: boolean }) {
   return (
     <>
       <span className={cn('tabular-nums', bold && 'font-medium')}>{n0(lb)}</span>
-      <span className="block text-[11px] tabular-nums text-gray-400">{n0(lb / LB_PER_KG)} kg</span>
+      <span className="block text-xs tabular-nums text-gray-400">{n0(lb / LB_PER_KG)} kg</span>
     </>
   )
 }
@@ -156,10 +161,10 @@ function GrazeDay({
 
 /** Under a class's dates: the season it is counted over when it has none, or that its calves are in the cows' row. */
 function SeasonNote({ h }: { h: HerdCalc }) {
-  if (h.withCows) return <p className="mt-0.5 text-[11px] text-gray-400">at side — in the cows&apos; row</p>
+  if (h.withCows) return <p className="mt-0.5 text-xs text-gray-400">at side — in the cows&apos; row</p>
   if (!h.assumedSeason || !h.start || !h.end) return null
   return (
-    <p className="mt-0.5 text-[11px] text-gray-400" title="No grazing dates typed, so counted over the ranch's grazing season. Type dates to change it.">
+    <p className="mt-0.5 text-xs text-gray-400" title="No grazing dates typed, so counted over the ranch's grazing season. Type dates to change it.">
       assumed season {shortDay(h.start)} – {shortDay(h.end)}
     </p>
   )
@@ -444,19 +449,17 @@ function useGrazingCalc(ranch: Ranch) {
     [herd, feedPlan, ranch.weaning_date],
   )
 
+  // Each total is the sum of the rows as printed (whole numbers; AUMs to one
+  // place), so the column adds up on screen and every figure below works from it.
   const totals = useMemo(
-    () =>
-      calc.reduce(
-        (a, p) => ({
-          acres: a.acres + p.acres,
-          grazeable: a.grazeable + p.totalGrazeableAc,
-          lbs: a.lbs + p.totalLbs,
-          aums: a.aums + p.aums,
-          auds: a.auds + p.auds,
-          fieldAuds: a.fieldAuds + p.fieldAuds,
-        }),
-        { acres: 0, grazeable: 0, lbs: 0, aums: 0, auds: 0, fieldAuds: 0 },
-      ),
+    () => ({
+      acres: sumAsShown(calc, (p) => p.acres),
+      grazeable: sumAsShown(calc, (p) => p.totalGrazeableAc),
+      lbs: sumAsShown(calc, (p) => p.totalLbs),
+      aums: sumAsShown(calc, (p) => p.aums, 1),
+      auds: sumAsShown(calc, (p) => p.auds),
+      fieldAuds: sumAsShown(calc, (p) => p.fieldAuds),
+    }),
     [calc],
   )
   // The same sum the Herd page's "the grass carries about N cows" is read from.
@@ -509,6 +512,7 @@ function useGrazingCalc(ranch: Ranch) {
     audsRequired,
     surplus,
     cowsOver,
+    othersOverGrass: balance.othersOverGrass,
     ranchTotals,
   }
 }
@@ -535,7 +539,7 @@ export function GrazingRanchTotals({
   return null
 }
 
-const WASTE_PILL = 'rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors disabled:cursor-default'
+const WASTE_PILL = 'rounded px-1.5 py-0.5 text-xs font-medium transition-colors disabled:cursor-default'
 
 /**
  * Which pound figure the AUDs are counted in: what the herd eats, or that plus
@@ -561,7 +565,7 @@ function AuWasteToggle({
 }) {
   return (
     <div className="mt-1.5 flex items-center gap-1">
-      <span className="text-[11px] text-gray-400">Counting</span>
+      <span className="text-xs text-gray-400">Counting</span>
       <div className="inline-flex overflow-hidden rounded border border-gray-200">
         {([true, false] as const).map((v) => (
           <button
@@ -688,6 +692,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
     audsRequired,
     surplus,
     cowsOver,
+    othersOverGrass,
   } = useGrazingCalc(ranch)
   /*
    * The nearest real gauge's total for the same window, shown beside the
@@ -697,6 +702,8 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
    */
   const { data: gauge } = useRanchGauge(ranch, measured?.through)
   const gaugeOff = gauge ? gaugeGap(gauge.mm, rain.toDateMm) : null
+  const { data: onNow } = useCattleOnNow()
+  const noFeedButOccupied = useMemo(() => occupiedWithNoFeed(calc, onNow ?? []), [calc, onNow])
   const setRanch = useSetRanch()
   const pastureM = usePastureMutations()
   const herdM = useHerdMutations()
@@ -762,7 +769,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
               <button
                 onClick={() => setRanchField({ precip_auto: !ranch.precip_auto })}
                 className={cn(
-                  'rounded border px-1.5 py-0.5 text-[10px] font-semibold',
+                  'rounded border px-1.5 py-0.5 text-xs font-semibold',
                   ranch.precip_auto
                     ? 'border-sky-200 bg-sky-50 text-sky-700'
                     : 'border-gray-200 text-gray-500 hover:bg-gray-50',
@@ -781,7 +788,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                 </span>
                 <span className="text-sm text-gray-400">mm</span>
               </div>
-              <p className="mt-0.5 text-[11px] text-gray-400">
+              <p className="mt-0.5 text-xs text-gray-400">
                 {precipError
                   ? 'rain data down — using manual'
                   : rain.projectedMm != null
@@ -805,7 +812,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
               {rain.toDateMm != null && (
                 <p
                   className={cn(
-                    'mt-0.5 text-[11px]',
+                    'mt-0.5 text-xs',
                     rain.pctOfNormal != null && rain.pctOfNormal < ranch.move_dry_pct
                       ? 'font-medium text-amber-700'
                       : 'text-gray-500',
@@ -830,7 +837,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
               {gauge && (
                 <p
                   className={cn(
-                    'mt-0.5 text-[11px]',
+                    'mt-0.5 text-xs',
                     gaugeOff != null && Math.abs(gaugeOff) >= GAUGE_GAP_FLAG
                       ? 'font-medium text-amber-700'
                       : 'text-gray-500',
@@ -854,7 +861,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                   classification of the ranch, so it is editable here rather
                   than measured — see the ZoneHelp note under the table. */}
               <p
-                className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-500"
+                className="mt-0.5 flex items-center gap-1 text-xs text-gray-500"
                 title={
                   rain.zoneSource === 'soil'
                     ? `The forage row is read at ${n0(rain.zoneMm)} mm, the ranch's annual precipitation zone. The manual reads that row off the soil climatic zone — 300 mm Brown, 400 mm Dark Brown — but the soil here remembers a drier climate than the ground produces in, so both ranches are classified on measured rainfall instead. This season is worth ${Math.round(rain.rainFactor * 100)}% of a normal one's grass${rain.rainWeighted ? ', weighted by the month the rain fell in' : ''} — not the same thing as its rain, because the first 100 mm grows nothing and a wet year runs into a nitrogen ceiling.`
@@ -866,7 +873,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                   value={rain.zoneMm}
                   disabled={!isManager}
                   onCommit={(v) => setRanchField({ forage_zone_mm: v > 0 ? v : null })}
-                  className="w-12 text-[11px]"
+                  className="w-12 text-xs"
                 />
                 <span>mm · season ×{rain.rainFactor.toFixed(2)}</span>
               </p>
@@ -874,7 +881,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                   set: the rating is a paddock against this ranch's median
                   paddock, so its median is 1.00 whatever the ranch grows. */}
               <p
-                className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-500"
+                className="mt-0.5 flex items-center gap-1 text-xs text-gray-500"
                 title={
                   `What a middling paddock here grows in an ordinary year. Each paddock is then read at this times its own measured cover against the ranch's median — Pasture K at 0.79 of the median is read at 0.79 of this, rather than rounded down to a word.` +
                   (baseFromOrbit
@@ -894,7 +901,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                   value={Math.round(setBaseLbAc)}
                   disabled={!isManager}
                   onCommit={(v) => setRanchField({ forage_base_lb_ac: v > 0 ? v : null, forage_base_source: 'manual' })}
-                  className="w-14 text-[11px]"
+                  className="w-14 text-xs"
                 />
                 <span>
                   lb/ac
@@ -919,11 +926,11 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                 />
                 <span className="text-sm text-gray-400">mm</span>
               </div>
-              <p className="mt-0.5 text-[11px] text-gray-400">manual · sets the forage-yield band</p>
+              <p className="mt-0.5 text-xs text-gray-400">manual · sets the forage-yield band</p>
             </>
           )}
           {isManager && (
-            <button onClick={() => setCfg((c) => !c)} className="mt-1 text-[10px] font-medium text-brand-700 hover:underline">
+            <button onClick={() => setCfg((c) => !c)} className="mt-1 text-xs font-medium text-brand-700 hover:underline">
               {cfg ? 'hide' : 'location & season'}
             </button>
           )}
@@ -948,14 +955,14 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
               the box above it is worse than one that explains itself. */}
           {droughtCut ? (
             <p
-              className="mt-0.5 text-[11px] font-medium text-amber-700"
+              className="mt-0.5 text-xs font-medium text-amber-700"
               title={`This season is worth ${Math.round(rain.rainFactor * 100)}% of a normal one's grass. Grazing drought-stressed plants to the usual mark costs next year's growth as well as this year's, so the rate slides toward two thirds of what you set.`}
             >
               Dry year — grazing at {Math.round(utilization * 100)}% of {Math.round(setRate * 100)}%
             </p>
           ) : (
             <p
-              className="mt-0.5 text-[11px] text-gray-400"
+              className="mt-0.5 text-xs text-gray-400"
               title={
                 rain.rainFactor > 1.02
                   ? `This season is worth ${Math.round(rain.rainFactor * 100)}% of a normal one's grass, and the extra is already in the forage figures. The rate stays where you set it: a good year grows more grass to take half of, and taking a bigger share of it is a decision for a person, not something the arithmetic should do on its own.`
@@ -973,7 +980,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
           <p className="mt-1 text-lg font-bold tabular-nums text-gray-900">
             {n0(totals.auds)} <span className="text-sm font-normal text-gray-400">AUDs (animal-unit days)</span>
           </p>
-          <p className="mt-0.5 text-[11px] text-gray-400">
+          <p className="mt-0.5 text-xs text-gray-400">
             {n0(totals.aums)} animal-unit months (AUMs) · {n0(totals.grazeable)} grazeable ac
             {totals.fieldAuds > 0 && ` · ${n0(totals.fieldAuds)} AUDs off the crop fields`}
           </p>
@@ -998,7 +1005,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
             * "what happened this year".
             */}
           {rain.forecastSource === 'normal' && normalAuds > 0 && (
-            <p className="mt-1 flex flex-wrap items-baseline gap-x-1.5 text-[11px]">
+            <p className="mt-1 flex flex-wrap items-baseline gap-x-1.5 text-xs">
               <span className="text-gray-500" title={`The same paddocks in an ordinary year: the ${n0(rain.zoneMm)} mm zone, with no scaling for this season and no measured growth. This figure does not move with the weather.`}>
                 {n0(normalAuds)} AUDs in a normal year
               </span>
@@ -1011,7 +1018,9 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                   title={`This season is worth ${Math.round(rain.rainFactor * 100)}% of a normal one's grass${measuredCount > 0 ? `, and ${measuredCount} paddock${measuredCount === 1 ? ' is' : 's are'} measured from orbit instead` : ''}. Both figures are at the ${Math.round(setRate * 100)}% rate you set, so this is the weather on its own. The zone it is read against has not changed.`}
                 >
                   {rainAuds >= normalAuds ? '+' : ''}{n0(rainAuds - normalAuds)} AUDs from this year’s rain
-                  {' '}({Math.round(rain.rainFactor * 100)}%)
+                  {/* The grass factor, not the rain's % of normal beside it: the
+                      first 100 mm grows nothing, so the two differ. */}
+                  {' '}(grass {Math.round(rain.rainFactor * 100)}% of normal)
                 </span>
               )}
               {/* The rate cut is its own line. Folded into the one above it,
@@ -1051,7 +1060,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
             * sustainable rate in a 131% season and still left grass.
             */}
           {essr && (
-            <p className="mt-1 flex flex-wrap items-baseline gap-x-1.5 border-t border-gray-100 pt-1 text-[11px]">
+            <p className="mt-1 flex flex-wrap items-baseline gap-x-1.5 border-t border-gray-100 pt-1 text-xs">
               <span className="text-gray-500">{n0(essr.auds)} AUDs the ground sustains</span>
               <span
                 className={cn(
@@ -1071,14 +1080,19 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
             </p>
           )}
         </div>
-        <div className={cn('rounded-lg border p-3', surplus >= 0 ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50')}>
+        {/* The answer the strip exists for, so it reads first: on a phone at
+            the top, on a wide screen top-left (design review, Nov 2026). Last
+            in the source because it is worked out from the three before it. */}
+        <div className={cn('order-first rounded-lg border p-3', surplus >= 0 ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50')}>
           <p className="text-xs text-gray-600">{surplus >= 0 ? 'Surplus' : 'Deficit'} vs herd</p>
           <p className={cn('mt-1 text-lg font-bold tabular-nums', surplus >= 0 ? 'text-green-800' : 'text-red-800')}>
             {surplus >= 0 ? '+' : ''}{n0(surplus)} <span className="text-sm font-normal opacity-70">AUDs</span>
           </p>
-          <p className="mt-0.5 text-[11px] text-gray-500">
+          <p className="mt-0.5 text-xs text-gray-500">
             Herd needs {n0(audsRequired)} AUDs
-            {cowsOver != null && cowsOver !== 0 && ` · about ${n0(Math.abs(cowsOver))} cows ${cowsOver > 0 ? 'over' : 'of room'}`}
+            {othersOverGrass
+              ? ' · the bulls, heifers and other classes alone need more than the grass'
+              : cowsOver != null && cowsOver !== 0 && ` · about ${n0(Math.abs(cowsOver))} cows ${cowsOver > 0 ? 'over' : 'of room'}`}
           </p>
         </div>
       </div>
@@ -1128,7 +1142,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
               scales the forage · the {n0(rain.zoneMm)} mm zone sets the baseline
             </span>
           </div>
-          <Suspense fallback={<p className="py-16 text-center text-sm text-gray-400">Loading chart…</p>}>
+          <Suspense fallback={<ChartSkeleton />}>
             <RainGraph
               series={measured.series}
               normal={measured.normal?.cumulative}
@@ -1154,6 +1168,20 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
             )}
           </div>
         </div>
+        {/* A herd on a paddock these sums count as nothing: either the
+            paddock's acres are wrong here or the cattle are short of feed. */}
+        {noFeedButOccupied.length > 0 && (
+          <ul className="mb-2 space-y-0.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {noFeedButOccupied.map((o) => (
+              <li key={o.id} className="flex items-start gap-1.5">
+                <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0 text-amber-600" />
+                <span>
+                  {o.head != null ? `${n0(o.head)} head are` : 'Cattle are'} on <b>{o.name}</b> since {shortDay(o.since)}, but it counts 0 AUDs here. Check its grazeable acres.
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
           {/* Phones: one card per pasture. Tap it for the feed breakdown, the
               pencil to change it. */}
@@ -1174,7 +1202,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                   <>
                     {/* The figure the list is read for, where the eye lands. */}
                     <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-gray-900">
-                      {n0(p.auds)} <span className="text-[11px] font-normal text-gray-400">AUDs</span>
+                      {n0(p.auds)} <span className="text-xs font-normal text-gray-400">AUDs</span>
                     </span>
                     {isManager && <EditButton onClick={() => setEditing(p)} />}
                   </>
@@ -1240,33 +1268,30 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
             <thead className={TABLE_HEAD}>
               <tr>
                 <th className="px-2 py-2 font-medium">Pasture</th>
-                <th className="px-2 py-2 text-right font-medium" title="The whole pasture inside the fence">Acres</th>
+                <th className="px-2 py-2 text-right font-medium">Acres<HeadTip title="Acres">The whole pasture inside the fence</HeadTip></th>
                 {detail && (
                   <>
-                    <th className="px-2 py-2 text-right font-medium" title="Non-grazeable acres (island, riverbed, yard…)">Non-graz</th>
-                    <th className="px-2 py-2 text-right font-medium" title="Crop field acres inside the pasture: from the field boundaries, typed by hand only where no field is mapped">Field ac</th>
-                    <th className="px-2 py-2 text-right font-medium" title="Field acres that give grazing for the season (stubble after harvest, forage)">Graz field</th>
-                    <th className="px-2 py-2 text-right font-medium" title="Acres − non-grazeable − crop fields">Native</th>
+                    <th className="px-2 py-2 text-right font-medium">Non-graz<HeadTip title="Non-graz">Non-grazeable acres (island, riverbed, yard…)</HeadTip></th>
+                    <th className="px-2 py-2 text-right font-medium">Field ac<HeadTip title="Field ac">Crop field acres inside the pasture: from the field boundaries, typed by hand only where no field is mapped</HeadTip></th>
+                    <th className="px-2 py-2 text-right font-medium">Graz field<HeadTip title="Graz field">Field acres that give grazing for the season (stubble after harvest, forage)</HeadTip></th>
+                    <th className="px-2 py-2 text-right font-medium">Native<HeadTip title="Native">Acres − non-grazeable − crop fields</HeadTip></th>
                   </>
                 )}
-                <th className="px-2 py-2 text-right font-medium" title="Native grass + field acres that give grazing">Grazeable</th>
+                <th className="px-2 py-2 text-right font-medium">Grazeable<HeadTip title="Grazeable">Native grass + field acres that give grazing</HeadTip></th>
                 <th
                   className="px-2 py-2 font-medium"
-                  title="Canopy cover against this ranch's median paddock, measured from orbit. 1.00 is the middling paddock here; a paddock nobody has measured shows the old word instead."
                 >
-                  Cover
+                  Cover<HeadTip title="Cover">Canopy cover against this ranch&apos;s median paddock, measured from orbit. 1.00 is the middling paddock here; a paddock nobody has measured shows the old word instead.</HeadTip>
                 </th>
                 <th
                   className="px-2 py-2 text-right font-medium"
-                  title="Estimated feed this pasture grows this season, per grazeable acre, after the utilization rate is taken off"
                 >
-                  Feed lb/ac
+                  Feed lb/ac<HeadTip title="Feed lb/ac">Estimated feed this pasture grows this season, per grazeable acre, after the utilization rate is taken off</HeadTip>
                 </th>
                 <th
                   className="px-2 py-2 text-right font-medium"
-                  title="Feed per acre across the pasture's grazeable acres — what the whole paddock is estimated to grow"
                 >
-                  Total feed lb
+                  Total feed lb<HeadTip title="Total feed lb">Feed per acre across the pasture&apos;s grazeable acres — what the whole paddock is estimated to grow</HeadTip>
                 </th>
                 {detail && (
                   <>
@@ -1276,7 +1301,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                     >
                       AUMs
                     </th>
-                    <th className="px-2 py-2 text-right font-medium" title="Of the pasture's AUDs, the ones off the crop fields inside the fence — the rest is native grass">Field AUDs</th>
+                    <th className="px-2 py-2 text-right font-medium">Field AUDs<HeadTip title="Field AUDs">Of the pasture&apos;s AUDs, the ones off the crop fields inside the fence — the rest is native grass</HeadTip></th>
                   </>
                 )}
                 <th className="px-2 py-2 text-right font-medium">
@@ -1542,7 +1567,7 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                 heading={h.class_name}
                 actions={
                   <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-gray-900">
-                    {n0(h.audsRequired)} <span className="text-[11px] font-normal text-gray-400">AUDs</span>
+                    {n0(h.audsRequired)} <span className="text-xs font-normal text-gray-400">AUDs</span>
                   </span>
                 }
                 /*
@@ -1558,7 +1583,13 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                       <NumCell value={h.avg_weight_lb} step="50" disabled={!isManager} onCommit={(v) => patchH(h.id, { avg_weight_lb: v })} className="w-16" />
                       <span className="text-gray-400">lb</span>
                       <Dot />
-                      <NumCell value={h.au_equivalent} step="0.05" disabled={!isManager} onCommit={(v) => patchH(h.id, { au_equivalent: v })} className="w-14" />
+                      <NumCell
+                        value={Math.round(h.auPerHead * 100) / 100}
+                        step="0.05"
+                        disabled={!isManager}
+                        onCommit={(v) => patchH(h.id, { au_equivalent: v, au_override: Math.abs(v - auFromWeight(Number(h.avg_weight_lb))) > 0.005 })}
+                        className={cn('w-14', h.au_override && 'text-amber-700')}
+                      />
                       {/* Total AU is head x AU/head and is in the table; on a
                           375 px line it only pushed itself onto a row of its
                           own behind a stranded dot. */}
@@ -1582,7 +1613,18 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
                 facts={[
                   { label: 'Head', node: n0(h.head_count) },
                   { label: 'Avg weight lb', node: <NumCell value={h.avg_weight_lb} step="50" disabled={!isManager} onCommit={(v) => patchH(h.id, { avg_weight_lb: v })} /> },
-                  { label: 'AU/head', node: <NumCell value={h.au_equivalent} step="0.05" disabled={!isManager} onCommit={(v) => patchH(h.id, { au_equivalent: v })} /> },
+                  {
+                    label: 'AU/head',
+                    node: (
+                      <NumCell
+                        value={Math.round(h.auPerHead * 100) / 100}
+                        step="0.05"
+                        disabled={!isManager}
+                        onCommit={(v) => patchH(h.id, { au_equivalent: v, au_override: Math.abs(v - auFromWeight(Number(h.avg_weight_lb))) > 0.005 })}
+                        className={h.au_override ? 'text-amber-700' : undefined}
+                      />
+                    ),
+                  },
                   { label: 'Total AU', node: n1(h.totalAU) },
                   {
                     label: 'Start',
@@ -1613,8 +1655,8 @@ export function GrazingCalculator({ isManager, ranch }: { isManager: boolean; ra
               <tr>
                 <th className="px-2 py-2 font-medium">Class</th>
                 <th className="px-2 py-2 text-right font-medium">Avg weight lb</th>
-                <th className="px-2 py-2 text-right font-medium" title="Animal units per head">AU/head</th>
-                <th className="px-2 py-2 text-right font-medium" title="From the Herd tab"># Head</th>
+                <th className="px-2 py-2 text-right font-medium">AU/head<HeadTip title="AU/head">Animal units per head</HeadTip></th>
+                <th className="px-2 py-2 text-right font-medium"># Head<HeadTip title="# Head">From the Herd tab</HeadTip></th>
                 <th className="px-2 py-2 text-right font-medium">Total AU</th>
                 <th className="px-2 py-2 font-medium">Start</th>
                 <th className="px-2 py-2 font-medium">End</th>

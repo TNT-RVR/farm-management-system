@@ -78,7 +78,9 @@ export function ManureCreditCard() {
     [planned, inputs],
   )
   const saving = rows.reduce((s, x) => s + x.dollars, 0)
-  useReportSaving(9, saving)
+  // Still loading is not "no credit": the empty answer waits for the data.
+  const loading = inputs.loading || !inputs.manureLoaded
+  useReportSaving(9, loading ? null : saving)
   return (
     <ToolCard
       n={9}
@@ -93,10 +95,12 @@ export function ManureCreditCard() {
       sources={[S.manure, S.soil, S.requirements]}
       title="Manure credits in the prescription"
       why="Manure spread on a field, credited against its recommendation — and flagged where the recommendation was written before the spread was recorded."
-      saving={saving}
-      note={!rows.length ? `no manure credit for ${inputs.cropYear}` : saving <= 0 ? 'credits already counted' : null}
+      saving={loading ? null : saving}
+      note={loading ? 'loading…' : !rows.length ? `no manure credit for ${inputs.cropYear}` : saving <= 0 ? 'credits already counted' : null}
     >
-      {!rows.length ? (
+      {loading ? (
+        <Empty>Loading the spreads…</Empty>
+      ) : !rows.length ? (
         <Empty>No manure recorded that credits a {inputs.cropYear} crop.</Empty>
       ) : (
         <Table head={['Field', 'Credit N · P₂O₅ · K₂O lb/ac', 'Recommended', 'Counted?', 'Worth', '']}>
@@ -184,11 +188,11 @@ export function PriorCropCard() {
               <td className={td}>{x.prior ?? 'not recorded'}</td>
               <td className={tdNum}>
                 {x.legume ? `${x.legume.lbN} lb` : '—'}
-                {x.legume?.label && <span className="block text-[10px] text-gray-400">{x.legume.label}</span>}
+                {x.legume?.label && <span className="block text-xs text-gray-400">{x.legume.label}</span>}
               </td>
               <td className={tdNum}>
                 {x.residual != null ? `${n0(x.residual)} lb` : '—'}
-                {x.residual != null && <span className="block text-[10px] text-gray-400">{x.nitrateCounted ? 'counted' : 'not mentioned'}</span>}
+                {x.residual != null && <span className="block text-xs text-gray-400">{x.nitrateCounted ? 'counted' : 'not mentioned'}</span>}
               </td>
               <td className={tdNum}>{n0(x.recN)}</td>
               <td className={td}>
@@ -280,14 +284,14 @@ export function EconomicNCard() {
               <td className={td}>{x.crop ?? '—'}</td>
               <td className={tdNum}>{n0(x.recN)}</td>
               <td className={tdNum}>
-                {x.yieldGoal ? n0(x.yieldGoal) : '—'} <span className="text-[10px] text-gray-400">{x.unit}</span>
+                {x.yieldGoal ? n0(x.yieldGoal) : '—'} <span className="text-xs text-gray-400">{x.unit}</span>
               </td>
               <td className={tdNum}>{x.price != null ? money(x.price, 2) : '—'}</td>
               <td className={tdNum}>{x.res ? x.res.ratio.toFixed(2) : '—'}</td>
               <td className={tdNum}>
-                {x.res ? `${n0(x.res.rate)} lb` : x.f == null ? <span className="text-[10px] text-gray-400">no response data for this crop</span> : '—'}
+                {x.res ? `${n0(x.res.rate)} lb` : x.f == null ? <span className="text-xs text-gray-400">no response data for this crop</span> : '—'}
                 {x.ab && (
-                  <span className="block text-[10px] text-gray-400" title={x.ab.source}>
+                  <span className="block text-xs text-gray-400" title={x.ab.source}>
                     Alberta curve · {n0(x.ab.fertN2to1)} at 2:1 · cap {n0(x.ab.cap)} total
                   </span>
                 )}
@@ -390,8 +394,8 @@ export function RemovalCard() {
     .map((x) => {
       const p = suggestedRate(x.pRating as 'low' | 'marginal' | 'ok' | 'high' | null, x.recP, x.removal?.p2o5 ?? null, { nutrient: 'p', olsenPpm: x.soil?.oP, texture: x.texture })
       const k = suggestedRate(x.kRating as 'low' | 'marginal' | 'ok' | 'high' | null, x.recK, x.removal?.k2o ?? null, { nutrient: 'k' })
-      const maintainP = p.rule === 'maintain' ? x.recP - p.rate : 0
-      const maintainK = k.rule === 'maintain' ? x.recK - k.rate : 0
+      const maintainP = p.rule === 'maintain' ? Math.max(0, x.recP - p.rate) : 0
+      const maintainK = k.rule === 'maintain' ? Math.max(0, x.recK - k.rate) : 0
       return { ...x, p, k, dollars: (maintainP * (inputs.perLb.p2o5 ?? 0) + maintainK * (inputs.perLb.k2o ?? 0)) * (x.r.acres ?? 0) }
     })
     .filter((x) => x.recP > 0 || x.recK > 0)
@@ -425,7 +429,7 @@ export function RemovalCard() {
               <td className={td}>
                 {x.last?.crop ?? '—'}
                 {x.last?.yield_per_acre != null && (
-                  <span className="block text-[10px] text-gray-400">
+                  <span className="block text-xs text-gray-400">
                     {n0(x.last.yield_per_acre)} {x.last.yield_unit}
                     <KgAside value={x.last.yield_per_acre} unit={x.last.yield_unit} per="" />
                   </span>
@@ -472,7 +476,7 @@ export function useSoilFindings() {
       const p = suggestedRate(x.pRating as 'low' | 'marginal' | 'ok' | 'high' | null, x.recP, x.removal?.p2o5 ?? null, { nutrient: 'p', olsenPpm: x.soil?.oP, texture: x.texture })
       const k = suggestedRate(x.kRating as 'low' | 'marginal' | 'ok' | 'high' | null, x.recK, x.removal?.k2o ?? null, { nutrient: 'k' })
       const maintain =
-        ((p.rule === 'maintain' ? x.recP - p.rate : 0) * (inputs.perLb.p2o5 ?? 0) + (k.rule === 'maintain' ? x.recK - k.rate : 0) * (inputs.perLb.k2o ?? 0)) * (x.r.acres ?? 0)
+        ((p.rule === 'maintain' ? Math.max(0, x.recP - p.rate) : 0) * (inputs.perLb.p2o5 ?? 0) + (k.rule === 'maintain' ? Math.max(0, x.recK - k.rate) : 0) * (inputs.perLb.k2o ?? 0)) * (x.r.acres ?? 0)
       out.set(x.r.fieldId, { name: x.r.fieldName, acres: x.r.acres, testYear: x.soil.reportYear, skip, maintain: Math.max(0, maintain) })
     }
     return out
@@ -559,7 +563,7 @@ export function SplitCard() {
               <td className={tdNum}>{n0(x.sp.inSeasonLbAc)} lb/ac</td>
               <td className={tdNum}>
                 {n0(x.sp.uanLitresPerAc)} L/ac
-                <span className="block text-[10px] text-gray-400">{n0(x.sp.uanLitresTotal)} L</span>
+                <span className="block text-xs text-gray-400">{n0(x.sp.uanLitresTotal)} L</span>
               </td>
               <td className={td}>
                 <Select
@@ -616,7 +620,7 @@ export function TissueGateCard() {
               <td className={td}><FieldLink id={x.r.fieldId} name={x.r.fieldName} to="sampling" /></td>
               <td className={tdNum}>
                 {x.test?.n_pct != null ? `${Number(x.test.n_pct).toFixed(2)}%` : '—'}
-                {x.test && <span className="block text-[10px] text-gray-400">{x.test.sampled_on}</span>}
+                {x.test && <span className="block text-xs text-gray-400">{x.test.sampled_on}</span>}
               </td>
               <td className={tdNum}>{x.band ? `${x.band[0]}–${x.band[1]}%` : '—'}</td>
               <td className={td}>
@@ -700,7 +704,7 @@ export function EnhancedCard() {
               <td className={td}>
                 <span
                   className={cn(
-                    'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase',
+                    'rounded px-1.5 py-0.5 text-xs font-semibold uppercase',
                     x.risk.risk === 'high' ? 'bg-amber-100 text-amber-800' : x.risk.risk === 'moderate' ? 'bg-gray-100 text-gray-700' : 'bg-green-100 text-green-800',
                   )}
                   title={x.risk.reasons.join('; ')}

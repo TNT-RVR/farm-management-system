@@ -169,7 +169,7 @@ export function InputsTab({ realm }: { realm: string }) {
                       <Link to={`/fields/${f.fieldId}`} className="text-gray-900 hover:text-brand-700 hover:underline">
                         {f.field}
                       </Link>
-                      <span className="block text-[11px] text-gray-500">
+                      <span className="block text-xs text-gray-500">
                         {f.crop ?? '—'} · {Math.round(f.acres).toLocaleString('en-CA')} ac
                       </span>
                     </td>

@@ -9,10 +9,13 @@ import { ConfirmDialog, Modal } from '@/components/Modal'
 import { DetailList, rowClick } from '@/components/RecordEditor'
 import { HelpNote } from '@/components/HelpNote'
 import { supabase } from '@/lib/supabase'
+import { dbErrorMessage } from '@/lib/db-error'
 import {
   PURPOSE_LABEL,
   UNIT_LABEL,
+  describeDays,
   describeQuantity,
+  feedRecordProblem,
   poundsFor,
   summarise,
   type FeedLine,
@@ -405,7 +408,7 @@ export function FeedRecordsTab({
                       {r.herd_group} · {describePeriod(r.period_start, r.period_end)}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {ranchName(r.ranch_id)} · {r.head_count ?? '-'} head · {s.days} days
+                      {ranchName(r.ranch_id)} · {r.head_count ?? '-'} head · {describeDays(s.days)}
                     </p>
                   </div>
                   {canEdit && (
@@ -517,7 +520,7 @@ export function FeedRecordsTab({
           )} - and its ${confirmDelete.feed_record_lines.length} line(s). This cannot be undone from here.`}
           confirmLabel="Delete"
           busy={remove.isPending}
-          error={remove.error ? (remove.error as Error).message : null}
+          error={remove.error ? dbErrorMessage(remove.error, 'That could not be deleted.') : null}
           onConfirm={() => {
             remove.mutate(confirmDelete.id)
             setConfirmDelete(null)
@@ -540,31 +543,36 @@ type LineInsert = {
 }
 
 /**
- * Correct a saved record: the header in place, then the new lines in before
- * the old ones out, so a failure part-way leaves the old lines rather than
- * none. save_feed_record only inserts, hence three calls rather than one.
+ * Correct a saved record. Until 18 Nov 2026 this was three calls from here
+ * (header, then delete the old lines, then insert the new), so a refusal
+ * part-way left the record half-changed. The caller still runs
+ * feedRecordProblem first, so a refusal should not happen at all.
  */
 async function updateFeedRecord(
   existing: RecordRow,
   header: Pick<RecordRow, 'ranch_id' | 'herd_group' | 'herd_count_id' | 'period_start' | 'period_end' | 'head_count' | 'notes'>,
   lines: LineInsert[],
 ) {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  // updated_at is a real column the generated types leave out of Update.
-  const { error: e1 } = await (supabase as unknown as SupabaseClient)
-    .from('feed_records')
-    .update({ ...header, updated_at: new Date().toISOString(), updated_by: user?.id ?? null })
-    .eq('id', existing.id)
-  if (e1) throw e1
-  const { error: e2 } = await supabase.from('feed_record_lines').insert(lines.map((l) => ({ ...l, record_id: existing.id })))
-  if (e2) throw e2
-  const old = existing.feed_record_lines.map((l) => l.id)
-  if (old.length) {
-    const { error: e3 } = await supabase.from('feed_record_lines').delete().in('id', old)
-    if (e3) throw e3
-  }
+  // One transaction (update_feed_record, 20261118233000): the header, the old
+  // lines out and the new lines in, all or none.
+  const { error } = await (supabase as unknown as SupabaseClient).rpc('update_feed_record', {
+    p_id: existing.id,
+    p_record: {
+      ranch_id: header.ranch_id,
+      herd_group: header.herd_group,
+      herd_count_id: header.herd_count_id ?? '',
+      period_start: header.period_start,
+      period_end: header.period_end,
+      head_count: header.head_count == null ? '' : String(header.head_count),
+      notes: header.notes ?? '',
+    },
+    p_lines: lines.map((l) => ({
+      ...l,
+      feed_type_id: l.feed_type_id ?? '',
+      lb_per_bale: l.lb_per_bale == null ? '' : String(l.lb_per_bale),
+    })),
+  })
+  if (error) throw error
 }
 
 /** One record, opened from its card: every line with its bale weight, and Edit / Delete. */
@@ -599,7 +607,7 @@ function FeedRecordDetail({
         rows={[
           ['Ranch', ranchName],
           ['Group', r.herd_group],
-          ['Days', r.period_start === r.period_end ? r.period_start : `${r.period_start} to ${r.period_end} (${s.days} days)`],
+          ['Days', r.period_start === r.period_end ? r.period_start : `${r.period_start} to ${r.period_end} (${describeDays(s.days)})`],
           ['Head fed', r.head_count != null ? String(r.head_count) : null],
           ['Per head a day', s.lbPerHeadPerDay != null ? `${s.lbPerHeadPerDay.toFixed(1)} lb` : null],
           ['Fed', `${lbs(s.feedLb)} lb`],
@@ -619,7 +627,9 @@ function FeedRecordDetail({
                 key={l.id}
                 heading={l.feed_type_name}
                 facts={[
-                  { label: 'Amount', node: describeQuantity({ quantity: Number(l.quantity), unit: l.unit }) },
+                  // A pounds line is its own weight; saying it twice read as
+                  // "210,000 / 210,000 lb". Amount is for bale counts only.
+                  { label: 'Amount', node: l.unit === 'lb' ? null : describeQuantity({ quantity: Number(l.quantity), unit: l.unit }) },
                   { label: 'lb / bale', node: l.unit === 'lb' ? null : (perBale ?? '—') },
                   { label: 'Pounds', node: lb == null ? '—' : lbs(lb) },
                   { label: 'Use', node: PURPOSE_LABEL[l.purpose] },
@@ -648,7 +658,7 @@ function FeedRecordDetail({
                 return (
                   <tr key={l.id}>
                     <td className="px-3 py-1">{l.feed_type_name}</td>
-                    <td className="px-3 py-1 text-right tabular-nums">{describeQuantity({ quantity: Number(l.quantity), unit: l.unit })}</td>
+                    <td className="px-3 py-1 text-right tabular-nums">{l.unit === 'lb' ? '' : describeQuantity({ quantity: Number(l.quantity), unit: l.unit })}</td>
                     <td className="px-3 py-1 text-right tabular-nums text-gray-500">{l.unit === 'lb' ? '' : (l.lb_per_bale ?? lbPerBaleFor(l.feed_type_id) ?? '—')}</td>
                     <td className="px-3 py-1 text-right tabular-nums">{lb == null ? '—' : lbs(lb)}</td>
                     <td className="px-3 py-1 text-gray-500">{PURPOSE_LABEL[l.purpose]}</td>
@@ -779,6 +789,12 @@ function FeedRecordForm({
   // The running total, shown while typing, because a transposed digit in a
   // six-figure silage number is invisible until it lands next to an average
   // somebody recognises as wrong.
+  // A negative amount or head is refused here, before the preview turns it
+  // into "-650,000 lb fed" and before Save sends it.
+  const problem = useMemo(
+    () => feedRecordProblem({ periodStart: start, periodEnd: end, headCount: head, lines }),
+    [start, end, head, lines],
+  )
   const preview = useMemo(() => {
     const parsed: FeedLine[] = lines
       .filter((l) => l.feedTypeId && l.quantity.trim() !== '')
@@ -790,9 +806,9 @@ function FeedRecordForm({
         purpose: l.purpose,
       }))
       .filter((l) => Number.isFinite(l.quantity))
-    if (!start || !end) return null
+    if (!start || !end || problem) return null
     return summarise({ periodStart: start, periodEnd: end, headCount: Number(head) || null }, parsed)
-  }, [lines, start, end, head, typeById])
+  }, [lines, start, end, head, typeById, problem])
 
   // Enough, too much, and will it last.
   const check = useMemo(() => {
@@ -852,11 +868,12 @@ function FeedRecordForm({
       if (!ranch) throw new Error('Pick a ranch.')
       if (!group.trim()) throw new Error('Say which group was fed.')
       if (!start || !end) throw new Error('Give the first and last day of the period.')
-      if (end < start) throw new Error('The period ends before it starts.')
       if (!usable.length) throw new Error('Add at least one feed line.')
+      // Everything checked before anything is written: an edit writes in steps.
+      const problem = feedRecordProblem({ periodStart: start, periodEnd: end, headCount: head, lines: usable })
+      if (problem) throw new Error(problem)
 
       if (existing) {
-        if (usable.some((l) => !Number.isFinite(Number(l.quantity)) || Number(l.quantity) < 0)) throw new Error('An amount is not a number.')
         await updateFeedRecord(
           existing,
           {
@@ -918,7 +935,7 @@ function FeedRecordForm({
       void qc.invalidateQueries({ queryKey: ['feed_on_hand'] })
       onDone()
     },
-    onError: (e) => setError((e as Error).message),
+    onError: (e) => setError(dbErrorMessage(e)),
   })
 
   const setLine = (key: string, patch: Partial<DraftLine>) =>
@@ -1089,7 +1106,7 @@ function FeedRecordForm({
                 <Trash2 className="mx-auto h-4 w-4" />
               </button>
               {t && l.unit !== 'lb' && l.lbPerBale.trim() === '' && (
-                <p className="col-span-2 text-[11px] text-amber-700 sm:col-span-12">
+                <p className="col-span-2 text-xs text-amber-700 sm:col-span-12">
                   No bale weight for {t.name}, so this line cannot be counted in the total.
                 </p>
               )}
@@ -1111,9 +1128,10 @@ function FeedRecordForm({
         className="mt-2 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
       />
 
+      {problem && <p className="mt-2 text-xs text-amber-700">{problem}</p>}
       {preview && (
         <p className="mt-2 text-xs text-gray-600">
-          {lbs(preview.feedLb)} lb fed over {preview.days} days
+          {lbs(preview.feedLb)} lb fed over {describeDays(preview.days)}
           {preview.beddingLb > 0 && ` · ${lbs(preview.beddingLb)} lb bedding`}
           {preview.lbPerHeadPerDay != null && (
             <span className="ml-1 font-semibold text-gray-900">
@@ -1138,7 +1156,7 @@ function FeedRecordForm({
         </div>
       )}
       {!check && !groupId && groupOptions.length > 0 && (
-        <p className="mt-2 text-[11px] text-gray-500">Pick the group to check this against what it needs today.</p>
+        <p className="mt-2 text-xs text-gray-500">Pick the group to check this against what it needs today.</p>
       )}
 
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
@@ -1149,7 +1167,7 @@ function FeedRecordForm({
             setError(null)
             save.mutate()
           }}
-          disabled={save.isPending}
+          disabled={save.isPending || !!problem}
           className="rounded-md bg-brand-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-800 disabled:opacity-50"
         >
           {save.isPending ? 'Saving...' : existing ? 'Save changes' : 'Save record'}
@@ -1228,10 +1246,10 @@ function LastWeekCheck({ ranchId, records }: { ranchId: string; records: RecordR
       if (!c) continue
       const warnings = c.warnings.map((w) =>
         w.code === 'W3' || (w.code === 'W2' && days >= 7)
-          ? { ...w, level: 'red' as const, text: `Last ${days} days: ${w.text.replace("today's need", 'the need')}` }
+          ? { ...w, level: 'red' as const, text: `Last ${describeDays(days)}:${w.text.replace("today's need", 'the need')}` }
           : w.code === 'W4' && days >= 7
-            ? { ...w, text: `Last ${days} days: ${w.text.replace("today's need", 'the need')}` }
-            : { ...w, text: `Last ${days} days: ${w.text.replace("today's need", 'the need')}` },
+            ? { ...w, text: `Last ${describeDays(days)}:${w.text.replace("today's need", 'the need')}` }
+            : { ...w, text: `Last ${describeDays(days)}:${w.text.replace("today's need", 'the need')}` },
       )
       out.push({ name: g.class_name, days, warnings, ratio: c.ratio })
     }

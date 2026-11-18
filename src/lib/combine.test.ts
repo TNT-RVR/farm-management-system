@@ -5,12 +5,30 @@ import {
   SETTINGS,
   SYMPTOMS,
   judgeLoss,
+  lossCheckProblem,
   lossFromPan,
   lossValue,
   recomputeLossCheck,
   seedsPerBushel,
   type CombineCropKey,
 } from './combine'
+
+describe('lossCheckProblem', () => {
+  const ok = { grams: '10', pan: '2.74', header: '36', discharge: '30' }
+  it('passes a sensible check, and a form still being filled in', () => {
+    expect(lossCheckProblem(ok)).toBeNull()
+    expect(lossCheckProblem({ grams: '', pan: '', header: '', discharge: '' })).toBeNull()
+    expect(lossCheckProblem({ ...ok, grams: '0' })).toBeNull()
+  })
+  it('refuses a negative pan weight rather than reading it as no loss', () => {
+    expect(lossCheckProblem({ ...ok, grams: '-10' })).toBe("Pan weight can't be negative.")
+  })
+  it('refuses a pan, header or spread of nothing or less', () => {
+    expect(lossCheckProblem({ ...ok, pan: '0' })).toMatch(/Pan area/)
+    expect(lossCheckProblem({ ...ok, header: '-36' })).toMatch(/Header width/)
+    expect(lossCheckProblem({ ...ok, discharge: '0' })).toMatch(/Discharge spread/)
+  })
+})
 
 describe('seedsPerBushel', () => {
   it('matches the known figures for the crops we run', () => {

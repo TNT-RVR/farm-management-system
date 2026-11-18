@@ -192,7 +192,7 @@ export function FieldAllocation({ row, seasonEnd, setSeasonEnd, loading }: { row
         <span className="text-gray-600">
           {row.source} · {n1(row.acres)} ac
         </span>
-        <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold', VERDICT[row.verdict].cls)}>{VERDICT[row.verdict].label}</span>
+        <span className={cn('rounded px-1.5 py-0.5 text-xs font-semibold', VERDICT[row.verdict].cls)}>{VERDICT[row.verdict].label}</span>
         <label className="ml-auto flex items-center gap-1.5 text-gray-500">
           Season ends
           <input type="date" value={seasonEnd} onChange={(e) => setSeasonEnd(e.target.value)} className="rounded-md border border-gray-300 px-2 py-0.5 text-xs" />

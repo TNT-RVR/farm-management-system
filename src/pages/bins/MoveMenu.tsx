@@ -69,14 +69,14 @@ export function MoveMenu({
                 <Truck className="h-4 w-4 text-brand-700" />
                 <span>
                   Ship out
-                  <span className="block text-[11px] text-gray-500">All or some, to a plant or picked up at the yard</span>
+                  <span className="block text-xs text-gray-500">All or some, to a plant or picked up at the yard</span>
                 </span>
               </button>
               <button type="button" role="menuitem" onClick={pick(onMove)} className={item}>
                 <ArrowRightLeft className="h-4 w-4 text-brand-700" />
                 <span>
                   To another bin
-                  <span className="block text-[11px] text-gray-500">All or some of it</span>
+                  <span className="block text-xs text-gray-500">All or some of it</span>
                 </span>
               </button>
             </>
@@ -85,7 +85,7 @@ export function MoveMenu({
             <Plus className="h-4 w-4 text-brand-700" />
             <span>
               Add to this bin
-              <span className="block text-[11px] text-gray-500">Bought seed, fertilizer, grain left from an earlier year</span>
+              <span className="block text-xs text-gray-500">Bought seed, fertilizer, grain left from an earlier year</span>
             </span>
           </button>
         </span>

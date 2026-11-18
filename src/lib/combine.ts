@@ -746,6 +746,27 @@ export function seedsFromGrams(grams: number, gramsPer1000: number): number {
   return gramsPer1000 > 0 && grams > 0 ? (grams * 1000) / gramsPer1000 : 0
 }
 
+/**
+ * What is wrong with a loss check's typed figures, as the sentence to show, or
+ * null when they will do. A blank box is not wrong — the form is still being
+ * filled in. A negative pan weight used to read 0.00 bu/ac in the headline
+ * and a negative g/sq ft under it (batch 2 test, 17 Nov 2026); now both give
+ * way to this, and the check cannot be saved.
+ */
+export function lossCheckProblem(f: { grams: string; pan: string; header: string; discharge: string }): string | null {
+  const bad = (v: string, positive: boolean) => {
+    if (v.trim() === '') return false
+    const x = Number(v)
+    return !Number.isFinite(x) || (positive ? x <= 0 : x < 0)
+  }
+  if (f.grams.trim() !== '' && !Number.isFinite(Number(f.grams))) return 'Pan weight must be a number.'
+  if (bad(f.grams, false)) return "Pan weight can't be negative."
+  if (bad(f.pan, true)) return 'Pan area must be more than zero.'
+  if (bad(f.header, true)) return 'Header width must be more than zero.'
+  if (bad(f.discharge, true)) return 'Discharge spread must be more than zero.'
+  return null
+}
+
 export type LossInput = {
   /** Seeds counted in the pan. */
   seeds: number

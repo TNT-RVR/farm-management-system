@@ -189,7 +189,7 @@ export function PowerBills() {
                                 type="button"
                                 onClick={() => confirmPump.mutate(r.pumpId!)}
                                 disabled={confirmPump.isPending}
-                                className="rounded border border-amber-300 px-1.5 text-[11px] text-amber-900 hover:bg-amber-50 disabled:opacity-50"
+                                className="rounded border border-amber-300 px-1.5 text-xs text-amber-900 hover:bg-amber-50 disabled:opacity-50"
                               >
                                 Confirm
                               </button>
@@ -263,7 +263,7 @@ function BillRow({ b, onReread, onDelete }: { b: PowerBill; onReread: () => void
       <span className="min-w-0 flex-1">
         <span className="text-gray-900">{b.retailer ?? b.file_name ?? 'Bill'}</span>
         <span className="ml-2 text-xs text-gray-500">{period(b)}</span>
-        {b.source === 'quickbooks' && <span className="ml-1 rounded bg-emerald-50 px-1 text-[10px] text-emerald-800">QuickBooks</span>}
+        {b.source === 'quickbooks' && <span className="ml-1 rounded bg-emerald-50 px-1 text-xs text-emerald-800">QuickBooks</span>}
         {b.status === 'error' && <span className="block text-xs text-red-700">{b.error}</span>}
         {b.status === 'read' && b.error && <span className="block text-xs text-amber-800">{b.error}</span>}
         {b.notes && <span className="block text-xs text-gray-500">{b.notes}</span>}

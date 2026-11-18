@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Layers, Map as MapIcon } from 'lucide-react'
 import {
+  bandLabel,
   byField,
   WORTH_VARYING,
   fieldSpread,
@@ -52,7 +53,10 @@ export function YieldZones() {
     )
   }
 
-  const farmAcres = (zones ?? []).reduce((s, z) => s + (z.acres ?? 0), 0)
+  // Whole acres added up as they are printed — zones into a field, fields into
+  // the header — so each total is the sum of the rows under it.
+  const printedAcres = (f: (typeof fields)[number]) => f.zones.reduce((t, z) => t + Math.round(z.acres ?? 0), 0)
+  const farmAcres = fields.reduce((s, f) => s + printedAcres(f), 0)
 
   return (
     <div className="space-y-4">
@@ -62,7 +66,7 @@ export function YieldZones() {
             <h2 className="text-sm font-semibold text-gray-700">Productivity zones</h2>
             <p className="mt-0.5 text-xs text-gray-500">
               {fields.length} fields · {zones?.length} zones ·{' '}
-              {Math.round(farmAcres).toLocaleString('en-CA')} acres mapped
+              {farmAcres.toLocaleString('en-CA')} acres mapped
             </p>
           </div>
           <Link
@@ -73,11 +77,11 @@ export function YieldZones() {
           </Link>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-gray-500">% of the field&rsquo;s own average</span>
-          {bands.map((b) => (
-            <span key={b.colour} className="flex items-center gap-1 text-[11px] text-gray-600">
+          <span className="text-xs text-gray-500">% of the field&rsquo;s own average</span>
+          {bands.map((b, i) => (
+            <span key={b.colour} className="flex items-center gap-1 text-xs text-gray-600">
               <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: b.colour }} />
-              {b.from}–{b.to}
+              {bandLabel(bands, i)}
             </span>
           ))}
         </div>
@@ -116,7 +120,7 @@ export function YieldZones() {
                 >
                   <span className="font-medium text-gray-900">{f.name}</span>
                   <span className="text-xs text-gray-500">
-                    {f.zones.length} zones · {Math.round(acres)} ac
+                    {f.zones.length} zones · {printedAcres(f)} ac
                   </span>
                   {/* The bar is the field: each zone's share of the acres, in
                       its own colour. It says at a glance how much of the field

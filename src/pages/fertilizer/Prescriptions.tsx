@@ -3,7 +3,7 @@ import { FileText, Layers } from 'lucide-react'
 import { Select } from '@/components/Select'
 import { useCropYear } from '@/lib/crop-year'
 import { useFields } from '@/lib/queries'
-import { useSeasonOperations } from '@/lib/fieldOps'
+import { unitLabel, useSeasonOperations } from '@/lib/fieldOps'
 import {
   appliedFertiliser,
   appliedKind,
@@ -26,8 +26,9 @@ import { HelpNote } from '@/components/HelpNote'
 import { AdminOnly } from '@/components/TechnicalDetails'
 import { ImportHint } from '@/components/ImportHint'
 import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
-import { n0, n1 } from '@/lib/format'
+import { n0, n1, shortDay } from '@/lib/format'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 
 /**
  * Variable rate or blanket, said plainly.
@@ -72,7 +73,7 @@ function ZoneBar({ zones }: { zones: RxZoneRow[] }) {
         <div
           key={z.id}
           className={cn(
-            'flex items-center justify-center text-[10px] font-medium',
+            'flex items-center justify-center text-xs font-medium',
             shades[Math.min(i, shades.length - 1)],
             i > 2 ? 'text-white' : 'text-brand-900',
           )}
@@ -293,7 +294,8 @@ function AgainstActual({ rx, season }: { rx: Prescription; season: number }) {
               <td className="px-3 py-1.5">Difference</td>
               {NUTRIENTS.map((n) => {
                 const want = weightedRate(rx.zones, n.key)
-                const diff = want == null || !counted.length ? null : applied[n.key] - want
+                // From the two whole pounds printed above it, so 115 − 113 reads +2.
+                const diff = want == null || !counted.length ? null : (Math.round(applied[n.key]) - Math.round(want)) || 0
                 return (
                   <td
                     key={n.key}
@@ -329,10 +331,10 @@ function AgainstActual({ rx, season }: { rx: Prescription; season: number }) {
         <ul className="space-y-1 text-sm">
           {passes.map((p) => (
             <li key={p.key} className="flex flex-wrap items-baseline gap-x-2 text-gray-700">
-              <span className="tabular-nums text-gray-500">{p.date ?? '—'}</span>
+              <span className="tabular-nums text-gray-500">{shortDay(p.date)}</span>
               <span className="font-medium text-gray-900">{p.product}</span>
               <span className="tabular-nums">
-                {p.rate == null ? '—' : `${n1(p.rate)} ${p.unitId ?? ''}`}
+                {p.rate == null ? '—' : `${n1(p.rate)} ${unitLabel(p.unitId ?? undefined)}`.trim()}
               </span>
               {!p.nutrients && (
                 <span className="text-xs text-amber-700">
@@ -477,7 +479,60 @@ export function Prescriptions() {
       ) : (
         <>
           {view === 'all' && (
-          <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          {/* One prescription a card on a phone: the field, then what it
+              puts down (design review, Nov 2026). */}
+          <CardList>
+            {list.map((r) => (
+              <RowCard
+                key={r.id}
+                onClick={() => {
+                  setSelected(r.id)
+                  setView('one')
+                }}
+                heading={
+                  <span className="flex flex-wrap items-center gap-2">
+                    {r.field_label}
+                    {rxIsEmpty(r.zones) ? (
+                      <span className="text-xs font-normal text-gray-500">Nothing prescribed</span>
+                    ) : (
+                      <KindBadge kind={rxKind(r.zones)} />
+                    )}
+                  </span>
+                }
+                facts={[]}
+                summary={
+                  <SummaryLine>
+                    {r.crop_type && (
+                      <>
+                        <span>{r.crop_type}</span>
+                        <Dot />
+                      </>
+                    )}
+                    <span>{n1(r.total_acres)} ac</span>
+                    {NUTRIENTS.map((n) => {
+                      const v = weightedRate(r.zones, n.key)
+                      return v ? (
+                        <span key={n.key} className="contents">
+                          <Dot />
+                          <span className="tabular-nums">
+                            {n.label} {n0(v)}
+                          </span>
+                        </span>
+                      ) : null
+                    })}
+                    {!r.field_id && (
+                      <>
+                        <Dot />
+                        <span className="text-amber-700">not linked to a field</span>
+                      </>
+                    )}
+                  </SummaryLine>
+                }
+              />
+            ))}
+          </CardList>
+          <div className="hidden overflow-x-auto sm:block">
             <table className="w-full min-w-[640px] text-sm">
               <thead className={TABLE_HEAD}>
                 <tr>
@@ -539,6 +594,7 @@ export function Prescriptions() {
                 ))}
               </tbody>
             </table>
+          </div>
           </div>
           )}
 

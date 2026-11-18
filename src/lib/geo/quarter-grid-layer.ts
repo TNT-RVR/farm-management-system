@@ -56,7 +56,7 @@ export function drawQuarterGrid(
   return parcels.map((p) => {
     const el = document.createElement('div')
     el.className =
-      'pointer-events-none select-none whitespace-nowrap text-[10px] font-semibold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.95)]' +
+      'pointer-events-none select-none whitespace-nowrap text-xs font-semibold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.95)]' +
       (p.estimated ? ' italic opacity-70' : '')
     // Always the full description. "NW" on its own named the corner without
     // naming the parcel -- every section has one, so it answered nothing. A
