@@ -496,7 +496,7 @@ begin
      set grass_quality = r.rated,
          grass_quality_source = 'satellite',
          grass_quality_rel = r.rel,
-         grass_quality_set_on = current_date
+         grass_quality_set_on = public.farm_today()
     from r
    where g.id = r.grazing_pasture_id
      and g.grass_quality_source <> 'manual'
@@ -1736,6 +1736,19 @@ COMMENT ON FUNCTION "public"."farm_time_is"("p_hours" integer[], "p_dow" integer
 
 
 
+CREATE OR REPLACE FUNCTION "public"."farm_today"() RETURNS "date"
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'extensions'
+    AS $$ select (now() at time zone public.farm_tz())::date $$;
+
+
+ALTER FUNCTION "public"."farm_today"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."farm_today"() IS 'Today on the farm''s clock. Use instead of current_date, which is UTC here.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."farm_tz"() RETURNS "text"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
@@ -2108,7 +2121,7 @@ begin
     values (
       insp.field_id,
       extract(year from coalesce(insp.damage_date, insp.report_date, now()))::int,
-      coalesce(insp.damage_date, insp.report_date, current_date),
+      coalesce(insp.damage_date, insp.report_date, public.farm_today()),
       format(
         'AFSC inspection %s — %s%% loss on %s acres%s',
         insp.inspection_number,
@@ -2754,7 +2767,7 @@ begin
   update public.grants
      set status = 'closed', updated_at = now()
    where closes_on is not null
-     and closes_on < current_date
+     and closes_on < public.farm_today()
      and status in ('new', 'reviewing');
   get diagnostics n = row_count;
   return n;
@@ -4432,7 +4445,7 @@ begin
     from soil_test_samples s
     join soil_test_reports r on r.id = s.report_id
     where s.depth_top_in = 0 and s.cec_meq is not null and r.field_id is not null
-      and coalesce(r.report_date, make_date(r.crop_year, 1, 1)) >= (current_date - make_interval(years => p_years))
+      and coalesce(r.report_date, make_date(r.crop_year, 1, 1)) >= (public.farm_today() - make_interval(years => p_years))
   ), per_sample as (
     select t.*, greatest(3, (t.cec_norm - 2 * t.om) / 0.55) as clay, a.awc_mm_m, a.wp_mm_10cm
     from tops t cross join lateral fn_clay_awc(greatest(3, (t.cec_norm - 2 * t.om) / 0.55)) a
@@ -4476,7 +4489,7 @@ begin
     and not exists (
       select 1 from soil_test_reports r join soil_test_samples s on s.report_id = r.id
       where r.field_id = p.field_id and s.depth_top_in = 0 and s.cec_meq is not null
-        and coalesce(r.report_date, make_date(r.crop_year, 1, 1)) >= (current_date - make_interval(years => p_years)));
+        and coalesce(r.report_date, make_date(r.crop_year, 1, 1)) >= (public.farm_today() - make_interval(years => p_years)));
   return v_rows;
 end $$;
 
@@ -4683,7 +4696,7 @@ $$;
 ALTER FUNCTION "public"."fn_seed_bin_check_due"("p_harvest" "date", "p_day" "date") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."fn_seed_bin_check_reminders"("p_day" "date" DEFAULT CURRENT_DATE) RETURNS integer
+CREATE OR REPLACE FUNCTION "public"."fn_seed_bin_check_reminders"("p_day" "date" DEFAULT "public"."farm_today"()) RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
     AS $_$
@@ -5254,7 +5267,7 @@ $$;
 ALTER FUNCTION "public"."fn_truck_inspection_guard"() OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."fn_truck_inspection_reminders"("p_day" "date" DEFAULT CURRENT_DATE) RETURNS integer
+CREATE OR REPLACE FUNCTION "public"."fn_truck_inspection_reminders"("p_day" "date" DEFAULT "public"."farm_today"()) RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
     AS $$
@@ -6942,7 +6955,7 @@ CREATE TABLE IF NOT EXISTS "public"."field_boundaries" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "field_id" "uuid" NOT NULL,
     "geom" "public"."geometry"(MultiPolygon,4326) NOT NULL,
-    "valid_from" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "valid_from" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "valid_to" "date",
     "source" "public"."boundary_source" NOT NULL,
     "acres" numeric(10,2) GENERATED ALWAYS AS ("round"((("public"."st_area"(("geom")::"public"."geography") / (4046.8564224)::double precision))::numeric, 2)) STORED,
@@ -7912,7 +7925,7 @@ begin
     select st.id as sid, st_distance(r.centroid, st.geom) as dist into s
     from weather_stations st
     where st.active and st.decommissioned_on is null
-      and (st.data_available_till is null or st.data_available_till >= current_date - 7)
+      and (st.data_available_till is null or st.data_available_till >= public.farm_today() - 7)
     order by st_distance(r.centroid, st.geom) asc
     limit 1;
     if found then
@@ -7975,13 +7988,13 @@ declare
   v_new_id uuid;
 begin
   update field_boundaries
-  set valid_to = current_date
-  where field_id = p_field_id and valid_to is null and valid_from < current_date;
+  set valid_to = public.farm_today()
+  where field_id = p_field_id and valid_to is null and valid_from < public.farm_today();
 
   -- A boundary created today never really applied, so it is replaced rather
   -- than closed — this also satisfies the valid_to > valid_from check.
   delete from field_boundaries
-  where field_id = p_field_id and valid_to is null and valid_from = current_date;
+  where field_id = p_field_id and valid_to is null and valid_from = public.farm_today();
 
   insert into field_boundaries (field_id, geom, source)
   values (
@@ -9929,7 +9942,7 @@ CREATE TABLE IF NOT EXISTS "public"."grain_movements" (
     "contract_id" "uuid",
     "movement_type" "public"."grain_movement_type" NOT NULL,
     "bushels" numeric NOT NULL,
-    "moved_at" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "moved_at" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "ticket_number" "text",
     "notes" "text",
     "created_by" "uuid" DEFAULT "auth"."uid"(),
@@ -9996,7 +10009,7 @@ CREATE TABLE IF NOT EXISTS "public"."bin_monitor_readings" (
     "bin_id" "uuid" NOT NULL,
     "crop_year" integer NOT NULL,
     "crop_id" "uuid",
-    "read_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "read_on" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "lot_number" "text",
     "lld" "text",
     "initials" "text",
@@ -10354,7 +10367,7 @@ CREATE TABLE IF NOT EXISTS "public"."cattle_events" (
     "cattle_id" "uuid",
     "group_id" "uuid",
     "event_type" "public"."cattle_event_type" NOT NULL,
-    "event_date" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "event_date" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "weight_lb" numeric,
     "product" "text",
     "dose" "text",
@@ -10404,7 +10417,7 @@ CREATE TABLE IF NOT EXISTS "public"."cattle_manifests" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "crop_year" integer NOT NULL,
     "manifest_no" "text",
-    "moved_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "moved_on" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "ranch_id" "uuid",
     "owner_name" "text",
     "owner_phone" "text",
@@ -10837,7 +10850,7 @@ CREATE TABLE IF NOT EXISTS "public"."chem_stock_adjustments" (
     "product_id" "uuid" NOT NULL,
     "kind" "text" NOT NULL,
     "quantity" numeric NOT NULL,
-    "occurred_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "occurred_on" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "note" "text",
     "created_by" "uuid" DEFAULT "auth"."uid"(),
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
@@ -11006,7 +11019,7 @@ CREATE TABLE IF NOT EXISTS "public"."chemical_recrop_overrides" (
     "max_months" numeric NOT NULL,
     "reason" "text" NOT NULL,
     "told_by" "text",
-    "set_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "set_on" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     CONSTRAINT "chemical_recrop_overrides_max_months_check" CHECK (("max_months" >= (0)::numeric))
 );
@@ -11222,7 +11235,7 @@ COMMENT ON COLUMN "public"."combine_settings"."presieve_mm" IS 'Pre-sieve openin
 
 CREATE TABLE IF NOT EXISTS "public"."combine_settings_used" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "used_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "used_on" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "crop_key" "text" NOT NULL,
     "crop_year" integer NOT NULL,
     "field_id" "uuid",
@@ -12199,7 +12212,7 @@ CREATE TABLE IF NOT EXISTS "public"."equipment_service_log" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "equipment_id" "uuid" NOT NULL,
     "plan_id" "uuid",
-    "done_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "done_on" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "engine_hours" numeric,
     "notes" "text",
     "cost" numeric,
@@ -12596,7 +12609,7 @@ CREATE TABLE IF NOT EXISTS "public"."feed_inventory" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "ranch_id" "uuid" NOT NULL,
     "feed_type_id" "uuid" NOT NULL,
-    "moved_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "moved_on" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "kind" "text" DEFAULT 'harvested'::"text" NOT NULL,
     "quantity" numeric NOT NULL,
     "unit" "text" DEFAULT 'lb'::"text" NOT NULL,
@@ -12854,7 +12867,7 @@ COMMENT ON TABLE "public"."feed_ration" IS 'Share of each ranch''s winter dry ma
 CREATE TABLE IF NOT EXISTS "public"."feed_tests" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "feed_type_id" "uuid" NOT NULL,
-    "sampled_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "sampled_on" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "lab" "text",
     "dm_pct" numeric,
     "cp_pct" numeric,
@@ -12934,7 +12947,7 @@ CREATE TABLE IF NOT EXISTS "public"."fert_bookings" (
     "supplier" "text" DEFAULT 'ICI'::"text" NOT NULL,
     "tonnes" numeric NOT NULL,
     "price_per_tonne" numeric,
-    "booked_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "booked_on" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "delivered" boolean DEFAULT false NOT NULL,
     "note" "text",
     "created_by" "uuid",
@@ -12952,7 +12965,7 @@ CREATE TABLE IF NOT EXISTS "public"."fert_buy_signals" (
     "series_id" "uuid" NOT NULL,
     "state" "text" NOT NULL,
     "percentile" numeric,
-    "changed_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "changed_on" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "notified_at" timestamp with time zone,
     CONSTRAINT "fert_buy_signals_state_check" CHECK (("state" = ANY (ARRAY['cheap'::"text", 'middle'::"text", 'dear'::"text"])))
 );
@@ -12990,7 +13003,7 @@ CREATE TABLE IF NOT EXISTS "public"."fert_inventory" (
     "unit" "text" DEFAULT 't'::"text" NOT NULL,
     "bin_id" "uuid",
     "location" "text",
-    "counted_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "counted_on" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "note" "text",
     "created_by" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
@@ -13032,7 +13045,7 @@ CREATE TABLE IF NOT EXISTS "public"."fert_quotes" (
     "product" "text" NOT NULL,
     "supplier" "text" NOT NULL,
     "price_per_tonne" numeric NOT NULL,
-    "quoted_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "quoted_on" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "valid_until" "date",
     "includes_delivery" boolean DEFAULT false NOT NULL,
     "note" "text",
@@ -13302,7 +13315,7 @@ CREATE TABLE IF NOT EXISTS "public"."field_hail_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "field_id" "uuid" NOT NULL,
     "crop_year" integer NOT NULL,
-    "event_date" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "event_date" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "notes" "text",
     "created_by" "uuid" DEFAULT "auth"."uid"(),
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
@@ -14474,7 +14487,7 @@ COMMENT ON COLUMN "public"."fieldnet_systems"."applied_zone_watermarks" IS 'zone
 CREATE TABLE IF NOT EXISTS "public"."financial_entries" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "crop_year" integer DEFAULT ("date_part"('year'::"text", "now"()))::integer NOT NULL,
-    "entry_date" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "entry_date" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "kind" "public"."financial_kind" NOT NULL,
     "category" "text",
     "amount" numeric NOT NULL,
@@ -15438,7 +15451,7 @@ CREATE TABLE IF NOT EXISTS "public"."input_movements" (
     "movement_type" "public"."input_movement_type" NOT NULL,
     "quantity" numeric NOT NULL,
     "unit_cost" numeric,
-    "moved_at" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "moved_at" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "crop_id" "uuid",
     "field_id" "uuid",
     "crop_year" integer,
@@ -15535,7 +15548,7 @@ ALTER VIEW "public"."integration_status_v" OWNER TO "postgres";
 CREATE TABLE IF NOT EXISTS "public"."irrigation_events" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "field_id" "uuid" NOT NULL,
-    "date" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "date" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "gross_mm" numeric,
     "net_mm" numeric,
     "source" "text" DEFAULT 'manual'::"text" NOT NULL,
@@ -19952,7 +19965,7 @@ CREATE TABLE IF NOT EXISTS "public"."sclerotinia_checklists" (
     "crop_year" integer NOT NULL,
     "answers" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
     "notes" "text",
-    "filled_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "filled_on" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
 );
@@ -20941,7 +20954,7 @@ CREATE TABLE IF NOT EXISTS "public"."weed_patches" (
     "field_id" "uuid",
     "severity" "text",
     "notes" "text",
-    "observed_on" "date" DEFAULT CURRENT_DATE NOT NULL,
+    "observed_on" "date" DEFAULT "public"."farm_today"() NOT NULL,
     "treated_on" "date",
     "created_by" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
@@ -35799,6 +35812,12 @@ GRANT ALL ON FUNCTION "public"."farm_rented_out_acres"("p_year" integer) TO "ser
 REVOKE ALL ON FUNCTION "public"."farm_time_is"("p_hours" integer[], "p_dow" integer, "p_mday" integer, "p_months" integer[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."farm_time_is"("p_hours" integer[], "p_dow" integer, "p_mday" integer, "p_months" integer[]) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."farm_time_is"("p_hours" integer[], "p_dow" integer, "p_mday" integer, "p_months" integer[]) TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."farm_today"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."farm_today"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."farm_today"() TO "anon";
 
 
 

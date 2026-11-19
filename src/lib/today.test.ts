@@ -23,4 +23,19 @@ describe("today's date", () => {
     walk(path.resolve(__dirname, '..'))
     expect(hits).toEqual([])
   })
+
+  it('is not current_date in a new migration: the database clock is UTC', () => {
+    // After 20261119040000_farm_today, which made it, use public.farm_today().
+    const dir = path.resolve(__dirname, '../../supabase/migrations')
+    const hits = fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith('.sql') && f > '20261119040000_farm_today.sql')
+      .filter((f) =>
+        fs
+          .readFileSync(path.join(dir, f), 'utf8')
+          .split('\n')
+          .some((line) => /current_date/i.test(line.replace(/--.*$/, ''))),
+      )
+    expect(hits).toEqual([])
+  })
 })
