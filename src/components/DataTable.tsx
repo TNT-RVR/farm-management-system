@@ -67,6 +67,12 @@ type Props<Row> = {
    * A column keyed `actions` still shows, at the card's top right.
    */
   phoneSummary?: (row: Row) => React.ReactNode
+  /**
+   * The phone card's heading in place of the first column, and the columns it
+   * stands in for (left out of the card). For a table whose first column is a
+   * tick box: a card headed by a lone box says nothing (phone pass, Nov 2026).
+   */
+  phoneHeading?: { render: (row: Row) => React.ReactNode; replaces: string[] }
 }
 
 /** The pinned first cell: opaque, so the columns slide underneath it. */
@@ -85,17 +91,20 @@ function TableRowCard<Row>({
   columns,
   onClick,
   summary,
+  heading,
 }: {
   row: Row
   columns: DataTableColumn<Row>[]
   onClick?: () => void
   summary?: (row: Row) => React.ReactNode
+  heading?: { render: (row: Row) => React.ReactNode; replaces: string[] }
 }) {
-  const [first, ...rest] = columns
+  const [first, ...others] = columns
+  const rest = heading ? columns.filter((c) => !heading.replaces.includes(c.key)) : others
   const actions = summary ? columns.find((c) => c.key === 'actions') : undefined
   return (
     <RowCard
-      heading={first.render ? first.render(row) : (first.value(row) ?? '—')}
+      heading={heading ? heading.render(row) : first.render ? first.render(row) : (first.value(row) ?? '—')}
       summary={summary ? <SummaryLine>{summary(row)}</SummaryLine> : undefined}
       actions={actions?.render?.(row) ?? undefined}
       facts={rest.map((c) => ({
@@ -122,6 +131,7 @@ export function DataTable<Row>({
   stickyFirstColumn,
   compact,
   phoneSummary,
+  phoneHeading,
 }: Props<Row>) {
   const pad = compact ? 'px-2 py-2' : 'px-3 py-2'
   return (
@@ -151,6 +161,7 @@ export function DataTable<Row>({
               columns={columns}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
               summary={phoneSummary}
+              heading={phoneHeading}
             />
           ))}
         </CardList>

@@ -751,6 +751,7 @@ export function RotationAdvisor({
                         disabled={!isManager || setRenterOnly.isPending}
                         onChange={(e) => setRenterOnly.mutate({ cropId: c.id, renterOnly: e.target.checked })}
                         aria-label={`${c.name} is grown here only by a renter`}
+                        className="h-5 w-5 accent-brand-700"
                       />
                     </dd>
                   </div>
@@ -765,6 +766,7 @@ export function RotationAdvisor({
                         disabled={!isManager || setOwnUse.isPending}
                         onChange={(e) => setOwnUse.mutate({ cropId: c.id, ownUse: e.target.checked })}
                         aria-label={`${c.name} is grown for our own feed`}
+                        className="h-5 w-5 accent-brand-700"
                       />
                     </dd>
                   </div>

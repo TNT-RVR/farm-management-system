@@ -199,8 +199,8 @@ function RotationRules({
         <HelpNote className="mb-2 text-xs" summary="Ticked = it may follow." title="Reading the grid">
           Rows are last year&apos;s crop, columns the crop planted after it. A tick means it may follow; clear the tick and the
           planner treats that pairing as never. The mark beside a tick is how the farm rates it — <b>★</b> recommended,{' '}
-          <b>!</b> with care — and clicking the mark cycles it. Hover a cell for the reason and whether it came from your
-          rotation sheet or the research report.
+          <b>!</b> with care — and clicking the mark cycles it. On a computer, hover a cell for the reason and whether it
+          came from your rotation sheet or the research report.
         </HelpNote>
         <div className="overflow-x-auto rounded-md border border-gray-200 bg-white">
           <table className="text-xs">
@@ -256,7 +256,7 @@ function RotationRules({
                                 preference: e.target.checked ? null : 'no_go',
                               })
                             }
-                            className="h-3.5 w-3.5 cursor-pointer accent-gray-700 disabled:cursor-default disabled:opacity-40"
+                            className="h-3.5 w-3.5 cursor-pointer accent-gray-700 disabled:cursor-default disabled:opacity-40 max-sm:h-5 max-sm:w-5"
                           />
                           <button
                             type="button"
@@ -274,7 +274,7 @@ function RotationRules({
                                   | null,
                               })
                             }}
-                            className="w-2 text-xs leading-none text-gray-500 hover:text-gray-900 disabled:opacity-0"
+                            className="w-2 text-xs leading-none text-gray-500 hover:text-gray-900 disabled:opacity-0 max-sm:h-6 max-sm:w-4 max-sm:text-sm"
                           >
                             {p && p !== 'no_go' ? MARK[p] : ''}
                           </button>

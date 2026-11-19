@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { money, n1 } from './savings/ui'
 import { askConfirm } from '@/components/askConfirm'
 import { CARD_HEAD } from '@/lib/table-style'
+import { revealOnMount } from '@/lib/reveal'
 import { dbErrorMessage } from '@/lib/db-error'
 import { invoiceLineProblem } from '@/lib/manure-haul'
 
@@ -109,7 +110,12 @@ export function ManureInvoices({ isManager }: { isManager: boolean }) {
         })}
       </ul>
       {del.isError && <p className="px-3 py-1 text-xs text-red-700">{dbErrorMessage(del.error)}</p>}
-      {adding && <LineForm apps={apps ?? []} fieldName={nameOf} last={latestLine(lines ?? [])} onDone={() => setAdding(false)} />}
+      {/* The form opens at the foot of the list, out of sight on a phone: bring it up. */}
+      {adding && (
+        <div ref={revealOnMount}>
+          <LineForm apps={apps ?? []} fieldName={nameOf} last={latestLine(lines ?? [])} onDone={() => setAdding(false)} />
+        </div>
+      )}
     </div>
   )
 }

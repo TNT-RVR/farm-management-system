@@ -257,7 +257,7 @@ void (async () => {
     if (location.pathname.startsWith('/login')) location.replace('/')
     ui.done()
     badge(() => void resetDemo())
-    banner()
+    banner(() => void resetDemo())
     count('open')
   } catch (err) {
     settleAuth()

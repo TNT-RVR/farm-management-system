@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { grossMargins, switchGain, type CowCalf, type LandEnterprise } from '@/lib/gross-margin'
 import { HeadTip } from '@/components/HeadTip'
 import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
+import { revealOnMount } from '@/lib/reveal'
 
 /**
  * What an acre earns under each use.
@@ -113,6 +114,8 @@ export function GrossMarginPage() {
   })
   const [crops, setCrops] = useState<CropRow[]>(START_CROPS)
   const [moveAcres, setMoveAcres] = useState('100')
+  // The crop just added, brought on screen: it lands at the foot of the list.
+  const [fresh, setFresh] = useState<string | null>(null)
 
   const setCow = (k: keyof typeof c) => (v: string) => setC((s) => ({ ...s, [k]: v }))
   const setFor = (k: keyof typeof f) => (v: string) => setF((s) => ({ ...s, [k]: v }))
@@ -246,11 +249,13 @@ export function GrossMarginPage() {
         action={
           <button
             type="button"
-            onClick={() =>
+            onClick={() => {
+              const key = `c${Date.now()}`
+              setFresh(key)
               setCrops((rows) => [
                 ...rows,
                 {
-                  key: `c${Date.now()}`,
+                  key,
                   label: CASH_CROP_COLOURS[rows.length % CASH_CROP_COLOURS.length],
                   acres: '0',
                   directPerAcre: '0',
@@ -259,7 +264,7 @@ export function GrossMarginPage() {
                   unit: 'bu',
                 },
               ])
-            }
+            }}
             className="flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
           >
             <Plus className="h-3.5 w-3.5" /> Add a crop
@@ -270,7 +275,7 @@ export function GrossMarginPage() {
             six-column table two screens wide (batch 2 test, 17 Nov 2026). */}
         <ul className="space-y-2 sm:hidden">
           {crops.map((r) => (
-            <li key={r.key} className="rounded-md border border-gray-200 p-2">
+            <li key={r.key} ref={r.key === fresh ? revealOnMount : undefined} className="rounded-md border border-gray-200 p-2">
               <div className="flex items-center gap-2">
                 <input value={r.label} aria-label="Crop" onChange={(e) => setCrop(r.key, 'label')(e.target.value)} className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-sm font-medium" />
                 <button type="button" onClick={() => setCrops((rows) => rows.filter((x) => x.key !== r.key))} aria-label={`Remove ${r.label}`} className="p-1 text-gray-400 hover:text-red-600">
@@ -314,7 +319,7 @@ export function GrossMarginPage() {
             </thead>
             <tbody>
               {crops.map((r) => (
-                <tr key={r.key} className="border-t border-gray-100">
+                <tr key={r.key} ref={r.key === fresh ? revealOnMount : undefined} className="border-t border-gray-100">
                   <td className="px-2 py-1">
                     <input value={r.label} onChange={(e) => setCrop(r.key, 'label')(e.target.value)} className="w-28 rounded border border-gray-300 px-2 py-1" />
                   </td>

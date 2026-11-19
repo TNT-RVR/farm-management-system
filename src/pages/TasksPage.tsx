@@ -50,32 +50,29 @@ export function TasksPage() {
 
   // The CSV's columns are shared with the Reports page; the screen adds the
   // tick box, the subtask count and the overdue colour.
-  const columns: DataTableColumn<TaskRow>[] = withDisplay(taskListColumns(names), {
-    done: {
-      render: (t) => (
-        <input
-          type="checkbox"
-          checked={t.status === 'done'}
-          onClick={(e) => e.stopPropagation()}
-          onChange={() =>
-            update.mutate({ id: t.id, patch: { status: t.status === 'done' ? 'open' : 'done' } })
-          }
-        />
-      ),
-    },
-    title: {
-      className: 'font-medium',
-      render: (t) => (
-        <span className={cn(t.status === 'done' && 'text-gray-400 line-through')}>
-          {t.title}
-          {subtaskCount(t.id) > 0 && (
-            <span className="ml-2 whitespace-nowrap rounded-full bg-gray-100 px-1.5 text-xs font-normal text-gray-500">
-              {subtaskCount(t.id)} {subtaskCount(t.id) === 1 ? 'subtask' : 'subtasks'}
-            </span>
-          )}
+  const tick = (t: TaskRow) => (
+    <input
+      type="checkbox"
+      checked={t.status === 'done'}
+      aria-label={t.status === 'done' ? `Reopen "${t.title}"` : `Mark "${t.title}" done`}
+      onClick={(e) => e.stopPropagation()}
+      onChange={() => update.mutate({ id: t.id, patch: { status: t.status === 'done' ? 'open' : 'done' } })}
+      className="h-4 w-4 max-sm:h-5 max-sm:w-5 accent-brand-700"
+    />
+  )
+  const title = (t: TaskRow) => (
+    <span className={cn(t.status === 'done' && 'text-gray-400 line-through')}>
+      {t.title}
+      {subtaskCount(t.id) > 0 && (
+        <span className="ml-2 whitespace-nowrap rounded-full bg-gray-100 px-1.5 text-xs font-normal text-gray-500">
+          {subtaskCount(t.id)} {subtaskCount(t.id) === 1 ? 'subtask' : 'subtasks'}
         </span>
-      ),
-    },
+      )}
+    </span>
+  )
+  const columns: DataTableColumn<TaskRow>[] = withDisplay(taskListColumns(names), {
+    done: { render: tick },
+    title: { className: 'font-medium', render: title },
     // Each person as their picture in a circle, names beside.
     assignee: {
       render: (t) => {
@@ -209,6 +206,15 @@ export function TasksPage() {
           exportFilename="tasks"
           onRowClick={(t) => navigate(`/tasks/${t.id}`)}
           emptyMessage="No tasks here."
+          phoneHeading={{
+            replaces: ['done', 'title'],
+            render: (t) => (
+              <span className="flex items-start gap-2.5">
+                {tick(t)}
+                {title(t)}
+              </span>
+            ),
+          }}
         />
       )}
     </div>

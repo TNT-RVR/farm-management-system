@@ -104,17 +104,7 @@ export function overlay() {
   }
 }
 
-/** The corner badge: this is a demo, and a way back to the start. */
-export function badge(onReset: () => void) {
-  // Above the phone layout's bottom navigation bar (56 px, md:hidden), beside it on wider screens.
-  const style = document.createElement('style')
-  // Phones: bottom left, above the navigation bar. Wider screens: bottom right, clear of the sidebar.
-  style.textContent = `.rvr-demo-badge{left:12px;bottom:calc(68px + env(safe-area-inset-bottom))}@media (min-width:768px){.rvr-demo-badge{left:auto;right:12px;bottom:12px}}@media print{.rvr-demo-badge{display:none!important}}`
-  document.head.appendChild(style)
-  const el = document.createElement('div')
-  el.className = 'rvr-demo-badge'
-  el.style.cssText = `position:fixed;z-index:2147483645;display:flex;align-items:center;gap:8px;padding:6px 8px 6px 12px;border-radius:999px;background:#fffbeb;border:1px solid #fcd34d;box-shadow:0 2px 8px rgba(0,0,0,.12);font-family:${font};font-size:12px;color:#78350f`
-  el.innerHTML = `<span><b>Demo</b> · made-up farm, resets overnight</span>`
+function resetButton(onReset: () => void) {
   const btn = document.createElement('button')
   btn.textContent = 'Reset'
   btn.title = 'Throw away your changes and start the farm again'
@@ -122,6 +112,25 @@ export function badge(onReset: () => void) {
   btn.onclick = () => {
     if (confirm('Start the demo farm again? Everything you changed will be thrown away.')) onReset()
   }
+  return btn
+}
+
+/**
+ * The corner badge: this is a demo, and a way back to the start.
+ *
+ * Wider screens only. On a phone a floating badge sat over the bottom of
+ * every form and covered the event form's Add button (phone pass, 18 Nov
+ * 2026), so there the same words and Reset ride in the top banner instead.
+ */
+export function badge(onReset: () => void) {
+  const style = document.createElement('style')
+  style.textContent = `.rvr-demo-badge{right:12px;bottom:12px}@media (max-width:767px){.rvr-demo-badge{display:none!important}}@media print{.rvr-demo-badge{display:none!important}}`
+  document.head.appendChild(style)
+  const el = document.createElement('div')
+  el.className = 'rvr-demo-badge'
+  el.style.cssText = `position:fixed;z-index:2147483645;display:flex;align-items:center;gap:8px;padding:6px 8px 6px 12px;border-radius:999px;background:#fffbeb;border:1px solid #fcd34d;box-shadow:0 2px 8px rgba(0,0,0,.12);font-family:${font};font-size:12px;color:#78350f`
+  el.innerHTML = `<span><b>Demo</b> · made-up farm, resets overnight</span>`
+  const btn = resetButton(onReset)
   const hide = document.createElement('button')
   hide.textContent = '×'
   hide.title = 'Hide this badge until the page reloads'
@@ -142,17 +151,18 @@ export const PUBLIC_REPO = 'https://github.com/TNT-RVR/farm-management-system'
  * app, and the app (#root, normally the full window height) takes what is
  * left, so nothing of the app is covered and nothing extra scrolls.
  */
-export function banner() {
+export function banner(onReset: () => void) {
   const style = document.createElement('style')
-  style.textContent = `body.rvr-demo-has-banner{display:flex;flex-direction:column}body.rvr-demo-has-banner #root{flex:1 1 auto;min-height:0;height:auto}@media print{.rvr-demo-banner{display:none!important}}`
+  // Phones get the short wording and a second line standing in for the corner badge.
+  style.textContent = `body.rvr-demo-has-banner{display:flex;flex-direction:column}body.rvr-demo-has-banner #root{flex:1 1 auto;min-height:0;height:auto}.rvr-demo-phone{display:none}@media (max-width:767px){.rvr-demo-long{display:none}.rvr-demo-phone{display:flex}}@media print{.rvr-demo-banner{display:none!important}}`
   document.head.appendChild(style)
   const el = document.createElement('div')
   el.className = 'rvr-demo-banner'
   el.setAttribute('role', 'region')
   el.setAttribute('aria-label', 'About this demo')
-  el.style.cssText = `flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;padding:7px 40px 7px 12px;position:relative;background:${BRAND};color:#fff;font-family:${font};font-size:13px;line-height:1.35;text-align:center`
+  el.style.cssText = `flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:4px 10px;flex-wrap:wrap;padding:6px 40px 6px 12px;position:relative;background:${BRAND};color:#fff;font-family:${font};font-size:13px;line-height:1.35;text-align:center`
   const text = document.createElement('span')
-  text.innerHTML = `<b>Want this for your own farm?</b> Build your own version for free.`
+  text.innerHTML = `<b>Want this for your own farm?</b><span class="rvr-demo-long"> Build your own version for free.</span>`
   const link = document.createElement('a')
   link.href = PUBLIC_REPO
   link.target = '_blank'
@@ -169,7 +179,12 @@ export function banner() {
     el.remove()
     document.body.classList.remove('rvr-demo-has-banner')
   }
-  el.append(text, link, close)
+  const phone = document.createElement('div')
+  phone.className = 'rvr-demo-phone'
+  phone.style.cssText = 'flex-basis:100%;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#fef3c7'
+  phone.innerHTML = `<span><b>Demo</b> · made-up farm, resets overnight</span>`
+  phone.append(resetButton(onReset))
+  el.append(text, link, phone, close)
   document.body.classList.add('rvr-demo-has-banner')
   document.body.insertBefore(el, document.body.firstChild)
 }

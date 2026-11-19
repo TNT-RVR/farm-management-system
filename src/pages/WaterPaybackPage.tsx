@@ -21,6 +21,7 @@ import {
 } from '@/lib/water-system-payback'
 import { HeadTip } from '@/components/HeadTip'
 import { CardList, RowCard } from '@/components/RowCards'
+import { revealOnMount } from '@/lib/reveal'
 
 /**
  * Does a trough pay for itself?
@@ -90,6 +91,8 @@ export function WaterPaybackPage() {
     horizon: '10',
   })
   const [rows, setRows] = useState<Row[]>(START)
+  // The system just added, brought on screen: it lands at the foot of the list.
+  const [fresh, setFresh] = useState<string | null>(null)
 
   const set = (k: keyof typeof h) => (v: string) => setH((s) => ({ ...s, [k]: v }))
   const setRow = (id: string, field: keyof WaterSystem) => (v: string) =>
@@ -235,12 +238,14 @@ export function WaterPaybackPage() {
           <p className="text-xs font-medium uppercase tracking-wide text-gray-500">The systems</p>
           <button
             type="button"
-            onClick={() =>
+            onClick={() => {
+              const id = `s${Date.now()}`
+              setFresh(id)
               setRows((rs) => [
                 ...rs,
-                { id: `s${Date.now()}`, key: `s${Date.now()}`, label: 'New system', capital: 0, funding: 0, powerPerYear: 0, maintenancePerYear: 0, lifeYears: 15 },
+                { id, key: id, label: 'New system', capital: 0, funding: 0, powerPerYear: 0, maintenancePerYear: 0, lifeYears: 15 },
               ])
-            }
+            }}
             className="flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
           >
             <Plus className="h-3.5 w-3.5" /> Add a system
@@ -253,6 +258,7 @@ export function WaterPaybackPage() {
               key={r.id}
               heading={
                 <input
+                  ref={r.id === fresh ? revealOnMount : undefined}
                   value={r.label}
                   onChange={(e) => setRow(r.id, 'label')(e.target.value)}
                   aria-label="System name"
@@ -281,7 +287,7 @@ export function WaterPaybackPage() {
               {rows.map((r) => (
                 <tr key={r.id} className="border-t border-gray-100">
                   <td className="px-2 py-1">
-                    <input value={r.label} onChange={(e) => setRow(r.id, 'label')(e.target.value)} className="w-36 rounded border border-gray-300 px-2 py-1" />
+                    <input ref={r.id === fresh ? revealOnMount : undefined} value={r.label} onChange={(e) => setRow(r.id, 'label')(e.target.value)} className="w-36 rounded border border-gray-300 px-2 py-1" />
                   </td>
                   {SYSTEM_NUMS.map(([k, label]) => (
                     <td key={k} className="px-2 py-1 text-right">
