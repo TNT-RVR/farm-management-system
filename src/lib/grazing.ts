@@ -12,6 +12,7 @@ import { RAIN_NORMAL_YEARS, rainFactor, rainOutlook, rainSplits, type SeasonNorm
 import { droughtUtilization } from './forage-response'
 import type { GrassQuality } from './forage-yield'
 import { auFor, monthDayOf, pairAUDays, weightFor, type MonthDay } from './animal-units'
+import { localToday } from '@/lib/today'
 
 // The forage arithmetic lives in forage-yield.ts (no Supabase client), so the
 // server's pasture move-out check uses exactly these numbers too.
@@ -287,7 +288,7 @@ export function useCattleOnNow() {
   return useQuery({
     queryKey: ['grazing_events', 'on-now'],
     queryFn: async (): Promise<OnNow[]> => {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = localToday()
       const { data, error } = await supabase
         .from('grazing_events')
         .select('pasture_id, head_count, turned_in_on')

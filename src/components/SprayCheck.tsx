@@ -10,6 +10,7 @@ import { useRecropRules } from '@/lib/recrop'
 import { carryover, cropKey, type CarryoverHit } from '@/lib/rotation-engine'
 import { cn } from '@/lib/utils'
 import { CARD_HEAD } from '@/lib/table-style'
+import { localToday } from '@/lib/today'
 
 /**
  * The products this check can be run on.
@@ -58,7 +59,7 @@ export function SprayCheck({ fieldId }: { fieldId?: string }) {
   const { data: plansA } = useCropPlans(cropYear + 1)
   const { data: plansB } = useCropPlans(cropYear + 2)
   const [productId, setProductId] = useState('')
-  const [sprayOn, setSprayOn] = useState(new Date().toISOString().slice(0, 10))
+  const [sprayOn, setSprayOn] = useState(localToday())
   const [picked, setPicked] = useState<Set<string>>(new Set(fieldId ? [fieldId] : []))
   const [filter, setFilter] = useState('')
 

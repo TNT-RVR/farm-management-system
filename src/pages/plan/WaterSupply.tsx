@@ -9,6 +9,7 @@ import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useFarmSettings } from '@/lib/farm-setup'
 import { STATION_COLUMNS, pageHref, sectionLabel, stationOf, type WaterStation, type WaterStationRow } from '@/lib/water-stations'
 import { cn } from '@/lib/utils'
+import { localToday } from '@/lib/today'
 
 type Row = { station: string; observed_on: string; value: number | string | null; pct_full: number | string | null; pct_full_last_year: number | string | null; pct_of_median: number | string | null }
 
@@ -165,7 +166,7 @@ const wyDay = (iso: string) => {
 const MONTHS = ['Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep']
 
 function WaterGraph({ station, onClose }: { station: WaterStation; onClose: () => void }) {
-  const today = wyDay(new Date().toISOString().slice(0, 10))
+  const today = wyDay(localToday())
   const since = `${today.wy - 1}-10-01`
   const { data, isLoading } = useQuery({
     queryKey: ['water_supply_daily', station.key, since],

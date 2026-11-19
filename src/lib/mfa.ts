@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
+import { localToday } from '@/lib/today'
 
 /**
  * Optional authenticator-app sign-in (TOTP), through Supabase Auth.
@@ -69,7 +70,7 @@ export async function startTotpEnrolment(): Promise<{ factorId: string; qr: stri
   for (const f of existing?.all ?? []) {
     if (f.factor_type === 'totp' && f.status !== 'verified') await supabase.auth.mfa.unenroll({ factorId: f.id })
   }
-  const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: `Authenticator ${new Date().toISOString().slice(0, 10)}` })
+  const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: `Authenticator ${localToday()}` })
   if (error) throw error
   return { factorId: data.id, qr: data.totp.qr_code, secret: data.totp.secret }
 }

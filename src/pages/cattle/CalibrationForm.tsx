@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Loader2, MapPin, X } from 'lucide-react'
 import { useAddCalibration, type CalibrationInput } from '@/lib/grazing-forage'
 import { usePastures } from '@/lib/pastures'
+import { localToday } from '@/lib/today'
 
 /**
  * Clip-and-weigh entry (spec §9.2).
@@ -21,7 +22,7 @@ export function CalibrationForm({ onClose }: { onClose: () => void }) {
   const add = useAddCalibration()
 
   const [pastureId, setPastureId] = useState('')
-  const [sampledOn, setSampledOn] = useState(() => new Date().toISOString().slice(0, 10))
+  const [sampledOn, setSampledOn] = useState(() => localToday())
   const [method, setMethod] = useState<CalibrationInput['method']>('clip_and_weigh')
   const [dryGrams, setDryGrams] = useState('')
   const [notes, setNotes] = useState('')

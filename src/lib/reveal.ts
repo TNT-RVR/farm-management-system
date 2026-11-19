@@ -10,7 +10,9 @@
  */
 export function revealOnMount(el: HTMLElement | null) {
   if (!el || el.offsetParent === null) return
-  el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  // A jump, not a smooth scroll: a smooth one can be dropped when the page is
+  // busy or not painting, and then the form stays out of sight.
+  el.scrollIntoView({ block: 'center' })
   const box = el.matches('input, select, textarea') ? el : el.querySelector<HTMLElement>('input, select, textarea')
   box?.focus({ preventScroll: true })
 }

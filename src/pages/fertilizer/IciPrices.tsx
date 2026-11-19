@@ -24,6 +24,7 @@ import { STRAIGHTS, straightKeyOf } from '@/lib/fert-savings/straights'
 import { money as fmtMoney } from '@/lib/format'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
+import { localToday } from '@/lib/today'
 
 /**
  * What ICI has charged this farm for fertilizer, product by product.
@@ -73,7 +74,7 @@ export function IciPrices({ isManager }: { isManager: boolean }) {
   const [blendsOpen, setBlendsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [quoting, setQuoting] = useState(false)
-  const [form, setForm] = useState({ product_id: '', on: new Date().toISOString().slice(0, 10), value: '' })
+  const [form, setForm] = useState({ product_id: '', on: localToday(), value: '' })
 
   const rows = useMemo<Row[]>(() => {
     return (products?.products ?? [])

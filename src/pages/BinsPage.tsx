@@ -42,6 +42,7 @@ import { cn } from '@/lib/utils'
 import { useAllCropZones } from '@/lib/cropZones'
 import { Modal } from '@/components/Modal'
 import { dbErrorMessage } from '@/lib/db-error'
+import { localToday } from '@/lib/today'
 
 export type StorageTab = 'estimator' | 'bins' | 'map'
 
@@ -561,7 +562,7 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
                         ) : (
                           <button
                             type="button"
-                            onClick={() => setEmptying({ id: c.id, on: new Date().toISOString().slice(0, 10) })}
+                            onClick={() => setEmptying({ id: c.id, on: localToday() })}
                             className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
                           >
                             Emptied

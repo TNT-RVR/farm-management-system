@@ -29,11 +29,12 @@ import { AdderNote, adderText } from './AdderNote'
 import { Empty, Table, ToolCard, button, ghost, input, money, n0, n1, perLbFmt, td, tdNum } from './ui'
 import { RowDelete, RowEditor } from './RowEditor'
 import { askConfirm } from '@/components/askConfirm'
+import { localToday } from '@/lib/today'
 
 const NUTRIENT_LABEL: Record<NutrientKey, string> = { n: 'N', p2o5: 'P₂O₅', k2o: 'K₂O', s: 'S' }
 const productOptions = STRAIGHTS.map((s) => ({ value: s.key, label: s.label }))
 const labelOf = (key: string) => straightByKey(key)?.label ?? key
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => localToday()
 const rowCls = 'cursor-pointer hover:bg-gray-50'
 const day = (iso: string) => localDate(iso).toLocaleDateString('en-CA', { day: 'numeric', month: 'short', year: 'numeric' })
 const errOf = (...e: (unknown | null)[]) => {

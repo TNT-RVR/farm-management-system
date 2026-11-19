@@ -55,6 +55,19 @@ export type ContractDraft = {
  * grain is contracted unpriced often enough — but a negative one is never
  * anything but a typo.
  */
+/**
+ * The amount and price boxes named in the crop's own unit. The editor said
+ * "Bushels" for every contract, so a seed contract in pounds read as bushels
+ * (second-round walk, 18 Nov 2026).
+ */
+export function contractUnitLabels(unit?: string | null): { amount: string; price: string } {
+  if (unit === 'lbs' || unit === 'lb') return { amount: 'Pounds', price: 'Price per lb' }
+  if (unit === 'cwt') return { amount: 'Hundredweight', price: 'Price per cwt' }
+  if (unit === 'MT') return { amount: 'Tonnes', price: 'Price per tonne' }
+  if (unit && unit !== 'bu') return { amount: `Amount (${unit})`, price: `Price per ${unit}` }
+  return { amount: 'Bushels', price: 'Price per bushel' }
+}
+
 export function contractProblems(d: ContractDraft): string[] {
   const out: string[] = []
   if (!d.cropId) out.push('Pick the crop.')

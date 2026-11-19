@@ -17,6 +17,7 @@ import {
 } from './straights'
 import { computeAdders, surveyKeyOf, type DtnWeek, type FxDay, type ProductAdder, type SurveyPrice } from './adder'
 import { yieldsWithCrops } from '@/lib/crop-yields'
+import { localToday } from '@/lib/today'
 
 type Tables = Database['public']['Tables']
 export type FertTable =
@@ -42,7 +43,7 @@ export type CheckStrip = Tables['fert_check_strips']['Row']
 const db = supabase as any
 
 const DAY = 86_400_000
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => localToday()
 const daysBetween = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / DAY
 
 /* ---------------------------------------------------------------- settings */

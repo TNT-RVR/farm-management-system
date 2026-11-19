@@ -20,6 +20,7 @@ import { Empty, FieldLink, Table, ToolCard, ghost, input, money, n0, perLbFmt, t
 import { fertYieldGoal } from '@/lib/yield-goal'
 import { useRetailerName } from '@/lib/products'
 import { KgAside } from '@/components/KgAside'
+import { localToday } from '@/lib/today'
 
 /** Pounds an acre of one nutrient across a requirement's lines. */
 function lineLb(r: FieldRequirement, nutrient: 'N' | 'P' | 'K' | 'S'): number {
@@ -520,7 +521,7 @@ export function SplitCard() {
         crop_year: inputs.cropYear,
         upfront_pct: patch.upfront_pct ?? cur.pct,
         status: (patch.status ?? cur.status) as 'planned' | 'applied' | 'skipped',
-        decided_on: patch.status && patch.status !== 'planned' ? new Date().toISOString().slice(0, 10) : null,
+        decided_on: patch.status && patch.status !== 'planned' ? localToday() : null,
       },
       onConflict: 'field_id,crop_year',
     })
@@ -639,7 +640,7 @@ export function TissueGateCard() {
                     className={ghost}
                     onClick={() =>
                       m.upsert.mutate({
-                        row: { field_id: x.r.fieldId, crop_year: inputs.cropYear, upfront_pct: x.pct, status: 'skipped', decided_on: new Date().toISOString().slice(0, 10) },
+                        row: { field_id: x.r.fieldId, crop_year: inputs.cropYear, upfront_pct: x.pct, status: 'skipped', decided_on: localToday() },
                         onConflict: 'field_id,crop_year',
                       })
                     }

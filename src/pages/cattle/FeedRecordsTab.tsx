@@ -42,6 +42,7 @@ import { WarningList } from '@/pages/cattle/feed/bits'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { MenuButton } from '@/components/MenuButton'
 import { CardList, RowCard } from '@/components/RowCards'
+import { localToday } from '@/lib/today'
 
 /**
  * The cattle manager's feed sheets, typed in.
@@ -159,7 +160,10 @@ function describePeriod(start: string, end: string): string {
     e.getDate() === new Date(e.getFullYear(), e.getMonth() + 1, 0).getDate()
   if (wholeMonth) return monthName(start)
   const fmt = (d: Date) => d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
-  return `${fmt(s)} - ${fmt(e)}, ${e.getFullYear()}`
+  // One day reads as that day, not "Nov 19 - Nov 19" (second-round walk, 18 Nov 2026).
+  if (start === end) return `${fmt(s)}, ${s.getFullYear()}`
+  const sYear = s.getFullYear() !== e.getFullYear() ? `, ${s.getFullYear()}` : ''
+  return `${fmt(s)}${sYear} – ${fmt(e)}, ${e.getFullYear()}`
 }
 
 type DraftLine = {
@@ -183,7 +187,7 @@ const blankLine = (): DraftLine => ({
 })
 
 /** Today, as the date inputs want it. */
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => localToday()
 
 export function FeedRecordsTab({
   ranchId,
@@ -517,7 +521,7 @@ export function FeedRecordsTab({
           message={`${confirmDelete.herd_group}, ${describePeriod(
             confirmDelete.period_start,
             confirmDelete.period_end,
-          )} - and its ${confirmDelete.feed_record_lines.length} line(s). This cannot be undone from here.`}
+          )}, and its ${confirmDelete.feed_record_lines.length} ${confirmDelete.feed_record_lines.length === 1 ? 'line' : 'lines'}. This cannot be undone from here.`}
           confirmLabel="Delete"
           busy={remove.isPending}
           error={remove.error ? dbErrorMessage(remove.error, 'That could not be deleted.') : null}

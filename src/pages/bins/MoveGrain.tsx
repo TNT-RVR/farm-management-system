@@ -10,6 +10,7 @@ import { cropForVariety } from '@/lib/crop-variety-settings'
 import { useCropVarietySettings } from '@/lib/crop-variety-settings-data'
 import { useBinContents } from '@/lib/bin-contents'
 import { bushelWeightFor, convertMass, MASS_UNITS, type MassUnit } from '@/lib/bushels'
+import { localToday } from '@/lib/today'
 
 const numInput =
   'w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-brand-600 focus:outline-none'
@@ -64,7 +65,7 @@ export function MoveGrain({
   const [toBinId, setToBinId] = useState('')
   const [amount, setAmount] = useState('')
   const [unit, setUnit] = useState<MassUnit>('bu')
-  const [movedAt, setMovedAt] = useState(new Date().toISOString().slice(0, 10))
+  const [movedAt, setMovedAt] = useState(localToday())
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)

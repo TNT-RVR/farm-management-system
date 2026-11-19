@@ -9,6 +9,7 @@ import { useCropVarietySettings } from '@/lib/crop-variety-settings-data'
 import { binCropOptions, useBinContents } from '@/lib/bin-contents'
 import { bushelWeightFor, convertMass, MASS_UNITS, type MassUnit } from '@/lib/bushels'
 import { cn } from '@/lib/utils'
+import { localToday } from '@/lib/today'
 
 const box = 'mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-brand-600 focus:outline-none'
 const numBox = cn(box, 'text-right tabular-nums')
@@ -56,7 +57,7 @@ export function AddToBin({
   const [amount, setAmount] = useState('')
   const [unit, setUnit] = useState<MassUnit>('bu')
   const [grownIn, setGrownIn] = useState(String(cropYear - 1))
-  const [movedAt, setMovedAt] = useState(new Date().toISOString().slice(0, 10))
+  const [movedAt, setMovedAt] = useState(localToday())
   const [supplier, setSupplier] = useState('')
   const [cost, setCost] = useState('')
   const [notes, setNotes] = useState('')

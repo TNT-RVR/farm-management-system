@@ -2,6 +2,7 @@ import { PURPOSES, totalHead, type ManifestWithLines } from '@/lib/manifests'
 import { farmName } from '@/lib/farm-context'
 import type { SignatureImage } from '@/lib/signature'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { localToday } from '@/lib/today'
 
 /** Blank rows so the rest can be written in at the chute. */
 const BLANK_ROWS = 4
@@ -170,7 +171,7 @@ export function ManifestPrint({ manifest: m, signature }: { manifest: ManifestWi
       </div>
 
       <p className="mt-3 text-[8px] text-gray-400">
-        {farmName()} · printed {new Date().toISOString().slice(0, 10)} · this is the farm&rsquo;s
+        {farmName()} · printed {localToday()} · this is the farm&rsquo;s
         copy
       </p>
     </div>

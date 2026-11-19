@@ -184,6 +184,14 @@ function BinsView() {
   // reload if it was open when the phone was put down (9 Oct), or asked for
   // by the % button on another Harvest view (?reading=1).
   const [reading, setReading] = useState(() => moistureFormWasOpen() || params.get('reading') === '1')
+  // Each tap of Add → Moisture test is a new navigation, so it opens the form
+  // again even when this page is already showing (as Tasks does for ?new=1).
+  const { key: navKey } = useLocation()
+  const [seenNav, setSeenNav] = useState<string | null>(null)
+  if (params.get('reading') === '1' && navKey !== seenNav) {
+    setSeenNav(navKey)
+    if (!reading) setReading(true)
+  }
   useEffect(() => {
     if (params.get('reading') !== '1') return
     const next = new URLSearchParams(params)

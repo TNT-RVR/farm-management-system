@@ -39,6 +39,7 @@ import {
   type SecondPass,
 } from '@/lib/virtual-fence'
 import { HeadTip } from '@/components/HeadTip'
+import { localToday } from '@/lib/today'
 
 const DAYS_KEY = 'virtual_fence_days'
 const CALVES_KEY = 'virtual_fence_calves'
@@ -245,7 +246,7 @@ export function VirtualFenceRotation({ ranch }: { ranch: Ranch }) {
   const thisYear = new Date().getFullYear()
   const planYear = new Date().getMonth() >= 7 ? thisYear + 1 : thisYear
   const season = useMemo(() => grazingSeason(herd ?? [], planYear), [herd, planYear])
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localToday()
   const turnIn = turnInPick ?? (today > season.from && today < season.to ? today : season.from)
 
   /*

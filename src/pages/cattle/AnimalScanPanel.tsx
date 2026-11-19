@@ -9,6 +9,7 @@ import { useCattleMutations, type CattleRow } from '@/lib/cattle'
 import { useRecentScans, useRecordScan } from '@/lib/cattle-animals'
 import { PREGNANCY_STATUSES } from '@/lib/eshepherd-animals'
 import { dbErrorMessage } from '@/lib/db-error'
+import { localToday } from '@/lib/today'
 
 /**
  * Scan an animal in the yard, and write down what you find.
@@ -196,12 +197,12 @@ function ScannedAnimal({ animal, isManager, onDone }: { animal: CattleRow; isMan
     const patch: Record<string, unknown> = {}
     if (weight.trim()) {
       patch.weight_kg = Number(weight)
-      patch.weighed_on = new Date().toISOString().slice(0, 10)
+      patch.weighed_on = localToday()
     }
     if (preg) patch.pregnancy_status = preg
     if (note.trim()) {
       const was = (r.notes_md as string | null)?.trim()
-      const stamp = new Date().toISOString().slice(0, 10)
+      const stamp = localToday()
       patch.notes_md = `${was ? `${was}\n\n` : ''}${stamp}: ${note.trim()}`
     }
     if (!Object.keys(patch).length) return

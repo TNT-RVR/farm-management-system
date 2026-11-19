@@ -20,6 +20,7 @@ import { FeedInfo } from './FeedInfo'
 import { Num, n0, n1 } from './bits'
 import { askConfirm } from '@/components/askConfirm'
 import { TABLE_HEAD } from '@/lib/table-style'
+import { localToday } from '@/lib/today'
 
 const CATEGORY_LABEL: Record<FeedCategory, string> = {
   hay: 'Hay',
@@ -230,7 +231,7 @@ export function FeedQuality({
 
 function TestForm({ feed, onDone }: { feed: FeedTypeRow; onDone: () => void }) {
   const m = useFeedTestMutations()
-  const [f, setF] = useState({ sampled_on: new Date().toISOString().slice(0, 10), lab: '', dm: '', cp: '', tdn: '', adf: '', ndf: '', nitrate: '', nitrateUnit: 'pct', notes: '' })
+  const [f, setF] = useState({ sampled_on: localToday(), lab: '', dm: '', cp: '', tdn: '', adf: '', ndf: '', nitrate: '', nitrateUnit: 'pct', notes: '' })
   const n = (s: string) => (s.trim() === '' ? null : Number(s))
   const cat = feed.category as FeedCategory
   const estTdn = n(f.tdn) == null && n(f.adf) != null ? tdnFromAdf(cat, n(f.adf)!, n(f.cp), feed.legume) : null

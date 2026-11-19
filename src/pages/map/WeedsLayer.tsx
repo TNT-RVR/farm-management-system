@@ -17,6 +17,7 @@ import {
   type Weed,
 } from '@/lib/weeds'
 import { cn } from '@/lib/utils'
+import { localToday } from '@/lib/today'
 
 /**
  * A weed photo, or its colour when there is no photo.
@@ -365,7 +366,7 @@ export function WeedsLayer({
             save.mutate({
               id: selected.id,
               weed: selected.weed,
-              treated_on: treatment ? new Date().toISOString().slice(0, 10) : null,
+              treated_on: treatment ? localToday() : null,
               treatment,
               // Cleared along with the date on an undo, so a patch never claims
               // a chemical it is no longer marked as having had.

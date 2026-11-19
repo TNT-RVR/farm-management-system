@@ -23,7 +23,7 @@ import {
   type ContractRow,
   type ContractStatus,
 } from '@/lib/sales'
-import { contractProblems } from '@/lib/contracts'
+import { contractProblems, contractUnitLabels } from '@/lib/contracts'
 import { dbErrorMessage } from '@/lib/db-error'
 import { money, money2 } from '@/lib/planner'
 import { Select } from '@/components/Select'
@@ -346,7 +346,7 @@ export function ContractsPage() {
                   />
                 </label>
                 <label className="text-xs text-gray-500">
-                  Units (bu/lbs/cwt)
+                  {form.crop_id ? contractUnitLabels(cropUnit(form.crop_id)).amount : 'Amount (bu, lb or cwt)'}
                   <input
                     type="number"
                     value={form.bushels}
@@ -355,7 +355,7 @@ export function ContractsPage() {
                   />
                 </label>
                 <label className="text-xs text-gray-500">
-                  Price / unit
+                  {form.crop_id ? contractUnitLabels(cropUnit(form.crop_id)).price : 'Price / unit'}
                   <input
                     type="number"
                     step="0.01"
@@ -505,7 +505,7 @@ export function ContractsPage() {
         <ContractEditor
           cropYear={cropYear}
           existing={editing}
-          crops={(crops ?? []).map((c) => ({ id: c.id, name: c.name }))}
+          crops={(crops ?? []).map((c) => ({ id: c.id, name: c.name, unit: c.yield_unit }))}
           isManager={isManager}
           deliveredFromTickets={ticketed.has(editing.id)}
           onClose={() => setEditing(null)}

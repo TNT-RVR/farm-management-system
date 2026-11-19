@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils'
 import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 import { Modal } from '@/components/Modal'
 import { HeadTip } from '@/components/HeadTip'
+import { localToday } from '@/lib/today'
 
 const KINDS: FeedInventoryKind[] = [
   'harvested',
@@ -132,7 +133,7 @@ export function FeedOnHandPanel({
     quantity: '',
     unit: 'lb',
     lb_per_bale: '',
-    moved_on: new Date().toISOString().slice(0, 10),
+    moved_on: localToday(),
     note: '',
   })
 

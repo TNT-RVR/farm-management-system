@@ -15,6 +15,7 @@ import type { Json } from './database.types'
 import { farmCode } from './fuel-market'
 import type { FuelProduct } from './fuel-supplier-invoice'
 import { latestQbPrices, readQbFuelBills, type QbFuelBill, type QbFuelLineRow } from './qb-fuel'
+import { localToday } from '@/lib/today'
 
 const num = (v: unknown): number | null => {
   const n = typeof v === 'string' ? Number(v) : v
@@ -178,7 +179,7 @@ export function useSaveTypedFuelDefault() {
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      const value = { perL: v.perL, product: 'farm_diesel', by: v.by, on: new Date().toISOString().slice(0, 10) }
+      const value = { perL: v.perL, product: 'farm_diesel', by: v.by, on: localToday() }
       const { error } = await supabase
         .from('operating_settings')
         .upsert({ key: 'fuel_default_per_l', value: value as unknown as Json, updated_by: user?.id ?? null, updated_at: new Date().toISOString() }, { onConflict: 'key' })

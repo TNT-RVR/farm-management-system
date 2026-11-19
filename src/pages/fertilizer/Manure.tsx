@@ -43,6 +43,7 @@ import { n0, n1 } from '@/lib/format'
 import { YearSelect } from '@/components/YearSelect'
 import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
+import { localToday } from '@/lib/today'
 
 const SRC = 'manure'
 const FILL = 'manure-fill'
@@ -218,7 +219,7 @@ function SaveSpread({
     existing?.rate_tons_per_acre != null ? String(existing.rate_tons_per_acre) : '20',
   )
   const [appliedOn, setAppliedOn] = useState(
-    existing?.applied_on ?? new Date().toISOString().slice(0, 10),
+    existing?.applied_on ?? localToday(),
   )
   const [manureType, setManureType] = useState<string>(existing?.manure_type ?? 'fresh_pen')
   // An old record says only yes/no; it keeps saying that until someone picks a day.

@@ -26,6 +26,7 @@ import {
 import { askConfirm } from '@/components/askConfirm'
 import { CARD_HEAD } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
+import { localToday } from '@/lib/today'
 
 /** The fields a logged event is corrected through (managers; Sam, 7 Oct 2026). */
 const EVENT_FIELDS: EditField[] = [
@@ -54,7 +55,7 @@ export function CattleDetailPage() {
   const herdTakeOff = useHerdTakeOff()
   const [ev, setEv] = useState({
     event_type: 'vaccination' as (typeof CATTLE_EVENT_TYPES)[number],
-    event_date: new Date().toISOString().slice(0, 10),
+    event_date: localToday(),
     weight_lb: '',
     product: '',
     notes: '',

@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils'
 import { askConfirm } from '@/components/askConfirm'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
+import { localToday } from '@/lib/today'
 
 /**
  * The gap between what a buyer offers and what the board says.
@@ -327,7 +328,7 @@ function AddBidDialog({
 }) {
   const [cropId, setCropId] = useState(existing?.crop_id ?? crops[0]?.value ?? '')
   const [buyer, setBuyer] = useState(existing?.buyer ?? '')
-  const [bidOn, setBidOn] = useState(existing?.bid_on ?? new Date().toISOString().slice(0, 10))
+  const [bidOn, setBidOn] = useState(existing?.bid_on ?? localToday())
   const [price, setPrice] = useState(existing ? String(existing.price_per_unit) : '')
   const [unit, setUnit] = useState(existing?.unit ?? 'bu')
   const [location, setLocation] = useState(existing?.location ?? '')

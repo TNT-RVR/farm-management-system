@@ -29,6 +29,7 @@ import {
 import { PREGNANCY_STATUSES, STOCK_CLASSES } from '@/lib/eshepherd-animals'
 import { AnimalScanPanel } from '@/pages/cattle/AnimalScanPanel'
 import { dbErrorMessage } from '@/lib/db-error'
+import { localToday } from '@/lib/today'
 
 /**
  * The animal register: eShepherd's sheet in, the same sheet out.
@@ -158,7 +159,7 @@ export function AnimalRegister({
       const a = document.createElement('a')
       a.href = url
       const where = ranchId ? ` ${ranchName(ranchId)}` : ''
-      a.download = `eShepherd animals${where} ${new Date().toISOString().slice(0, 10)}.xlsx`
+      a.download = `eShepherd animals${where} ${localToday()}.xlsx`
       a.click()
       setTimeout(() => URL.revokeObjectURL(url), 10_000)
     } catch (e) {

@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils'
 import { powerByUse } from '@/lib/irrigation-power-core'
 import { usePowerBillSites } from '@/lib/power-bills'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { localToday } from '@/lib/today'
 
 const money0 = (v: number) => v.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
 const when = (iso: string) => new Date(iso).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -80,7 +81,7 @@ export function BooksFixedCosts({ year, locked, setting }: { year: number; locke
   )
 
   if (!company || !connected) return null
-  const unfinished = fy.end > new Date().toISOString().slice(0, 10)
+  const unfinished = fy.end > localToday()
   const parts = FIXED_CATEGORIES.filter((c) => c.key !== 'depreciation' || includeDep)
   const savedAmount = (k: FixedCategory) => {
     const l = (saved ?? []).find((x) => x.category === k)

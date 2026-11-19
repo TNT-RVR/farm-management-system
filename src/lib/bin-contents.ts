@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
+import { localToday } from '@/lib/today'
 
 /**
  * What is actually sitting in a bin, including last year's grain.
@@ -121,7 +122,7 @@ export function useEmptyBin() {
       const { error } = await supabase
         .from('bin_contents')
         .update({
-          emptied_on: on ?? new Date().toISOString().slice(0, 10),
+          emptied_on: on ?? localToday(),
           updated_at: new Date().toISOString(),
           updated_by: user?.id ?? null,
         })

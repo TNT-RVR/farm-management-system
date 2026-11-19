@@ -60,6 +60,7 @@ import { FuelTab } from './hauling/FuelTab'
 import { PricesBar } from './hauling/ui'
 import { TabSuspense } from '@/components/TabSuspense'
 import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { localToday } from '@/lib/today'
 
 // The maps and charts are their own chunks, loaded when their tab (or the price chart) shows.
 const PriceChart = lazy(() =>
@@ -830,7 +831,7 @@ function PurchaseHistory({
   const [openId, setOpenId] = useState<string | null>(null)
   const [editing, setEditing] = useState<FuelPurchase | null>(null)
   const [form, setForm] = useState({
-    on: new Date().toISOString().slice(0, 10),
+    on: localToday(),
     product: 'farm_diesel' as FuelProduct,
     litres: '',
     price: '',

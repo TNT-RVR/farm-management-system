@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils'
 import { contactNameOf, cropNameOf, quickBooksColumns } from '@/lib/reports/lists'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
+import { localToday } from '@/lib/today'
 
 function Variance({ value, goodWhenPositive }: { value: number; goodWhenPositive: boolean }) {
   if (Math.abs(value) < 0.5) return <span className="text-gray-400">—</span>
@@ -106,7 +107,7 @@ export function ActualsTab({ budget, locked }: { budget: BudgetLine[]; locked: b
     category: '',
     crop_id: '',
     contact_id: '',
-    entry_date: new Date().toISOString().slice(0, 10),
+    entry_date: localToday(),
     description: '',
   })
 

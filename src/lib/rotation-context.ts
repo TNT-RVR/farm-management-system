@@ -15,6 +15,7 @@ import { productResolver, sprayedProducts } from './spray-products'
 import { asTrait, grownTrait, type CanolaYear } from './canola-trait'
 import { companyLookup } from './crop-label'
 import { companyOf as scoutCompanyOf, scoutPassed, seedCompanyOf } from './scout-reports'
+import { localToday } from '@/lib/today'
 
 const SANDY = /^(S|LS|SL|LFS|FS|FSL|LVFS|VFS|CS|LCS)$/i
 
@@ -286,7 +287,7 @@ export function useRotationContext(cropYear: number) {
       inputs: (d.inputs ?? []).map((i) => ({ ...i, cost_per_acre: i.cost_per_acre == null ? null : Number(i.cost_per_acre) })),
       market: d.market ?? [],
       bids: new Map(d.bids ?? []),
-      today: new Date().toISOString().slice(0, 10),
+      today: localToday(),
     }
     const money = (v: number) => (v < 1 ? v.toFixed(3) : v.toFixed(2))
     const deals: LandDeal[] = (d.leases ?? []).map((l) => ({

@@ -2,7 +2,7 @@ import { DateField } from '@/components/DateField'
 import { ScaleTickets } from '@/pages/contracts/ScaleTickets'
 import { useState } from 'react'
 import { Modal } from '@/components/Modal'
-import { contractProblems, useDeleteContract, useSaveContract, type Contract } from '@/lib/contracts'
+import { contractProblems, contractUnitLabels, useDeleteContract, useSaveContract, type Contract } from '@/lib/contracts'
 import { dbErrorMessage } from '@/lib/db-error'
 import { useContacts } from '@/lib/sales'
 import type { Database } from '@/lib/database.types'
@@ -51,7 +51,7 @@ export function ContractEditor({
 }: {
   cropYear: number
   existing?: Contract
-  crops: { id: string; name: string }[]
+  crops: { id: string; name: string; unit?: string | null }[]
   isManager: boolean
   deliveredFromTickets?: boolean
   onClose: () => void
@@ -85,6 +85,7 @@ export function ContractEditor({
 
   const bushels = numOrNull(d.bushels)
   const price = numOrNull(d.price_per_unit)
+  const words = contractUnitLabels(crops.find((c) => c.id === d.crop_id)?.unit)
   const delivered = deliveredFromTickets ? undefined : (numOrNull(d.delivered_bu) ?? 0)
   const problems = contractProblems({
     cropId: d.crop_id || null,
@@ -149,7 +150,7 @@ export function ContractEditor({
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <label className="text-xs text-gray-500">
-            Bushels
+            {words.amount}
             <input
               className={input}
               inputMode="decimal"
@@ -158,7 +159,7 @@ export function ContractEditor({
             />
           </label>
           <label className="text-xs text-gray-500">
-            Price per bushel
+            {words.price}
             <input
               className={input}
               inputMode="decimal"

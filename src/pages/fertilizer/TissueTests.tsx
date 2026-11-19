@@ -27,6 +27,7 @@ import {
 } from '@/lib/tissue'
 import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
+import { localToday } from '@/lib/today'
 
 type TissueRow = Database['public']['Tables']['tissue_tests']['Row']
 
@@ -442,7 +443,7 @@ function TissueTestForm({ cropYear, existing, onClose }: { cropYear: number; exi
   const { save, update } = useTissueMutations(cropYear)
   const busy = existing ? update : save
   const [form, setForm] = useState<Record<string, string>>(() =>
-    existing ? tissueFormOf(existing) : { sampled_on: new Date().toISOString().slice(0, 10) },
+    existing ? tissueFormOf(existing) : { sampled_on: localToday() },
   )
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
   const num = (k: string) => {

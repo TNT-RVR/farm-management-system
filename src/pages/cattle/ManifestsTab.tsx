@@ -32,6 +32,7 @@ import {
 import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { CardList, RowCard } from '@/components/RowCards'
 import { useHerdTakeOff } from '@/pages/cattle/HerdTakeOff'
+import { localToday } from '@/lib/today'
 
 type ManifestInsert = Database['public']['Tables']['cattle_manifests']['Insert']
 type ManifestLineInsert = Omit<
@@ -503,7 +504,7 @@ function ManifestForm({
 }) {
   const [d, setD] = useState<Draft>(() => {
     const base: Draft = {
-      moved_on: existing?.moved_on ?? new Date().toISOString().slice(0, 10),
+      moved_on: existing?.moved_on ?? localToday(),
       // Paperwork for cattle leaving is what a manifest has always been here,
       // so that stays the default; 'in' is what puts a load on the arrivals
       // list and gives it a respiratory note.
@@ -875,7 +876,7 @@ function ManifestForm({
         signedBy={d.signed_by ?? ''}
         onSign={(name) => {
           set('signed_by', name)
-          if (!(d.signed_on ?? '').trim()) set('signed_on', new Date().toISOString().slice(0, 10))
+          if (!(d.signed_on ?? '').trim()) set('signed_on', localToday())
         }}
       />
 
@@ -893,7 +894,7 @@ function ManifestForm({
             const row: ManifestInsert = {
               ...(existing ? { id: existing.id } : {}),
               crop_year: cropYear,
-              moved_on: d.moved_on || new Date().toISOString().slice(0, 10),
+              moved_on: d.moved_on || localToday(),
             }
             for (const k of [
               'manifest_no',
