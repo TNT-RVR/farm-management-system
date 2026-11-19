@@ -401,6 +401,26 @@ export function useProductApplications() {
 }
 
 /** The invoice lines behind each product's price, newest first. */
+export type SeedDefault = { price: number; on: string; source: string }
+
+/**
+ * Each seed's default price: its last itemised purchase (Sam, 19 Nov 2026).
+ * A typed price overrides it; clearing the box goes back to it.
+ */
+export function useSeedDefaults(enabled: boolean) {
+  return useQuery({
+    queryKey: ['seed_purchase_default'],
+    enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('seed_purchase_default').select('*')
+      if (error) throw error
+      return new Map<string, SeedDefault>(
+        (data ?? []).map((d) => [d.product_id, { price: Number(d.price_per_unit), on: d.price_on, source: d.price_source }]),
+      )
+    },
+  })
+}
+
 export function useProductPurchases() {
   return useQuery({
     queryKey: ['product_purchases'],

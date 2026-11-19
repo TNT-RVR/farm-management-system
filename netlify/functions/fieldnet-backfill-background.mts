@@ -1,6 +1,7 @@
 import { admin, json, requireManager } from './_fieldnet.mts'
 import { rebuildApplied } from '../shared/fieldnet-applied.ts'
 import { hydrateSecrets } from '../shared/secrets.ts'
+import { farmToday } from '../shared/dates.ts'
 
 // Manager-triggered historical fill of applied irrigation.
 //
@@ -24,10 +25,11 @@ export default async (req: Request) => {
 
   const url = new URL(req.url)
   const from = url.searchParams.get('from') ?? DEFAULT_FROM
-  // Exclusive upper bound, and tomorrow by default so today is included.
+  // Exclusive upper bound, and tomorrow by default so today is included: the
+  // farm's tomorrow, since the rebuild's days are the farm's days.
   const to =
     url.searchParams.get('to') ??
-    new Date(Date.now() + 864e5).toISOString().slice(0, 10)
+    new Date(Date.parse(`${farmToday()}T12:00:00Z`) + 864e5).toISOString().slice(0, 10)
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from >= to) {
     return json({ error: 'from/to must be YYYY-MM-DD with from before to' }, 400)

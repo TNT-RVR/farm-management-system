@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { farmToday } from './dates.ts'
 
 // Cross-sensor harmonization (spec §4.5).
 //
@@ -123,7 +124,8 @@ export async function runHarmonization(sb: SupabaseClient): Promise<HarmonizeRes
           n_pairs: fit.n,
           r2: Number(fit.r2.toFixed(4)),
           source: 'local',
-          derived_on: new Date().toISOString().slice(0, 10),
+          // The farm's date: a fit made in the evening is not tomorrow's.
+          derived_on: farmToday(),
           updated_at: new Date().toISOString(),
         })
         .eq('collection', 'landsat-c2-l2')

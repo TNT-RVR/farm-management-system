@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ratioMoved } from '../../src/lib/fert-savings/checks.ts'
+import { farmYear } from './dates.ts'
 
 /**
  * Tell the managers when the nitrogen-to-crop price ratio moves enough to
@@ -38,7 +39,7 @@ export async function runNRatioWatch(sb: SupabaseClient): Promise<{ moved: strin
   // US$ per short ton of urea → C$ per lb of N.
   const nPerLb = (urea.value * fx.value) / 2000 / 0.46
 
-  const year = new Date().getFullYear()
+  const year = farmYear()
   const { data: prices } = await sb
     .from('crop_prices')
     .select('crop_id, crop_year, price_per_unit, crops(name)')

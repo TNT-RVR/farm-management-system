@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { DEFAULT_WARN_DAYS, dueLabel, dueState, nextDueLabel, type Due, type ServicePlan } from '../../src/lib/maintenance'
+import { farmYear } from './dates.ts'
 
 /**
  * A service that is due raises its own task.
@@ -102,7 +103,7 @@ export async function runServiceDue(sb: SupabaseClient, managerId: string): Prom
   const byMachine = new Map((machines ?? []).map((m) => [m.id, m as MachineRow]))
   const openByPlan = new Map((open ?? []).map((t) => [t.source_ref, t as TaskRow]))
   const result: ServiceDueResult = { plans: 0, raised: 0, updated: 0, retired: 0, detail: '' }
-  const year = new Date().getFullYear()
+  const year = farmYear()
 
   for (const plan of (plans ?? []) as PlanRow[]) {
     const machine = byMachine.get(plan.equipment_id)

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { changeList, changeSummary } from '../../src/lib/combine-monitor.ts'
 import { loadCombineStates } from '../../src/lib/combine-monitor-state.ts'
+import { farmYear } from './dates.ts'
 
 /**
  * Tell the managers when a combine's display goes out of date (Sam, 17 Oct
@@ -15,7 +16,7 @@ import { loadCombineStates } from '../../src/lib/combine-monitor-state.ts'
  * running count after that. A combine never marked loaded has nothing to
  * compare with and is left alone.
  */
-export async function runCombineMonitorWatch(sb: SupabaseClient, cropYear = new Date().getFullYear()): Promise<{ checked: number; alerted: string[] }> {
+export async function runCombineMonitorWatch(sb: SupabaseClient, cropYear = farmYear()): Promise<{ checked: number; alerted: string[] }> {
   // The crop year the app opens on (the calendar year). Fields with nothing
   // planned for it yet are neither added nor taken off, so the new year does
   // not set every combine off on 1 January.

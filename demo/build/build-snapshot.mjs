@@ -234,11 +234,23 @@ step('demo account created')
 // ------------------------------------------------------------ the made-up farm
 // As the database owner: these files are the farm's history, not a user's edits.
 await pg.exec('reset role; set row_security = off')
+// On the farm's clock, not the build machine's. PGlite takes its zone from the
+// host: UTC on the GitHub runner, where current_date turns over at 5-6 pm on
+// the farm, and the local zone on a PC. The made-up farm's "today" (every
+// current_date in demo/farm, farm_today() defaults, demo.meta.base_date and so
+// the manifest's baseDate) is the farm's date wherever the build runs. The zone
+// is the farm's own from Farm setup once 010_setup.sql has set it.
+const farmClock = async () => {
+  const { rows } = await pg.query(`select time_zone from public.farm_setup where time_zone is not null limit 1`)
+  await pg.query(`select set_config('TimeZone', $1, false)`, [rows[0]?.time_zone ?? 'America/Edmonton'])
+}
+await farmClock()
 const farmDir = path.join(ROOT, 'demo', 'farm')
 const farmFiles = existsSync(farmDir) ? readdirSync(farmDir).filter((f) => f.endsWith('.sql')).sort() : []
 for (const f of farmFiles) {
   try {
     await pg.exec(readFileSync(path.join(farmDir, f), 'utf8'))
+    await farmClock()
   } catch (e) {
     console.error(`\ndemo/farm/${f} failed: ${e.message.split('\n')[0]}${e.detail ? `\n  detail: ${e.detail}` : ''}${e.hint ? `\n  hint: ${e.hint}` : ''}${e.where ? `\n  where: ${e.where.split('\n')[0]}` : ''}`)
     process.exit(1)
@@ -278,6 +290,9 @@ if (CHECK) {
 }
 
 // ------------------------------------------------------------------ write
+// The day the farm's dates were written against, from the database that wrote
+// them, so the manifest can never disagree with the data it describes.
+const baseDate = (await pg.query(`select base_date::text as d from demo.meta`)).rows[0].d
 await pg.exec('checkpoint')
 const blob = await pg.dumpDataDir('gzip')
 const bytes = Buffer.from(await blob.arrayBuffer())
@@ -287,7 +302,7 @@ const file = `farm-${hash}.tar.gz`
 writeFileSync(path.join(outDir, file), bytes)
 writeFileSync(
   path.join(outDir, 'manifest.json'),
-  JSON.stringify({ snapshot: file, bytes: bytes.length, baseDate: new Date().toISOString().slice(0, 10), builtAt: new Date().toISOString() }, null, 2),
+  JSON.stringify({ snapshot: file, bytes: bytes.length, baseDate, builtAt: new Date().toISOString() }, null, 2),
 )
 step(`wrote ${path.relative(ROOT, path.join(outDir, file))} (${(bytes.length / 1048576).toFixed(1)} MB)`)
 await backend.close()

@@ -39,7 +39,7 @@ import {
 } from '../../src/lib/harvest-date.ts'
 import { decideWateringDone } from '../../src/lib/watering-done.ts'
 import { farmTz } from '../../src/lib/farm-context.ts'
-import { farmToday } from '../shared/dates.ts'
+import { farmToday, farmYear } from '../shared/dates.ts'
 import { finishedDays, finishedFor, handDayByField, handWorkDays, type FinishRow, type HandWorkRow } from '../../src/lib/field-work.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
 import { fetchHourly, saveHourly } from '../shared/weather-hourly.ts'
@@ -346,7 +346,7 @@ async function handle(req: Request | null) {
     wateringDone: [] as string[],
     errors: [] as string[],
   }
-  const year = new Date().getFullYear()
+  const year = farmYear()
   // Auto-generated irrigation tasks are attributed to an active manager
   // (the pipeline has no auth.uid()). null if the farm has no manager yet.
   const { data: mgr } = await sb

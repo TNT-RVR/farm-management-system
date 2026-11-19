@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { cropAlerts, type CropAlert } from '../../src/lib/crop-weather.ts'
 import { farmTz } from '../../src/lib/farm-context.ts'
+import { farmYear } from './dates.ts'
 
 /**
  * Frost and heat by crop stage, every morning.
@@ -12,7 +13,7 @@ import { farmTz } from '../../src/lib/farm-context.ts'
  * five days running is one message, not five.
  */
 export async function runCropWeatherWatch(sb: SupabaseClient): Promise<{ fields: number; sent: number; detail: string }> {
-  const year = new Date().getFullYear()
+  const year = farmYear()
   const [seasons, plans, points, harvests, loads] = await Promise.all([
     sb.from('field_crop_seasons').select('field_id, planting_date').eq('crop_year', year).not('planting_date', 'is', null),
     sb.from('crop_plans').select('field_id, crops(name)').eq('crop_year', year),

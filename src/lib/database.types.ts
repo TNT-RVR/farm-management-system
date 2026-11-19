@@ -10126,6 +10126,20 @@ export type Database = {
        * research_folders with the number of papers in the folder and in
        * everything under it. Migration 20261031120000. Read-only.
        */
+      /**
+       * Each seed's default price per thousand seeds, from its last itemised
+       * purchase (a rule says how many seeds a pack holds). Migration
+       * 20261119050000. Read-only.
+       */
+      seed_purchase_default: {
+        Row: {
+          product_id: string
+          price_per_unit: number
+          price_on: string
+          price_source: string
+        }
+        Relationships: []
+      }
       research_folders_v: {
         Row: {
           id: string
@@ -11264,6 +11278,14 @@ export type Database = {
       }
     }
     Functions: {
+      /**
+       * Puts each seed's last-bought price on every seed row nobody typed a
+       * price for. Migration 20261119050000.
+       */
+      refresh_seed_prices: {
+        Args: Record<string, never>
+        Returns: number
+      }
       /**
        * Rows that are a second listing of a grant already on the list.
        * Migration 20261109130000.

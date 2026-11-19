@@ -12,6 +12,7 @@ import {
   useProductPurchases,
   useRegistrationTypes,
   useSaveProduct,
+  useSeedDefaults,
   type JdProduct,
   type ProductApplication,
 } from '@/lib/products'
@@ -41,6 +42,7 @@ import { HelpNote } from '@/components/HelpNote'
 import { CardList, RowCard, type Fact } from '@/components/RowCards'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { HeadTip } from '@/components/HeadTip'
+import { localToday } from '@/lib/today'
 
 /**
  * The price book behind every input cost in the app.
@@ -168,6 +170,12 @@ export function ProductPrices({
   )
   const { data: recrop } = useRecropRules(category === 'chemical')
   const saveProduct = useSaveProduct()
+  // Seed defaults to its last-bought price; a typed one overrides it (Sam, 19 Nov 2026).
+  const { data: seedDefaults } = useSeedDefaults(category === 'seed')
+  const applyDefault = (p: JdProduct) => {
+    const d = seedDefaults?.get(p.id)
+    if (d) saveProduct.mutate({ id: p.id, price_per_unit: d.price, price_updated_on: d.on, price_source: d.source })
+  }
   const linkAlias = useLinkAlias()
   // Sam, 7 Oct 2026: a product can be typed in by hand, and a hand-added one deleted.
   const addProduct = useAddProduct()
@@ -339,7 +347,18 @@ export function ProductPrices({
     // which would read as free on every field the product touched.
     const value = trimmed === '' ? null : Number(trimmed)
     if (value != null && (!Number.isFinite(value) || value < 0)) return
-    if (value !== p.price_per_unit) saveProduct.mutate({ id: p.id, price_per_unit: value })
+    if (category === 'seed') {
+      // Seed: a typed price is marked so the last-bought default never
+      // overwrites it, and an emptied box goes back to that default.
+      if (value == null && seedDefaults?.has(p.id)) applyDefault(p)
+      else if (value !== p.price_per_unit)
+        saveProduct.mutate({
+          id: p.id,
+          price_per_unit: value,
+          price_source: value == null ? null : 'Typed',
+          price_updated_on: value == null ? null : localToday(),
+        })
+    } else if (value !== p.price_per_unit) saveProduct.mutate({ id: p.id, price_per_unit: value })
     setDraft((d) => {
       const next = { ...d }
       delete next[p.id]
@@ -434,14 +453,34 @@ export function ProductPrices({
       /* Where the price came from, and when. A price with no date is one
          somebody typed, and it has been ageing quietly ever since while the
          field costs treated it as current. */
-      priceFrom: p.price_updated_on ? (
-        <span className={cn(isStale(p.price_updated_on) && 'text-amber-700')}>
-          {p.price_updated_on}
-          {p.price_source && <span className="block text-xs text-gray-400">{p.price_source}</span>}
-        </span>
-      ) : p.price_per_unit != null ? (
-        <span className="text-gray-400">entered by hand</span>
-      ) : null,
+      priceFrom: (() => {
+        const dated = p.price_updated_on ? (
+          <span className={cn('block', isStale(p.price_updated_on) && 'text-amber-700')}>
+            {p.price_updated_on}
+            {p.price_source && <span className="block text-xs text-gray-400">{p.price_source}</span>}
+          </span>
+        ) : p.price_per_unit != null ? (
+          <span className="block text-gray-400">entered by hand</span>
+        ) : null
+        // A typed seed price overrides the last-bought one; one click puts it back.
+        const d = seedDefaults?.get(p.id)
+        const back =
+          canEdit && d && p.price_source !== d.source ? (
+            <button
+              type="button"
+              onClick={() => applyDefault(p)}
+              className="mt-1 text-xs text-brand-700 underline hover:text-brand-800"
+            >
+              Use last-bought price (${d.price.toFixed(2)})
+            </button>
+          ) : null
+        return dated || back ? (
+          <>
+            {dated}
+            {back}
+          </>
+        ) : null
+      })(),
       /* Which fields it went on. Two named, then a count — the full list is
          one click away and a dozen field names in a cell is a wall. */
       fields:

@@ -1739,7 +1739,13 @@ COMMENT ON FUNCTION "public"."farm_time_is"("p_hours" integer[], "p_dow" integer
 CREATE OR REPLACE FUNCTION "public"."farm_today"() RETURNS "date"
     LANGUAGE "sql" STABLE
     SET "search_path" TO 'public', 'extensions'
-    AS $$ select (now() at time zone public.farm_tz())::date $$;
+    AS $$
+  select (now() at time zone case
+           when public.farm_tz() = 'America/Edmonton' and now() >= timestamptz '2026-11-01 08:00+00'
+             then 'America/Regina'
+           else public.farm_tz()
+         end)::date
+$$;
 
 
 ALTER FUNCTION "public"."farm_today"() OWNER TO "postgres";
@@ -4240,6 +4246,20 @@ end $$;
 
 
 ALTER FUNCTION "public"."fn_purchase_reprice_product"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_purchases_refresh_seed_prices"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  perform public.refresh_seed_prices();
+  return null;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_purchases_refresh_seed_prices"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_push_dispatch"() RETURNS "trigger"
@@ -7938,6 +7958,36 @@ $$;
 
 
 ALTER FUNCTION "public"."refresh_irrigation_assignments"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."refresh_seed_prices"() RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  changed integer := 0;
+begin
+  if auth.uid() is not null and not public.is_active() then
+    raise exception 'Only active accounts can do this';
+  end if;
+
+  update public.jd_products p
+     set price_per_unit = d.price_per_unit,
+         price_updated_on = d.price_on,
+         price_source = d.price_source,
+         updated_at = now()
+    from public.seed_purchase_default d
+   where p.id = d.product_id
+     and (p.price_source is null or p.price_source like 'Last bought:%')
+     and (p.price_per_unit is distinct from d.price_per_unit or p.price_source is distinct from d.price_source);
+
+  get diagnostics changed = row_count;
+  return changed;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."refresh_seed_prices"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."refresh_soil_input_hashes"("p_report_ids" "uuid"[] DEFAULT NULL::"uuid"[]) RETURNS integer
@@ -20059,6 +20109,42 @@ COMMENT ON COLUMN "public"."scouting_notes"."count_unit" IS 'What count_value co
 
 
 
+CREATE OR REPLACE VIEW "public"."seed_purchase_default" WITH ("security_invoker"='true') AS
+ WITH "rules"("product_pattern", "purchase_pattern", "pack_unit", "k_seeds_per_pack", "pack_words") AS (
+         VALUES ('corn'::"text",'corn|dkc|pioneer'::"text",'bag'::"text",(80)::numeric,'bag of 80,000 seeds'::"text")
+        ), "latest" AS (
+         SELECT DISTINCT ON ("r"."product_pattern") "r"."product_pattern",
+            "r"."k_seeds_per_pack",
+            "r"."pack_words",
+            "pp"."supplier",
+            "pp"."invoice_no",
+            "pp"."invoice_date",
+            "pp"."description",
+            "pp"."unit_price"
+           FROM ("rules" "r"
+             JOIN "public"."product_purchases" "pp" ON ((("lower"("pp"."pack_unit") = "r"."pack_unit") AND ("pp"."description" ~* "r"."purchase_pattern") AND ("pp"."unit_price" > (0)::numeric))))
+          ORDER BY "r"."product_pattern", "pp"."invoice_date" DESC, "pp"."created_at" DESC
+        )
+ SELECT "p"."id" AS "product_id",
+    "round"(("l"."unit_price" / "l"."k_seeds_per_pack"), 4) AS "price_per_unit",
+    "l"."invoice_date" AS "price_on",
+    ((((((((('Last bought: '::"text" ||
+        CASE
+            WHEN ("l"."supplier" ~~* 'independent crop%'::"text") THEN 'ICI'::"text"
+            ELSE "l"."supplier"
+        END) || ' '::"text") || COALESCE("l"."invoice_no", ''::"text")) || ', '::"text") || TRIM(BOTH FROM "l"."description")) || ' at $'::"text") || "to_char"("l"."unit_price", 'FM999990.00'::"text")) || ' a '::"text") || "l"."pack_words") AS "price_source"
+   FROM ("public"."jd_products" "p"
+     JOIN "latest" "l" ON (("p"."name" ~* "l"."product_pattern")))
+  WHERE (("p"."category" = 'seed'::"text") AND ("p"."unit" = 'k seeds'::"text"));
+
+
+ALTER VIEW "public"."seed_purchase_default" OWNER TO "postgres";
+
+
+COMMENT ON VIEW "public"."seed_purchase_default" IS 'Each seed''s default price per thousand seeds, from its last itemised purchase.';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."seed_report_bins" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "report_id" "uuid" NOT NULL,
@@ -25762,6 +25848,10 @@ CREATE OR REPLACE TRIGGER "push_dispatch" AFTER INSERT ON "public"."notification
 
 
 CREATE OR REPLACE TRIGGER "ranch_feed_plan" AFTER INSERT ON "public"."ranches" FOR EACH ROW EXECUTE FUNCTION "public"."fn_ranch_feed_plan"();
+
+
+
+CREATE OR REPLACE TRIGGER "refresh_seed_prices" AFTER INSERT OR UPDATE ON "public"."product_purchases" FOR EACH STATEMENT EXECUTE FUNCTION "public"."fn_purchases_refresh_seed_prices"();
 
 
 
@@ -36311,6 +36401,11 @@ GRANT ALL ON FUNCTION "public"."fn_purchase_reprice_product"() TO "service_role"
 
 
 
+GRANT ALL ON FUNCTION "public"."fn_purchases_refresh_seed_prices"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_purchases_refresh_seed_prices"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_push_dispatch"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_push_dispatch"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_push_dispatch"() TO "service_role";
@@ -38255,6 +38350,11 @@ GRANT ALL ON FUNCTION "public"."record_integration_heartbeat"("p_key" "text", "p
 
 REVOKE ALL ON FUNCTION "public"."refresh_irrigation_assignments"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."refresh_irrigation_assignments"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."refresh_seed_prices"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."refresh_seed_prices"() TO "service_role";
 
 
 
@@ -43567,6 +43667,11 @@ GRANT ALL ON TABLE "public"."scout_reports" TO "service_role";
 
 GRANT ALL ON TABLE "public"."scouting_notes" TO "authenticated";
 GRANT ALL ON TABLE "public"."scouting_notes" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."seed_purchase_default" TO "authenticated";
+GRANT ALL ON TABLE "public"."seed_purchase_default" TO "service_role";
 
 
 
