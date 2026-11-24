@@ -3,16 +3,13 @@ import { useLocation } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { hasAdminAccess, hasManagerAccess, useAuth, type AppRole } from './auth'
-import { isViewDenied, resolveNav, type NavPrefs } from './nav'
+import { isViewDenied } from './nav'
 import { isPathOff, useDisabledPaths } from './farm-setup'
 import {
   MENU_SECTIONS,
-  carryOverHidden,
   filterSections,
   matchLocation,
-  menuEnabled,
   readMenuPrefs,
-  withCarriedHidden,
   resolveBar,
   resolveMenu,
   type MenuAccess,
@@ -25,8 +22,8 @@ import {
  * menu resolved for the device in hand. The tree and the pure rules are in
  * lib/nav-tree.ts.
  *
- * The season menu is everyone's menu since 26 Oct 2026 (Sam); the old one
- * (lib/nav.ts) is what you get only by choosing it, and is going away later.
+ * The season menu is the only menu: everyone's since 26 Oct 2026, and the old
+ * one's sidebar was deleted on 20 Nov 2026 (Sam).
  */
 
 // The app's md breakpoint. A tablet turned sideways is wider than this and
@@ -47,36 +44,25 @@ export function useMenuDevice(): MenuDevice {
 }
 
 /**
- * The person's menu_prefs, read defensively, with what they hid in the old
- * menu filled in where they have not set the new one (Sam, 26 Oct 2026).
- * Everything reads prefs through here, the Menu panel included, so what it
- * shows is what the menu does, and its first save writes the carried list down.
+ * The person's menu_prefs, read defensively. Everything reads prefs through
+ * here, the Menu panel included, so what the panel shows is what the menu does.
+ *
+ * What somebody had hidden in the old menu used to be carried over here, for
+ * anyone who had never touched the new one. Dropped on 20 Nov 2026 with the old
+ * sidebar: of the twelve people on the app, three had old prefs, and for all
+ * three it was a no-op — two had hidden nothing, and the third had already set
+ * both device lists himself, which took precedence anyway.
  */
 export function useMenuPrefs(): MenuPrefs {
   const { profile } = useAuth()
   const raw = profile?.menu_prefs
-  const nav = profile?.nav_prefs
-  return useMemo(() => {
-    const prefs = readMenuPrefs(raw)
-    if (prefs.desktop?.hidden && prefs.phone?.hidden) return prefs
-    const old = nav as NavPrefs | null | undefined
-    const savedHidden = Array.isArray(old?.hidden) ? old.hidden.filter((k): k is string => typeof k === 'string') : []
-    return withCarriedHidden(prefs, carryOverHidden(resolveNav(old), savedHidden))
-  }, [raw, nav])
-}
-
-/**
- * Season menu or old menu: the one place that decides. On for everyone unless
- * they chose the old menu in Settings → My account → Menu (Sam, 26 Oct 2026).
- */
-export function useMenuEnabled(): boolean {
-  return menuEnabled(useMenuPrefs())
+  return useMemo(() => readMenuPrefs(raw), [raw])
 }
 
 /**
  * What a person may open at all: not denied by an admin, not a part of the
- * app the farm switched off, and their role is enough. Same rules as the old
- * sidebar. A denial is matched on the path without its `?tab=`, so denying
+ * app the farm switched off, and their role is enough. A denial is matched on
+ * the path without its `?tab=`, so denying
  * /plan also takes Crop money and Next year's plan (/plan?tab=…) wherever
  * they are listed, shortcuts included.
  */
@@ -125,7 +111,7 @@ export function useMenuMatch() {
   return useMemo(() => matchLocation(pathname, search), [pathname, search])
 }
 
-/** Persist menu_prefs to the user's row, optimistically, like useSaveNavPrefs. */
+/** Persist menu_prefs to the user's row, optimistically: no round-trip flicker. */
 export function useSaveMenuPrefs() {
   const { profile } = useAuth()
   const queryClient = useQueryClient()

@@ -61,6 +61,7 @@ import { cn } from '@/lib/utils'
 import { InfoPopover } from '@/components/InfoPopover'
 import { alertGuide } from '@/lib/alert-guides'
 import { CARD_HEAD } from '@/lib/table-style'
+import { Page } from '@/components/Page'
 
 
 /**
@@ -182,9 +183,12 @@ export function MeetingPage() {
   const thisWeek = monday === weekStart()
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 print:hidden">
-        <div className="flex items-center gap-1">
+    <Page
+      title="Monday meeting"
+      info={`Week of ${dayLabel(days[0])} – ${dayLabel(days[6])}${!thisWeek ? ' · not this week' : ''}.`}
+      actions={
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
+          <div className="flex items-center gap-1">
           <button
             onClick={() => setMonday(shiftWeek(monday, -1))}
             aria-label="Previous week"
@@ -208,7 +212,6 @@ export function MeetingPage() {
             </button>
           )}
         </div>
-        <div className="flex items-center gap-2">
           <TvControl labelled />
           <button
             onClick={() => window.print()}
@@ -217,20 +220,16 @@ export function MeetingPage() {
             <Printer className="h-3.5 w-3.5" /> Print
           </button>
         </div>
-      </div>
-
-      <h1 className="text-lg font-semibold text-gray-900">Monday meeting</h1>
-      <p className="mb-4 text-xs text-gray-500">
-        Week of {dayLabel(days[0])} – {dayLabel(days[6])}
-        {!thisWeek && ' · not this week'}
-      </p>
-
-      <PillTabs
-        tabs={MEETING_TABS.map((t) => ({ key: t, label: TAB_LABEL[t] }))}
-        value={tab}
-        onChange={setTab}
-        className="mb-4 print:hidden"
-      />
+      }
+      tabs={
+        <PillTabs
+          tabs={MEETING_TABS.map((t) => ({ key: t, label: TAB_LABEL[t] }))}
+          value={tab}
+          onChange={setTab}
+          className="print:hidden"
+        />
+      }
+    >
 
       {/* The agenda prints whichever tab is open — a printed agenda missing
           its parts is worse than no printout, and nobody finds out until they
@@ -684,7 +683,7 @@ export function MeetingPage() {
           <WhatsNewView />
         </Suspense>
       )}
-    </div>
+    </Page>
   )
 }
 

@@ -14,6 +14,7 @@ import { boundsOf } from '@/lib/geo/area'
 import { cleanFieldName } from '@/lib/field-name'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { CardList, RowCard } from '@/components/RowCards'
+import { Page } from '@/components/Page'
 
 /**
  * The "Create a new field" choice in a row's field picker. Not a uuid, so it
@@ -292,11 +293,10 @@ export function ImportBoundariesPage() {
   const busy = rows.some((r) => r.status === 'importing')
 
   return (
-    <div className="mx-auto max-w-5xl p-4 md:p-6">
+    <Page narrow title="Import boundaries">
       <Link to="/fields" className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
         <ArrowLeft className="h-4 w-4" /> Fields
       </Link>
-      <h1 className="mt-2 text-xl font-bold text-gray-900">Import boundaries</h1>
       <HelpNote className="mt-1 text-sm" summary="GeoJSON, KML or shapefile, in lat/long." title="Boundary files">
         GeoJSON, KML, zipped shapefile, or .shp — WGS84 lat/long only. Existing boundaries are
         versioned, not overwritten: the old one keeps its history.
@@ -414,6 +414,6 @@ export function ImportBoundariesPage() {
           </button>
         </>
       )}
-    </div>
+    </Page>
   )
 }

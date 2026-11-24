@@ -2,7 +2,6 @@ import { lazy, useEffect, useState, type ReactNode } from 'react'
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Calculator, Percent, Scale, Settings2 } from 'lucide-react'
 import { useTab } from '@/lib/useTab'
-import { GrainBin } from '@/components/icons/GrainBin'
 import { PillTabs } from '@/components/PillTabs'
 import { Fold } from '@/components/Fold'
 import { InfoPopover } from '@/components/InfoPopover'
@@ -18,6 +17,7 @@ import { useCropYear } from '@/lib/crop-year'
 import { usePartnerView } from '@/lib/partner-view'
 import { isPartnerTab } from '@/lib/partner'
 import { TabSuspense } from '@/components/TabSuspense'
+import { Page } from '@/components/Page'
 
 // Each tab is its own chunk: the bin map and the charts load when their tab opens.
 const HarvestReadiness = lazy(() => import('@/pages/harvest/HarvestReadiness').then((m) => ({ default: m.HarvestReadiness })))
@@ -91,26 +91,17 @@ function HarvestShell({
   const iconBtn = 'flex h-11 w-11 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 hover:text-brand-700'
 
   return (
-    <div className={flush ? 'pt-4 md:pt-6' : 'p-4 md:p-6'}>
-      <div className={flush ? 'px-4 md:px-6' : ''}>
-        <h1 className="mb-3 flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-          <GrainBin className="h-5 w-5 text-brand-700" /> {title} {cropYear}
-        </h1>
-
-        {!partner && (
-          <div>
-            <BinAirAlerts />
-          </div>
-        )}
-
-        <div className="mb-1 flex flex-wrap items-center gap-3">
-          {tabs}
-          {/* Big icons for a finger (Sam, 22 Oct 2026). */}
-          <div className="ml-auto flex items-center gap-2">
-            <button type="button" onClick={() => setWeighing(true)} aria-label="Weigh in a load" title="Weigh in a load" className={iconBtn}>
-              <Scale className="h-6 w-6" />
-            </button>
-            {!partner && (
+    <Page
+      title={`${title} ${cropYear}`}
+      bleed={flush}
+      tabs={tabs}
+      actions={
+        /* Big icons for a finger (Sam, 22 Oct 2026). */
+        <>
+          <button type="button" onClick={() => setWeighing(true)} aria-label="Weigh in a load" title="Weigh in a load" className={iconBtn}>
+            <Scale className="h-6 w-6" />
+          </button>
+          {!partner && (
             <button
               type="button"
               onClick={onReading ?? (() => navigate('/harvest?tab=moisture&reading=1'))}
@@ -120,24 +111,31 @@ function HarvestShell({
             >
               <Percent className="h-6 w-6" />
             </button>
-            )}
-            {binTools && (
-              <>
-                <Link to="/calculator?tab=bushels" aria-label="Bushel calculator" title="Bushel calculator" className={iconBtn}>
-                  <Calculator className="h-6 w-6" />
-                </Link>
-                <button type="button" onClick={() => setSettings(true)} aria-label="Bin settings" title="Bin settings" className={iconBtn}>
-                  <Settings2 className="h-6 w-6" />
-                </button>
-              </>
-            )}
-          </div>
+          )}
+          {binTools && (
+            <>
+              <Link to="/calculator?tab=bushels" aria-label="Bushel calculator" title="Bushel calculator" className={iconBtn}>
+                <Calculator className="h-6 w-6" />
+              </Link>
+              <button type="button" onClick={() => setSettings(true)} aria-label="Bin settings" title="Bin settings" className={iconBtn}>
+                <Settings2 className="h-6 w-6" />
+              </button>
+            </>
+          )}
+        </>
+      }
+    >
+      {/* The alerts are the thing that must not be missed, so they sit above
+          every view rather than inside one. */}
+      {!partner && (
+        <div className={flush ? 'mb-3 px-4 md:px-6' : 'mb-3'}>
+          <BinAirAlerts />
         </div>
-      </div>
+      )}
       {settings && <BinSettingsDialog onClose={() => setSettings(false)} />}
       {weighing && <WeighInDialog cropYear={cropYear} onClose={() => setWeighing(false)} />}
       <TabSuspense>{children}</TabSuspense>
-    </div>
+    </Page>
   )
 }
 

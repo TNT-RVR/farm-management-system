@@ -1,17 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { useTab } from '@/lib/useTab'
-import { useMenuEnabled } from '@/lib/menu-prefs'
-import {
-  FERTILIZER_VIEW_KEYS,
-  FERTILIZER_VIEWS,
-  fertilizerRedirect,
-  fertilizerTabs,
-  oldFertilizerTab,
-  type FertilizerView,
-} from '@/lib/fertilizer-views'
+import { FERTILIZER_VIEWS, fertilizerRedirect, fertilizerTabs, oldFertilizerTab, type FertilizerView } from '@/lib/fertilizer-views'
 import { SavingsHere } from '@/pages/fertilizer/savings/SavingsHere'
-import { CheckCircle2, ChevronRight, Loader2, RefreshCw, Sparkles, Sprout, Upload } from 'lucide-react'
+import { CheckCircle2, ChevronRight, Loader2, RefreshCw, Sparkles, Upload } from 'lucide-react'
 import { Select } from '@/components/Select'
 import { EditButton, RecordEditModal, rowClick, type EditField } from '@/components/RecordEditor'
 import { ColumnHelp } from '@/components/ColumnHelp'
@@ -57,6 +49,7 @@ import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { usePartnerView } from '@/lib/partner-view'
 import { isPartnerTab } from '@/lib/partner'
 import { useRetailerName } from '@/lib/products'
+import { Page } from '@/components/Page'
 
 // Each tab is its own chunk, so opening one view does not load every view's maps and charts.
 const SavingsTab = lazy(() => import('@/pages/fertilizer/savings/SavingsTab').then((m) => ({ default: m.SavingsTab })))
@@ -910,10 +903,7 @@ function useViewTab(view: FertilizerView, hidden: readonly string[] = []) {
 
 /** Title, the view's tab row, and the page under them. */
 function ViewShell({ view, tabs, children }: { view: FertilizerView; tabs?: ReactNode; children: ReactNode }) {
-  const navigate = useNavigate()
-  const seasonMenu = useMenuEnabled()
-  // Whatever view is on screen is the one the old menu's Fertilizer link and a
-  // bare /fertilizer reopen.
+  // Whatever view is on screen is the one a bare /fertilizer reopens.
   useEffect(() => {
     try {
       localStorage.setItem(LAST_VIEW_KEY, view)
@@ -922,30 +912,9 @@ function ViewShell({ view, tabs, children }: { view: FertilizerView; tabs?: Reac
     }
   }, [view])
   return (
-    <div className="mx-auto max-w-[1600px]">
-      <div className="border-b border-gray-200 bg-white px-4 md:px-6">
-        <div className="flex items-center gap-2 py-3">
-          <Sprout className="h-5 w-5 text-brand-700" />
-          <h1 className="text-lg font-semibold text-gray-900">{FERTILIZER_VIEWS[view].label}</h1>
-          {/* The old menu has one Fertilizer link, so people on it need a way
-              between the five views; the season menu lists them itself. */}
-          {!seasonMenu && (
-            <Select
-              size="sm"
-              value={view}
-              onChange={(v) => navigate(`/fertilizer/${v}`)}
-              options={FERTILIZER_VIEW_KEYS.map((v) => ({ value: v, label: FERTILIZER_VIEWS[v].label }))}
-              ariaLabel="Fertilizer view"
-              className="ml-auto w-44"
-            />
-          )}
-        </div>
-        {tabs}
-      </div>
-      <div className="p-4 md:p-6">
-        <TabSuspense>{children}</TabSuspense>
-      </div>
-    </div>
+    <Page title={FERTILIZER_VIEWS[view].label} tabs={tabs}>
+      <TabSuspense>{children}</TabSuspense>
+    </Page>
   )
 }
 
@@ -959,7 +928,7 @@ function SoilView({ isManager }: { isManager: boolean }) {
   return (
     <ViewShell
       view="soil"
-      tabs={<PillTabs tabs={shown} value={tab} onChange={setTab} className="border-b-0 pb-2" />}
+      tabs={<PillTabs tabs={shown} value={tab} onChange={setTab} />}
     >
       {tab === 'map' ? (
         <SamplingMap
@@ -988,7 +957,7 @@ function PlanView() {
   return (
     <ViewShell
       view="plan"
-      tabs={<PillTabs tabs={shown} value={tab} onChange={setTab} className="border-b-0 pb-2" />}
+      tabs={<PillTabs tabs={shown} value={tab} onChange={setTab} />}
     >
       {tab === 'zones' ? <YieldZones /> : tab === 'rx' ? <Prescriptions /> : tab === 'blends' ? <BlendsTab /> : tab === 'spreading' ? <SpreadingCost /> : <Requirements />}
     </ViewShell>
@@ -1005,7 +974,7 @@ function PricesView({ isManager }: { isManager: boolean }) {
   return (
     <ViewShell
       view="prices"
-      tabs={<PillTabs tabs={tabs} value={tab} onChange={setTab} className="border-b-0 pb-2" />}
+      tabs={<PillTabs tabs={tabs} value={tab} onChange={setTab} />}
     >
       {tab === 'market' ? (
         <MarketTab isManager={isManager} />

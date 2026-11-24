@@ -18,6 +18,7 @@ import { TemplatePlaces } from './checklists/TemplatePlaces'
 import { askConfirm } from '@/components/askConfirm'
 import { CARD_HEAD } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
+import { Page } from '@/components/Page'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
@@ -100,7 +101,9 @@ export function ChecklistTemplatePage() {
   }
 
   return (
-    <div className={template.map_based ? 'mx-auto max-w-6xl p-4 md:p-6' : 'mx-auto max-w-2xl p-4 md:p-6'}>
+    // The name is the text box below, which a screen reader reads as a box
+    // and not as the page's name: Page's own heading does that.
+    <Page narrow title={template.name}>
       <Link
         to="/checklists"
         className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800"
@@ -317,7 +320,7 @@ export function ChecklistTemplatePage() {
           <Trash2 className="h-4 w-4" /> Delete template
         </button>
       )}
-    </div>
+    </Page>
   )
 }
 

@@ -87,10 +87,12 @@ export function GrazingSettings({
 
   return (
     <div>
-      <div className="border-b border-gray-200 bg-white px-4 py-3 md:px-6 print:hidden">
+      {/* Cattle's frame pads the top; this is its tab row, on the same line
+          as every other view's. */}
+      <div className="mb-3 px-4 md:px-6 print:hidden">
         <PillTabs tabs={CATTLE_SETTINGS_TABS} value={tab} onChange={setTab} />
       </div>
-      <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-6">
+      <div className="space-y-4 px-4 pb-4 md:px-6 md:pb-6">
         {tab === 'ranches' && (
           <>
             {/* Moved off the pasture map (Sam, 10 Nov 2026): it is a list of

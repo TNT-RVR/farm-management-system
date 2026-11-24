@@ -63,6 +63,7 @@ import {
 } from '@/lib/handling-data'
 import { HandlingMap, type Tool } from '@/pages/cattle/handling/HandlingMap'
 import { Yard3D } from '@/pages/cattle/handling/Yard3D'
+import { Page } from '@/components/Page'
 import {
   HerdPanel,
   InventoryPanel,
@@ -230,9 +231,8 @@ export function HandlingSystemPage() {
 
   if (!site) {
     return (
-      <div className="p-6">
-        <h1 className="text-lg font-semibold text-gray-800">Handling system</h1>
-        <p className="mt-2 max-w-md text-sm text-gray-600">
+      <Page title="Handling system">
+        <p className="max-w-md text-sm text-gray-600">
           No corral yard yet. A yard is a place you lay panels out — the home corral, a field set-up.
         </p>
         {canEdit && (
@@ -243,7 +243,7 @@ export function HandlingSystemPage() {
             Add a yard
           </button>
         )}
-      </div>
+      </Page>
     )
   }
 
@@ -403,12 +403,14 @@ export function HandlingSystemPage() {
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
+      {/* The canvas fills the screen, so there is no frame to hang a heading
+          on; the name is still here for a screen reader, which cannot see the
+          breadcrumb. */}
+      <h1 className="sr-only">Handling system</h1>
       {/* ── Yard, tools ──────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3 border-b border-gray-200 bg-white px-4 py-2 md:px-6">
         <div className="flex items-center gap-2">
-          <h1 className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
-            Handling system
-            <InfoPopover title="What this is for">
+          <InfoPopover title="What this is for" label="What this is for">
               <p>The corral drawn to scale on the photo of your own yard, so a plan can be read before it is built.</p>
               <p>
                 Pens are checked against the real herd at {ranchName ?? 'this ranch'}, and the parts list against the
@@ -428,8 +430,7 @@ export function HandlingSystemPage() {
                 the gate, whether a bull can see over the wind fence. <strong>Plan</strong> prints it to scale with the
                 parts list.
               </p>
-            </InfoPopover>
-          </h1>
+          </InfoPopover>
           <select
             className="rounded border border-gray-300 px-2 py-1 text-sm"
             value={site.id}

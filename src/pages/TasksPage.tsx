@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { withDisplay } from '@/lib/reports/columns'
 import { AvatarStack } from '@/components/UserAvatar'
 import { taskListColumns, taskListRows, taskLookups, type TaskStatusFilter, type TaskWho } from '@/lib/reports/lists'
+import { Page } from '@/components/Page'
 
 type Filter = TaskWho
 type StatusFilter = TaskStatusFilter
@@ -100,10 +101,10 @@ export function TasksPage() {
   })
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold text-gray-900">Tasks</h1>
-        <div className="flex items-center gap-2">
+    <Page
+      title="Tasks"
+      actions={
+        <>
           <button
             onClick={() => setSaying((s) => !s)}
             title="Say a task or a field note instead of typing it"
@@ -117,8 +118,9 @@ export function TasksPage() {
           >
             <Plus className="h-3.5 w-3.5" /> New task
           </button>
-        </div>
-      </div>
+        </>
+      }
+    >
 
       {saying && (
         <div className="mb-4">
@@ -217,6 +219,6 @@ export function TasksPage() {
           }}
         />
       )}
-    </div>
+    </Page>
   )
 }

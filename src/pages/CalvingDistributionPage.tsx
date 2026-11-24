@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { CalendarRange, AlertTriangle } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { HelpNote } from '@/components/HelpNote'
-import { PageHeader } from '@/components/PageHeader'
 import { Select } from '@/components/Select'
 import { useRanches } from '@/lib/ranches'
 import { useCalfMoney } from '@/lib/ranch-summary'
@@ -10,6 +9,7 @@ import { supabase } from '@/lib/supabase'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { money, n0, n1 } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { Page } from '@/components/Page'
 import {
   CYCLE_LABELS,
   INDUSTRY_TARGET,
@@ -205,12 +205,11 @@ export function CalvingDistributionPage() {
   const years = Array.from({ length: 8 }, (_, i) => new Date().getFullYear() - i)
 
   return (
-    <div className="mx-auto max-w-5xl space-y-3 p-4 md:p-6">
-      <PageHeader
-        title="What a tighter calving season is worth"
-        icon={<CalendarRange className="h-5 w-5 text-brand-700" />}
-        subtitle={`A slipped cycle costs ${n0(lbPerCycleSlipped(num(f.adgLbPerDay)))} lb of weaning weight`}
-      />
+    <Page
+      title="What a tighter calving season is worth"
+      className="space-y-3"
+      info={`A slipped cycle costs ${n0(lbPerCycleSlipped(num(f.adgLbPerDay)))} lb of weaning weight.`}
+    >
 
       <div className="flex flex-wrap items-center gap-2">
         <Select value={ranch} options={ranchList.map((x) => ({ value: x.id, label: x.name }))} onChange={setRanchId} className="w-40" ariaLabel="Ranch" />
@@ -395,6 +394,6 @@ export function CalvingDistributionPage() {
           Markets tab&rsquo;s figure — averaged. Type over it to try your own.
         </p>
       </HelpNote>
-    </div>
+    </Page>
   )
 }

@@ -46,6 +46,7 @@ const MapSidebar = lazy(() => import('@/pages/cattle/MapSidebar').then((m) => ({
 const ArrivalRisk = lazy(() => import('@/pages/cattle/ArrivalRisk').then((m) => ({ default: m.ArrivalRisk })))
 const WinterBenchmarkFold = lazy(() => import('@/pages/cattle/WinterBenchmark').then((m) => ({ default: m.WinterBenchmarkFold })))
 import { askConfirm } from '@/components/askConfirm'
+import { Page } from '@/components/Page'
 
 /**
  * The herd is tracked as group totals (head per class), not individually tagged
@@ -563,21 +564,25 @@ function CattleBody({
   const showTabs = tabs.length > 1 && !!setTab
 
   return (
-    <div>
-      {(showTabs || ranchScoped) && (
-        // On a computer the Ranch picker sits at the right end of the tab row
-        // (Sam, 29 Oct 2026); on a phone it goes under the tabs.
-        <div className="space-y-2 border-b border-gray-200 bg-white px-4 py-3 md:flex md:items-center md:gap-4 md:space-y-0 md:px-6 print:hidden">
-          {showTabs && (
-            <PillTabs
-              className="md:flex-1 md:border-b-0 md:pb-0"
-              tabs={tabs.map((t) => ({ key: t.key, label: t.label }))}
-              value={tab!}
-              onChange={setTab!}
-            />
-          )}
-          {ranchScoped && (
-            <div className="flex items-center gap-2 md:ml-auto md:shrink-0">
+    <Page
+      // The tab is the screen you are on, so it is the name read out;
+      // Cattle settings is the one view with no tabs of its own.
+      title={current?.label ?? 'Cattle settings'}
+      bleed
+      tabs={
+        showTabs ? (
+          <PillTabs
+            tabs={tabs.map((t) => ({ key: t.key, label: t.label }))}
+            value={tab!}
+            onChange={setTab!}
+          />
+        ) : undefined
+      }
+      // The Ranch picker is a filter, not a tab, so it rides with the buttons
+      // at the right end of the tab row (Sam, 29 Oct 2026).
+      actions={
+        ranchScoped && (
+          <div className="flex items-center gap-2 print:hidden">
               <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
                 Ranch
               </span>
@@ -617,26 +622,24 @@ function CattleBody({
                   Manage
                 </button>
               )}
-            </div>
-          )}
-        </div>
-      )}
+          </div>
+        )
+      }
+    >
       <TabSuspense>
       {view === 'settings' ? (
         <GrazingSettings ranches={ranchList} isManager={isManager} />
       ) : tab === 'restrictions' ? (
         // Its own page until the split, padding and all.
-        // The reading pages share the Herd tab's width; the map and the
-        // calculators keep the full width they need.
-        <div className="mx-auto max-w-5xl p-4 md:p-6">
+        <div className="p-4 md:p-6">
           <GrazingRestrictionsPage embedded />
         </div>
       ) : tab === 'bale-checks' ? (
-        <div className="mx-auto max-w-5xl p-4 md:p-6">
-          <BaleChecksPage embedded />
+        <div className="p-4 md:p-6">
+          <BaleChecksPage />
         </div>
       ) : tab === 'replacements' ? (
-        <div className="mx-auto max-w-5xl p-4 md:p-6">
+        <div className="p-4 md:p-6">
           {/* Per ranch: the calculation needs one ranch's herd and grass. */}
           {ranch && !allRanches ? (
             <ReplacementHeifers ranch={ranch} />
@@ -745,7 +748,7 @@ function CattleBody({
         </div>
       )}
       </TabSuspense>
-    </div>
+    </Page>
   )
 }
 

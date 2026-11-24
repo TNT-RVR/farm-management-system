@@ -1,24 +1,10 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import {
-  BookOpen,
-  Beef,
-  ChevronLeft,
-  ChevronRight,
-  CloudHail,
-  Container,
-  Droplet,
-  Droplets,
-  ExternalLink,
-  Sun,
-  Tractor,
-  Truck,
-  CheckSquare,
-  Wrench,
-} from 'lucide-react'
+import { Beef, ChevronLeft, ChevronRight, CloudHail, Container, Droplet, Droplets, ExternalLink, Sun, Tractor, Truck, CheckSquare, Wrench } from 'lucide-react'
 import { addDays, localDate } from '@/lib/date-range'
 import { useDaybook, type DayItem } from '@/lib/daybook'
 import { cn } from '@/lib/utils'
+import { Page } from '@/components/Page'
 
 /**
  * The day book.
@@ -68,11 +54,10 @@ export function DaybookPage() {
   const isToday = day === today()
 
   return (
-    <div className="mx-auto max-w-3xl p-4 md:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-          <BookOpen className="h-5 w-5 text-brand-700" /> Day book
-        </h1>
+    <Page narrow
+      title="Day book"
+      info="Written by the machines and the records — nothing here was typed in as a diary."
+      actions={
         <div className="flex items-center gap-1">
           <button
             onClick={() => setDay(addDays(day, -1))}
@@ -103,13 +88,10 @@ export function DaybookPage() {
             </button>
           )}
         </div>
-      </div>
-      <p className="mt-0.5 text-sm text-gray-500">
+      }
+    >
+      <p className="text-sm text-gray-500">
         {d.toLocaleDateString('en-CA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-        {' · '}
-        <span className="text-xs">
-          written by the machines and the records — nothing here was typed in as a diary
-        </span>
       </p>
 
       {isLoading ? (
@@ -156,6 +138,6 @@ export function DaybookPage() {
           })}
         </ol>
       )}
-    </div>
+    </Page>
   )
 }

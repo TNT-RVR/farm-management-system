@@ -765,6 +765,23 @@ $$;
 ALTER FUNCTION "public"."assign_monthly_copy"("p_copy" "uuid", "p_users" "uuid"[]) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."can_read_document"("p_access" "text", "p_added_by" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select case coalesce(p_access, 'all')
+    when 'all'     then true
+    when 'manager' then public.is_manager()
+    when 'finance' then public.can_see_finances()
+    when 'admin'   then public.is_admin()
+    else false
+  end or p_added_by = auth.uid();
+$$;
+
+
+ALTER FUNCTION "public"."can_read_document"("p_access" "text", "p_added_by" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."can_see_finances"() RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
@@ -1401,6 +1418,43 @@ $$;
 
 
 ALTER FUNCTION "public"."delete_field_work_record"("p_id" "uuid", "p_remove_feed" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."document_area_counts"() RETURNS TABLE("area" "text", "n" integer)
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select d.area, count(*)::integer from public.documents d group by d.area;
+$$;
+
+
+ALTER FUNCTION "public"."document_area_counts"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."document_filter_options"() RETURNS json
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select json_build_object(
+    'kinds', coalesce((
+      select json_agg(k order by k.n desc, k.kind)
+        from (select doc_type as kind, count(*)::int as n
+                from public.documents where doc_type is not null
+               group by doc_type) k), '[]'::json),
+    'years', coalesce((
+      select json_agg(y order by y.year desc)
+        from (select crop_year as year, count(*)::int as n
+                from public.documents where crop_year is not null
+               group by crop_year) y), '[]'::json),
+    'sources', coalesce((
+      select json_agg(s order by s.n desc)
+        from (select source, count(*)::int as n
+                from public.documents group by source) s), '[]'::json)
+  )
+$$;
+
+
+ALTER FUNCTION "public"."document_filter_options"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."drive_backup_finished"("p_run" "uuid", "p_status" "text", "p_made" integer, "p_skipped" "jsonb", "p_errors" "jsonb") RETURNS "void"
@@ -3226,6 +3280,154 @@ $$;
 ALTER FUNCTION "public"."fn_dedupe_grants"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."fn_document_file"("j" "jsonb", "p_id" "uuid", "p_source" "text", "p_bucket" "text", "p_area" "text", "p_type" "text", "p_path_col" "text", "p_title_col" "text" DEFAULT NULL::"text", "p_date_col" "text" DEFAULT NULL::"text", "p_party_col" "text" DEFAULT NULL::"text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  v_path    text;
+  v_file    text;
+  v_title   text;
+  v_date    date;
+  v_year    int;
+  v_party   text;
+  v_summary text;
+  v_tags    text[];
+  v_who     uuid;
+begin
+  v_path := nullif(j ->> p_path_col, '');
+
+  -- A row whose file has gone, or was never there, leaves nothing to find.
+  if v_path is null then
+    delete from public.documents where source_table = p_source and source_id = p_id;
+    return;
+  end if;
+
+  v_file := coalesce(
+    nullif(j ->> 'filename', ''),
+    nullif(j ->> 'file_name', ''),
+    regexp_replace(v_path, '^.*/', ''));
+  v_title := coalesce(
+    case when p_title_col is not null then nullif(j ->> p_title_col, '') end,
+    v_file);
+  v_date := case when p_date_col is not null then (nullif(j ->> p_date_col, ''))::date end;
+  v_year := (nullif(j ->> 'crop_year', ''))::int;
+  -- Whoever it is from: the column the trigger named, else the row's own
+  -- authors. A paper's authors are how it gets found as often as its title.
+  v_party := coalesce(
+    case when p_party_col is not null then nullif(j ->> p_party_col, '') end,
+    nullif(j ->> 'authors', ''));
+  v_summary := coalesce(nullif(j ->> 'abstract', ''), nullif(j ->> 'summary', ''));
+
+  -- Tags only where the row really carries an array of them; a jsonb scalar
+  -- or object under that name is left alone rather than coerced into noise.
+  if jsonb_typeof(j -> 'tags') = 'array' then
+    select array_agg(t) into v_tags
+      from jsonb_array_elements_text(j -> 'tags') t
+     where nullif(t, '') is not null;
+  end if;
+
+  v_who := coalesce(
+    (nullif(j ->> 'uploaded_by', ''))::uuid,
+    (nullif(j ->> 'created_by', ''))::uuid,
+    (nullif(j ->> 'added_by', ''))::uuid);
+
+  insert into public.documents as d
+    (area, doc_type, title, party, doc_date, crop_year, summary, tags,
+     storage_bucket, storage_path, filename, mime, bytes,
+     source, source_table, source_id, added_by, created_at, updated_at)
+  values
+    (p_area, nullif(p_type, ''), left(v_title, 300), v_party, v_date, v_year,
+     left(v_summary, 4000), coalesce(v_tags, '{}'),
+     p_bucket, v_path, v_file,
+     nullif(j ->> 'mime', ''), (nullif(j ->> 'bytes', ''))::bigint,
+     p_source, p_source, p_id, v_who,
+     coalesce((nullif(j ->> 'created_at', ''))::timestamptz,
+              (nullif(j ->> 'uploaded_at', ''))::timestamptz, now()),
+     now())
+  -- The index this matches is partial, so the predicate has to be repeated.
+  on conflict (source_table, source_id) where source_table is not null do update set
+    -- What the document IS belongs to whoever filed it, once they have.
+    area     = case when d.curated then d.area     else excluded.area     end,
+    doc_type = case when d.curated then d.doc_type else excluded.doc_type end,
+    title    = case when d.curated then d.title    else excluded.title    end,
+    party    = case when d.curated then d.party    else excluded.party    end,
+    summary  = case when d.curated then d.summary  else coalesce(excluded.summary, d.summary) end,
+    -- Tags typed by hand are kept; otherwise the row's own are the truth.
+    tags     = case when d.curated then d.tags     else excluded.tags     end,
+    -- Where the file IS always comes from the source row.
+    storage_bucket = excluded.storage_bucket,
+    storage_path   = excluded.storage_path,
+    filename       = excluded.filename,
+    mime           = coalesce(excluded.mime, d.mime),
+    bytes          = coalesce(excluded.bytes, d.bytes),
+    doc_date       = coalesce(excluded.doc_date, d.doc_date),
+    crop_year      = coalesce(excluded.crop_year, d.crop_year),
+    updated_at     = now();
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_document_file"("j" "jsonb", "p_id" "uuid", "p_source" "text", "p_bucket" "text", "p_area" "text", "p_type" "text", "p_path_col" "text", "p_title_col" "text", "p_date_col" "text", "p_party_col" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_document_mirror"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $_$
+declare
+  v_path   text;
+  v_others boolean;
+begin
+  if tg_op = 'DELETE' then
+    v_path := to_jsonb(old) ->> tg_argv[3];
+    if v_path is null or v_path = '' then
+      delete from public.documents where source_table = tg_table_name and source_id = old.id;
+      return old;
+    end if;
+    execute format(
+      'select exists (select 1 from public.%I where %I = $1 and id <> $2)',
+      tg_table_name, tg_argv[3])
+      into v_others using v_path, old.id;
+    if not v_others then
+      delete from public.documents
+       where storage_bucket = tg_argv[0] and storage_path = v_path;
+    end if;
+    return old;
+  end if;
+
+  perform public.fn_document_file(
+    to_jsonb(new), new.id, tg_table_name,
+    tg_argv[0], tg_argv[1], tg_argv[2], tg_argv[3],
+    nullif(tg_argv[4], ''), nullif(tg_argv[5], ''), nullif(tg_argv[6], ''));
+  return new;
+end;
+$_$;
+
+
+ALTER FUNCTION "public"."fn_document_mirror"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_documents_fts"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  new.fts :=
+    setweight(to_tsvector('english'::regconfig, coalesce(new.title, '')), 'A') ||
+    setweight(to_tsvector('english'::regconfig,
+      coalesce(new.party, '') || ' ' || coalesce(new.doc_type, '') || ' ' ||
+      coalesce(new.filename, '') || ' ' || coalesce(array_to_string(new.tags, ' '), '')), 'B') ||
+    setweight(to_tsvector('english'::regconfig, coalesce(new.summary, '')), 'C') ||
+    setweight(to_tsvector('english'::regconfig, coalesce(new.text_content, '')), 'D');
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_documents_fts"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."fn_eshepherd_import_heartbeat"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'extensions'
@@ -3655,6 +3857,40 @@ end; $$;
 
 
 ALTER FUNCTION "public"."fn_harvest_op_air"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_insurance_doc_landed"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  perform public.link_insurance_documents();
+  return null;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_insurance_doc_landed"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."fn_insurance_match_field"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+begin
+  if new.field_id is null and new.land_location is not null then
+    select f.id into new.field_id
+      from public.fields f
+     where public.legal_key4(f.legal_land_description) = public.legal_key4(new.land_location)
+     order by f.active desc nulls last
+     limit 1;
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."fn_insurance_match_field"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."fn_irrigation_event_adjust"() RETURNS "trigger"
@@ -6179,6 +6415,109 @@ $$;
 
 
 ALTER FUNCTION "public"."jd_unconfirmed_operations"("p_field" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."legal_key"("p" "text") RETURNS "text"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'extensions'
+    AS $_$
+  select nullif(
+    (select string_agg(
+              case when t.part ~ '^[0-9]+$' then (t.part::int)::text else t.part end,
+              '-' order by t.ord)
+       from unnest(
+              string_to_array(
+                regexp_replace(
+                  regexp_replace(upper(coalesce(p, '')), '[^A-Z0-9]+', '-', 'g'),
+                  '-W([0-9]+)$', '-\1'),
+                '-')
+            ) with ordinality as t(part, ord)
+      where t.part <> ''),
+    '')
+$_$;
+
+
+ALTER FUNCTION "public"."legal_key"("p" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."legal_key4"("p" "text") RETURNS "text"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+  select nullif(array_to_string((string_to_array(public.legal_key(p), '-'))[1:4], '-'), '')
+$$;
+
+
+ALTER FUNCTION "public"."legal_key4"("p" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."link_insurance_documents"() RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'extensions'
+    AS $$
+declare
+  r      record;
+  v_kind text;
+  v_id   uuid;
+  n      integer := 0;
+begin
+  for r in
+    select d.id, d.title, d.filename
+      from public.documents d
+     where d.area = 'insurance'
+       and not exists (select 1 from public.insurance_claims c where c.document_id = d.id)
+  loop
+    v_kind := case
+      -- The title the upload script writes, first: it is the exact one.
+      when r.title ilike 'Post-harvest 50% advance%'          then 'post_harvest_advance'
+      when r.title ilike 'Pre-harvest statement of loss%'      then 'pre_harvest'
+      when r.title ilike 'Hail endorsement statement of loss%' then 'hail'
+      when r.title ilike 'Post-harvest statement of loss%'     then 'post_harvest'
+      when r.title ilike 'Premium refund%'                     then 'refund'
+      -- Otherwise what the file is called. Order matters: an advance is a
+      -- post-harvest statement too.
+      when r.filename ilike '%advance%'     then 'post_harvest_advance'
+      when r.filename ilike '%pre %harvest%' or r.filename ilike '%pre-harvest%' then 'pre_harvest'
+      when r.filename ilike '%hail%'        then 'hail'
+      when r.filename ilike '%post %harvest%' or r.filename ilike '%post-harvest%' then 'post_harvest'
+      when r.filename ilike '%refund%'      then 'refund'
+      else null
+    end;
+
+    if v_kind is null then continue; end if;
+
+    -- Exactly one claim of that kind still wanting a document, or nothing.
+    select c.id into v_id
+      from public.insurance_claims c
+     where c.kind = v_kind and c.document_id is null
+     limit 2;
+    if v_id is null then continue; end if;
+    if (select count(*) from public.insurance_claims c
+         where c.kind = v_kind and c.document_id is null) <> 1 then
+      continue;
+    end if;
+
+    update public.insurance_claims set document_id = r.id, updated_at = now() where id = v_id;
+    n := n + 1;
+  end loop;
+
+  -- And the policy points at its confirmation of insurance. Here the year
+  -- does the work, because a confirmation names its own year in the title the
+  -- script writes and in the filename it arrives under.
+  update public.insurance_policies p
+     set document_id = d.id, updated_at = now()
+    from public.documents d
+   where p.document_id is null
+     and d.area = 'insurance'
+     and (d.doc_type = 'Confirmation of insurance' or d.filename ilike '%confirmation of insurance%')
+     and (d.crop_year = p.crop_year or d.title like '%' || p.crop_year || '%');
+
+  return n;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."link_insurance_documents"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."load_dockage_pct"("p_load" "uuid") RETURNS numeric
@@ -12209,6 +12548,64 @@ CREATE TABLE IF NOT EXISTS "public"."delivery_sites" (
 ALTER TABLE "public"."delivery_sites" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."document_areas" (
+    "key" "text" NOT NULL,
+    "label" "text" NOT NULL,
+    "icon" "text",
+    "sort" integer DEFAULT 100 NOT NULL
+);
+
+
+ALTER TABLE "public"."document_areas" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."document_links" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "document_id" "uuid" NOT NULL,
+    "entity_type" "text" NOT NULL,
+    "entity_id" "uuid" NOT NULL,
+    "note" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."document_links" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."documents" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "area" "text" DEFAULT 'other'::"text" NOT NULL,
+    "curated" boolean DEFAULT false NOT NULL,
+    "doc_type" "text",
+    "title" "text" NOT NULL,
+    "party" "text",
+    "doc_date" "date",
+    "crop_year" integer,
+    "storage_bucket" "text" DEFAULT 'documents'::"text" NOT NULL,
+    "storage_path" "text" NOT NULL,
+    "filename" "text" NOT NULL,
+    "mime" "text",
+    "bytes" bigint,
+    "text_content" "text",
+    "summary" "text",
+    "tags" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "source" "text" DEFAULT 'upload'::"text" NOT NULL,
+    "source_table" "text",
+    "source_id" "uuid",
+    "added_by" "uuid" DEFAULT "auth"."uid"(),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "fts" "tsvector",
+    "report_id" "text",
+    "report_options" "jsonb",
+    "access" "text",
+    CONSTRAINT "documents_access_check" CHECK ((("access" IS NULL) OR ("access" = ANY (ARRAY['all'::"text", 'manager'::"text", 'finance'::"text", 'admin'::"text"]))))
+);
+
+
+ALTER TABLE "public"."documents" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."drive_backup_items" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "key" "text" NOT NULL,
@@ -13271,6 +13668,25 @@ COMMENT ON COLUMN "public"."field_climate"."chu_p20" IS 'Corn heat units in a co
 
 
 COMMENT ON COLUMN "public"."field_climate"."outlook" IS '{ plan_year, cansips: { temp_above, temp_below, precip_above, precip_below, months }, seas5: [{ month, temp_anom_c, precip_anom_mm }], chu_shift }';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."field_contacts" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "contact_id" "uuid" NOT NULL,
+    "role" "text" DEFAULT 'agronomist'::"text" NOT NULL,
+    "send_harvest_report" boolean DEFAULT true NOT NULL,
+    "notes" "text",
+    "created_by" "uuid" DEFAULT "auth"."uid"(),
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."field_contacts" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."field_contacts" IS 'Who looks after a field (agronomist, seed rep, custom operator). send_harvest_report: emailed the field''s season report once the field is marked finished.';
 
 
 
@@ -15334,6 +15750,29 @@ CREATE TABLE IF NOT EXISTS "public"."handling_versions" (
 ALTER TABLE "public"."handling_versions" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."harvest_report_sends" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "field_id" "uuid" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "contact_id" "uuid",
+    "email" "text" NOT NULL,
+    "kind" "text" NOT NULL,
+    "ok" boolean NOT NULL,
+    "error" "text",
+    "resend_id" "text",
+    "sent_by" "uuid",
+    "sent_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "harvest_report_sends_kind_check" CHECK (("kind" = ANY (ARRAY['auto'::"text", 'manual'::"text"])))
+);
+
+
+ALTER TABLE "public"."harvest_report_sends" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."harvest_report_sends" IS 'Each harvest report emailed to a field contact. Written by the functions only (service role).';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."herd_counts" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "ranch_id" "uuid",
@@ -15533,6 +15972,153 @@ CREATE OR REPLACE VIEW "public"."input_onhand" WITH ("security_invoker"='true') 
 
 
 ALTER VIEW "public"."input_onhand" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."insurance_claim_lines" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "claim_id" "uuid" NOT NULL,
+    "crop_label" "text",
+    "land_location" "text",
+    "field_id" "uuid",
+    "acres" numeric,
+    "damage_pct" numeric,
+    "price_option" numeric,
+    "yield_coverage_kg" numeric,
+    "production_kg" numeric,
+    "yield_short_kg" numeric,
+    "total_coverage" numeric,
+    "previous_payments" numeric,
+    "award" numeric,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."insurance_claim_lines" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."insurance_claims" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "policy_id" "uuid",
+    "crop_year" integer NOT NULL,
+    "kind" "text" NOT NULL,
+    "inspection_no" "text",
+    "assessment_no" "text",
+    "version_no" "text",
+    "resolved_on" "date",
+    "total_award" numeric,
+    "previous_award" numeric,
+    "net_award" numeric,
+    "document_id" "uuid",
+    "notes" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."insurance_claims" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."insurance_coverage" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "policy_id" "uuid" NOT NULL,
+    "ag_input" "text",
+    "end_use" "text",
+    "crop_label" "text" NOT NULL,
+    "coverage_level" numeric,
+    "hail_endorsement" boolean,
+    "dollars_per_acre" numeric,
+    "deductible_pct" numeric,
+    "crop_id" "uuid"
+);
+
+
+ALTER TABLE "public"."insurance_coverage" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."insurance_land" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "policy_id" "uuid" NOT NULL,
+    "land_location" "text" NOT NULL,
+    "nickname" "text",
+    "tenure" "text",
+    "acres" numeric,
+    "insured" boolean,
+    "crop_label" "text",
+    "variety" "text",
+    "end_use" "text",
+    "ag_input" "text",
+    "seeding_date" "date",
+    "practice" "text",
+    "comments" "text",
+    "field_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."insurance_land" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."insurance_policies" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "provider" "text" DEFAULT 'AFSC'::"text" NOT NULL,
+    "crop_year" integer NOT NULL,
+    "client_name" "text",
+    "client_id_no" "text",
+    "policy_no" "text",
+    "branch" "text",
+    "coverage_level" numeric,
+    "declared_acres" numeric,
+    "document_id" "uuid",
+    "notes" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."insurance_policies" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."insurance_production" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "policy_id" "uuid" NOT NULL,
+    "crop_label" "text" NOT NULL,
+    "end_use" "text",
+    "ag_input" "text",
+    "land_location" "text",
+    "variety" "text",
+    "insured_acres" numeric,
+    "reported_acres" numeric,
+    "what_you_did" "text",
+    "yield_kg_per_acre" numeric,
+    "production_kg" numeric,
+    "stored_kg" numeric,
+    "sold_kg" numeric,
+    "harvest_completed" "date",
+    "comments" "text",
+    "field_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+
+ALTER TABLE "public"."insurance_production" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."insurance_production_totals" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "policy_id" "uuid" NOT NULL,
+    "crop_label" "text" NOT NULL,
+    "end_use" "text",
+    "ag_input" "text",
+    "production_kg" numeric,
+    "stored_fed_kg" numeric,
+    "sold_kg" numeric,
+    "carryover" boolean,
+    "harvest_completed" "date",
+    "comments" "text"
+);
+
+
+ALTER TABLE "public"."insurance_production_totals" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."integration_accounts" (
@@ -21719,6 +22305,26 @@ ALTER TABLE ONLY "public"."delivery_sites"
 
 
 
+ALTER TABLE ONLY "public"."document_areas"
+    ADD CONSTRAINT "document_areas_pkey" PRIMARY KEY ("key");
+
+
+
+ALTER TABLE ONLY "public"."document_links"
+    ADD CONSTRAINT "document_links_document_id_entity_type_entity_id_key" UNIQUE ("document_id", "entity_type", "entity_id");
+
+
+
+ALTER TABLE ONLY "public"."document_links"
+    ADD CONSTRAINT "document_links_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."documents"
+    ADD CONSTRAINT "documents_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."drive_backup_items"
     ADD CONSTRAINT "drive_backup_items_key_key" UNIQUE ("key");
 
@@ -21991,6 +22597,16 @@ ALTER TABLE ONLY "public"."field_boundaries"
 
 ALTER TABLE ONLY "public"."field_climate"
     ADD CONSTRAINT "field_climate_pkey" PRIMARY KEY ("cell_key");
+
+
+
+ALTER TABLE ONLY "public"."field_contacts"
+    ADD CONSTRAINT "field_contacts_one" UNIQUE ("field_id", "contact_id");
+
+
+
+ALTER TABLE ONLY "public"."field_contacts"
+    ADD CONSTRAINT "field_contacts_pkey" PRIMARY KEY ("id");
 
 
 
@@ -22344,6 +22960,11 @@ ALTER TABLE ONLY "public"."handling_versions"
 
 
 
+ALTER TABLE ONLY "public"."harvest_report_sends"
+    ADD CONSTRAINT "harvest_report_sends_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."herd_counts"
     ADD CONSTRAINT "herd_counts_pkey" PRIMARY KEY ("id");
 
@@ -22371,6 +22992,61 @@ ALTER TABLE ONLY "public"."input_items"
 
 ALTER TABLE ONLY "public"."input_movements"
     ADD CONSTRAINT "input_movements_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."insurance_claim_lines"
+    ADD CONSTRAINT "insurance_claim_lines_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."insurance_claims"
+    ADD CONSTRAINT "insurance_claims_crop_year_kind_assessment_no_key" UNIQUE ("crop_year", "kind", "assessment_no");
+
+
+
+ALTER TABLE ONLY "public"."insurance_claims"
+    ADD CONSTRAINT "insurance_claims_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."insurance_coverage"
+    ADD CONSTRAINT "insurance_coverage_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."insurance_coverage"
+    ADD CONSTRAINT "insurance_coverage_policy_id_ag_input_end_use_crop_label_key" UNIQUE ("policy_id", "ag_input", "end_use", "crop_label");
+
+
+
+ALTER TABLE ONLY "public"."insurance_land"
+    ADD CONSTRAINT "insurance_land_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."insurance_policies"
+    ADD CONSTRAINT "insurance_policies_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."insurance_policies"
+    ADD CONSTRAINT "insurance_policies_provider_crop_year_policy_no_key" UNIQUE ("provider", "crop_year", "policy_no");
+
+
+
+ALTER TABLE ONLY "public"."insurance_production"
+    ADD CONSTRAINT "insurance_production_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."insurance_production_totals"
+    ADD CONSTRAINT "insurance_production_totals_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."insurance_production_totals"
+    ADD CONSTRAINT "insurance_production_totals_policy_id_crop_label_end_use_ag_key" UNIQUE ("policy_id", "crop_label", "end_use", "ag_input");
 
 
 
@@ -23951,6 +24627,34 @@ CREATE UNIQUE INDEX "delivery_sites_name_idx" ON "public"."delivery_sites" USING
 
 
 
+CREATE INDEX "document_links_entity_idx" ON "public"."document_links" USING "btree" ("entity_type", "entity_id");
+
+
+
+CREATE INDEX "documents_area_idx" ON "public"."documents" USING "btree" ("area", "doc_date" DESC NULLS LAST);
+
+
+
+CREATE INDEX "documents_fts_idx" ON "public"."documents" USING "gin" ("fts");
+
+
+
+CREATE UNIQUE INDEX "documents_object_idx" ON "public"."documents" USING "btree" ("storage_bucket", "storage_path");
+
+
+
+CREATE INDEX "documents_report_idx" ON "public"."documents" USING "btree" ("report_id", "created_at" DESC) WHERE ("report_id" IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX "documents_source_idx" ON "public"."documents" USING "btree" ("source_table", "source_id") WHERE ("source_table" IS NOT NULL);
+
+
+
+CREATE INDEX "documents_year_idx" ON "public"."documents" USING "btree" ("crop_year");
+
+
+
 CREATE INDEX "drive_backup_runs_started" ON "public"."drive_backup_runs" USING "btree" ("started_at" DESC);
 
 
@@ -24051,6 +24755,10 @@ CREATE UNIQUE INDEX "field_boundaries_one_current" ON "public"."field_boundaries
 
 
 
+CREATE INDEX "field_contacts_contact" ON "public"."field_contacts" USING "btree" ("contact_id");
+
+
+
 CREATE INDEX "field_crop_zones_geom_idx" ON "public"."field_crop_zones" USING "gist" ("public"."st_setsrid"("public"."st_geomfromgeojson"("geojson"), 4326)) WHERE ("geojson" IS NOT NULL);
 
 
@@ -24120,6 +24828,10 @@ CREATE INDEX "fieldnet_passes_field_id_started_at_idx" ON "public"."fieldnet_pas
 
 
 CREATE INDEX "fieldnet_systems_field_idx" ON "public"."fieldnet_systems" USING "btree" ("field_id");
+
+
+
+CREATE INDEX "fields_legal_key_idx" ON "public"."fields" USING "btree" ("public"."legal_key4"("legal_land_description"));
 
 
 
@@ -24247,6 +24959,14 @@ CREATE INDEX "handling_versions_site_idx" ON "public"."handling_versions" USING 
 
 
 
+CREATE UNIQUE INDEX "harvest_report_sends_auto_once" ON "public"."harvest_report_sends" USING "btree" ("field_id", "crop_year", "contact_id") WHERE (("kind" = 'auto'::"text") AND "ok");
+
+
+
+CREATE INDEX "harvest_report_sends_field" ON "public"."harvest_report_sends" USING "btree" ("field_id", "crop_year");
+
+
+
 CREATE INDEX "herd_counts_ranch_idx" ON "public"."herd_counts" USING "btree" ("ranch_id", "sort_order");
 
 
@@ -24256,6 +24976,34 @@ CREATE INDEX "ici_field_lines_year_idx" ON "public"."ici_field_lines" USING "btr
 
 
 CREATE INDEX "input_movements_item_idx" ON "public"."input_movements" USING "btree" ("input_item_id", "moved_at" DESC);
+
+
+
+CREATE INDEX "insurance_claim_lines_claim_idx" ON "public"."insurance_claim_lines" USING "btree" ("claim_id");
+
+
+
+CREATE INDEX "insurance_claim_lines_field_idx" ON "public"."insurance_claim_lines" USING "btree" ("field_id");
+
+
+
+CREATE INDEX "insurance_claims_year_idx" ON "public"."insurance_claims" USING "btree" ("crop_year", "resolved_on" DESC);
+
+
+
+CREATE INDEX "insurance_land_field_idx" ON "public"."insurance_land" USING "btree" ("field_id");
+
+
+
+CREATE INDEX "insurance_land_policy_idx" ON "public"."insurance_land" USING "btree" ("policy_id");
+
+
+
+CREATE INDEX "insurance_production_field_idx" ON "public"."insurance_production" USING "btree" ("field_id");
+
+
+
+CREATE INDEX "insurance_production_policy_idx" ON "public"."insurance_production" USING "btree" ("policy_id");
 
 
 
@@ -25079,6 +25827,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."documents" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."equipment" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
@@ -25192,6 +25944,10 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."field_boundaries" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."field_contacts" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -25336,6 +26092,34 @@ CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."input_movements" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."insurance_claim_lines" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."insurance_claims" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."insurance_coverage" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."insurance_land" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."insurance_policies" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."insurance_production" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."insurance_production_totals" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
 
 
 
@@ -25687,6 +26471,58 @@ CREATE OR REPLACE TRIGGER "crop_prices_touch_updated_at" BEFORE INSERT OR UPDATE
 
 
 
+CREATE OR REPLACE TRIGGER "document_mirror" AFTER INSERT OR DELETE OR UPDATE ON "public"."checklist_photos" FOR EACH ROW EXECUTE FUNCTION "public"."fn_document_mirror"('checklist-photos', 'people', 'Checklist photo', 'storage_path', 'caption', '', '');
+
+
+
+CREATE OR REPLACE TRIGGER "document_mirror" AFTER INSERT OR DELETE OR UPDATE ON "public"."contracts" FOR EACH ROW EXECUTE FUNCTION "public"."fn_document_mirror"('contract-files', 'grain', 'Grain contract', 'doc_path', 'contract_number', '', '');
+
+
+
+CREATE OR REPLACE TRIGGER "document_mirror" AFTER INSERT OR DELETE OR UPDATE ON "public"."field_files" FOR EACH ROW EXECUTE FUNCTION "public"."fn_document_mirror"('field-files', 'fields', 'Field file', 'storage_path', 'filename', '', '');
+
+
+
+CREATE OR REPLACE TRIGGER "document_mirror" AFTER INSERT OR DELETE OR UPDATE ON "public"."hail_inspections" FOR EACH ROW EXECUTE FUNCTION "public"."fn_document_mirror"('invoices', 'insurance', 'Hail inspection', 'storage_path', 'inspection_number', 'report_date', 'adjuster');
+
+
+
+CREATE OR REPLACE TRIGGER "document_mirror" AFTER INSERT OR DELETE OR UPDATE ON "public"."pasture_biomass_calibration" FOR EACH ROW EXECUTE FUNCTION "public"."fn_document_mirror"('scouting-photos', 'cattle', 'Pasture sample photo', 'photo_path', 'notes', 'sampled_on', '');
+
+
+
+CREATE OR REPLACE TRIGGER "document_mirror" AFTER INSERT OR DELETE OR UPDATE ON "public"."pivot_photos" FOR EACH ROW EXECUTE FUNCTION "public"."fn_document_mirror"('equipment-photos', 'irrigation', 'Pivot photo', 'storage_path', 'caption', '', '');
+
+
+
+CREATE OR REPLACE TRIGGER "document_mirror" AFTER INSERT OR DELETE OR UPDATE ON "public"."power_bills" FOR EACH ROW EXECUTE FUNCTION "public"."fn_document_mirror"('invoices', 'utilities', 'Power bill', 'storage_path', 'file_name', 'bill_date', 'retailer');
+
+
+
+CREATE OR REPLACE TRIGGER "document_mirror" AFTER INSERT OR DELETE OR UPDATE ON "public"."product_documents" FOR EACH ROW EXECUTE FUNCTION "public"."fn_document_mirror"('invoices', 'chemicals', 'Product sheet', 'storage_path', 'title', '', '');
+
+
+
+CREATE OR REPLACE TRIGGER "document_mirror" AFTER INSERT OR DELETE OR UPDATE ON "public"."product_purchases" FOR EACH ROW EXECUTE FUNCTION "public"."fn_document_mirror"('invoices', 'money', 'Invoice', 'storage_path', 'invoice_no', 'invoice_date', 'supplier');
+
+
+
+CREATE OR REPLACE TRIGGER "document_mirror" AFTER INSERT OR DELETE OR UPDATE ON "public"."pump_photos" FOR EACH ROW EXECUTE FUNCTION "public"."fn_document_mirror"('equipment-photos', 'irrigation', 'Pump photo', 'storage_path', 'caption', '', '');
+
+
+
+CREATE OR REPLACE TRIGGER "document_mirror" AFTER INSERT OR DELETE OR UPDATE ON "public"."research_papers" FOR EACH ROW EXECUTE FUNCTION "public"."fn_document_mirror"('research-library', 'research', 'Paper', 'storage_path', 'title', '', '');
+
+
+
+CREATE OR REPLACE TRIGGER "document_mirror" AFTER INSERT OR DELETE OR UPDATE ON "public"."scale_ticket_photos" FOR EACH ROW EXECUTE FUNCTION "public"."fn_document_mirror"('scale-ticket-photos', 'grain', 'Scale ticket', 'storage_path', 'filename', '', '');
+
+
+
+CREATE OR REPLACE TRIGGER "document_mirror" AFTER INSERT OR DELETE OR UPDATE ON "public"."task_files" FOR EACH ROW EXECUTE FUNCTION "public"."fn_document_mirror"('task-files', 'other', 'Task file', 'storage_path', 'filename', '', '');
+
+
+
 CREATE OR REPLACE TRIGGER "equipment_service_log_applied" AFTER INSERT OR DELETE OR UPDATE ON "public"."equipment_service_log" FOR EACH ROW EXECUTE FUNCTION "public"."fn_service_log_applied"();
 
 
@@ -25731,6 +26567,10 @@ CREATE OR REPLACE TRIGGER "fixed_guard" BEFORE INSERT OR UPDATE ON "public"."cro
 
 
 
+CREATE OR REPLACE TRIGGER "fts" BEFORE INSERT OR UPDATE ON "public"."documents" FOR EACH ROW EXECUTE FUNCTION "public"."fn_documents_fts"();
+
+
+
 CREATE OR REPLACE TRIGGER "gate_dirties_zones" AFTER INSERT OR DELETE OR UPDATE ON "public"."pasture_gates" FOR EACH ROW EXECUTE FUNCTION "public"."gate_dirties_zones"();
 
 
@@ -25767,11 +26607,27 @@ CREATE OR REPLACE TRIGGER "line_changed" AFTER INSERT OR DELETE OR UPDATE ON "pu
 
 
 
+CREATE OR REPLACE TRIGGER "link_insurance" AFTER INSERT OR UPDATE OF "area", "title", "doc_type", "crop_year" ON "public"."documents" FOR EACH ROW WHEN (("new"."area" = 'insurance'::"text")) EXECUTE FUNCTION "public"."fn_insurance_doc_landed"();
+
+
+
 CREATE OR REPLACE TRIGGER "load_moisture_yield" AFTER UPDATE OF "moisture_pct" ON "public"."bin_loads" FOR EACH ROW WHEN (("old"."moisture_pct" IS DISTINCT FROM "new"."moisture_pct")) EXECUTE FUNCTION "public"."fn_bin_load_moisture_yield"();
 
 
 
 CREATE OR REPLACE TRIGGER "market_alerts_audit" AFTER INSERT OR DELETE OR UPDATE ON "public"."market_alerts" FOR EACH ROW EXECUTE FUNCTION "public"."fn_audit"();
+
+
+
+CREATE OR REPLACE TRIGGER "match_field" BEFORE INSERT OR UPDATE ON "public"."insurance_claim_lines" FOR EACH ROW EXECUTE FUNCTION "public"."fn_insurance_match_field"();
+
+
+
+CREATE OR REPLACE TRIGGER "match_field" BEFORE INSERT OR UPDATE ON "public"."insurance_land" FOR EACH ROW EXECUTE FUNCTION "public"."fn_insurance_match_field"();
+
+
+
+CREATE OR REPLACE TRIGGER "match_field" BEFORE INSERT OR UPDATE ON "public"."insurance_production" FOR EACH ROW EXECUTE FUNCTION "public"."fn_insurance_match_field"();
 
 
 
@@ -26762,6 +27618,21 @@ ALTER TABLE ONLY "public"."delivery_sites"
 
 
 
+ALTER TABLE ONLY "public"."document_links"
+    ADD CONSTRAINT "document_links_document_id_fkey" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."documents"
+    ADD CONSTRAINT "documents_added_by_fkey" FOREIGN KEY ("added_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."documents"
+    ADD CONSTRAINT "documents_area_fkey" FOREIGN KEY ("area") REFERENCES "public"."document_areas"("key");
+
+
+
 ALTER TABLE ONLY "public"."drive_backup_runs"
     ADD CONSTRAINT "drive_backup_runs_run_by_fkey" FOREIGN KEY ("run_by") REFERENCES "public"."users"("id") ON DELETE SET NULL;
 
@@ -27014,6 +27885,21 @@ ALTER TABLE ONLY "public"."fertility_rx_zones"
 
 ALTER TABLE ONLY "public"."field_boundaries"
     ADD CONSTRAINT "field_boundaries_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."field_contacts"
+    ADD CONSTRAINT "field_contacts_contact_id_fkey" FOREIGN KEY ("contact_id") REFERENCES "public"."contacts"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."field_contacts"
+    ADD CONSTRAINT "field_contacts_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."field_contacts"
+    ADD CONSTRAINT "field_contacts_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
 
 
 
@@ -27462,6 +28348,21 @@ ALTER TABLE ONLY "public"."handling_versions"
 
 
 
+ALTER TABLE ONLY "public"."harvest_report_sends"
+    ADD CONSTRAINT "harvest_report_sends_contact_id_fkey" FOREIGN KEY ("contact_id") REFERENCES "public"."contacts"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."harvest_report_sends"
+    ADD CONSTRAINT "harvest_report_sends_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."harvest_report_sends"
+    ADD CONSTRAINT "harvest_report_sends_sent_by_fkey" FOREIGN KEY ("sent_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
+
+
 ALTER TABLE ONLY "public"."herd_counts"
     ADD CONSTRAINT "herd_counts_ranch_id_fkey" FOREIGN KEY ("ranch_id") REFERENCES "public"."ranches"("id") ON DELETE CASCADE;
 
@@ -27504,6 +28405,66 @@ ALTER TABLE ONLY "public"."input_movements"
 
 ALTER TABLE ONLY "public"."input_movements"
     ADD CONSTRAINT "input_movements_input_item_id_fkey" FOREIGN KEY ("input_item_id") REFERENCES "public"."input_items"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."insurance_claim_lines"
+    ADD CONSTRAINT "insurance_claim_lines_claim_id_fkey" FOREIGN KEY ("claim_id") REFERENCES "public"."insurance_claims"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."insurance_claim_lines"
+    ADD CONSTRAINT "insurance_claim_lines_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."insurance_claims"
+    ADD CONSTRAINT "insurance_claims_document_id_fkey" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."insurance_claims"
+    ADD CONSTRAINT "insurance_claims_policy_id_fkey" FOREIGN KEY ("policy_id") REFERENCES "public"."insurance_policies"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."insurance_coverage"
+    ADD CONSTRAINT "insurance_coverage_crop_id_fkey" FOREIGN KEY ("crop_id") REFERENCES "public"."crops"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."insurance_coverage"
+    ADD CONSTRAINT "insurance_coverage_policy_id_fkey" FOREIGN KEY ("policy_id") REFERENCES "public"."insurance_policies"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."insurance_land"
+    ADD CONSTRAINT "insurance_land_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."insurance_land"
+    ADD CONSTRAINT "insurance_land_policy_id_fkey" FOREIGN KEY ("policy_id") REFERENCES "public"."insurance_policies"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."insurance_policies"
+    ADD CONSTRAINT "insurance_policies_document_id_fkey" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."insurance_production"
+    ADD CONSTRAINT "insurance_production_field_id_fkey" FOREIGN KEY ("field_id") REFERENCES "public"."fields"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."insurance_production"
+    ADD CONSTRAINT "insurance_production_policy_id_fkey" FOREIGN KEY ("policy_id") REFERENCES "public"."insurance_policies"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."insurance_production_totals"
+    ADD CONSTRAINT "insurance_production_totals_policy_id_fkey" FOREIGN KEY ("policy_id") REFERENCES "public"."insurance_policies"("id") ON DELETE CASCADE;
 
 
 
@@ -29016,6 +29977,15 @@ CREATE POLICY "dismiss_any" ON "public"."bin_air_alerts" FOR UPDATE TO "authenti
 
 
 
+ALTER TABLE "public"."document_areas" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."document_links" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."documents" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."drive_backup_items" ENABLE ROW LEVEL SECURITY;
 
 
@@ -29221,6 +30191,9 @@ ALTER TABLE "public"."field_boundaries" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."field_climate" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."field_contacts" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."field_crop_seasons" ENABLE ROW LEVEL SECURITY;
 
 
@@ -29309,6 +30282,10 @@ CREATE POLICY "fields_mgr" ON "public"."fields" TO "authenticated" USING (( SELE
 
 
 CREATE POLICY "fields_user" ON "public"."fields" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active")) WITH CHECK (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "file_made_report" ON "public"."documents" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND ("source" = 'report'::"text") AND ("area" = 'reports'::"text") AND ("added_by" = "auth"."uid"()) AND ("storage_bucket" = 'documents'::"text") AND ("storage_path" ~~ (('made-reports/'::"text" || ("auth"."uid"())::"text") || '/%'::"text"))));
 
 
 
@@ -29441,6 +30418,9 @@ ALTER TABLE "public"."handling_sites" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."handling_versions" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."harvest_report_sends" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."herd_counts" ENABLE ROW LEVEL SECURITY;
@@ -29802,6 +30782,27 @@ CREATE POLICY "inst_update" ON "public"."monthly_task_instances" FOR UPDATE TO "
 
 
 
+ALTER TABLE "public"."insurance_claim_lines" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."insurance_claims" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."insurance_coverage" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."insurance_land" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."insurance_policies" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."insurance_production" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."insurance_production_totals" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."integration_accounts" ENABLE ROW LEVEL SECURITY;
 
 
@@ -29906,6 +30907,18 @@ ALTER TABLE "public"."land_lease_payments" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."land_leases" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "manager_delete" ON "public"."documents" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") AND "public"."can_read_document"("access", "added_by")));
+
+
+
+CREATE POLICY "manager_insert" ON "public"."documents" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "manager_update" ON "public"."documents" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") AND "public"."can_read_document"("access", "added_by"))) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
 
 
 ALTER TABLE "public"."manure_applications" ENABLE ROW LEVEL SECURITY;
@@ -30501,6 +31514,10 @@ CREATE POLICY "mfa_required" ON "public"."field_boundaries" AS RESTRICTIVE TO "a
 
 
 CREATE POLICY "mfa_required" ON "public"."field_climate" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
+
+
+
+CREATE POLICY "mfa_required" ON "public"."field_contacts" AS RESTRICTIVE TO "authenticated" USING (( SELECT "public"."mfa_ok"() AS "mfa_ok")) WITH CHECK (( SELECT "public"."mfa_ok"() AS "mfa_ok"));
 
 
 
@@ -31297,6 +32314,10 @@ ALTER TABLE "public"."n_rich_strips" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."n_trials" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "no_partner" ON "public"."field_contacts" AS RESTRICTIVE TO "authenticated" USING ((NOT ( SELECT "public"."is_partner"() AS "is_partner"))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
 CREATE POLICY "note_update" ON "public"."checklist_run_locations" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") AND "public"."checklist_run_is_map"("run_id"))) WITH CHECK ((( SELECT "public"."is_active"() AS "is_active") AND "public"."checklist_run_is_map"("run_id")));
 
 
@@ -31907,6 +32928,14 @@ CREATE POLICY "partner_scope" ON "public"."crop_plans" AS RESTRICTIVE TO "authen
 
 
 
+CREATE POLICY "partner_scope" ON "public"."document_links" AS RESTRICTIVE TO "authenticated" USING ((NOT ( SELECT "public"."is_partner"() AS "is_partner"))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."documents" AS RESTRICTIVE TO "authenticated" USING ((NOT ( SELECT "public"."is_partner"() AS "is_partner"))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
 CREATE POLICY "partner_scope" ON "public"."fert_blends" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR (("field_id", "crop_year") IN ( SELECT "partner_field_years"."field_id",
     "partner_field_years"."crop_year"
    FROM "public"."partner_field_years"() "partner_field_years"("field_id", "crop_year")))));
@@ -31980,6 +33009,34 @@ CREATE POLICY "partner_scope" ON "public"."fieldnet_passes" AS RESTRICTIVE TO "a
 
 
 CREATE POLICY "partner_scope" ON "public"."hail_inspections" AS RESTRICTIVE TO "authenticated" USING (((NOT ( SELECT "public"."is_partner"() AS "is_partner")) OR ("field_id" IN ( SELECT "public"."partner_field_ids"() AS "partner_field_ids")))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."insurance_claim_lines" AS RESTRICTIVE TO "authenticated" USING ((NOT ( SELECT "public"."is_partner"() AS "is_partner"))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."insurance_claims" AS RESTRICTIVE TO "authenticated" USING ((NOT ( SELECT "public"."is_partner"() AS "is_partner"))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."insurance_coverage" AS RESTRICTIVE TO "authenticated" USING ((NOT ( SELECT "public"."is_partner"() AS "is_partner"))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."insurance_land" AS RESTRICTIVE TO "authenticated" USING ((NOT ( SELECT "public"."is_partner"() AS "is_partner"))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."insurance_policies" AS RESTRICTIVE TO "authenticated" USING ((NOT ( SELECT "public"."is_partner"() AS "is_partner"))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."insurance_production" AS RESTRICTIVE TO "authenticated" USING ((NOT ( SELECT "public"."is_partner"() AS "is_partner"))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
+
+
+
+CREATE POLICY "partner_scope" ON "public"."insurance_production_totals" AS RESTRICTIVE TO "authenticated" USING ((NOT ( SELECT "public"."is_partner"() AS "is_partner"))) WITH CHECK ((NOT ( SELECT "public"."is_partner"() AS "is_partner")));
 
 
 
@@ -32830,6 +33887,18 @@ CREATE POLICY "read_all" ON "public"."delivery_sites" FOR SELECT TO "authenticat
 
 
 
+CREATE POLICY "read_all" ON "public"."document_areas" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+
+
+
+CREATE POLICY "read_all" ON "public"."document_links" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+
+
+
+CREATE POLICY "read_all" ON "public"."documents" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_active"() AS "is_active") AND "public"."can_read_document"("access", "added_by")));
+
+
+
 CREATE POLICY "read_all" ON "public"."equipment" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -32947,6 +34016,10 @@ CREATE POLICY "read_all" ON "public"."fertility_rx_zones" FOR SELECT TO "authent
 
 
 CREATE POLICY "read_all" ON "public"."field_boundaries" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."field_contacts" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
 
@@ -33094,6 +34167,10 @@ CREATE POLICY "read_all" ON "public"."handling_versions" FOR SELECT TO "authenti
 
 
 
+CREATE POLICY "read_all" ON "public"."harvest_report_sends" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
 CREATE POLICY "read_all" ON "public"."herd_counts" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
 
 
@@ -33111,6 +34188,34 @@ CREATE POLICY "read_all" ON "public"."input_items" FOR SELECT TO "authenticated"
 
 
 CREATE POLICY "read_all" ON "public"."input_movements" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_active"() AS "is_active"));
+
+
+
+CREATE POLICY "read_all" ON "public"."insurance_claim_lines" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+
+
+
+CREATE POLICY "read_all" ON "public"."insurance_claims" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+
+
+
+CREATE POLICY "read_all" ON "public"."insurance_coverage" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+
+
+
+CREATE POLICY "read_all" ON "public"."insurance_land" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+
+
+
+CREATE POLICY "read_all" ON "public"."insurance_policies" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+
+
+
+CREATE POLICY "read_all" ON "public"."insurance_production" FOR SELECT TO "authenticated" USING ("public"."is_active"());
+
+
+
+CREATE POLICY "read_all" ON "public"."insurance_production_totals" FOR SELECT TO "authenticated" USING ("public"."is_active"());
 
 
 
@@ -33490,6 +34595,10 @@ CREATE POLICY "remove" ON "public"."bale_checks" FOR DELETE TO "authenticated" U
 
 
 CREATE POLICY "remove" ON "public"."checklist_photos" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_manager"() AS "is_manager") OR ("created_by" = ( SELECT "auth"."uid"() AS "uid"))));
+
+
+
+CREATE POLICY "remove_own_made_report" ON "public"."documents" FOR DELETE TO "authenticated" USING ((("source" = 'report'::"text") AND ("added_by" = "auth"."uid"())));
 
 
 
@@ -33951,6 +35060,42 @@ CREATE POLICY "write_all" ON "public"."truck_inspections" FOR INSERT TO "authent
 
 
 
+CREATE POLICY "write_manager" ON "public"."document_areas" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+
+
+
+CREATE POLICY "write_manager" ON "public"."document_links" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+
+
+
+CREATE POLICY "write_manager" ON "public"."insurance_claim_lines" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+
+
+
+CREATE POLICY "write_manager" ON "public"."insurance_claims" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+
+
+
+CREATE POLICY "write_manager" ON "public"."insurance_coverage" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+
+
+
+CREATE POLICY "write_manager" ON "public"."insurance_land" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+
+
+
+CREATE POLICY "write_manager" ON "public"."insurance_policies" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+
+
+
+CREATE POLICY "write_manager" ON "public"."insurance_production" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+
+
+
+CREATE POLICY "write_manager" ON "public"."insurance_production_totals" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
+
+
+
 CREATE POLICY "write_manager" ON "public"."soil_test_requests" TO "authenticated" USING ("public"."is_manager"()) WITH CHECK ("public"."is_manager"());
 
 
@@ -34344,6 +35489,10 @@ CREATE POLICY "write_mgr" ON "public"."fertility_rx_zones" TO "authenticated" US
 
 
 CREATE POLICY "write_mgr" ON "public"."field_boundaries" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
+
+
+
+CREATE POLICY "write_mgr" ON "public"."field_contacts" TO "authenticated" USING (( SELECT "public"."is_manager"() AS "is_manager")) WITH CHECK (( SELECT "public"."is_manager"() AS "is_manager"));
 
 
 
@@ -35607,6 +36756,11 @@ GRANT ALL ON FUNCTION "public"."box3dtobox"("public"."box3d") TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."can_read_document"("p_access" "text", "p_added_by" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."can_read_document"("p_access" "text", "p_added_by" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."can_see_finances"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."can_see_finances"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."can_see_finances"() TO "service_role";
@@ -35777,6 +36931,16 @@ GRANT ALL ON FUNCTION "public"."disablelongtransactions"() TO "postgres";
 GRANT ALL ON FUNCTION "public"."disablelongtransactions"() TO "anon";
 GRANT ALL ON FUNCTION "public"."disablelongtransactions"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."disablelongtransactions"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."document_area_counts"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."document_area_counts"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."document_filter_options"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."document_filter_options"() TO "service_role";
 
 
 
@@ -36179,6 +37343,21 @@ GRANT ALL ON FUNCTION "public"."fn_dedupe_grants"() TO "authenticated";
 
 
 
+GRANT ALL ON FUNCTION "public"."fn_document_file"("j" "jsonb", "p_id" "uuid", "p_source" "text", "p_bucket" "text", "p_area" "text", "p_type" "text", "p_path_col" "text", "p_title_col" "text", "p_date_col" "text", "p_party_col" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_document_file"("j" "jsonb", "p_id" "uuid", "p_source" "text", "p_bucket" "text", "p_area" "text", "p_type" "text", "p_path_col" "text", "p_title_col" "text", "p_date_col" "text", "p_party_col" "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_document_mirror"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_document_mirror"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_documents_fts"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_documents_fts"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."fn_eshepherd_import_heartbeat"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_eshepherd_import_heartbeat"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_eshepherd_import_heartbeat"() TO "service_role";
@@ -36255,6 +37434,16 @@ GRANT ALL ON FUNCTION "public"."fn_grant_new_notify"() TO "service_role";
 REVOKE ALL ON FUNCTION "public"."fn_harvest_op_air"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_harvest_op_air"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_harvest_op_air"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_insurance_doc_landed"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_insurance_doc_landed"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."fn_insurance_match_field"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."fn_insurance_match_field"() TO "service_role";
 
 
 
@@ -37543,6 +38732,21 @@ GRANT ALL ON FUNCTION "public"."jd_set_not_ours"("p_id" "uuid", "p_kind" "text",
 REVOKE ALL ON FUNCTION "public"."jd_unconfirmed_operations"("p_field" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."jd_unconfirmed_operations"("p_field" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."jd_unconfirmed_operations"("p_field" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."legal_key"("p" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."legal_key"("p" "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."legal_key4"("p" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."legal_key4"("p" "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."link_insurance_documents"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."link_insurance_documents"() TO "service_role";
 
 
 
@@ -42249,6 +43453,21 @@ GRANT ALL ON TABLE "public"."delivery_sites" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."document_areas" TO "authenticated";
+GRANT ALL ON TABLE "public"."document_areas" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."document_links" TO "authenticated";
+GRANT ALL ON TABLE "public"."document_links" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."documents" TO "authenticated";
+GRANT ALL ON TABLE "public"."documents" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."drive_backup_items" TO "authenticated";
 GRANT ALL ON TABLE "public"."drive_backup_items" TO "service_role";
 
@@ -42461,6 +43680,11 @@ GRANT ALL ON TABLE "public"."field_centroids" TO "service_role";
 
 GRANT ALL ON TABLE "public"."field_climate" TO "authenticated";
 GRANT ALL ON TABLE "public"."field_climate" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."field_contacts" TO "authenticated";
+GRANT ALL ON TABLE "public"."field_contacts" TO "service_role";
 
 
 
@@ -42824,6 +44048,11 @@ GRANT ALL ON TABLE "public"."handling_versions" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."harvest_report_sends" TO "authenticated";
+GRANT ALL ON TABLE "public"."harvest_report_sends" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."herd_counts" TO "authenticated";
 GRANT ALL ON TABLE "public"."herd_counts" TO "service_role";
 
@@ -42856,6 +44085,41 @@ GRANT ALL ON TABLE "public"."input_movements" TO "service_role";
 
 GRANT ALL ON TABLE "public"."input_onhand" TO "authenticated";
 GRANT ALL ON TABLE "public"."input_onhand" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."insurance_claim_lines" TO "authenticated";
+GRANT ALL ON TABLE "public"."insurance_claim_lines" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."insurance_claims" TO "authenticated";
+GRANT ALL ON TABLE "public"."insurance_claims" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."insurance_coverage" TO "authenticated";
+GRANT ALL ON TABLE "public"."insurance_coverage" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."insurance_land" TO "authenticated";
+GRANT ALL ON TABLE "public"."insurance_land" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."insurance_policies" TO "authenticated";
+GRANT ALL ON TABLE "public"."insurance_policies" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."insurance_production" TO "authenticated";
+GRANT ALL ON TABLE "public"."insurance_production" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."insurance_production_totals" TO "authenticated";
+GRANT ALL ON TABLE "public"."insurance_production_totals" TO "service_role";
 
 
 
@@ -43951,6 +45215,7 @@ insert into storage.buckets (id, name, public) values ('avatars', 'avatars', tru
 insert into storage.buckets (id, name, public) values ('branding', 'branding', true) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('checklist-photos', 'checklist-photos', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('contract-files', 'contract-files', false) on conflict (id) do nothing;
+insert into storage.buckets (id, name, public) values ('documents', 'documents', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('equipment-photos', 'equipment-photos', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('field-files', 'field-files', false) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('field-work-photos', 'field-work-photos', false) on conflict (id) do nothing;
@@ -43984,6 +45249,16 @@ drop policy if exists contract_files_read on storage.objects;
 create policy contract_files_read on storage.objects as PERMISSIVE for SELECT to authenticated using (((bucket_id = 'contract-files'::text) AND public.is_active()));
 drop policy if exists contract_files_write on storage.objects;
 create policy contract_files_write on storage.objects as PERMISSIVE for INSERT to authenticated with check (((bucket_id = 'contract-files'::text) AND public.is_manager()));
+drop policy if exists documents_delete on storage.objects;
+create policy documents_delete on storage.objects as PERMISSIVE for DELETE to authenticated using (((bucket_id = 'documents'::text) AND (( SELECT public.is_manager() AS is_manager) OR (name ~~ (('made-reports/'::text || (auth.uid())::text) || '/%'::text)))));
+drop policy if exists documents_insert on storage.objects;
+create policy documents_insert on storage.objects as PERMISSIVE for INSERT to authenticated with check (((bucket_id = 'documents'::text) AND (( SELECT public.is_manager() AS is_manager) OR (( SELECT public.is_active() AS is_active) AND (NOT ( SELECT public.is_partner() AS is_partner)) AND (name ~~ (('made-reports/'::text || (auth.uid())::text) || '/%'::text))))));
+drop policy if exists documents_read on storage.objects;
+create policy documents_read on storage.objects as PERMISSIVE for SELECT to authenticated using (((bucket_id = 'documents'::text) AND ( SELECT public.is_active() AS is_active) AND (NOT ( SELECT public.is_partner() AS is_partner)) AND ((name !~~ 'made-reports/%'::text) OR (EXISTS ( SELECT 1
+   FROM public.documents d
+  WHERE ((d.storage_bucket = 'documents'::text) AND (d.storage_path = objects.name)))))));
+drop policy if exists documents_update on storage.objects;
+create policy documents_update on storage.objects as PERMISSIVE for UPDATE to authenticated using (((bucket_id = 'documents'::text) AND ( SELECT public.is_manager() AS is_manager)));
 drop policy if exists equipment_photos_delete on storage.objects;
 create policy equipment_photos_delete on storage.objects as PERMISSIVE for DELETE to authenticated using (((bucket_id = 'equipment-photos'::text) AND ( SELECT public.is_manager() AS is_manager)));
 drop policy if exists equipment_photos_insert on storage.objects;

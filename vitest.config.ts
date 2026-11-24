@@ -7,6 +7,6 @@ export default defineConfig({
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'agent/**/*.test.ts', 'public-export/**/*.test.mjs'],
+    include: ['src/**/*.test.ts', 'agent/**/*.test.ts', 'netlify/**/*.test.ts', 'public-export/**/*.test.mjs'],
   },
 })

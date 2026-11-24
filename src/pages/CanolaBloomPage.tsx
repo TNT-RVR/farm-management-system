@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Flower2, Plus, Trash2 } from 'lucide-react'
-import { PageHeader } from '@/components/PageHeader'
 import { PillTabs } from '@/components/PillTabs'
 import { Card } from '@/components/Card'
 import { Fold } from '@/components/Fold'
@@ -14,6 +13,7 @@ import { useBloomSettings, useFarmBloom, useSaveBloomSettings, type FarmBloomRow
 import { PollinatorsTab } from '@/pages/canola/PollinatorsTab'
 import { SclerotiniaTab } from '@/pages/canola/SclerotiniaTab'
 import { cn } from '@/lib/utils'
+import { Page } from '@/components/Page'
 
 const TABS = ['season', 'sclerotinia', 'pollinators', 'report', 'tuning'] as const
 type Tab = (typeof TABS)[number]
@@ -35,19 +35,24 @@ export function CanolaBloomPage() {
   const { data: rows = [], isLoading } = useFarmBloom()
   const { data: set } = useBloomSettings()
   return (
-    <div className="mx-auto max-w-6xl space-y-3 p-4 md:p-6">
-      <PageHeader title="Canola bloom" icon={<Flower2 className="h-5 w-5 text-brand-700" />} subtitle="Which canola is flowering, from the satellite" />
-      <PillTabs
-        tabs={[
-          { key: 'season', label: 'This season' },
-          { key: 'sclerotinia', label: 'Sclerotinia' },
-          { key: 'pollinators', label: 'Pollinators' },
-          { key: 'report', label: 'Season report' },
-          { key: 'tuning', label: 'How it did' },
-        ]}
-        value={tab}
-        onChange={setTab}
-      />
+    <Page
+      title="Canola bloom"
+      className="space-y-3"
+      info="Which canola is flowering, worked out from the satellite rather than typed in."
+      tabs={
+        <PillTabs
+          tabs={[
+            { key: 'season', label: 'This season' },
+            { key: 'sclerotinia', label: 'Sclerotinia' },
+            { key: 'pollinators', label: 'Pollinators' },
+            { key: 'report', label: 'Season report' },
+            { key: 'tuning', label: 'How it did' },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+      }
+    >
       {isLoading || !set ? (
         <p className="text-sm text-gray-500">Loading…</p>
       ) : tab === 'season' ? (
@@ -66,7 +71,7 @@ export function CanolaBloomPage() {
       ) : (
         <TuningTab rows={rows} set={set} />
       )}
-    </div>
+    </Page>
   )
 }
 

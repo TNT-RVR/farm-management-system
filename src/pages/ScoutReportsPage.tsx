@@ -1,6 +1,4 @@
 import { useMemo } from 'react'
-import { ClipboardCheck } from 'lucide-react'
-import { PageHeader } from '@/components/PageHeader'
 import { PillTabs } from '@/components/PillTabs'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useTab } from '@/lib/useTab'
@@ -8,6 +6,7 @@ import { useSearchParams } from 'react-router-dom'
 import { isCompanyOf, SCOUT_COMPANIES, scoutCompanies, scoutYears, useScoutReports } from '@/lib/scout-reports'
 import { ScoutCompanyTab } from './scout/ScoutCompanyTab'
 import { ScoutOverviewTab } from './scout/ScoutOverviewTab'
+import { Page } from '@/components/Page'
 
 /**
  * Seed canola scout reports (Sam, 12 Nov 2026).
@@ -48,12 +47,11 @@ export function ScoutReportsPage() {
   const company = companies.find((c) => c.key === tab) ?? companies[0]
 
   return (
-    <div className="mx-auto max-w-6xl space-y-3 p-4 md:p-6">
-      <PageHeader
-        title="Seed canola scout reports"
-        icon={<ClipboardCheck className="h-5 w-5 text-brand-700" />}
-        subtitle="Which fields each seed company will grow canola on next year, and why"
-        actions={
+    <Page
+      title="Seed canola scout reports"
+      className="space-y-3"
+      info="Which fields each seed company will grow canola on next year, and why."
+      actions={
           years.length > 1 ? (
             <label className="flex items-center gap-1.5 text-xs text-gray-500">
               Crop year
@@ -72,13 +70,15 @@ export function ScoutReportsPage() {
           ) : years.length === 1 ? (
             <span className="text-xs text-gray-500">Crop year {years[0]}</span>
           ) : null
-        }
-      />
-      <PillTabs
-        tabs={[{ key: 'overview' as Tab, label: 'Overview' }, ...companies.map((c) => ({ key: c.key as Tab, label: c.label }))]}
-        value={tab}
-        onChange={setTab}
-      />
+      }
+      tabs={
+        <PillTabs
+          tabs={[{ key: 'overview' as Tab, label: 'Overview' }, ...companies.map((c) => ({ key: c.key as Tab, label: c.label }))]}
+          value={tab}
+          onChange={setTab}
+        />
+      }
+    >
       {isLoading ? (
         <p className="p-6 text-sm text-gray-500">Loading…</p>
       ) : tab === 'overview' ? (
@@ -91,6 +91,6 @@ export function ScoutReportsPage() {
           isManager={isManager}
         />
       )}
-    </div>
+    </Page>
   )
 }

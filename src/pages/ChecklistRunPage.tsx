@@ -9,6 +9,7 @@ import { AddJob } from './checklists/AddJob'
 import { JobText } from './checklists/JobActions'
 import { FreezeAlertSetting } from './checklists/FreezeAlertSetting'
 import { cn } from '@/lib/utils'
+import { Page } from '@/components/Page'
 
 function RunItem({
   item,
@@ -101,7 +102,7 @@ export function ChecklistRunPage() {
   const pct = total ? Math.round((done / total) * 100) : 0
 
   return (
-    <div className={cn('mx-auto p-4 md:p-6', mapBased ? 'max-w-6xl' : 'max-w-2xl')}>
+    <Page narrow>
       <Link
         to="/checklists"
         className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800"
@@ -172,6 +173,6 @@ export function ChecklistRunPage() {
         ))}
       </ul>}
       {!mapBased && hasManagerAccess(profile?.role) && <AddJob runId={run.id} templateId={run.template_id} runLocationId={null} keeps={Boolean(run.template_id)} />}
-    </div>
+    </Page>
   )
 }

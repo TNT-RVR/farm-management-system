@@ -17,6 +17,7 @@ import { useTruckInspections } from '@/lib/truck-inspection-data'
 import { useTab } from '@/lib/useTab'
 import { CARD_HEAD } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
+import { Page } from '@/components/Page'
 
 type MachineTab = 'overview' | 'service' | 'warranty' | 'inspections'
 const TABS: readonly MachineTab[] = ['overview', 'service', 'warranty', 'inspections']
@@ -95,7 +96,7 @@ export function EquipmentDetailPage() {
   const draft = notes ?? e.notes ?? ''
 
   return (
-    <div className="p-4 md:p-6">
+    <Page>
       <Link
         to={`/equipment?type=${equipmentKind(e.equipment_type)}`}
         className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-brand-700"
@@ -200,6 +201,6 @@ export function EquipmentDetailPage() {
       )}
       {tab === 'warranty' && <EquipmentWarranty e={e} canEdit={canEdit} />}
       {tab === 'inspections' && inspected && <InspectionsTab machine={e} />}
-    </div>
+    </Page>
   )
 }

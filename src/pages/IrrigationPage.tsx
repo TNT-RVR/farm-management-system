@@ -45,6 +45,7 @@ import { usePartnerView } from '@/lib/partner-view'
 import { cn } from '@/lib/utils'
 import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
 import { CardList, RowCard } from '@/components/RowCards'
+import { Page } from '@/components/Page'
 
 // Lazy so recharts (the chart library) splits into its own chunk and only loads
 // when the Graph tab is opened — keeps the app shell small + PWA-precacheable.
@@ -891,6 +892,13 @@ const GENERAL_TABS = [
   { key: 'pump', label: 'Pump Information' },
 ] as const
 
+/** The view's own name, for a screen reader — the breadcrumb shows it. */
+const SECTION_TITLE: Record<IrrigationSection, string> = {
+  aimm: 'Irrigation',
+  river: 'River',
+  general: 'Pivots & pumps',
+}
+
 export function IrrigationPage({ section = 'aimm' }: { section?: IrrigationSection } = {}) {
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
@@ -945,34 +953,31 @@ export function IrrigationPage({ section = 'aimm' }: { section?: IrrigationSecti
     setParams(next, { replace: true })
   }
 
+  /* One tab row, wherever the view came from: General Info's two tables,
+     River's ranches, or AIMM's four. The controls that act on the section —
+     the unit toggle and the sync — sit beside them rather than on a bar of
+     their own. */
+  const sectionTabs =
+    section === 'general' ? (
+      <PillTabs tabs={GENERAL_TABS} value={generalTab} onChange={setGeneralTab} className="print:hidden" />
+    ) : tab === 'river' ? (
+      <PillTabs
+        tabs={RIVER_TABS.map((r) => ({ key: r, label: r }))}
+        value={riverRanch}
+        onChange={setRiverRanch}
+        className="print:hidden"
+      />
+    ) : tab === 'aimm' ? (
+      <PillTabs tabs={aimmTabs} value={aimmTab} onChange={setAimmTab} className="print:hidden" />
+    ) : undefined
+
   return (
-    <div>
-      {/* General Info: its two tables. */}
-      {section === 'general' && (
-        <div className="bg-gray-50 px-4 pt-3 md:px-6 print:hidden">
-          <PillTabs tabs={GENERAL_TABS} value={generalTab} onChange={setGeneralTab} />
-        </div>
-      )}
-
-      {/* River — one per ranch, plus the gauge map */}
-      {tab === 'river' && (
-        <div className="bg-gray-50 px-4 pt-3 md:px-6 print:hidden">
-          <PillTabs
-            tabs={RIVER_TABS.map((r) => ({ key: r, label: r }))}
-            value={riverRanch}
-            onChange={setRiverRanch}
-          />
-        </div>
-      )}
-
-      {/* AIMM — the tabs on the left, the controls that act on this section on
-          the right of the SAME row. They had a bar of their own above this one,
-          which on AIMM held nothing else: a whole row of chrome to say three
-          things that fit beside the tabs. */}
-      {tab === 'aimm' && (
-        <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50 px-4 pt-3 md:px-6 print:hidden">
-          <PillTabs tabs={aimmTabs} value={aimmTab} onChange={setAimmTab} className="border-b-0 pb-0" />
-          <div className="flex flex-wrap items-center gap-2 pb-2">
+    <Page
+      title={SECTION_TITLE[section]}
+      tabs={sectionTabs}
+      actions={
+        tab === 'aimm' && (
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
             <UnitToggle />
             {isManager && (
               <button
@@ -984,10 +989,11 @@ export function IrrigationPage({ section = 'aimm' }: { section?: IrrigationSecti
               </button>
             )}
           </div>
-        </div>
-      )}
+        )
+      }
+    >
 
-      <div className="p-4 md:p-6">
+      <div>
         {tab === 'aimm' && sync.isSuccess && (
           <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-xs text-green-800">
             Synced · {(sync.data as { tasks: number }).tasks} task{(sync.data as { tasks: number }).tasks === 1 ? '' : 's'} raised.
@@ -1035,6 +1041,6 @@ export function IrrigationPage({ section = 'aimm' }: { section?: IrrigationSecti
           <Setup isManager={isManager} focusField={focusField} />
         )}
       </div>
-    </div>
+    </Page>
   )
 }

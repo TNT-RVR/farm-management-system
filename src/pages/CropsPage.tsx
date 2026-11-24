@@ -31,6 +31,8 @@ import { useCropVarietySettings, useRecordedVarieties } from '@/lib/crop-variety
 import { VarietySettingsEditor, VarietySubRows, VarietyToggle } from '@/pages/crops/CropVarietyRows'
 import { KgAside } from '@/components/KgAside'
 import { kgAside } from '@/lib/lbs-kg'
+import { Page } from '@/components/Page'
+import { PillTabs } from '@/components/PillTabs'
 
 type Row = CropListRow
 
@@ -309,35 +311,29 @@ export function CropsPage() {
   }
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-4 flex items-center gap-3">
-        <h1 className="text-lg font-semibold text-gray-900">Crops</h1>
-        <div className="flex rounded-md border border-gray-200 bg-white p-0.5 text-sm">
-          {(['active', 'archive'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={cn(
-                'rounded px-3 py-1 capitalize',
-                tab === t
-                  ? 'bg-brand-700 font-semibold text-white'
-                  : 'text-gray-600 hover:bg-gray-50',
-              )}
-            >
-              {t} ({t === 'active' ? active.length : archived.length})
-            </button>
-          ))}
-        </div>
-
-        {canAdd && (
+    <Page
+      title="Crops"
+      tabs={
+        <PillTabs
+          tabs={[
+            { key: 'active', label: `Active (${active.length})` },
+            { key: 'archive', label: `Archive (${archived.length})` },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+      }
+      actions={
+        canAdd && (
           <button
             onClick={() => setAdding({ name: '', unit: 'bu' })}
-            className="ml-auto flex items-center gap-1.5 rounded-md bg-brand-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-800"
+            className="flex items-center gap-1.5 rounded-md bg-brand-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-800"
           >
             <Plus className="h-3.5 w-3.5" /> Add crop
           </button>
-        )}
-      </div>
+        )
+      }
+    >
 
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading…</p>
@@ -470,6 +466,6 @@ export function CropsPage() {
           }
         />
       )}
-    </div>
+    </Page>
   )
 }

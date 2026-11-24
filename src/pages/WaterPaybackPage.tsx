@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Droplet, Plus, X } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 import { HelpNote } from '@/components/HelpNote'
-import { PageHeader } from '@/components/PageHeader'
 import { PillTabs } from '@/components/PillTabs'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { money, n0, n1, n1Fixed } from '@/lib/format'
@@ -22,6 +21,7 @@ import {
 import { HeadTip } from '@/components/HeadTip'
 import { CardList, RowCard } from '@/components/RowCards'
 import { revealOnMount } from '@/lib/reveal'
+import { Page } from '@/components/Page'
 
 /**
  * Does a trough pay for itself?
@@ -144,13 +144,11 @@ export function WaterPaybackPage() {
   const headLabel = kind === 'cow_calf' ? 'pair' : 'head'
 
   return (
-    <div className="mx-auto max-w-5xl space-y-3 p-4 md:p-6">
-      <PageHeader
-        title="Does a trough pay for itself?"
-        icon={<Droplet className="h-5 w-5 text-brand-700" />}
-        subtitle="Pumped water against walking into the dugout"
-      />
-
+    <Page
+      title="Does a trough pay for itself?"
+      className="space-y-3"
+      info="Pumped water against walking into the dugout."
+      tabs={
       <PillTabs
         tabs={[
           { key: 'cow_calf' as const, label: 'Cows and calves' },
@@ -159,7 +157,8 @@ export function WaterPaybackPage() {
         value={kind}
         onChange={setKind}
       />
-
+      }
+    >
       <div className="grid gap-3 md:grid-cols-2">
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">The herd on this water</p>
@@ -384,6 +383,6 @@ export function WaterPaybackPage() {
           water, and a bank you are not repairing are all real and none of them are in these numbers.
         </p>
       </HelpNote>
-    </div>
+    </Page>
   )
 }

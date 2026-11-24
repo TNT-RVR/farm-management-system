@@ -6,6 +6,7 @@ import { ArrowDown, ArrowUp, Lightbulb, Scale } from 'lucide-react'
 import { HelpNote } from '@/components/HelpNote'
 import { cropColour } from '@/lib/crop-colour'
 import { downloadBlob, tableReportToCsv, tableReportToPdf } from '@/lib/table-report'
+import { keepMadeReport } from '@/lib/made-reports'
 import { ExportButton } from '@/components/ExportButton'
 import { conv, depthValue, useUnitSystem, type UnitSystem } from '@/lib/units'
 import { cn } from '@/lib/utils'
@@ -391,9 +392,12 @@ export function WaterSeasonReview({ year }: { year: number }) {
     if (format === 'CSV') {
       const blob = new Blob([tableReportToCsv(report)], { type: 'text/csv;charset=utf-8' })
       downloadBlob(blob, `water-review-${shownYear}.csv`)
+      keepMadeReport({ reportId: 'water-review', name: 'Water against yield', blob, filename: `water-review-${shownYear}.csv`, format, cropYear: shownYear, labels: { 'Crop year': String(shownYear) }, family: 'water-report' })
       return
     }
-    downloadBlob(await tableReportToPdf(report), `water-review-${shownYear}.pdf`)
+    const blob = await tableReportToPdf(report)
+    downloadBlob(blob, `water-review-${shownYear}.pdf`)
+    keepMadeReport({ reportId: 'water-review', name: 'Water against yield', blob, filename: `water-review-${shownYear}.pdf`, format, cropYear: shownYear, labels: { 'Crop year': String(shownYear) }, family: 'water-report' })
   }
 
   return (

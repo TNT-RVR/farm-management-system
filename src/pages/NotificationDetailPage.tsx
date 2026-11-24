@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { hasAdminAccess, useAuth } from '@/lib/auth'
 import { TechnicalDetails } from '@/components/TechnicalDetails'
 import { CARD_HEAD } from '@/lib/table-style'
+import { Page } from '@/components/Page'
 
 /** The integration_health row a feed alert is about, matched by label in the title. */
 function useFeedState(kind: string | undefined, title: string | undefined) {
@@ -115,7 +116,7 @@ export function NotificationDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4 p-4 md:p-6">
+    <Page narrow className="space-y-4">
       <button type="button" onClick={() => navigate('/notifications')} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
         <ArrowLeft className="h-4 w-4" /> All notifications
       </button>
@@ -298,6 +299,6 @@ export function NotificationDetailPage() {
           <ClipboardCopy className="h-3.5 w-3.5" /> {copied ? 'Copied — paste it to whoever looks after the app' : 'Copy error details'}
         </button>
       )}
-    </div>
+    </Page>
   )
 }

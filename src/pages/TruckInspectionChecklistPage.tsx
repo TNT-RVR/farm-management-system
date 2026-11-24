@@ -1,9 +1,10 @@
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ClipboardCheck } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { Select } from '@/components/Select'
 import { InspectionView, TruckInspectionHistory } from '@/components/TruckInspection'
 import { useInspectedVehicles, useTruckInspections, vehicleOptions } from '@/lib/truck-inspection-data'
 import { progress } from '@/lib/truck-inspection'
+import { Page } from '@/components/Page'
 
 /**
  * The Truck inspection checklist (Sam, 24 Oct 2026: "a generic form under
@@ -35,7 +36,7 @@ export function TruckInspectionChecklistPage() {
   if (open) {
     const truck = (vehicles ?? []).find((t) => t.id === open.equipment_id) ?? null
     return (
-      <div className="mx-auto max-w-3xl space-y-3 p-4 md:p-6">
+      <Page narrow title="Truck inspection" className="space-y-3">
         <InspectionView
           key={open.id}
           inspection={open}
@@ -45,7 +46,7 @@ export function TruckInspectionChecklistPage() {
           onBack={() => set({ inspection: null, truck: open.equipment_id })}
           onMoved={(id) => set({ truck: id })}
         />
-      </div>
+      </Page>
     )
   }
 
@@ -58,14 +59,15 @@ export function TruckInspectionChecklistPage() {
     .filter((i) => !i.signed_at && i.equipment_id !== truck?.id)
     .sort((a, b) => b.started_at.localeCompare(a.started_at))
   return (
-    <div className="mx-auto max-w-3xl space-y-3 p-4 md:p-6">
+    <Page
+      narrow
+      title="Truck inspection"
+      className="space-y-3"
+      info="Each semi once a year. Pick the truck or trailer; it shows on that one’s Inspections tab."
+    >
       <Link to="/checklists" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-brand-700">
         <ArrowLeft className="h-4 w-4" /> Checklists
       </Link>
-      <h1 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-        <ClipboardCheck className="h-5 w-5 text-brand-700" /> Truck inspection
-      </h1>
-      <p className="text-xs text-gray-500">Each semi once a year. Pick the truck or trailer; it shows on that one’s Inspections tab.</p>
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading…</p>
       ) : !vehicles?.length ? (
@@ -127,7 +129,7 @@ export function TruckInspectionChecklistPage() {
           )}
         </>
       )}
-    </div>
+    </Page>
   )
 }
 

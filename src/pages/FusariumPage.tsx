@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, Droplets, Wheat } from 'lucide-react'
-import { PageHeader } from '@/components/PageHeader'
 import { Card } from '@/components/Card'
 import { Fold } from '@/components/Fold'
 import { HelpNote } from '@/components/HelpNote'
@@ -23,6 +22,7 @@ import {
 } from '@/lib/fusarium'
 import { useFusariumSeason } from '@/lib/fusarium-data'
 import { cn } from '@/lib/utils'
+import { Page } from '@/components/Page'
 
 const day = (d: string | null | undefined) =>
   d ? new Date(`${d.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', timeZone: 'UTC' }) : '—'
@@ -53,13 +53,11 @@ export function FusariumPage() {
   const { data, isLoading, error } = useFusariumSeason(cropYear)
 
   return (
-    <div className="mx-auto max-w-6xl space-y-3 p-4 md:p-6">
-      <PageHeader
-        title="Fusarium risk"
-        icon={<Wheat className="h-5 w-5 text-brand-700" />}
-        subtitle={`Cereal fields in ${cropYear}, against Alberta's conditions for head blight`}
-      />
-
+    <Page
+      title="Fusarium risk"
+      className="space-y-3"
+      info={`Cereal fields in ${cropYear}, against Alberta's conditions for head blight.`}
+    >
       <HelpNote summary="Warm, wet weather while the heads are open, landing on cereal or corn residue.">
         Alberta's factsheet says disease development accelerates when air temperatures around 25 °C are associated with precipitation, or very high
         humidity, for 36 hours. This page looks for that weather in each cereal field's flowering window, at the field's own station, and says what
@@ -174,7 +172,7 @@ export function FusariumPage() {
           </Fold>
         </>
       )}
-    </div>
+    </Page>
   )
 }
 

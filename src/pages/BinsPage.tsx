@@ -36,7 +36,7 @@ import {
 import {
   useAllocationMutations,
   useBinAllocations,
-  type BinEstimateLine, useBinFieldsIn, useBinOnHand, useEstimatedByBin, type BinRow } from '@/lib/bins'
+  type BinEstimateLine, useBinFieldsIn, useBinOnHand, useBins, useEstimatedByBin, type BinRow } from '@/lib/bins'
 import { useBinEstimate } from '@/lib/bin-estimate'
 import { cn } from '@/lib/utils'
 import { useAllCropZones } from '@/lib/cropZones'
@@ -139,6 +139,28 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
   const [shippingFrom, setShippingFrom] = useState<BinRow | null>(null)
   // The bin opened in full, from a click on its row.
   const [detailFor, setDetailFor] = useState<BinRow | null>(null)
+  /*
+   * ?bin=<id> opens that bin (Sam, 19 Nov 2026).
+   *
+   * Searching the app for "bin 4" used to answer with the bin's name and drop
+   * you on the yard list to find it again. Now the search result is a link to
+   * the bin itself. Derived rather than copied into state, so a link that
+   * arrives before the bins have loaded still opens once they do.
+   *
+   * Resolved against every bin, not the estimate's list: that one leaves out
+   * bins out of use and bins in a hidden yard, and the search finds those, so
+   * a link to one would have opened nothing at all.
+   */
+  const { data: allBins } = useBins()
+  const askedBin = params.get('bin')
+  const detail = detailFor ?? (askedBin ? ((allBins ?? []).find((b) => b.id === askedBin) ?? null) : null)
+  const closeDetail = () => {
+    setDetailFor(null)
+    if (!params.has('bin')) return
+    const next = new URLSearchParams(params)
+    next.delete('bin')
+    setParams(next, { replace: true })
+  }
   const { data: estimates } = useEstimatedByBin()
   const { data: binProducts } = useBinProducts()
   const cropName = (id: string | null) => crops?.find((c) => c.id === id)?.name ?? ''
@@ -188,8 +210,6 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
 
   return (
     <div className={embedded ? 'px-4 pb-4 pt-3 md:px-6 md:pb-6' : 'p-4 md:p-6'}>
-      {!embedded && <h1 className="mb-3 text-lg font-semibold text-gray-900">Bins {cropYear}</h1>}
-
       {!embedded && <BinAirAlerts compact />}
       {/* Left-aligned under the heading, the way every other view puts its
           sub-tabs — a strip that starts on the right reads as a control panel
@@ -679,31 +699,31 @@ export function BinsPage({ tab: shownTab }: { tab?: StorageTab } = {}) {
 
       {askingWhichBin && <WeighInDialog cropYear={cropYear} onClose={clearWeigh} />}
 
-      {detailFor && (
+      {detail && (
         <BinDetail
-          bin={detailFor}
+          bin={detail}
           cropYear={cropYear}
           canEdit={isManager && !isPast}
-          onClose={() => setDetailFor(null)}
+          onClose={closeDetail}
           onWeighIn={() => {
-            setDetailFor(null)
-            setLoadsFor(detailFor)
+            closeDetail()
+            setLoadsFor(detail)
           }}
           onAdd={() => {
-            setDetailFor(null)
-            setAddingTo(detailFor)
+            closeDetail()
+            setAddingTo(detail)
           }}
           onMove={() => {
-            setDetailFor(null)
-            setMovingFrom(detailFor)
+            closeDetail()
+            setMovingFrom(detail)
           }}
           onShip={() => {
-            setDetailFor(null)
-            setShippingFrom(detailFor)
+            closeDetail()
+            setShippingFrom(detail)
           }}
           onRecord={() => {
-            setDetailFor(null)
-            setRecordFor(detailFor)
+            closeDetail()
+            setRecordFor(detail)
           }}
         />
       )}

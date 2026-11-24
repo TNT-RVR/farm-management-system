@@ -10,6 +10,7 @@ import { useCrops, useFields } from '@/lib/queries'
 import { useBins, binNumber } from '@/lib/bins'
 import { supabase } from '@/lib/supabase'
 import { downloadBlob } from '@/lib/table-report'
+import { keepMadeReport } from '@/lib/made-reports'
 import { useMySignature } from '@/lib/signature'
 import { useBinMonitorReadings, useDeleteBinMonitor, useSaveBinMonitor, type MonitorRow } from '@/lib/bin-monitor-data'
 import {
@@ -297,7 +298,9 @@ function ReportEditor({ report, bins, fieldName, style }: { report: SeedReport; 
     setError(null)
     try {
       const blob = await style.reportPdf({ report, bins, binName, fieldName, signerName: signerName.data ?? null })
-      downloadBlob(blob, `${style.fileLabel(report.company)} seed report - ${safeName(fieldName)} - ${report.crop_year}.pdf`)
+      const filename = `${style.fileLabel(report.company)} seed report - ${safeName(fieldName)} - ${report.crop_year}.pdf`
+      downloadBlob(blob, filename)
+      keepMadeReport({ reportId: 'seed-production-report', name: style.reportTitle, blob, filename, format: 'PDF', party: report.company, cropYear: report.crop_year, labels: { Company: report.company, Field: fieldName, Year: String(report.crop_year) }, family: 'seed-canola' })
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -627,7 +630,9 @@ function BinTemps({ report, bins, fieldName, cropId, style }: { report: SeedRepo
       const cropName = (id: string | null) => crops.data?.find((c) => c.id === id)?.name ?? null
       const blob = await style.binTempPdf({ report, bins: chosen, binName, fieldName, signerName: null, readings: rows, cropName })
       const label = only ? ` - ${only.company_bin_id || growerBinLabel(binName(only.bin_id)) || 'bin'}` : ''
-      downloadBlob(blob, `${style.fileLabel(report.company)} bin temperatures - ${safeName(fieldName)}${label} - ${report.crop_year}.pdf`)
+      const filename = `${style.fileLabel(report.company)} bin temperatures - ${safeName(fieldName)}${label} - ${report.crop_year}.pdf`
+      downloadBlob(blob, filename)
+      keepMadeReport({ reportId: 'seed-bin-temperatures', name: 'Seed company bin temperature records', blob, filename, format: 'PDF', party: report.company, cropYear: report.crop_year, labels: { 'Going to': report.company, 'Seed field': fieldName, Bins: only ? label.replace(/^ - /, '') : 'Every bin on its seed report' }, family: 'bin-sensor' })
     } catch (e) {
       setError((e as Error).message)
     } finally {

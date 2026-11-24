@@ -69,6 +69,7 @@ export const FEATURES: Feature[] = [
       '/cattle-markets',
       '/handling-system',
       '/cattle-settings',
+      '/pasture-use',
       '/grazing',
       '/feed-records',
       '/pregnancy',

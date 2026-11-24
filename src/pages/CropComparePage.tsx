@@ -2,7 +2,7 @@ import { PLANNING_ROLLOVER_MONTH } from '@/lib/fiscal-year'
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { ArrowLeftRight, FileText, Loader2, Sparkles } from 'lucide-react'
+import { FileText, Loader2, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useCropYear } from '@/lib/crop-year'
 import { boundariesForYear, useAllBoundaries, useCrops, useFields } from '@/lib/queries'
@@ -12,14 +12,13 @@ import { evaluate, objectiveScore, type CropInfo, type Preference } from '@/lib/
 import { breakevenYield, cornWetTonnesPerBu, marginPerAcre, payoffGrid, tieYield, yieldFor, type CompareSide } from '@/lib/crop-compare'
 import { isActualYield } from '@/lib/forecast'
 import { openChemicalLabel } from '@/lib/chemicals'
-import { PageHeader } from '@/components/PageHeader'
-import { HelpNote } from '@/components/HelpNote'
 import { Select } from '@/components/Select'
 import { Fold } from '@/components/Fold'
 import { cn } from '@/lib/utils'
 import { money, n0 } from '@/lib/format'
 import { YearSelect } from '@/components/YearSelect'
 import { CARD_HEAD, TABLE_HEAD, TABLE_TH, TABLE_TH_MUTED } from '@/lib/table-style'
+import { Page } from '@/components/Page'
 
 const unitPrice = (v: number) => (v < 1 ? v.toFixed(3) : v.toFixed(2))
 const fmtYield = (v: number, unit: string) => `${unit === 'bu' ? n0(v) : v.toFixed(unit === 'MT' || unit === 'ton' ? 2 : 1)} ${unit}`
@@ -193,13 +192,13 @@ export function CropComparePage() {
   const fieldOptions = (fields ?? []).map((f) => ({ value: f.id, label: f.name }))
 
   return (
-    <div className="mx-auto max-w-6xl p-4 md:p-6">
-      <PageHeader
-        title="Compare crops"
-        icon={<ArrowLeftRight className="h-5 w-5 text-brand-700" />}
-        subtitle={field ? `${field.name} · ${n0(acres)} ac · ${year}` : 'Pick a field and two crops'}
-        info={
-          <HelpNote title="How the comparison works">
+    <Page
+      title="Compare crops"
+      infoTitle="How the comparison works"
+      info={
+        <>
+          <p>{field ? `${field.name} · ${n0(acres)} ac · ${year}.` : 'Pick a field and two crops.'}</p>
+          <p>
             Each crop starts from the farm's own numbers, the same ones the rotation plan uses: the yield is this field's average once it has five harvests of the
             crop, then the farm's average, then the crop's normal yield; the price is a contract, then your price for the year, then the elevator bid or Alberta
             market; the cost is the year's input budget without the farm's fixed expenses. Type over any of them. Custom work ($/ac) and per-unit costs such as
@@ -207,9 +206,10 @@ export function CropComparePage() {
             crops are compared on what each makes over its own inputs; the "Against fixed costs" line and the farm check show whether that is enough to carry
             the farm. On a 50/50 or crop-share field only our side of it is counted. The warnings come from the rotation
             engine: what grew here, herbicide labels, scouting, salinity, heat units and irrigation, and they hold whatever the money says.
-          </HelpNote>
-        }
-      />
+          </p>
+        </>
+      }
+    >
 
       <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-5">
         <label className="col-span-2 text-xs text-gray-600 md:col-span-1">
@@ -348,7 +348,7 @@ export function CropComparePage() {
           highlight={[A, B, C].flatMap((s) => (s ? [{ name: s.crop.name, perAcre: marginPerAcre(s.side) }] : []))}
         />
       )}
-    </div>
+    </Page>
   )
 }
 

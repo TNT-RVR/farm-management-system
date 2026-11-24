@@ -32,6 +32,7 @@ import { useUnitSystem } from '@/lib/units'
 import { cn } from '@/lib/utils'
 import { askConfirm } from '@/components/askConfirm'
 import { usePartnerAccess } from '@/lib/partner-view'
+import { Page } from '@/components/Page'
 
 const colourOf = (c: ScoutCategory) => SCOUT_CATEGORIES.find((x) => x.value === c)?.colour ?? '#0284c7'
 const when = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
@@ -66,13 +67,11 @@ export function ScoutingPage() {
   const open = notes?.find((n) => n.id === openId) ?? null
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">Scouting</h1>
-          <p className="text-xs text-gray-500">Weeds, insects and disease, pinned where they were seen, {cropYear}.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+    <Page
+      title="Scouting"
+      info={`Weeds, insects and disease, pinned where they were seen, ${cropYear}.`}
+      actions={
+        <>
           <Select
             value={filter}
             ariaLabel="Category"
@@ -91,8 +90,9 @@ export function ScoutingPage() {
           >
             <Plus className="h-4 w-4" /> Log Scouting
           </button>
-        </div>
-      </div>
+        </>
+      }
+    >
 
       {form && <ScoutForm cropYear={cropYear} initialField={form.field} spot={form.spot} onClose={closeForm} />}
 
@@ -122,7 +122,7 @@ export function ScoutingPage() {
       </div>
 
       {open && <ScoutDetail note={open} fieldName={nameOf(open.field_id)} onClose={() => setOpenId(null)} />}
-    </div>
+    </Page>
   )
 }
 

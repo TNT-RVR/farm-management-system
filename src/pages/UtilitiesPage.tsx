@@ -1,8 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Flame, Plug, Sun, Zap } from 'lucide-react'
+import { Flame, Sun, Zap } from 'lucide-react'
 import { InfoPopover } from '@/components/InfoPopover'
-import { PageHeader } from '@/components/PageHeader'
 import { PillTabs } from '@/components/PillTabs'
 import { rowClick } from '@/components/RecordEditor'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
@@ -17,6 +16,7 @@ import { GasBills } from '@/pages/utilities/GasBills'
 import { PowerBills } from '@/pages/utilities/PowerBills'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
+import { Page } from '@/components/Page'
 
 const TABS = ['solar', 'power', 'gas'] as const
 type Tab = (typeof TABS)[number]
@@ -34,8 +34,11 @@ export function UtilitiesPage() {
   const tabs = solarOn ? TABS : (['power', 'gas'] as const)
   const [tab, setTab] = useTab<Tab>('utilities', tabs)
   return (
-    <div className="mx-auto max-w-4xl space-y-3 p-4 md:p-6">
-      <PageHeader title="Utilities" icon={<Plug className="h-5 w-5 text-brand-700" />} subtitle={solarOn ? 'Solar, power and natural gas' : 'Power and natural gas'} />
+    <Page
+      title="Utilities"
+      className="space-y-3"
+      info={solarOn ? 'Solar, power and natural gas.' : 'Power and natural gas.'}
+      tabs={
       <PillTabs
         tabs={[
           ...(solarOn ? [{ key: 'solar' as const, label: <span className="flex items-center gap-1.5"><Sun className="h-3.5 w-3.5" /> Solar</span> }] : []),
@@ -45,8 +48,10 @@ export function UtilitiesPage() {
         value={tab}
         onChange={setTab}
       />
-      {tab === 'solar' && solarOn ? <SolarPage embedded /> : tab === 'gas' ? <GasBills /> : <PowerTab solarOn={solarOn} />}
-    </div>
+      }
+    >
+      {tab === 'solar' && solarOn ? <SolarPage /> : tab === 'gas' ? <GasBills /> : <PowerTab solarOn={solarOn} />}
+    </Page>
   )
 }
 

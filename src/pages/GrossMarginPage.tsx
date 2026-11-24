@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Scale, Plus, X } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 import { HelpNote } from '@/components/HelpNote'
-import { PageHeader } from '@/components/PageHeader'
 import { useHerdCounts } from '@/lib/cattle'
 import { useCattleCosts, DEFAULT_CULL_PCT } from '@/lib/cattleEconomics'
 import { useMainRanch } from '@/lib/ranches'
@@ -12,6 +11,7 @@ import { grossMargins, switchGain, type CowCalf, type LandEnterprise } from '@/l
 import { HeadTip } from '@/components/HeadTip'
 import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
 import { revealOnMount } from '@/lib/reveal'
+import { Page } from '@/components/Page'
 
 /**
  * What an acre earns under each use.
@@ -189,12 +189,7 @@ export function GrossMarginPage() {
   const move = worst && best && worst.key !== best.key ? switchGain(result, worst.key, best.key, Number(moveAcres) || 0) : null
 
   return (
-    <div className="mx-auto max-w-5xl space-y-3 p-4 md:p-6">
-      <PageHeader
-        title="Gross margins by land use"
-        icon={<Scale className="h-5 w-5 text-brand-700" />}
-        subtitle="What an acre earns under each use"
-      />
+    <Page title="Gross margins by land use" className="space-y-3" info="What an acre earns under each use.">
 
       <div className="grid gap-3 md:grid-cols-2">
         <Group
@@ -512,6 +507,6 @@ export function GrossMarginPage() {
           eat another quarter of hay, and the rotation will not take another year of the same crop.
         </p>
       </HelpNote>
-    </div>
+    </Page>
   )
 }

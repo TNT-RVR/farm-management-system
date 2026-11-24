@@ -4,14 +4,15 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, ArrowUpRight, Download, Loader2, Star } from 'lucide-react'
 import { Modal } from '@/components/Modal'
 import { Select } from '@/components/Select'
-import { downloadCsv } from '@/hooks/useExport'
 import { useCropYear } from '@/lib/crop-year'
 import { useBins } from '@/lib/bins'
 import { useCrops, useFields } from '@/lib/queries'
 import { useRanches } from '@/lib/ranches'
-import { downloadBlob, tableReportToPdf } from '@/lib/table-report'
-import { initialParams, isFile, reportCsv, reportTable, rowCount, type GatherContext, type LookupKey, type Made, type ParamSpec, type ParamValues } from '@/lib/reports/framework'
-import type { BuiltReport, OpenReport, ReportFormat, SourceLink } from '@/lib/reports/catalogue'
+import { downloadBlob } from '@/lib/table-report'
+import { madeFile, startParams, type GatherContext, type LookupKey, type Made, type ParamSpec, type ParamValues } from '@/lib/reports/framework'
+import type { BuiltReport, OpenReport, ReportEntry, ReportFormat, SourceLink } from '@/lib/reports/catalogue'
+import type { ReportFamily } from '@/lib/reports/families'
+import { accessOf, keepMadeReport } from '@/lib/made-reports'
 import { loadGatherer, type HookRun } from './gatherers'
 import { LOOKUP_LISTS } from './lookups'
 import { cn } from '@/lib/utils'
@@ -29,17 +30,6 @@ import { dbErrorMessage } from '@/lib/db-error'
  */
 
 const messageOf = (e: unknown) => dbErrorMessage(e)
-
-/**
- * Make the file: the PDF through the branded layout, the CSV as one flat
- * table, and a file the report made in its own shape (a ZIP, Markdown) as it is.
- */
-async function deliver(g: Made, format: ReportFormat) {
-  if (isFile(g)) return downloadBlob(g.blob, g.filename)
-  if (!rowCount(g)) throw new Error('Nothing to put in it.')
-  if (format === 'CSV') downloadCsv(reportCsv(g), g.filename)
-  else downloadBlob(await tableReportToPdf(reportTable(g)), `${g.filename}.pdf`)
-}
 
 function useRemembered(id: string, formats: ReportFormat[]): [ReportFormat, (f: ReportFormat) => void] {
   const key = `reports:format:${id}`
@@ -69,13 +59,18 @@ function useLookup(key: LookupKey) {
   return useQuery({ queryKey: ['report_lookup', key], staleTime: 10 * 60_000, queryFn: LOOKUP_LISTS[key] })
 }
 
-type PickProps = { value: string; onChange: (v: string) => void }
+type PickProps = { value: string; onChange: (v: string) => void; onLabel?: (label: string) => void }
 type Opt = { value: string; label: string }
 
 /** "Choose a field": a picker's own label repeated as its placeholder read as "Field / Field". */
 const choose = (label: string) => `Choose ${/^[aeiou]/i.test(label) ? 'an' : 'a'} ${label.toLowerCase()}`
 
-function Sel({ value, onChange, options, label, placeholder }: PickProps & { options: Opt[]; label: string; placeholder?: string }) {
+function Sel({ value, onChange, onLabel, options, label, placeholder }: PickProps & { options: Opt[]; label: string; placeholder?: string }) {
+  // What the choice reads as, for the copy kept under Made reports.
+  const shown = options.find((o) => o.value === value)?.label
+  useEffect(() => {
+    if (shown != null) onLabel?.(shown)
+  }, [shown, onLabel])
   return <Select value={value} onChange={onChange} className="w-full" ariaLabel={label} placeholder={placeholder ?? choose(label)} options={options} />
 }
 const allOf = (allLabel?: string): Opt[] => (allLabel ? [{ value: '', label: allLabel }] : [])
@@ -112,7 +107,7 @@ function RanchPick({ spec, ...p }: PickProps & { spec: Extract<ParamSpec, { kind
   return <Sel {...p} label={labelOf(spec)} options={[...allOf(spec.allLabel), ...(data ?? []).map((r) => ({ value: r.id, label: r.name }))]} />
 }
 /** A bin report needs a bin: the first one, until another is chosen (unless it can be left at "all"). */
-function BinPick({ spec, value, onChange }: PickProps & { spec: Extract<ParamSpec, { kind: 'bin' }> }) {
+function BinPick({ spec, value, onChange, onLabel }: PickProps & { spec: Extract<ParamSpec, { kind: 'bin' }> }) {
   const { data } = useBins()
   const bins = useMemo(() => (data ?? []).filter((b) => b.active), [data])
   const mustPick = spec.allLabel == null
@@ -123,6 +118,7 @@ function BinPick({ spec, value, onChange }: PickProps & { spec: Extract<ParamSpe
     <Sel
       value={value}
       onChange={onChange}
+      onLabel={onLabel}
       label={labelOf(spec)}
       placeholder={data ? 'No bins' : 'Loading…'}
       options={[...allOf(spec.allLabel), ...bins.map((b) => ({ value: b.id, label: b.site ? `${b.name} · ${b.site}` : b.name }))]}
@@ -130,7 +126,7 @@ function BinPick({ spec, value, onChange }: PickProps & { spec: Extract<ParamSpe
   )
 }
 /** A list from the database; one that must be chosen starts on its first entry, as a bin does. */
-function LookupPick({ spec, value, onChange }: PickProps & { spec: Extract<ParamSpec, { kind: 'lookup' }> }) {
+function LookupPick({ spec, value, onChange, onLabel }: PickProps & { spec: Extract<ParamSpec, { kind: 'lookup' }> }) {
   const lookup = useLookup(spec.lookup)
   const first = spec.allLabel == null ? lookup.data?.[0]?.value : undefined
   useEffect(() => {
@@ -140,6 +136,7 @@ function LookupPick({ spec, value, onChange }: PickProps & { spec: Extract<Param
     <Sel
       value={value}
       onChange={onChange}
+      onLabel={onLabel}
       label={spec.label}
       placeholder={!lookup.data ? 'Loading…' : lookup.data.length ? choose(spec.label) : `No ${spec.label.toLowerCase()}s yet`}
       options={[...allOf(spec.allLabel), ...(lookup.data ?? [])]}
@@ -153,8 +150,8 @@ function YearPick({ spec, ...p }: PickProps & { spec: Extract<ParamSpec, { kind:
   return <YearSelect value={p.value ? Number(p.value) : null} years={years} onChange={(y) => p.onChange(String(y))} className="w-full" ariaLabel={label} placeholder={label} />
 }
 
-function Picker({ spec, value, onChange }: { spec: ParamSpec } & PickProps) {
-  const p = { value, onChange }
+function Picker({ spec, value, onChange, onLabel }: { spec: ParamSpec } & PickProps) {
+  const p = { value, onChange, onLabel }
   switch (spec.kind) {
     case 'year':
       return <YearPick spec={spec} {...p} />
@@ -251,14 +248,16 @@ function Line({ label, children }: { label: string; children: React.ReactNode })
 }
 
 /** The star that adds a report to this person's favourites (Sam, 9 Oct 2026). */
-function FavouriteStar({ id, name }: { id: string; name: string }) {
+function FavouriteStar({ id, name, alsoStarred = [] }: { id: string; name: string; alsoStarred?: string[] }) {
   const { data: favs } = useReportFavourites()
   const toggle = useToggleFavourite()
-  const on = (favs ?? []).includes(id)
+  // A combined entry is starred when it is, or when one of its reports was starred before it joined.
+  const mine = [id, ...alsoStarred].filter((x) => (favs ?? []).includes(x))
+  const on = mine.length > 0
   return (
     <button
       type="button"
-      onClick={() => toggle.mutate({ reportId: id, on: !on })}
+      onClick={() => (on ? mine.forEach((x) => toggle.mutate({ reportId: x, on: false })) : toggle.mutate({ reportId: id, on: true }))}
       aria-pressed={on}
       aria-label={on ? `Remove ${name} from favourites` : `Add ${name} to favourites`}
       title={on ? 'In your favourites' : 'Add to your favourites'}
@@ -271,11 +270,11 @@ function FavouriteStar({ id, name }: { id: string; name: string }) {
 
 // One look for every row: whether a report is made here or on its own page,
 // the Download box says so — a second edge colour only raised the question.
-function RowShell({ id, name, what, children }: { id: string; name: string; what: string; children: React.ReactNode }) {
+function RowShell({ id, name, what, alsoStarred, children }: { id: string; name: string; what: string; alsoStarred?: string[]; children: React.ReactNode }) {
   return (
     <li className="rounded-lg border border-l-4 border-gray-200 border-l-brand-600 bg-white px-3 py-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <FavouriteStar id={id} name={name} />
+        <FavouriteStar id={id} name={name} alsoStarred={alsoStarred} />
         <div className="min-w-0 flex-1 basis-56">
           <p className="text-sm font-semibold text-gray-900">{name}</p>
           <p className="truncate text-xs text-gray-500" title={what}>
@@ -331,31 +330,84 @@ function useCloseTo(autoOpen: boolean, from: SourceLink) {
   }, [autoOpen, from.to, key, navigate])
 }
 
-export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport; ctx: GatherContext; autoOpen?: boolean; preset?: ParamValues }) {
+/** Which report of a family is being made, for the copy kept under Made reports. */
+type Within = { family: ReportFamily; choice: string }
+
+/**
+ * One report's form: file type, its pickers, and the button that makes it.
+ * The file downloads, and a copy goes to Documents → Made reports with who
+ * made it, when, and what was chosen (Sam, 23 Nov 2026).
+ *
+ * `seed` carries choices made under another report of the same family (the
+ * year, the field) — only those the person set, so each report keeps its own
+ * defaults — and `onPick` hands each new choice back up.
+ */
+export function ReportForm({
+  r,
+  ctx,
+  preset,
+  seed,
+  onPick,
+  within,
+  onMade,
+  onCancel,
+  onBusy,
+  children,
+}: {
+  r: BuiltReport
+  ctx: GatherContext
+  preset?: ParamValues
+  seed?: ParamValues
+  onPick?: (key: string, v: string) => void
+  within?: Within
+  onMade: () => void
+  onCancel: () => void
+  onBusy?: (busy: boolean) => void
+  children?: React.ReactNode
+}) {
   const { cropYear } = useCropYear()
-  // A link from another page (?open=…&field=…&year=…) fills in its pickers; unknown keys are ignored.
-  const [params, setParams] = useState<ParamValues>(() => {
-    const start = initialParams(r.params, cropYear, ctx.today)
-    for (const s of r.params) if (preset?.[s.key]) start[s.key] = preset[s.key]
-    return start
-  })
+  const [params, setParams] = useState<ParamValues>(() => startParams(r.params, cropYear, ctx.today, preset, seed))
   const [format, setFormat] = useRemembered(r.id, r.formats)
-  const [open, setOpen] = useState(autoOpen)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusyState] = useState(false)
+  const setBusy = (b: boolean) => {
+    setBusyState(b)
+    onBusy?.(b)
+  }
   const [error, setError] = useState<string | null>(null)
   const [hookRun, setHookRun] = useState(0)
-  // A hook-gathered report's hook, once its code has loaded.
   const [hook, setHook] = useState<HookRun | null>(null)
-  const setParam = useCallback((key: string, v: string) => setParams((p) => ({ ...p, [key]: v })), [])
-  const closeTo = useCloseTo(autoOpen, r.from)
-  const close = useCallback(() => {
-    setOpen(false)
-    closeTo()
-  }, [closeTo])
+  const labels = useRef<Record<string, string>>({})
+  const setParam = useCallback(
+    (key: string, v: string) => {
+      setParams((p) => ({ ...p, [key]: v }))
+      onPick?.(key, v)
+    },
+    [onPick],
+  )
 
   // The gather is told which file is wanted: most ignore it, a few make a
   // different cut (or a ZIP) for it.
   const runCtx = useMemo(() => ({ ...ctx, format }), [ctx, format])
+
+  /** Download it, then keep the copy. */
+  const hand = (file: { blob: Blob; filename: string }) => {
+    downloadBlob(file.blob, file.filename)
+    const read: Record<string, string> = {}
+    if (within) read[within.family.ask] = within.family.choices.find((c) => c.id === within.choice)?.label ?? r.name
+    for (const s of r.params) read[labelOf(s)] = labels.current[labelOf(s)] ?? params[s.key] ?? ''
+    keepMadeReport({
+      reportId: r.id,
+      name: r.name,
+      blob: file.blob,
+      filename: file.filename,
+      format,
+      params,
+      labels: read,
+      family: within?.family.id,
+      party: within && within.family.ask === 'Going to' ? read[within.family.ask] : null,
+      access: accessOf(r),
+    })
+  }
 
   // Made: the dialog closes. Failed: it stays open with the reason.
   const settle = (job: Promise<unknown>) =>
@@ -363,7 +415,7 @@ export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport;
       .then(
         () => {
           setError(null)
-          close()
+          onMade()
         },
         (e: unknown) => setError(messageOf(e)),
       )
@@ -379,10 +431,10 @@ export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport;
     loadGatherer(r.id).then(
       (gatherer) => {
         if (format === 'XLSX' && 'run' in gatherer && gatherer.xlsx) {
-          void settle(gatherer.xlsx(params, ctx).then(({ blob, filename }) => downloadBlob(blob, filename)))
+          void settle(gatherer.xlsx(params, ctx).then(hand))
           return
         }
-        if ('run' in gatherer) void settle(gatherer.run(params, runCtx).then((g) => deliver(g, format)))
+        if ('run' in gatherer) void settle(gatherer.run(params, runCtx).then((g) => madeFile(g, format)).then(hand))
         else {
           setHook(() => gatherer.useRun)
           setHookRun((n) => n + 1)
@@ -393,49 +445,130 @@ export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport;
   }
 
   return (
+    <div className="flex flex-col gap-3">
+      {children}
+      <p className="text-xs text-gray-500">{r.what}</p>
+      <Line label="File type">
+        <div>
+          <FormatToggle formats={r.formats} value={format} onChange={setFormat} />
+        </div>
+      </Line>
+      {r.params.map((s) => (
+        <Line key={s.key} label={labelOf(s)}>
+          <Picker spec={s} value={params[s.key] ?? ''} onChange={(v) => setParam(s.key, v)} onLabel={(l) => (labels.current[labelOf(s)] = l)} />
+        </Line>
+      ))}
+      {error && <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+      <div className="flex justify-end gap-2 pt-1">
+        <button type="button" onClick={onCancel} disabled={busy} className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={start}
+          disabled={busy}
+          className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          {busy ? 'Making…' : `Download ${formatLabel(format)}`}
+        </button>
+      </div>
+      {hookRun > 0 && hook && <HookRunner key={hookRun} useRun={hook} params={params} ctx={runCtx} onReady={(j) => void settle(j.then((g) => madeFile(g, format)).then(hand))} />}
+    </div>
+  )
+}
+
+export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport; ctx: GatherContext; autoOpen?: boolean; preset?: ParamValues }) {
+  const [open, setOpen] = useState(autoOpen)
+  const [busy, setBusy] = useState(false)
+  const closeTo = useCloseTo(autoOpen, r.from)
+  const close = useCallback(() => {
+    setOpen(false)
+    closeTo()
+  }, [closeTo])
+
+  return (
     <RowShell id={r.id} name={r.name} what={r.what}>
       <SourceButton from={r.from} />
-      <DownloadButton
-        busy={busy}
-        onClick={() => {
-          setError(null)
-          setOpen(true)
-        }}
-      />
+      <DownloadButton busy={busy} onClick={() => setOpen(true)} />
       {open && (
         <Modal title={r.name} onClose={() => !busy && close()}>
-          <div className="flex flex-col gap-3">
-            <p className="text-xs text-gray-500">{r.what}</p>
-            <Line label="File type">
-              <div>
-                <FormatToggle formats={r.formats} value={format} onChange={setFormat} />
-              </div>
-            </Line>
-            {r.params.map((s) => (
-              <Line key={s.key} label={labelOf(s)}>
-                <Picker spec={s} value={params[s.key] ?? ''} onChange={(v) => setParam(s.key, v)} />
-              </Line>
-            ))}
-            {error && <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
-            <div className="flex justify-end gap-2 pt-1">
-              <button type="button" onClick={close} disabled={busy} className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={start}
-                disabled={busy}
-                className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
-              >
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                {busy ? 'Making…' : `Download ${formatLabel(format)}`}
-              </button>
-            </div>
-          </div>
+          <ReportForm r={r} ctx={ctx} preset={preset} onMade={close} onCancel={close} onBusy={setBusy} />
         </Modal>
       )}
-      {hookRun > 0 && hook && (
-        <HookRunner key={hookRun} useRun={hook} params={params} ctx={runCtx} onReady={(j) => void settle(j.then((g) => deliver(g, format)))} />
+    </RowShell>
+  )
+}
+
+/* ── A family: one row, a form that asks which report first ────────────── */
+
+/**
+ * Several reports off the same data as one row (Sam, 23 Nov 2026). The form
+ * asks who it is going to, or which report, then that report's own choices;
+ * each report is made exactly as it was on its own row.
+ */
+export function FamilyRow({
+  family,
+  reports,
+  ctx,
+  autoOpen = false,
+  openChoice,
+  preset,
+}: {
+  family: ReportFamily
+  /** The family's reports this person may make, in the family's order. */
+  reports: ReportEntry[]
+  ctx: GatherContext
+  autoOpen?: boolean
+  openChoice?: string
+  preset?: ParamValues
+}) {
+  const [open, setOpen] = useState(autoOpen)
+  const [busy, setBusy] = useState(false)
+  const [choice, setChoice] = useState(() => (openChoice && reports.some((r) => r.id === openChoice) ? openChoice : reports[0]?.id))
+  const [carried, setCarried] = useState<ParamValues>({})
+  const onPick = useCallback((key: string, v: string) => setCarried((c) => ({ ...c, [key]: v })), [])
+  const r = reports.find((x) => x.id === choice) ?? reports[0]
+  const closeTo = useCloseTo(autoOpen, r.from)
+  const close = useCallback(() => {
+    setOpen(false)
+    closeTo()
+  }, [closeTo])
+  const label = (id: string) => family.choices.find((c) => c.id === id)?.label ?? id
+
+  const chooser =
+    reports.length > 1 ? (
+      <Line label={family.ask}>
+        <Select value={r.id} onChange={setChoice} className="w-full" ariaLabel={family.ask} options={reports.map((x) => ({ value: x.id, label: label(x.id) }))} />
+      </Line>
+    ) : null
+
+  return (
+    <RowShell id={family.id} name={family.name} what={family.what} alsoStarred={family.choices.map((c) => c.id)}>
+      <DownloadButton busy={busy} onClick={() => setOpen(true)} />
+      {open && (
+        <Modal title={family.name} onClose={() => !busy && close()}>
+          {r.mode === 'build' ? (
+            <ReportForm
+              key={r.id}
+              r={r}
+              ctx={ctx}
+              preset={r.id === openChoice ? preset : undefined}
+              seed={carried}
+              onPick={onPick}
+              within={{ family, choice: r.id }}
+              onMade={close}
+              onCancel={close}
+              onBusy={setBusy}
+            >
+              {chooser}
+            </ReportForm>
+          ) : (
+            <OpenForm key={r.id} r={r} onCancel={close}>
+              {chooser}
+            </OpenForm>
+          )}
+        </Modal>
       )}
     </RowShell>
   )
@@ -443,58 +576,66 @@ export function BuiltRow({ r, ctx, autoOpen = false, preset }: { r: BuiltReport;
 
 /* ── A report made on its own page ──────────────────────────────────────── */
 
-export function OpenRow({ r, autoOpen = false }: { r: OpenReport; autoOpen?: boolean }) {
+/** The dialog for a report made on its own page: why, a field to start on, and the way there. */
+function OpenForm({ r, onCancel, children }: { r: OpenReport; onCancel: () => void; children?: React.ReactNode }) {
   const navigate = useNavigate()
   const { data: fields } = useFields()
+  const [fieldId, setFieldId] = useState('')
+  const field = fieldId || fields?.[0]?.id || ''
+  const to = r.pickField && field ? `${r.to}${r.to.includes('?') ? '&' : '?'}field=${field}` : r.to
+  return (
+    <div className="flex flex-col gap-3">
+      {children}
+      <p className="text-xs text-gray-500">
+        {r.what} {r.why}
+      </p>
+      <Line label="File type">
+        <div>
+          <FormatToggle formats={r.formats} value={r.formats[0]} onChange={() => {}} />
+        </div>
+      </Line>
+      {r.pickField && (
+        <Line label="Field">
+          <Select
+            value={field}
+            onChange={setFieldId}
+            className="w-full"
+            ariaLabel="Field"
+            placeholder={fields ? 'No fields' : 'Loading…'}
+            options={(fields ?? []).map((f) => ({ value: f.id, label: f.name }))}
+          />
+        </Line>
+      )}
+      <div className="flex justify-end gap-2 pt-1">
+        <button type="button" onClick={onCancel} className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate(to)}
+          className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800"
+        >
+          Open to download <ArrowRight className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function OpenRow({ r, autoOpen = false }: { r: OpenReport; autoOpen?: boolean }) {
   const [open, setOpen] = useState(autoOpen)
   const closeTo = useCloseTo(autoOpen, r.from)
   const close = () => {
     setOpen(false)
     closeTo()
   }
-  const [fieldId, setFieldId] = useState('')
-  const field = fieldId || fields?.[0]?.id || ''
-  const to = r.pickField && field ? `${r.to}${r.to.includes('?') ? '&' : '?'}field=${field}` : r.to
   return (
     <RowShell id={r.id} name={r.name} what={r.what}>
       <SourceButton from={r.from} />
       <DownloadButton onClick={() => setOpen(true)} />
       {open && (
         <Modal title={r.name} onClose={close}>
-          <div className="flex flex-col gap-3">
-            <p className="text-xs text-gray-500">
-              {r.what} {r.why}
-            </p>
-            <Line label="File type">
-              <div>
-                <FormatToggle formats={r.formats} value={r.formats[0]} onChange={() => {}} />
-              </div>
-            </Line>
-            {r.pickField && (
-              <Line label="Field">
-                <Select
-                  value={field}
-                  onChange={setFieldId}
-                  className="w-full"
-                  ariaLabel="Field"
-                  placeholder={fields ? 'No fields' : 'Loading…'}
-                  options={(fields ?? []).map((f) => ({ value: f.id, label: f.name }))}
-                />
-              </Line>
-            )}
-            <div className="flex justify-end gap-2 pt-1">
-              <button type="button" onClick={close} className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate(to)}
-                className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-800"
-              >
-                Open to download <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+          <OpenForm r={r} onCancel={close} />
         </Modal>
       )}
     </RowShell>

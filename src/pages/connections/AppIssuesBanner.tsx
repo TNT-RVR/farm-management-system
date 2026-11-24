@@ -43,18 +43,39 @@ const STATUS: Record<Issue['status'], { label: string; cls: string }> = {
 
 const OPEN: Issue['status'][] = ['new', 'working', 'needs_sam']
 
+/**
+ * What a row is about, where it is not the app itself. A failed nightly job
+ * and a screen that crashed read the same in a list of titles otherwise, and
+ * only one of them is something you can see in the app.
+ */
+const KIND: Record<string, string> = {
+  github_action: 'build job',
+  integration_alert: 'data feed',
+}
+
 const when = (iso: string) => new Date(iso).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })
 
 export function AppIssuesBanner() {
   const [expanded, setExpanded] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
   const { data } = useQuery({
-    // v2: rows carry working_since and stalls (20261016060000).
-    queryKey: ['app_issues', 'v2'],
+    // v3: open ones are fetched on their own, so a settled pile cannot push
+    // them out of the list (Sam, 19 Nov 2026).
+    queryKey: ['app_issues', 'v3'],
     queryFn: async () => {
-      const { data, error } = await db.from('app_issues').select('*').order('last_seen', { ascending: false }).limit(25)
-      if (error) throw error
-      return (data ?? []) as Issue[]
+      // Two queries rather than one `limit`: thirteen build failures marked
+      // "not a problem" had filled the twenty-five rows the banner read, so a
+      // screen that crashed last month was not in the list at all. Everything
+      // still open comes back whatever its age; the settled rows are only
+      // context, and the ignored ones are not even that — somebody has
+      // already said they are not a problem.
+      const [openRows, settled] = await Promise.all([
+        db.from('app_issues').select('*').in('status', OPEN).order('last_seen', { ascending: false }),
+        db.from('app_issues').select('*').eq('status', 'fixed').order('last_seen', { ascending: false }).limit(10),
+      ])
+      if (openRows.error) throw openRows.error
+      if (settled.error) throw settled.error
+      return [...((openRows.data ?? []) as Issue[]), ...((settled.data ?? []) as Issue[])]
     },
     refetchInterval: 60_000,
   })
@@ -63,8 +84,8 @@ export function AppIssuesBanner() {
   const stuck = new Map((data ?? []).map((i) => [i.id, stuckSince(i)]))
   const stuckCount = [...stuck.values()].filter(Boolean).length
   if (!waiting && !needsYou) return null
-  // Open ones first; the settled ones stay below for context.
-  const list = [...(data ?? [])].sort((a, b) => Number(OPEN.includes(b.status)) - Number(OPEN.includes(a.status)))
+  // Already open-first: the query asks for them separately.
+  const list = data ?? []
 
   return (
     <section className="rounded-lg border border-l-4 border-gray-200 border-l-violet-500 bg-white">
@@ -91,6 +112,7 @@ export function AppIssuesBanner() {
               <button type="button" onClick={() => setOpen(open === i.id ? null : i.id)} className="flex w-full items-center gap-2 text-left text-sm" aria-expanded={open === i.id}>
                 <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform', open === i.id && 'rotate-90')} />
                 <span className="min-w-0 flex-1 truncate text-gray-900">{i.title}</span>
+                {KIND[i.kind] && <span className="shrink-0 rounded bg-gray-100 px-1.5 text-xs text-gray-600">{KIND[i.kind]}</span>}
                 {i.occurrences > 1 && <span className="text-xs tabular-nums text-gray-400">×{i.occurrences}</span>}
                 {stuck.get(i.id) && (
                   <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-800">stuck since {when(stuck.get(i.id)!)}</span>

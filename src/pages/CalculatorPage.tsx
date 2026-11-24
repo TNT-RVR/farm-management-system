@@ -29,6 +29,7 @@ import {
   volumeForDepth,
   type Family,
 } from '@/lib/convert'
+import { Page } from '@/components/Page'
 
 const opts = (list: { key: string; label: string }[]) =>
   list.map((u) => ({ value: u.key, label: u.label }))
@@ -51,12 +52,15 @@ const numInput =
 function Converter({
   family,
   choices,
+  labels,
   title,
   note,
   fields: withFields,
 }: {
   family: Family
   choices?: Family[]
+  /** A quantity's name in the picker where its own is not what it is called here. */
+  labels?: Partial<Record<Family, string>>
   /** Offer a field picker, so an area can be read off the map rather than typed. */
   fields?: boolean
   /** A name, where several converters sit side by side and "Convert" is not enough. */
@@ -140,7 +144,7 @@ function Converter({
             onChange={(v) => switchTo(v as Family)}
             options={choices.map((c) => ({
               value: c,
-              label: c[0].toUpperCase() + c.slice(1),
+              label: labels?.[c] ?? c[0].toUpperCase() + c.slice(1),
             }))}
           />
         </div>
@@ -515,21 +519,16 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'irrigation', label: 'Irrigation cost' },
 ]
 
-/** The four plain converters, each its own calculator rather than a dropdown. */
-const GENERAL: { key: string; label: string; blurb: string }[] = [
-  { key: 'weight', label: 'Weight', blurb: 'Pounds, kilograms, hundredweight and both tons.' },
-  { key: 'area', label: 'Area', blurb: 'Acres, hectares, quarters and sections.' },
-  { key: 'distance', label: 'Distance', blurb: 'Feet, metres, rods, miles.' },
-  { key: 'liquid', label: 'Liquid', blurb: 'Litres, gallons — US and Imperial are not the same.' },
-]
-
-/** Liquid is the volume family under the name people look for it by. */
-const GENERAL_FAMILY: Record<string, Family> = {
-  weight: 'weight',
-  area: 'area',
-  distance: 'distance',
-  liquid: 'volume',
-}
+/**
+ * The plain quantities, in one converter rather than four cards.
+ *
+ * They were a card each, every one with a line naming the units it held —
+ * four boxes and four sentences to say what the unit dropdown says anyway
+ * (Sam, 19 Nov 2026). The Water tab had already shown the better shape: one
+ * box with the quantity picked inside it. Volume is last because "Liquid" is
+ * the name people look for it under, and the picker uses the family's own.
+ */
+const GENERAL_CHOICES: Family[] = ['weight', 'area', 'distance', 'volume']
 
 export function CalculatorPage() {
   const { search } = useLocation()
@@ -549,14 +548,11 @@ function CalculatorView() {
       asked === 'volume' || asked === 'flow' || asked === 'depth' ? 'water' : asked === 'area' ? 'general' : undefined,
   )
   return (
-    <div className="p-4 md:p-6">
-      <h1 className="mb-3 flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-        <Calculator className="h-5 w-5 text-brand-700" /> Calculator
-      </h1>
-
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <PillTabs tabs={TABS} value={family} onChange={setFamily} />
-        <span className="ml-auto flex gap-3 text-xs">
+    <Page
+      title="Calculator"
+      tabs={<PillTabs tabs={TABS} value={family} onChange={setFamily} />}
+      actions={
+        <span className="flex gap-3 text-xs">
           <Link to="/combine?tab=loss" className="inline-flex items-center gap-1 text-gray-500 hover:text-brand-700">
             <Wheat className="h-3.5 w-3.5" /> Combine loss
           </Link>
@@ -564,7 +560,8 @@ function CalculatorView() {
             <Droplet className="h-3.5 w-3.5" /> Moisture test
           </Link>
         </span>
-      </div>
+      }
+    >
 
       {/* Two wide on a desktop, one on a phone. These are small independent
           boxes and stacking them down a wide screen wasted most of it, while
@@ -582,16 +579,11 @@ function CalculatorView() {
         )}
 
         {family === 'bushels' && <BushelCalculator />}
-        {family === 'general' &&
-          GENERAL.map((g) => (
-            <Converter
-              key={g.key}
-              family={GENERAL_FAMILY[g.key]}
-              title={g.label}
-              note={g.blurb}
-              fields={g.key === 'area'}
-            />
-          ))}
+        {/* Opens on area: acres to hectares is the conversion that gets asked
+            for, and the old ?tab=area link lands here. */}
+        {family === 'general' && (
+          <Converter family="area" choices={GENERAL_CHOICES} labels={{ volume: 'Liquid' }} fields />
+        )}
 
         {(family === 'operation' || family === 'irrigation') && (
           <Suspense fallback={<p className="text-sm text-gray-400 lg:col-span-2">Loading…</p>}>
@@ -599,6 +591,6 @@ function CalculatorView() {
           </Suspense>
         )}
       </div>
-    </div>
+    </Page>
   )
 }

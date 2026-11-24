@@ -4,6 +4,7 @@ import { farmTz } from '../../src/lib/farm-context.ts'
 import { farmFeatureOn } from '../../src/lib/farm-context.ts'
 import { getUserMfa } from '../shared/auth-mfa.ts'
 import { admin } from '../shared/supabase-admin.ts'
+import { readGauge, type GaugeFeature } from '../shared/river-watch.ts'
 
 // Dam-release watchdog. Hourly, it checks the below-dam station (Brocket) for a
 // sharp rise in flow — the signature of the Oldman Dam being opened — and alerts
@@ -51,27 +52,38 @@ export default async (req: Request) => {
   let baseQ = 0
   let latestT = 0
   let gotAny = false
+  let reachedAny = false
   for (const st of stations) {
     const res = await fetch(
       `https://api.weather.gc.ca/collections/hydrometric-realtime/items?f=json` +
         `&STATION_NUMBER=${encodeURIComponent(st)}&sortby=-DATETIME&limit=1000`,
     )
     if (!res.ok) continue
-    const j = (await res.json()) as { features?: { properties: Record<string, unknown> }[] }
-    const pts = (j.features ?? [])
-      .map((f) => ({ t: f.properties.DATETIME as string, q: f.properties.DISCHARGE as number | null }))
-      .filter((p) => p.t && p.q != null)
-      .sort((a, b) => a.t.localeCompare(b.t))
-    if (pts.length < 2) continue
-    const latest = pts[pts.length - 1]
-    const cutoff = new Date(latest.t).getTime() - cfg.rise_window_h * HOUR
-    const windowMin = Math.min(...pts.filter((p) => new Date(p.t).getTime() >= cutoff).map((p) => p.q as number))
-    nowQ += latest.q as number
-    baseQ += windowMin
-    latestT = Math.max(latestT, new Date(latest.t).getTime())
+    const j = (await res.json()) as { features?: GaugeFeature[] }
+    const g = readGauge(j.features, cfg.rise_window_h)
+    if (g.readings > 0) reachedAny = true
+    if (!g.flow) continue
+    nowQ += g.flow.latestQ
+    baseQ += g.flow.windowMinQ
+    latestT = Math.max(latestT, g.flow.latestT)
     gotAny = true
   }
-  if (!gotAny) return new Response(JSON.stringify({ ok: true, note: 'no data' }), { status: 200 })
+  if (!gotAny) {
+    // Gauges answered with water levels but no flow: the Survey has withdrawn
+    // flow for river ice (every freeze-up). The watcher is alive, just paused,
+    // so say so rather than going quiet and tripping the stale alarm. If no
+    // gauge answered at all, stay quiet so a real outage still shows.
+    if (reachedAny) {
+      await sb.rpc('record_integration_heartbeat', {
+        p_key: 'river_watch',
+        p_detail: 'paused: Water Survey is publishing levels only (river ice), no flow to watch',
+        p_data_at: null,
+      })
+    }
+    return new Response(JSON.stringify({ ok: true, note: reachedAny ? 'no flow published (ice)' : 'no data' }), {
+      status: 200,
+    })
+  }
   const risePct = baseQ > 0 ? ((nowQ - baseQ) / baseQ) * 100 : 0
 
   const nowIso = new Date().toISOString()

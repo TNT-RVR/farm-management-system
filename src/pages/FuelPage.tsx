@@ -1,10 +1,9 @@
 import { Fragment, lazy, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom'
-import { ChevronRight, Fuel, RefreshCw } from 'lucide-react'
+import { ChevronRight, RefreshCw } from 'lucide-react'
 import { DateField } from '@/components/DateField'
 import { Fold } from '@/components/Fold'
 import { HelpNote } from '@/components/HelpNote'
-import { PageHeader } from '@/components/PageHeader'
 import { PillTabs } from '@/components/PillTabs'
 import {
   DeleteButton,
@@ -61,6 +60,7 @@ import { PricesBar } from './hauling/ui'
 import { TabSuspense } from '@/components/TabSuspense'
 import { CARD_HEAD, TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { localToday } from '@/lib/today'
+import { Page } from '@/components/Page'
 
 // The maps and charts are their own chunks, loaded when their tab (or the price chart) shows.
 const PriceChart = lazy(() =>
@@ -211,17 +211,13 @@ function FuelView() {
   )
   useScrollToHash(tab, arrivedFor === 'silage' ? 'silage' : null)
   return (
-    <div className="mx-auto max-w-[1400px]">
-      <div className="border-b border-gray-200 bg-white px-4 pt-3 md:px-6">
-        <PageHeader
-          title="Fuel & trucking"
-          icon={<Fuel className="h-5 w-5 text-brand-700" />}
-          subtitle={`Costs use ${perL(basics.dieselPerL, 2)}/L diesel · ${basics.dieselSource}`}
-          className="mb-1"
-        />
-        <PillTabs tabs={tabs} value={tab} onChange={setTab} className="border-b-0 pb-0" />
-      </div>
-      <div className="space-y-4 p-4 md:p-6">
+    <Page
+      title="Fuel & trucking"
+      info={`Costs use ${perL(basics.dieselPerL, 2)}/L diesel · ${basics.dieselSource}.`}
+      tabs={<PillTabs tabs={tabs} value={tab} onChange={setTab} />}
+      className="space-y-4"
+    >
+      <div className="space-y-4">
         {HAULING_TABS.has(tab) && <PricesBar isManager={isManager} />}
         <TabSuspense>
           {tab === 'fuel' ? (
@@ -246,7 +242,7 @@ function FuelView() {
           )}
         </TabSuspense>
       </div>
-    </div>
+    </Page>
   )
 }
 

@@ -175,12 +175,11 @@ function SectionRow({
 }
 
 /**
- * The season menu's desktop sidebar (everyone's unless they chose the old menu).
+ * The season menu's desktop sidebar — the only one since 20 Nov 2026.
  *
- * Same width, colours and icon sizes as SidebarNav, so switching between the
- * two is a change of grouping, not of look. Several sections can be open at
- * once: unlike the old groups these are long-lived, and someone working through
- * harvest wants Harvest to stay open while they glance into Cattle. The section
+ * Several sections can be open at once: unlike the old menu's groups these
+ * are long-lived, and someone working through harvest wants Harvest to stay
+ * open while they glance into Cattle. The section
  * you are in opens by itself when you arrive by address or reload. Reordering
  * and hiding live in Settings → My account → Menu, not in drags here.
  *

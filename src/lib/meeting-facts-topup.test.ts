@@ -4,6 +4,7 @@ import {
   TARGET_UNUSED_PER_MONTH,
   monthsNeedingFacts,
   parseFacts,
+  replyTexts,
   slugFor,
   stockByMonth,
   titleTooClose,
@@ -193,5 +194,26 @@ describe('reading the reply', () => {
     expect(parseFacts('[{"title": ')).toEqual([])
     expect(parseFacts('I could not find anything.')).toEqual([])
     expect(parseFacts('{"title":"not an array"}')).toEqual([])
+  })
+
+  it('skips a bracket in the notes ahead of the array', () => {
+    expect(parseFacts('Per AAFC [1], here:\n[{"title":"a"}]')).toEqual([{ title: 'a' }])
+  })
+
+  it('reads the answer after the last search, cited blocks joined as they were', () => {
+    const content = [
+      { type: 'text', text: 'Let me look [first].' },
+      { type: 'server_tool_use' },
+      { type: 'web_search_tool_result' },
+      { type: 'text', text: '[{"title":"Frost on ' },
+      { type: 'text', text: 'canola","months":[12]}]' },
+    ]
+    const [answer, all] = replyTexts(content)
+    expect(parseFacts(answer)).toEqual([{ title: 'Frost on canola', months: [12] }])
+    expect(all.startsWith('Let me look')).toBe(true)
+  })
+
+  it('falls back to every block when there was no search', () => {
+    expect(replyTexts([{ type: 'text', text: '[]' }])).toEqual(['[]', '[]'])
   })
 })

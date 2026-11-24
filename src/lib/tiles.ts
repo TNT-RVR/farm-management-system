@@ -23,7 +23,9 @@ import {
   Fence,
   FileSignature,
   FileText,
+  Footprints,
   FlaskConical,
+  FolderOpen,
   Fuel,
   KeyRound,
   Landmark,
@@ -56,7 +58,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { useAuth } from './auth'
-import { NAV_ITEMS, isViewDenied } from './nav'
+import { ALL_NAV_PATHS, isViewDenied } from './nav'
 import { isPathOff, useDisabledPaths } from './farm-setup'
 import { isPartner, isPartnerPath } from './partner'
 
@@ -571,6 +573,15 @@ export const TILES: Tile[] = [
     section: '/herd',
   },
   {
+    key: 'pastureuse',
+    label: 'Pasture use',
+    hint: 'Which herd was in which pasture, and for how long',
+    to: '/pasture-use',
+    icon: Footprints,
+    group: 'Cattle',
+    section: '/cattle',
+  },
+  {
     key: 'waterpayback',
     label: 'Does a trough pay?',
     hint: 'Pumped water against walking into the dugout',
@@ -888,6 +899,24 @@ export const TILES: Tile[] = [
     group: 'Reference',
     section: '/grants',
   },
+  {
+    key: 'documents',
+    label: 'Documents',
+    hint: 'Every file on the farm, searchable',
+    to: '/documents',
+    icon: FolderOpen,
+    group: 'Reference',
+    section: '/documents',
+  },
+  {
+    key: 'insurance',
+    label: 'Crop insurance',
+    hint: 'Cover, acres reported and claims paid',
+    to: '/insurance',
+    icon: ShieldCheck,
+    group: 'Reference',
+    section: '/insurance',
+  },
 ]
 
 export const TILE_GROUPS: TileGroup[] = [
@@ -913,7 +942,7 @@ const byKey = new Map(TILES.map((t) => [t.key, t]))
  * below quietly withheld its tile, the whole feature became unreachable without
  * typing the address.
  */
-const IN_SIDEBAR = new Set(NAV_ITEMS.flatMap((i) => [i.to, ...(i.children ?? []).map((c) => c.to)]))
+const IN_SIDEBAR = new Set(ALL_NAV_PATHS.map((p) => p.to))
 
 /**
  * Tiles to put on an arranged home screen without being asked.

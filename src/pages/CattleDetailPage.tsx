@@ -27,6 +27,7 @@ import { askConfirm } from '@/components/askConfirm'
 import { CARD_HEAD } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
 import { localToday } from '@/lib/today'
+import { Page } from '@/components/Page'
 
 /** The fields a logged event is corrected through (managers; Sam, 7 Oct 2026). */
 const EVENT_FIELDS: EditField[] = [
@@ -72,7 +73,7 @@ export function CattleDetailPage() {
   const userName = (uid: string | null) => users?.find((u) => u.id === uid)?.full_name ?? 'system'
 
   return (
-    <div className="mx-auto max-w-2xl p-4 md:p-6">
+    <Page narrow>
       {/* Back to the Herd page, where the animals are listed now. */}
       <Link to="/herd?tab=animals" className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
         <ArrowLeft className="h-4 w-4" /> Herd
@@ -384,7 +385,7 @@ export function CattleDetailPage() {
           <Trash2 className="h-4 w-4" /> Delete animal
         </button>
       )}
-    </div>
+    </Page>
   )
 }
 

@@ -86,6 +86,7 @@ describe('the tree', () => {
   it('lists Cattle’s hub pages, with shortcuts straight to their tabs', () => {
     expect(viewKeys('cattle')).toEqual([
       'pastures',
+      'pasture-use',
       'herd',
       'feed',
       'cattle-sales',
@@ -120,7 +121,7 @@ describe('visibility', () => {
 
   it('drops a section with nothing left in it', () => {
     const cattleOff: MenuAccess = ({ to }) =>
-      !['/cattle', '/herd', '/feed', '/cattle-markets', '/handling-system', '/cattle-settings'].includes(
+      !['/cattle', '/herd', '/feed', '/cattle-markets', '/handling-system', '/cattle-settings', '/pasture-use'].includes(
         to.split('?')[0],
       )
     const out = filterSections(MENU_SECTIONS, cattleOff)
@@ -182,7 +183,7 @@ describe('prefs', () => {
 
   it('drops a section whose views are all hidden', () => {
     const { sections } = resolveMenu(allowed, {
-      hidden: ['weather', 'reports', 'research', 'calculator', 'contacts', 'missing'],
+      hidden: ['weather', 'reports', 'documents', 'research', 'calculator', 'contacts', 'missing'],
     })
     expect(keysOf(sections)).not.toContain('tools')
   })
@@ -206,7 +207,7 @@ describe('phone bar', () => {
   })
 
   it('fills an unavailable slot with the next section in order', () => {
-    const noCattle = filterSections(MENU_SECTIONS, ({ to }) => !['/cattle', '/herd', '/feed', '/cattle-markets', '/handling-system', '/cattle-settings'].includes(to.split('?')[0]))
+    const noCattle = filterSections(MENU_SECTIONS, ({ to }) => !['/cattle', '/herd', '/feed', '/cattle-markets', '/handling-system', '/cattle-settings', '/pasture-use'].includes(to.split('?')[0]))
     const bar = resolveBar(resolveMenu(noCattle, undefined), ['search', 'home', 'cattle', 'fields', 'menu'])
     // Home and Fields are on already, so the spare is Map.
     expect(bar.map((s) => s.key)).toEqual(['search', 'home', 'map', 'fields', 'menu'])

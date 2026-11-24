@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
-import { Mountain, TriangleAlert } from 'lucide-react'
+import { TriangleAlert } from 'lucide-react'
 import { Select } from '@/components/Select'
 import { useFarmMap } from '@/lib/geo/use-farm-map'
 import {
@@ -131,11 +131,8 @@ export function TopographyPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-gray-200 bg-white px-4 pt-4 md:px-6">
-        <h1 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-          <Mountain className="h-5 w-5" /> Topography
-        </h1>
-        <HelpNote className="mt-0.5 text-xs" summary="From Deere's pass elevations; not tied to sea level." title="Where the heights come from">
+      <div className="px-4 pt-4 md:px-6">
+        <HelpNote className="text-xs" summary="From Deere's pass elevations; not tied to sea level." title="Where the heights come from">
           Built from the elevation John Deere logs on every pass. Heights are consistent within a
           field and are <strong>not</strong> tied to sea level — good for finding water, not for
           pricing a scraper job.

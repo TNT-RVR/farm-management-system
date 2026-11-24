@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react'
 import {
   Fence,
+  Footprints,
   Umbrella,
   ArrowLeftRight,
   BookOpen,
@@ -18,6 +19,7 @@ import {
   Droplets,
   FileSignature,
   FileText,
+  FolderOpen,
   FlaskConical,
   Flower2,
   Fuel,
@@ -70,10 +72,9 @@ import { GrainBin } from '@/components/icons/GrainBin'
  * is really one tab of a bigger page, it deep-links the tab; the page splits
  * come later and only have to change a `to` here.
  *
- * On for everyone since 26 Oct 2026 (Sam, after he and Derek had tried it):
- * menu_prefs.enabled === false is the only way to the old menu (lib/nav.ts),
- * which stays as the fallback until it is retired. What a person had hidden in
- * the old menu carries over at read time (carryOverHidden, below).
+ * The only menu since 20 Nov 2026 (Sam): everyone's from 26 Oct, after he
+ * and Derek had tried it, and the old sidebar and the switch back to it are
+ * gone. What is left of lib/nav.ts is the list of paths an admin can close off.
  */
 
 export type MenuIcon = ComponentType<{ className?: string }>
@@ -190,6 +191,8 @@ const VIEW_LIST: MenuView[] = [
   // refilled like any other unknown key.
   { key: 'pastures', label: 'Pastures', icon: MapIcon, to: '/cattle', description: 'The pasture map, grazing plan and spray restrictions.' },
   { key: 'herd', label: 'Herd', icon: Beef, to: '/herd', description: 'Every animal, and pregnancy from the collars.' },
+  // Its own page, not a tab of Pastures: a record of the year, by herd or by pasture (Sam, 23 Nov 2026).
+  { key: 'pasture-use', label: 'Pasture use', icon: Footprints, to: '/pasture-use', home: 'cattle', description: 'Which herd was in which pasture over the year, and for how long.' },
   { key: 'feed', label: 'Feed', icon: Container, to: '/feed', description: 'The winter feed plan, what was fed and bale checks.' },
   { key: 'cattle-sales', label: 'Sales & paperwork', icon: LineChart, to: '/cattle-markets', home: 'cattle', description: 'Auction prices, manifests and grazing leases.' },
   { key: 'handling-system', label: 'Handling system', icon: Fence, to: '/handling-system', home: 'cattle', description: 'Lay the corral out to scale on the yard, and check pens against the herd.' },
@@ -220,6 +223,7 @@ const VIEW_LIST: MenuView[] = [
   // Tools
   { key: 'weather', label: 'Weather', icon: Cloud, to: '/weather', description: 'The forecast, spray windows and frost.' },
   { key: 'reports', label: 'Reports', icon: FileText, to: '/reports', description: 'Every download the app makes, by section.' },
+  { key: 'documents', label: 'Documents', icon: FolderOpen, to: '/documents', description: 'Every file the farm holds, wherever it was added.' },
   // In the menu as well as on a tile (Sam, 2 Nov 2026): a tile under
   // Reference is the only way in, and he could not find it.
   { key: 'research', label: 'Research', icon: Library, to: '/research', description: 'What the papers say about our crops, sprays and water.' },
@@ -347,6 +351,7 @@ const SECTION_DEFS: SectionDef[] = [
       // Spray restrictions is a tab of Pastures only (Sam, 29 Oct 2026: "we
       // already have spray restrictions as a sub tab under pastures").
       'pastures',
+      'pasture-use',
       'herd',
       'feed',
       'cattle-sales',
@@ -366,7 +371,7 @@ const SECTION_DEFS: SectionDef[] = [
     icon: CheckSquare,
     items: ['tasks', 'checklists', 'daybook', 'calendar', 'monthly', 'meeting', 'conferences'],
   },
-  { key: 'tools', label: 'Tools', icon: Wrench, items: ['weather', 'reports', 'research', 'calculator', 'contacts', 'missing'] },
+  { key: 'tools', label: 'Tools', icon: Wrench, items: ['weather', 'reports', 'documents', 'research', 'calculator', 'contacts', 'missing'] },
   {
     key: 'settings',
     label: 'Settings',
@@ -522,11 +527,6 @@ export type MenuDevicePrefs = {
 
 /** users.menu_prefs. Everything optional: an empty object is "never touched it". */
 export type MenuPrefs = {
-  /**
-   * false: they chose the old menu. Missing means the season menu, the default
-   * for everyone since 26 Oct 2026 (Sam). Read it through menuEnabled().
-   */
-  enabled?: boolean
   desktop?: { order?: string[]; hidden?: string[] }
   phone?: MenuDevicePrefs
 }
@@ -561,9 +561,9 @@ const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
 export function readMenuPrefs(raw: unknown): MenuPrefs {
   if (!isObject(raw)) return {}
   const out: MenuPrefs = {}
-  if (typeof raw.enabled === 'boolean') out.enabled = raw.enabled
   // `hidden` stays missing when it was never saved, rather than becoming [],
-  // so withCarriedHidden can tell "never chose" from "chose to hide nothing".
+  // so what is stored is handed back as it stands: a person who has hidden
+  // nothing is not the same row as one who has never opened the Menu panel.
   const device = (d: Record<string, unknown>) => ({
     order: strings(d.order),
     ...(Array.isArray(d.hidden) ? { hidden: strings(d.hidden) } : {}),
@@ -573,142 +573,6 @@ export function readMenuPrefs(raw: unknown): MenuPrefs {
     out.phone = { ...device(raw.phone), bar: strings(raw.phone.bar) }
     if (Array.isArray(raw.phone.buttons)) out.phone.buttons = strings(raw.phone.buttons)
   }
-  return out
-}
-
-/**
- * Does this person get the season menu? Yes unless they picked the old one
- * (Sam, 26 Oct 2026: go ahead for everyone, after he and Derek tried it).
- */
-export const menuEnabled = (prefs: MenuPrefs): boolean => prefs.enabled !== false
-
-/* ------------------------------------------------- carried over from nav.ts */
-
-/**
- * What each old-menu entry (lib/nav.ts, keyed as users.nav_prefs and
- * denied_views are) led to in the season menu: view keys, or a leaf section's
- * key for Home and Map.
- *
- * A group's own entry is empty: hiding a group in the old menu hid everything
- * under it, and its children below say what that was. Tab views go with the
- * page they are a tab of (Bale checks with Feed). nav-tree.test.ts checks that
- * every old entry is here or in OLD_NAV_UNMAPPED.
- */
-export const OLD_NAV_VIEWS: Readonly<Record<string, readonly string[]>> = {
-  '/dashboard': ['home'],
-  '/map': ['map'],
-  '/fields': ['all-fields'],
-  '/crop': [],
-  '/plan': ['crop-money', 'next-year-plan'],
-  '/quickbooks': ['quickbooks'],
-  '/rotation': ['rotation'],
-  '/crop-compare': ['crop-compare'],
-  '/canola-reports': ['canola-isolation'],
-  '/canola-bloom': ['canola-bloom'],
-  '/fusarium': ['fusarium'],
-  '/crops': ['crops'],
-  '/markets': ['markets'],
-  '/contracts': ['contracts'],
-  '/scouting': ['scouting'],
-  '/scout-reports': ['scout-reports'],
-  '/leases': ['leases'],
-  '/work': [],
-  '/tasks': ['tasks'],
-  '/daybook': ['daybook'],
-  '/checklists': ['checklists'],
-  '/weather': ['weather'],
-  '/dates': [],
-  '/calendar': ['calendar'],
-  '/monthly': ['monthly'],
-  '/events': ['conferences'],
-  '/meeting': ['meeting'],
-  // The Harvest group's parent is the bins page, and so is its first child.
-  '/harvest': ['bins'],
-  '/weigh-scale': ['weigh-scale'],
-  '/pre-harvest': ['phi'],
-  '/harvest-reports': ['harvest-reports'],
-  '/water': [],
-  '/irrigation': ['soil-moisture'],
-  '/river': ['river'],
-  '/irrigation-info': ['pivots-pumps'],
-  '/inputs': [],
-  '/chemicals': ['chemicals'],
-  '/spraying': ['chemicals'],
-  '/fertilizer': ['soil-tests', 'fertility-plan', 'tissue-tests', 'fertilizer-prices', 'manure', 'fertilizer-savings'],
-  '/fuel': ['fuel-trucking'],
-  '/utilities': ['utilities'],
-  '/livestock': [],
-  '/cattle': ['pastures'],
-  '/herd': ['herd'],
-  '/feed': ['feed', 'bale-checks'],
-  '/cattle-markets': ['cattle-sales', 'cattle-markets', 'pasture-insurance'],
-  // New on 3 Nov 2026, so nobody hid it in the old menu; mapped all the same,
-  // because the carry-over reads this table and not the date a view shipped.
-  '/handling-system': ['handling-system'],
-  '/cattle-settings': ['cattle-settings'],
-  '/equipment': ['equipment-service'],
-  '/combine': ['combine'],
-  '/planter': ['seed-planter'],
-  '/fuel?tab=distances': ['fuel-trucking'],
-  '/cameras': ['cameras'],
-  '/reports': ['reports'],
-  '/contacts': ['contacts'],
-  '/calculator': ['calculator'],
-  '/grants': ['grants'],
-}
-
-/** Old entries deliberately not carried over: Settings is never hidden. */
-export const OLD_NAV_UNMAPPED: readonly string[] = ['/settings']
-
-/** An old-menu entry, as resolveNav (lib/nav.ts) hands it back. */
-export type OldNavEntry = { to: string; children?: { to: string }[] }
-
-/**
- * The season-menu keys to hide for someone who hid things in the old menu
- * (Sam, 26 Oct 2026), from resolveNav's visible and hidden lists.
- *
- * A view is hidden only when every old entry that led to it was hidden: Fuel &
- * trucking was under both Inputs and Equipment, so hiding Inputs alone leaves
- * it. Views the old menu never had stay shown. A section left with nothing is
- * hidden too, so the Menu panel shows its switch off. Settings never hides.
- *
- * The old sidebar only ever hid whole entries, but `savedHidden` (the raw
- * nav_prefs.hidden) may name a child such as '/quickbooks' too, and that
- * counts as hidden even though resolveNav drops it.
- */
-export function carryOverHidden(
-  old: { visible: OldNavEntry[]; hidden: OldNavEntry[] },
-  savedHidden: readonly string[] = [],
-): string[] {
-  const childHidden = new Set(savedHidden)
-  const flat = (entries: OldNavEntry[]) => entries.flatMap((e) => [e, ...(e.children ?? [])])
-  const shown = flat(old.visible).filter((e) => !childHidden.has(e.to) || old.visible.includes(e as OldNavEntry))
-  const gone = [...flat(old.hidden), ...flat(old.visible).filter((e) => !shown.includes(e))]
-  if (gone.length === 0) return []
-  const reached = (entries: OldNavEntry[]) => new Set(entries.flatMap((e) => OLD_NAV_VIEWS[e.to] ?? []))
-  const kept = reached(shown)
-  const pinned = new Set(
-    MENU_SECTIONS.filter((s) => s.pinned).flatMap((s) => [s.key, ...sectionItems(s).map((i) => i.view.key)]),
-  )
-  const hidden = new Set([...reached(gone)].filter((k) => !kept.has(k) && !pinned.has(k)))
-  for (const s of MENU_SECTIONS) {
-    if (s.pinned || isLeaf(s)) continue
-    if (sectionItems(s).every((i) => hidden.has(i.view.key))) hidden.add(s.key)
-  }
-  return [...hidden]
-}
-
-/**
- * Fill in a device's hidden list from the old menu where the person never set
- * one. The old menu had one list for both screens, so it goes to both. Read
- * time only: the Menu panel saves what it shows, so their first change there
- * writes these down, and from then on their own menu_prefs win.
- */
-export function withCarriedHidden(prefs: MenuPrefs, carried: string[]): MenuPrefs {
-  if (carried.length === 0) return prefs
-  const out = { ...prefs }
-  if (out.desktop?.hidden === undefined) out.desktop = { ...out.desktop, hidden: carried }
-  if (out.phone?.hidden === undefined) out.phone = { ...out.phone, hidden: carried }
   return out
 }
 
@@ -735,9 +599,9 @@ export function sectionOrder(sections: MenuSection[], saved: string[] | undefine
 
 /**
  * Apply one device's prefs to the sections a person may see (already through
- * filterSections with their access). Defensive, like resolveNav: keys that no
- * longer exist are dropped, and sections the saved order has never heard of
- * are appended, visible, so shipping a new section never hides it from anyone.
+ * filterSections with their access). Defensive: keys that no longer exist are
+ * dropped, and sections the saved order has never heard of are appended,
+ * visible, so shipping a new section never hides it from anyone.
  */
 export function resolveMenu(allowed: MenuSection[], prefs: MenuDevicePrefs | undefined): ResolvedMenu {
   const byKey = new Map(allowed.map((s) => [s.key, s]))

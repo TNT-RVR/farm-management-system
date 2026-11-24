@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { BookOpen, ExternalLink, FileText, Link2, Search } from 'lucide-react'
+import { ExternalLink, FileText, Link2, Search } from 'lucide-react'
 import { PillTabs } from '@/components/PillTabs'
 import { CardList, RowCard } from '@/components/RowCards'
 import { Fold } from '@/components/Fold'
@@ -12,6 +12,7 @@ import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { lazyWithRetry } from '@/lib/lazyWithRetry'
 import { useTab } from '@/lib/useTab'
 import { cn } from '@/lib/utils'
+import { Page } from '@/components/Page'
 import {
   cropGaps,
   gapSection,
@@ -609,18 +610,15 @@ export function ResearchPage() {
   const { data: totals } = useResearchTotals()
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-3">
-        <h1 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-          <BookOpen className="h-5 w-5 text-brand-700" /> Research
-        </h1>
-        <p className="text-xs text-gray-500">
-          {totals
-            ? `${totals.papers.toLocaleString('en-CA')} papers on our crops, chemicals, water and cattle. ${totals.alberta} from Alberta.`
-            : 'Papers on our crops, chemicals, water and cattle.'}
-        </p>
-      </div>
-
+    <Page
+      title="Research"
+      info={
+        totals
+          ? `${totals.papers.toLocaleString('en-CA')} papers on our crops, chemicals, water and cattle. ${totals.alberta} from Alberta.`
+          : 'Papers on our crops, chemicals, water and cattle.'
+      }
+      tabs={<PillTabs tabs={tabs} value={tab} onChange={setTab} />}
+    >
       <HelpNote summary="What a folder is about first, then nearest work." className="mb-2">
         <p>
           Every folder asks one thing first: is the paper about that subject, or does it only
@@ -639,8 +637,6 @@ export function ResearchPage() {
         </p>
       </HelpNote>
 
-      <PillTabs tabs={tabs} value={tab} onChange={setTab} />
-
       {/* Keyed by section so switching tabs starts on that shelf's fullest
           folder rather than keeping the last one, which is in another section. */}
       {tab === 'numbers' ? (
@@ -654,6 +650,6 @@ export function ResearchPage() {
       ) : (
         <Shelf key={tab} section={tab} />
       )}
-    </div>
+    </Page>
   )
 }

@@ -9,6 +9,7 @@ import { useMySignature } from '@/lib/signature'
 import { localDateKey } from '@/lib/ranchWeather'
 import { longDate } from '@/lib/reports/framework'
 import { downloadBlob, tableReportToPdf } from '@/lib/table-report'
+import { keepMadeReport } from '@/lib/made-reports'
 import { inspectionReport } from '@/lib/reports/truck-inspection-report'
 import { INSPECTION_SECTIONS, allAnswered, isDue, progress, toFix, type Answer, type Answers } from '@/lib/truck-inspection'
 import {
@@ -43,7 +44,10 @@ async function downloadReport(i: Inspection, truck: { name: string; make: string
     signature = { dataUrl: i.signature, width: bmp.width, height: bmp.height }
   }
   const r = inspectionReport(i, truck, signature)
-  downloadBlob(await tableReportToPdf(r), `${r.filename.replace(/[\\/:*?"<>|]+/g, '-')}.pdf`)
+  const blob = await tableReportToPdf(r)
+  const filename = `${r.filename.replace(/[\\/:*?"<>|]+/g, '-')}.pdf`
+  downloadBlob(blob, filename)
+  keepMadeReport({ reportId: 'truck-inspection', name: 'Truck inspection', blob, filename, format: 'PDF', labels: { Truck: truck.name } })
 }
 
 /**

@@ -1,11 +1,10 @@
 import { useMemo } from 'react'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
 import { useQuery } from '@tanstack/react-query'
-import { RefreshCw, Sun } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { Fold } from '@/components/Fold'
 import { HelpNote } from '@/components/HelpNote'
 import { InfoPopover } from '@/components/InfoPopover'
-import { PageHeader } from '@/components/PageHeader'
 import { hasAdminAccess, hasManagerAccess, useAuth } from '@/lib/auth'
 import { useCropYear } from '@/lib/crop-year'
 import { farmTz } from '@/lib/farm-context'
@@ -62,8 +61,8 @@ function HowToGetKeys() {
  * year's kWh, and what the year is worth at the solar sell price. Read hourly
  * from SolisCloud (netlify/shared/solis.ts).
  */
-/** `embedded`: shown as the Solar tab of Utilities, without the page's own frame. */
-export function SolarPage({ embedded = false }: { embedded?: boolean } = {}) {
+/** Always the Solar tab of Utilities (/solar redirects there), so it has no frame of its own. */
+export function SolarPage() {
   const { profile } = useAuth()
   const isManager = hasManagerAccess(profile?.role)
   const isAdmin = hasAdminAccess(profile?.role)
@@ -92,12 +91,12 @@ export function SolarPage({ embedded = false }: { embedded?: boolean } = {}) {
     : `${s.rows.length} plants · ${kw(s.total.capacityKwp)} kWp${updated && connected ? ` · SolisCloud ${updated}` : ''}`
 
   return (
-    <div className={embedded ? 'space-y-4' : 'mx-auto max-w-4xl space-y-4 p-4 md:p-6'}>
-      <PageHeader
-        title="Solar"
-        icon={<Sun className="h-5 w-5 text-amber-500" />}
-        subtitle={subtitle}
-        info={
+    <div className="space-y-4">
+      {/* The Solar tab names the page, so this row carries the facts and the
+          button only. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="flex items-center gap-1.5 text-xs text-gray-500">
+          {subtitle}
           <InfoPopover title="Where these numbers come from">
             <p>
               Each plant’s readings come from SolisCloud, the inverters’ own monitoring, every hour. “Now” is the power the plant was making at its last report (SolisCloud
@@ -108,20 +107,18 @@ export function SolarPage({ embedded = false }: { embedded?: boolean } = {}) {
               the pumps, which pay the grid price.
             </p>
           </InfoPopover>
-        }
-        actions={
-          isManager && (
-            <button
-              type="button"
-              onClick={() => void refresh.start()}
-              disabled={refresh.busy}
-              className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-            >
-              <RefreshCw className={cn('h-4 w-4', refresh.busy && 'animate-spin')} /> Update now
-            </button>
-          )
-        }
-      />
+        </p>
+        {isManager && (
+          <button
+            type="button"
+            onClick={() => void refresh.start()}
+            disabled={refresh.busy}
+            className="ml-auto flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+          >
+            <RefreshCw className={cn('h-4 w-4', refresh.busy && 'animate-spin')} /> Update now
+          </button>
+        )}
+      </div>
       {refresh.state && <p className="text-xs text-gray-600">{refresh.state}</p>}
 
       {!everWorked && (

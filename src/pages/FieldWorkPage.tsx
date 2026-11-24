@@ -48,6 +48,7 @@ import { HandWorkCard, QueuedWorkCard, RecordWorkBar } from '@/components/FieldW
 import { useFieldWork, useFieldWorkOutbox, useFillMissingWeather } from '@/lib/field-work-data'
 import { possibleDuplicates, type FieldWorkRecord } from '@/lib/field-work'
 import { HelpNote } from '@/components/HelpNote'
+import { Page } from '@/components/Page'
 
 const TYPE_LABEL: Record<string, string> = {
   application: 'Application',
@@ -746,7 +747,7 @@ export function FieldWorkPage({ section = 'work' }: { section?: 'work' | 'inputs
   if (isLoading) return <p className="p-4 text-sm text-gray-500 md:p-6">Loading…</p>
 
   return (
-    <div className="mx-auto max-w-3xl p-4 md:p-6">
+    <Page narrow>
       <Link
         to="/fields"
         className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-brand-700"
@@ -990,6 +991,6 @@ export function FieldWorkPage({ section = 'work' }: { section?: 'work' | 'inputs
           last thing that happens in a field's year and it was three cards away
           from the passes that produced it. */}
       {id && <FieldMoistureCard fieldId={id} />}
-    </div>
+    </Page>
   )
 }

@@ -29,6 +29,7 @@ import { HarvestEstimateLine } from '@/components/HarvestEstimateLine'
 import { FieldSeasonSummary } from '@/components/FieldSeasonSummary'
 import { FieldMoneyCard } from '@/components/FieldMoneyCard'
 import { FieldFiles } from '@/components/FieldFiles'
+import { FieldContactsCard } from '@/components/FieldContactsCard'
 import { TabSuspense } from '@/components/TabSuspense'
 import { canSeeFinances, hasManagerAccess, useAuth } from '@/lib/auth'
 import { useCropYear } from '@/lib/crop-year'
@@ -66,6 +67,7 @@ import {
 } from '@/lib/queries'
 import { usePartnerView, usePartnerYears } from '@/lib/partner-view'
 import { CARD_HEAD } from '@/lib/table-style'
+import { Page } from '@/components/Page'
 
 // The maps are their own chunks: the snapshot loads beside the page, the scouting map and boundary editor when opened.
 const FieldScouting = lazy(() => import('@/pages/ScoutingPage').then((m) => ({ default: m.FieldScouting })))
@@ -801,7 +803,7 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-4 md:p-6">
+    <Page narrow>
       <Link
         to="/fields"
         className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800"
@@ -887,6 +889,9 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
           <CanolaBloomCard fieldId={field.id} cropYear={cropYear} />
 
           <FieldHailCard fieldId={field.id} />
+
+          {/* Our agronomist and who else looks after the field; never a partner's. */}
+          {!partner && <FieldContactsCard fieldId={field.id} cropYear={cropYear} canEdit={hasManagerAccess(profile?.role)} />}
 
           {/* Notes and files were a tab of their own with two cards on it.
               They live here now; /fields/:id/notes opens this tab at them. */}
@@ -1039,6 +1044,6 @@ export function FieldDetailPage({ section = 'overview' }: { section?: FieldSecti
           />
         </Suspense>
       )}
-    </div>
+    </Page>
   )
 }

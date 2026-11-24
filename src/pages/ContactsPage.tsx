@@ -22,6 +22,7 @@ import { withDisplay } from '@/lib/reports/columns'
 import { contactListColumns, contactListRows } from '@/lib/reports/lists'
 import { contactProblem } from '@/lib/contact-check'
 import { useOpenParam } from '@/lib/useOpenParam'
+import { Page } from '@/components/Page'
 
 // Some linked tables (pumps, mineral programs) are newer than the generated types.
 const db = supabase as unknown as SupabaseClient
@@ -148,18 +149,18 @@ export function ContactsPage() {
   const saveError = (editing === 'new' ? create.error : update.error)?.message ?? null
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold text-gray-900">
-          Contacts
-          {contacts
-            ? rows.length === contacts.length
-              ? ` (${contacts.length})`
-              : ` (${rows.length} of ${contacts.length})`
-            : ''}
-        </h1>
-        {isManager && (
-          <div className="flex flex-wrap items-center gap-2">
+    <Page
+      title="Contacts"
+      info={
+        contacts
+          ? rows.length === contacts.length
+            ? `${contacts.length} on the farm's list.`
+            : `${rows.length} of ${contacts.length} shown.`
+          : undefined
+      }
+      actions={
+        isManager && (
+          <>
             {/* The harvest from Sam's mail and QuickBooks waits on its own
                 page; this is the only way anyone would find it. */}
             <Link
@@ -176,10 +177,10 @@ export function ContactsPage() {
                 setEditing('new')
               }}
             />
-          </div>
-        )}
-      </div>
-
+          </>
+        )
+      }
+    >
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
@@ -285,7 +286,7 @@ export function ContactsPage() {
           }
         />
       )}
-    </div>
+    </Page>
   )
 }
 

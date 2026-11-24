@@ -6,6 +6,7 @@ import { useCrops, useFields, useUsers } from '@/lib/queries'
 import { useBins } from '@/lib/bins'
 import { isOpenLoad, useDeliverySites, useScalePhotoUrl, type BinLoad } from '@/lib/bin-loads'
 import { downloadBlob, tableReportToCsv, tableReportToPdf } from '@/lib/table-report'
+import { keepMadeReport } from '@/lib/made-reports'
 import { DeleteLoadButton } from '@/pages/bins/WeighIn'
 import { useFieldCleanYield } from '@/lib/clean-out'
 import { useAllCropPrices } from '@/lib/forecast-data'
@@ -88,8 +89,10 @@ export function LoadSummary({ load: l, onEdit, onClose }: { load: BinLoad; onEdi
         <ExportButton
           label="Export this ticket"
           onExport={async (f) => {
-            if (f === 'CSV') downloadBlob(new Blob([tableReportToCsv(await report(false))], { type: 'text/csv' }), `${fileName}.csv`)
-            else downloadBlob(await tableReportToPdf(await report(true)), `${fileName}.pdf`)
+            const blob = f === 'CSV' ? new Blob([tableReportToCsv(await report(false))], { type: 'text/csv' }) : await tableReportToPdf(await report(true))
+            const filename = `${fileName}.${f.toLowerCase()}`
+            downloadBlob(blob, filename)
+            keepMadeReport({ reportId: 'scale-ticket', name: 'Scale ticket', blob, filename, format: f })
           }}
         />
       }

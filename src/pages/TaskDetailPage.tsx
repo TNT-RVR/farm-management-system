@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils'
 import { UserAvatar } from '@/components/UserAvatar'
 import { askConfirm } from '@/components/askConfirm'
 import { CARD_HEAD } from '@/lib/table-style'
+import { Page } from '@/components/Page'
 
 export function TaskDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -56,7 +57,7 @@ export function TaskDetailPage() {
   const done = task.status === 'done'
 
   return (
-    <div className="mx-auto max-w-2xl p-4 md:p-6">
+    <Page narrow>
       <Link to="/tasks" className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
         <ArrowLeft className="h-4 w-4" /> Tasks
       </Link>
@@ -361,6 +362,6 @@ export function TaskDetailPage() {
           <Trash2 className="h-4 w-4" /> Delete task
         </button>
       )}
-    </div>
+    </Page>
   )
 }

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, ChevronsDownUp, ChevronsUpDown, Search, ShieldCheck } from 'lucide-react'
 import { InfoPopover } from '@/components/InfoPopover'
 import { hasAdminAccess, useAuth, type AppRole } from '@/lib/auth'
-import { NAV_ITEMS, type NavItem } from '@/lib/nav'
+import { ALL_NAV_PATHS, NAV_ITEMS, type NavItem } from '@/lib/nav'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD } from '@/lib/table-style'
@@ -50,7 +50,7 @@ const initials = (name: string) =>
     .join('') || '?'
 
 /** Every path the matrix sets: each section and each sub-section. */
-const ALL_PATHS = NAV_ITEMS.flatMap((i) => [i.to, ...(i.children ?? []).map((c) => c.to)])
+const ALL_PATHS = ALL_NAV_PATHS.map((p) => p.to)
 
 function useAccessUsers() {
   return useQuery({

@@ -15,6 +15,7 @@ import { farmTz } from '@/lib/farm-context'
 import { CARD_HEAD } from '@/lib/table-style'
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
+import { Page } from '@/components/Page'
 
 /**
  * Every field and pasture a spray keeps livestock off, farm-wide.
@@ -26,6 +27,16 @@ import { HelpNote } from '@/components/HelpNote'
  * crop fields only, so a pasture sprayed with a quad or by a custom
  * applicator is written down here — and last what the app cannot judge yet.
  */
+/** Its own page (/spray-restrictions), or the Pastures view's tab, where the tab is the heading. */
+function Shell({ embedded, children }: { embedded: boolean; children: React.ReactNode }) {
+  if (embedded) return <div className="space-y-4">{children}</div>
+  return (
+    <Page title="Spray restrictions" className="space-y-4">
+      {children}
+    </Page>
+  )
+}
+
 export function GrazingRestrictionsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { picture, today, isLoading, error } = useGrazingPicture()
   const { profile } = useAuth()
@@ -43,10 +54,8 @@ export function GrazingRestrictionsPage({ embedded = false }: { embedded?: boole
     .sort((a, b) => Number(b.eaten.length + b.inPastures.length > 0) - Number(a.eaten.length + a.inPastures.length > 0) || a.name.localeCompare(b.name))
 
   return (
-    <div className={cn('space-y-4', !embedded && 'mx-auto max-w-3xl p-4 md:p-6')}>
-      {/* Inside the Pastures view's tab, the tab is the heading. */}
+    <Shell embedded={embedded}>
       <div>
-        {!embedded && <h1 className="text-lg font-semibold text-gray-900">Spray restrictions</h1>}
         <HelpNote
           className="text-sm text-gray-600"
           summary="What each sprayed label says about grazing or feeding the crop."
@@ -157,7 +166,7 @@ export function GrazingRestrictionsPage({ embedded = false }: { embedded?: boole
           </div>
         </section>
       )}
-    </div>
+    </Shell>
   )
 }
 

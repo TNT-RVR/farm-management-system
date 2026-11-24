@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { applyDeal, dealFor, isOffTheTop } from '@/lib/land-deals'
 import { useLandDeals } from '@/lib/land-deals-data'
 import maplibregl from 'maplibre-gl'
-import { CircleDollarSign, RefreshCw, TriangleAlert, Upload, X } from 'lucide-react'
+import { RefreshCw, TriangleAlert, Upload, X } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { YieldImport } from '@/components/YieldImport'
 import { supabase } from '@/lib/supabase'
@@ -41,7 +41,7 @@ import { useFixedAreas, useFixedPerAcre, useLandSharePerAcre } from '@/lib/farm-
 import { useOperatingCostLines } from '@/lib/operating-costs'
 import type { FuelOpRow } from '@/lib/hauling-data'
 import { cn } from '@/lib/utils'
-import { HelpNote } from '@/components/HelpNote'
+import { Page } from '@/components/Page'
 
 /**
  * The Profit/Loss Map: which parts of a field made money and which lost it.
@@ -76,15 +76,14 @@ export function ProfitLossPage() {
     )
   }
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-gray-200 bg-white px-4 pt-3 md:px-6">
-        <h1 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-          <CircleDollarSign className="h-5 w-5" /> Profit / Loss
-        </h1>
-        <p className="mt-0.5 text-xs text-gray-500">
-          Every field in {cropYear}, coloured by net $/acre. Click a field for its 5 m map and its inputs and outputs.
-        </p>
-        <div className="mt-2 flex flex-wrap items-center gap-2 pb-3">
+    <Page
+      // No title: this is a tab of the Map section, whose heading names it.
+      bleed
+      className="flex h-full flex-col"
+      infoTitle="Profit / Loss"
+      info={`Every field in ${cropYear}, coloured by net $/acre. Click a field for its 5 m map and its inputs and outputs.`}
+      actions={
+        <>
           <Select
             value="farm"
             ariaLabel="Field"
@@ -92,10 +91,11 @@ export function ProfitLossPage() {
             options={[{ value: 'farm', label: 'Whole farm' }, ...(fields ?? []).map((f) => ({ value: f.id, label: f.name }))]}
           />
           <PriceToggle value={priceMode} onChange={setPriceMode} />
-        </div>
-      </div>
+        </>
+      }
+    >
       <ProfitLossFarm cropYear={cropYear} priceMode={priceMode} onPickField={setView} />
-    </div>
+    </Page>
   )
 }
 
@@ -420,16 +420,20 @@ function ProfitLossField({
   ).length
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-gray-200 bg-white px-4 pt-3 md:px-6">
-        <h1 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-          <CircleDollarSign className="h-5 w-5" /> Profit / Loss
-        </h1>
-        <HelpNote className="mt-0.5 text-xs" summary={`What each 5 m square made or lost in ${cropYear}.`} title="How each square is worked out">
-          What each 5 m square made or lost in {cropYear}: yield × price, less the seed, fertilizer and spray the
-          machines put on that square, less the per-acre costs below.
-        </HelpNote>
-        <div className="mt-2 flex flex-wrap items-center gap-2 pb-3">
+    <Page
+      // No title: a tab of the Map section, which heads the screen.
+      bleed
+      className="flex h-full flex-col"
+      info={
+        <>
+          <p>What each 5 m square made or lost in {cropYear}: yield × price, less the seed, fertilizer and spray the
+          machines put on that square, less the per-acre costs below.</p>
+        </>
+      }
+      infoTitle="How each square is worked out"
+    >
+      <div className="px-4 md:px-6">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <Select
             value={field?.id ?? ''}
             ariaLabel="Field"
@@ -616,7 +620,7 @@ function ProfitLossField({
           )}
         </aside>
       </div>
-    </div>
+    </Page>
   )
 }
 

@@ -33,6 +33,8 @@ import { usePartnerAccess } from '@/lib/partner-view'
 import { fieldSectionPath } from './field/FieldTabs'
 import { Select } from '@/components/Select'
 import { SavedViews } from '@/components/SavedViews'
+import { PillTabs } from '@/components/PillTabs'
+import { Page } from '@/components/Page'
 import {
   cropOptions,
   filterFieldRows,
@@ -247,27 +249,21 @@ export function FieldsPage() {
   const farmId = fields?.[0]?.farm_id ?? null
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-gray-900">Fields</h1>
-          <div className="flex rounded-md border border-gray-200 bg-white p-0.5 text-sm">
-            {(['active', 'archive'] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setFilter({ tab: t }, true)}
-                className={cn(
-                  'rounded px-3 py-1 capitalize',
-                  tab === t ? 'bg-brand-700 font-semibold text-white' : 'text-gray-600 hover:bg-gray-50',
-                )}
-              >
-                {t} ({t === 'active' ? activeFields.length : archivedFields.length})
-              </button>
-            ))}
-          </div>
-        </div>
-        {canAdd && (
-          <div className="flex items-center gap-2">
+    <Page
+      title="Fields"
+      tabs={
+        <PillTabs
+          tabs={[
+            { key: 'active', label: `Active (${activeFields.length})` },
+            { key: 'archive', label: `Archive (${archivedFields.length})` },
+          ]}
+          value={tab}
+          onChange={(t) => setFilter({ tab: t }, true)}
+        />
+      }
+      actions={
+        canAdd && (
+          <>
             <button
               onClick={() => setAdding(true)}
               className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-800"
@@ -280,9 +276,10 @@ export function FieldsPage() {
             >
               <FileUp className="h-3.5 w-3.5" /> Import boundaries
             </Link>}
-          </div>
-        )}
-      </div>
+          </>
+        )
+      }
+    >
 
       {/* Two filters and the saved views for them. A 20-odd row list does not
           want a search box, but "what is still growing" and "the canola" are
@@ -440,7 +437,7 @@ export function FieldsPage() {
           error={create.error ? (create.error as Error).message : null}
         />
       )}
-    </div>
+    </Page>
   )
 }
 

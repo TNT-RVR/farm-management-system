@@ -4,6 +4,7 @@ import { BasisTab } from '@/pages/marketing/BasisTab'
 import { TargetsTab } from '@/pages/marketing/TargetsTab'
 import { useCropYear } from '@/lib/crop-year'
 import { useTab } from '@/lib/useTab'
+import { Page } from '@/components/Page'
 
 const TABS = [
   { key: 'prices', label: 'Prices' },
@@ -29,12 +30,10 @@ export function CropMarketsPage() {
   const { cropYear } = useCropYear()
 
   return (
-    <div className="p-4 md:p-6">
-      <h1 className="mb-3 text-lg font-semibold text-gray-900">Markets</h1>
-      <PillTabs tabs={TABS} value={tab} onChange={setTab} className="mb-3" />
+    <Page title="Markets" tabs={<PillTabs tabs={TABS} value={tab} onChange={setTab} />}>
       {tab === 'prices' && <MarketsTab />}
       {tab === 'basis' && <BasisTab />}
       {tab === 'targets' && <TargetsTab year={cropYear} />}
-    </div>
+    </Page>
   )
 }

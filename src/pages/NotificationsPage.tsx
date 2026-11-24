@@ -4,6 +4,7 @@ import { CheckCheck, Settings2 } from 'lucide-react'
 import { NotificationItem } from '@/components/NotificationItem'
 import { PillTabs } from '@/components/PillTabs'
 import { Select } from '@/components/Select'
+import { Page } from '@/components/Page'
 import {
   useNotificationFeed,
   useNotifications,
@@ -62,11 +63,11 @@ export function NotificationsPage() {
     )
 
   return (
-    <div className="mx-auto max-w-2xl p-4 md:p-6">
-      <div className="mb-3 flex items-center gap-2">
-        <h1 className="flex-1 text-lg font-semibold text-gray-900">
-          Notifications{unread > 0 ? ` (${unread} unread)` : ''}
-        </h1>
+    <Page narrow
+      title="Notifications"
+      info={unread > 0 ? `${unread} unread.` : undefined}
+      actions={
+        <>
         <button
           type="button"
           disabled={unread === 0}
@@ -83,9 +84,9 @@ export function NotificationsPage() {
         >
           <Settings2 className="h-4 w-4" />
         </Link>
-      </div>
-
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+        </>
+      }
+      tabs={
         <PillTabs<Show>
           tabs={[
             { key: 'all', label: 'All' },
@@ -94,12 +95,15 @@ export function NotificationsPage() {
           value={show}
           onChange={(k) => setParam('show', k === 'unread' ? 'unread' : null)}
         />
+      }
+    >
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <Select
           value={kind}
           options={kindOptions}
           onChange={(v) => setParam('kind', v || null)}
           ariaLabel="Kind"
-          className="ml-auto min-w-40"
+          className="min-w-40"
         />
       </div>
 
@@ -137,6 +141,6 @@ export function NotificationsPage() {
           {show === 'unread' || kind ? 'Nothing matches.' : 'No notifications yet.'}
         </p>
       )}
-    </div>
+    </Page>
   )
 }

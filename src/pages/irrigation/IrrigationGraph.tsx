@@ -12,6 +12,7 @@ import { useOnline } from '@/lib/useOnline'
 import { useWheelZoom } from '@/lib/useWheelZoom'
 import { chartToPng } from '@/lib/chart-image'
 import { downloadBlob, tableReportToPdf } from '@/lib/table-report'
+import { keepMadeReport } from '@/lib/made-reports'
 import { groupBalanceByZone } from '@/lib/balance-series'
 import {
   soilCapacities,
@@ -131,7 +132,9 @@ export function IrrigationGraph({ fieldId: chosen, onFieldChange }: { fieldId?: 
         fieldId: selectedId,
         year,
       })
-      downloadBlob(await tableReportToPdf(report), `${aimmFileName(fieldName, graphLabel)}.pdf`)
+      const blob = await tableReportToPdf(report)
+      downloadBlob(blob, `${aimmFileName(fieldName, graphLabel)}.pdf`)
+      keepMadeReport({ reportId: 'aimm', name: 'AIMM field report', blob, filename: `${aimmFileName(fieldName, graphLabel)}.pdf`, format: 'PDF', cropYear: year, labels: { Field: fieldName, 'Crop year': String(year), Graph: graphLabel }, family: 'water-report' })
       setExporting('idle')
     } catch {
       setExporting('error')

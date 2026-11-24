@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import type React from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ChevronRight, Presentation } from 'lucide-react'
-import { PageHeader } from '@/components/PageHeader'
+import { ChevronRight } from 'lucide-react'
 import { InfoPopover } from '@/components/InfoPopover'
 import { AssumptionNote } from '@/components/AssumptionNote'
 import { SETUP_LINKS } from '@/lib/setup-links'
@@ -12,6 +11,7 @@ import { useCalfCrop, useCalfMoney, useGrassDays, useWinterFigures } from '@/lib
 import { saleWeightSource } from '@/lib/calf-sale'
 import { money, n0 } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { Page } from '@/components/Page'
 
 /*
  * One page per ranch for a meeting or a visitor (Sam, 2 Nov 2026): the herd,
@@ -285,18 +285,16 @@ export function RanchSummaryPage() {
   )
 
   return (
-    <div className="mx-auto max-w-5xl p-4 md:p-6">
-      <PageHeader
-        title="Ranch summary"
-        icon={<Presentation className="h-5 w-5 text-brand-700" />}
-        subtitle={new Date().toLocaleDateString('en-CA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-        info={
-          <InfoPopover title="Ranch summary">
-            <p>Each figure is worked out by the page it links to, so it always matches there. Tap one to open it.</p>
-          </InfoPopover>
-        }
-        actions={picker}
-      />
+    <Page
+      title="Ranch summary"
+      info={
+        <>
+          <p>{new Date().toLocaleDateString('en-CA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+          <p>Each figure is worked out by the page it links to, so it always matches there. Tap one to open it.</p>
+        </>
+      }
+      actions={picker}
+    >
       {!ranches ? (
         <p className="py-16 text-center text-sm text-gray-400">Loading ranches…</p>
       ) : ranchId === undefined ? (
@@ -310,6 +308,6 @@ export function RanchSummaryPage() {
           <AssumptionNote ranchId={ranchId} />
         </>
       )}
-    </div>
+    </Page>
   )
 }

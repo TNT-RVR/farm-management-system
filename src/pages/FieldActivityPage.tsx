@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, History } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { Select } from '@/components/Select'
 import { useAllFields, useFieldAudit, useUsers } from '@/lib/queries'
 import { cn } from '@/lib/utils'
+import { Page } from '@/components/Page'
 
 /**
  * Everything that has happened to one field.
@@ -84,7 +85,10 @@ export function FieldActivityPage() {
   }, [rows])
 
   return (
-    <div className="p-4 md:p-6">
+    <Page
+      title={`Activity${field ? ` · ${field.name}` : ''}`}
+      info="Every recorded change to this field, newest first. Written by the database itself, so it covers changes made anywhere in the app."
+    >
       {/* Back to the section this drills down from, not to the top of the
           field — this is the long form of what the History tab summarises. */}
       <Link
@@ -94,14 +98,6 @@ export function FieldActivityPage() {
         <ArrowLeft className="h-3.5 w-3.5" /> {field?.name ?? 'The field'} · History
       </Link>
 
-      <h1 className="mt-2 flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-        <History className="h-5 w-5 text-gray-400" /> Activity
-        {field && <span className="font-normal text-gray-500">· {field.name}</span>}
-      </h1>
-      <p className="mt-0.5 text-xs text-gray-500">
-        Every recorded change to this field, newest first. Written by the database itself, so it
-        covers changes made anywhere in the app.
-      </p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <div className="flex rounded-md border border-gray-200 p-0.5">
@@ -207,6 +203,6 @@ export function FieldActivityPage() {
           ))}
         </div>
       )}
-    </div>
+    </Page>
   )
 }

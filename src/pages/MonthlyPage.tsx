@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { YearSelect } from '@/components/YearSelect'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { CardList, Dot, RowCard, SummaryLine } from '@/components/RowCards'
+import { Page } from '@/components/Page'
 
 /**
  * Monthly jobs (rebuilt 24 Oct 2026): what typically needs doing in a month.
@@ -35,9 +36,10 @@ export function MonthlyPage() {
   const now = ymOf(new Date())
 
   return (
-    <div className="p-4 md:p-6">
-      <h1 className="mb-3 text-lg font-semibold text-gray-900">Monthly jobs</h1>
-      <PillTabs tabs={TABS.map((t) => ({ key: t, label: LABEL[t] }))} value={tab} onChange={setTab} className="mb-4" />
+    <Page
+      title="Monthly jobs"
+      tabs={<PillTabs tabs={TABS.map((t) => ({ key: t, label: LABEL[t] }))} value={tab} onChange={setTab} />}
+    >
       {tab === 'todo' && (
         <>
           <label className="mb-3 flex items-center gap-2 text-sm text-gray-700">
@@ -49,7 +51,7 @@ export function MonthlyPage() {
       )}
       {tab === 'completed' && <CompletedTab />}
       {tab === 'jobs' && <JobsTab />}
-    </div>
+    </Page>
   )
 }
 

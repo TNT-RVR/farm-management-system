@@ -33,6 +33,7 @@ import { CardList, RowCard } from '@/components/RowCards'
 import { askConfirm } from '@/components/askConfirm'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { Modal } from '@/components/Modal'
+import { Page } from '@/components/Page'
 
 const STATUS_COLORS: Record<ContractStatus, string> = {
   open: 'bg-sky-100 text-sky-800',
@@ -230,20 +231,22 @@ export function ContractsPage() {
   )
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold text-gray-900">Contracts {cropYear}</h1>
-        {tab === 'contracts' && isManager && !isPast && (
+    <Page
+      title={`Contracts ${cropYear}`}
+      tabs={<PillTabs tabs={tabs} value={tab} onChange={setTab} />}
+      actions={
+        tab === 'contracts' &&
+        isManager &&
+        !isPast && (
           <button
             onClick={() => setAdding((a) => !a)}
             className="flex items-center gap-1.5 rounded-md bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-800"
           >
             <Plus className="h-3.5 w-3.5" /> New contract
           </button>
-        )}
-      </div>
-
-      <PillTabs tabs={tabs} value={tab} onChange={setTab} className="mb-3" />
+        )
+      }
+    >
 
       {tab === 'position' && (
         <div className="space-y-5">
@@ -511,6 +514,6 @@ export function ContractsPage() {
           onClose={() => setEditing(null)}
         />
       )}
-    </div>
+    </Page>
   )
 }

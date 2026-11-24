@@ -13,6 +13,7 @@ import { LoadSummary } from './LoadSummary'
 import { ExportButton } from '@/components/ExportButton'
 import { useAllCropPrices } from '@/lib/forecast-data'
 import { downloadBlob, tableReportToCsv, tableReportToPdf } from '@/lib/table-report'
+import { keepMadeReport } from '@/lib/made-reports'
 import { fetchCleanYields, storedPhoto, ticketFacts, ticketsReport } from '@/lib/scale-ticket-report'
 import { usePartnerLoads } from '@/lib/partner-view'
 import { shortDay } from '@/lib/field-state'
@@ -150,7 +151,9 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
       .join(' · ')
     const name = `Scale tickets ${what.replace(/[" ]+/g, ' ').trim()}`
     if (format === 'CSV') {
-      downloadBlob(new Blob([tableReportToCsv(ticketsReport(tickets, { filters: what, withPages: false }))], { type: 'text/csv' }), `${name}.csv`)
+      const blob = new Blob([tableReportToCsv(ticketsReport(tickets, { filters: what, withPages: false }))], { type: 'text/csv' })
+      downloadBlob(blob, `${name}.csv`)
+      keepMadeReport({ reportId: 'scale-tickets', name: 'Scale tickets', blob, filename: `${name}.csv`, format, labels: { Showing: what } })
       return
     }
     // Both photos of every load, four loads at a time.
@@ -162,6 +165,7 @@ export function WeighScaleTab({ cropYear }: { cropYear: number }) {
     }
     const pdf = await tableReportToPdf(ticketsReport(tickets, { filters: what, withPages: true, photos: (t) => photos.get(t.load.id) ?? [null, null] }))
     downloadBlob(pdf, `${name}.pdf`)
+    keepMadeReport({ reportId: 'scale-tickets', name: 'Scale tickets', blob: pdf, filename: `${name}.pdf`, format, labels: { Showing: what } })
   }
   const SortIcon = ({ k }: { k: TicketSort }) => (sort === k ? desc ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" /> : null)
 

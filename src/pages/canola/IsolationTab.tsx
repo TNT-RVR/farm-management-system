@@ -30,6 +30,7 @@ import {
 import { AddButton, DetailList, EditButton, RecordEditModal, type EditField } from '@/components/RecordEditor'
 import { isolationReport, type IsolationRow } from '@/lib/reports/canola-reports'
 import { downloadBlob, tableReportToCsv, tableReportToPdf } from '@/lib/table-report'
+import { keepMadeReport } from '@/lib/made-reports'
 import { farmBrand } from '@/lib/farm-setup'
 import { cn } from '@/lib/utils'
 import { lastSeedCanola } from '@/lib/seed-canola-year'
@@ -146,8 +147,10 @@ export function IsolationTab() {
     try {
       const r = await build(kind === 'pdf')
       const name = `Canola isolation ${fieldName(fieldId)} ${year}`
-      if (kind === 'pdf') downloadBlob(await tableReportToPdf(r), `${fileSafe(name)}.pdf`)
-      else downloadBlob(new Blob([tableReportToCsv(r)], { type: 'text/csv' }), `${fileSafe(name)}.csv`)
+      const blob = kind === 'pdf' ? await tableReportToPdf(r) : new Blob([tableReportToCsv(r)], { type: 'text/csv' })
+      const filename = `${fileSafe(name)}.${kind}`
+      downloadBlob(blob, filename)
+      keepMadeReport({ reportId: 'canola-isolation', name: 'Canola isolation, quarter by quarter', blob, filename, format: kind.toUpperCase(), cropYear: year, labels: { Field: fieldName(fieldId), Year: String(year) }, family: 'seed-canola' })
     } finally {
       setBusy(null)
     }

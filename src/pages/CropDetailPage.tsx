@@ -38,6 +38,7 @@ import { askConfirm } from '@/components/askConfirm'
 import { CARD_HEAD } from '@/lib/table-style'
 import { KgAside } from '@/components/KgAside'
 import { dbErrorMessage } from '@/lib/db-error'
+import { Page } from '@/components/Page'
 
 type CropUpdate = Database['public']['Tables']['crops']['Update']
 type InputCategory = CropInputRow['category']
@@ -833,7 +834,7 @@ export function CropDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-4 md:p-6">
+    <Page narrow>
       <Link
         to="/crops"
         className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800"
@@ -872,6 +873,6 @@ export function CropDetailPage() {
           <CropFieldHistory key={`hist-${crop.id}`} cropId={crop.id} cropName={crop.name} />
         </Fold>
       </div>
-    </div>
+    </Page>
   )
 }

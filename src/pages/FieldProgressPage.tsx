@@ -22,6 +22,7 @@ import {
   type ProgressKind,
 } from '@/lib/fieldProgress'
 import { dbErrorMessage } from '@/lib/db-error'
+import { Page } from '@/components/Page'
 
 /**
  * How much of the farm is seeded, and how much is off.
@@ -284,16 +285,10 @@ export function FieldProgressPage() {
   }, [kind, outstanding])
 
   return (
-    <div className="space-y-4 p-4 md:p-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">Seeding &amp; harvest progress</h1>
-          <HelpNote summary="Acres across the whole farm." title="What is counted">
-            Acres across the whole farm. Ground that is not ours to do is left out of the side it
-            does not belong to — summer fallow from both, established perennials from seeding only,
-            and the crop-shared potatoes from both.
-          </HelpNote>
-        </div>
+    <Page
+      title="Seeding & harvest progress"
+      className="space-y-4"
+      actions={
         <Select
           value={String(year)}
           ariaLabel="Crop year"
@@ -301,7 +296,13 @@ export function FieldProgressPage() {
           options={years}
           className="shrink-0"
         />
-      </div>
+      }
+    >
+      <HelpNote summary="Acres across the whole farm." title="What is counted">
+        Acres across the whole farm. Ground that is not ours to do is left out of the side it
+        does not belong to — summer fallow from both, established perennials from seeding only,
+        and the crop-shared potatoes from both.
+      </HelpNote>
 
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading…</p>
@@ -433,6 +434,6 @@ export function FieldProgressPage() {
           </HelpNote>
         </>
       )}
-    </div>
+    </Page>
   )
 }

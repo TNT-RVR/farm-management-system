@@ -1,6 +1,6 @@
 import { toCsv, type ExportColumn } from '@/hooks/useExport'
 import type { UnitSystem } from '@/lib/units'
-import { autoAlign, tableReportToCsv, type Align, type Cell, type ReportSection, type TableReport } from '@/lib/table-report'
+import { autoAlign, tableReportToCsv, tableReportToPdf, type Align, type Cell, type ReportSection, type TableReport } from '@/lib/table-report'
 import type { ReportFormat } from './catalogue'
 
 /**
@@ -289,4 +289,33 @@ export function initialParams(specs: ParamSpec[], cropYear: number, today: strin
     else p[s.key] = ''
   }
   return p
+}
+
+/**
+ * A report form's first choices: the report's own defaults, then what a link
+ * asked for (?field=&year=), then what was chosen under another report of the
+ * same family — a choice only when this report offers it. With nothing carried
+ * and no link, exactly initialParams: a report in a family starts where it did
+ * on a row of its own.
+ */
+export function startParams(specs: ParamSpec[], cropYear: number, today: string, preset?: ParamValues, carried?: ParamValues): ParamValues {
+  const start = initialParams(specs, cropYear, today)
+  for (const s of specs) {
+    const v = preset?.[s.key] || carried?.[s.key]
+    if (!v) continue
+    if (s.kind === 'choice' && !s.options.some((o) => o.value === v)) continue
+    start[s.key] = v
+  }
+  return start
+}
+
+/**
+ * The file in hand: the PDF through the branded layout, the CSV as one flat
+ * table, and a file the report made in its own shape (a ZIP, Markdown) as it is.
+ */
+export async function madeFile(g: Made, format: ReportFormat): Promise<ReportFile> {
+  if (isFile(g)) return { blob: g.blob, filename: g.filename }
+  if (!rowCount(g)) throw new Error('Nothing to put in it.')
+  if (format === 'CSV') return { blob: new Blob([reportCsv(g)], { type: 'text/csv;charset=utf-8' }), filename: g.filename.endsWith('.csv') ? g.filename : `${g.filename}.csv` }
+  return { blob: await tableReportToPdf(reportTable(g)), filename: `${g.filename}.pdf` }
 }

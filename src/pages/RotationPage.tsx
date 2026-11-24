@@ -1,6 +1,4 @@
 import { lazy } from 'react'
-import { Repeat } from 'lucide-react'
-import { PageHeader } from '@/components/PageHeader'
 import { PillTabs } from '@/components/PillTabs'
 import { TabSuspense } from '@/components/TabSuspense'
 import { useTab } from '@/lib/useTab'
@@ -8,6 +6,7 @@ import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { RotationPlanner } from '@/pages/plan/RotationPlanner'
 import { usePartnerView } from '@/lib/partner-view'
 import { isPartnerTab } from '@/lib/partner'
+import { Page } from '@/components/Page'
 
 // The rules are read once a winter and the recommendations are run a handful
 // of times; neither needs to be in the plan's chunk.
@@ -35,24 +34,25 @@ export function RotationPage() {
   const partner = usePartnerView()
   const [tab, setTab] = useTab<Tab>('rotation', partner ? TABS.filter((t) => isPartnerTab('/rotation', t)) : TABS)
   return (
-    <div className="space-y-3 p-4 md:p-6">
-      <PageHeader
-        title="Crop rotation plan"
-        icon={<Repeat className="h-5 w-5 text-brand-700" />}
-        subtitle="Which crops could go on each field for the next four years"
-      />
-      <PillTabs
-        tabs={[
-          { key: 'plan', label: 'Plan' },
-          ...(partner ? [] : [{ key: 'advice' as const, label: 'Recommendations' }]),
-          { key: 'rules', label: 'Rules' },
-        ]}
-        value={tab}
-        onChange={setTab}
-      />
+    <Page
+      title="Crop rotation plan"
+      className="space-y-3"
+      info="Which crops could go on each field for the next four years."
+      tabs={
+        <PillTabs
+          tabs={[
+            { key: 'plan', label: 'Plan' },
+            ...(partner ? [] : [{ key: 'advice' as const, label: 'Recommendations' }]),
+            { key: 'rules', label: 'Rules' },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+      }
+    >
       <TabSuspense>
         {tab === 'rules' ? <RotationRulesTab isManager={isManager} /> : <RotationPlanner isManager={isManager} view={tab} />}
       </TabSuspense>
-    </div>
+    </Page>
   )
 }

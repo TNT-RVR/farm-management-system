@@ -1,9 +1,9 @@
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
-import { PageHeader } from '@/components/PageHeader'
 import { MENU_SECTION_BY_KEY, filterSections, isLeaf } from '@/lib/nav-tree'
 import { useMenu, useMenuDevice } from '@/lib/menu-prefs'
 import { ShortcutMark } from '@/components/layout/SeasonSidebar'
+import { Page } from '@/components/Page'
 
 /**
  * A section's own page (/menu/:section): its views under their headings, each
@@ -26,21 +26,19 @@ export function MenuSectionPage() {
 
   if (!def || !section) {
     return (
-      <div className="p-4 md:p-6">
+      <Page title="Menu">
         <p className="text-sm text-gray-600">
           Nothing here for you.{' '}
           <Link to="/dashboard" className="text-brand-700 underline">
             Go home
           </Link>
         </p>
-      </div>
+      </Page>
     )
   }
 
-  const Icon = section.icon
   return (
-    <div className="mx-auto max-w-3xl p-4 md:p-6">
-      <PageHeader title={section.label} icon={<Icon className="h-5 w-5 text-brand-700" />} />
+    <Page narrow title={section.label}>
       <div className="space-y-5">
         {section.groups.map((g) => (
           <section key={g.key}>
@@ -73,6 +71,6 @@ export function MenuSectionPage() {
           </section>
         ))}
       </div>
-    </div>
+    </Page>
   )
 }

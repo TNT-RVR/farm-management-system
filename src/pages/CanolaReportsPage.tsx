@@ -1,10 +1,9 @@
 import { lazy } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { Flower2 } from 'lucide-react'
-import { PageHeader } from '@/components/PageHeader'
 import { PillTabs } from '@/components/PillTabs'
 import { useTab } from '@/lib/useTab'
 import { TabSuspense } from '@/components/TabSuspense'
+import { Page } from '@/components/Page'
 
 // Isolation is a map; each tab is its own chunk.
 const HistoryTab = lazy(() => import('@/pages/canola/HistoryTab').then((m) => ({ default: m.HistoryTab })))
@@ -38,17 +37,22 @@ export function CanolaReportsPage() {
 function CanolaReportsView() {
   const [tab, setTab] = useTab<Tab>('canola', TABS)
   return (
-    <div className="mx-auto max-w-6xl space-y-3 p-4 md:p-6">
-      <PageHeader title="Isolation" icon={<Flower2 className="h-5 w-5 text-brand-700" />} subtitle="The mile around each seed field, and its field history, for the seed companies" />
-      <PillTabs
-        tabs={[
-          { key: 'isolation', label: 'Isolation' },
-          { key: 'history', label: 'Field history' },
-        ]}
-        value={tab}
-        onChange={setTab}
-      />
+    <Page
+      title="Isolation"
+      className="space-y-3"
+      info="The mile around each seed field, and its field history, for the seed companies."
+      tabs={
+        <PillTabs
+          tabs={[
+            { key: 'isolation', label: 'Isolation' },
+            { key: 'history', label: 'Field history' },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+      }
+    >
       <TabSuspense>{tab === 'isolation' ? <IsolationTab /> : <HistoryTab />}</TabSuspense>
-    </div>
+    </Page>
   )
 }

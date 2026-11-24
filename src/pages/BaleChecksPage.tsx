@@ -2,9 +2,8 @@ import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { FileText, Pencil, Plus, Thermometer, Trash2, X } from 'lucide-react'
+import { FileText, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { ConfirmDialog } from '@/components/Modal'
-import { PageHeader } from '@/components/PageHeader'
 import { Select } from '@/components/Select'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import {
@@ -47,7 +46,7 @@ const RISK_WORD: Record<RiskLevel, string> = { ok: 'OK', watch: 'Watch', danger:
  * insurer wants after a hay fire — Reports → Bale temperature & moisture log
  * prints it.
  */
-export function BaleChecksPage({ embedded = false }: { embedded?: boolean } = {}) {
+export function BaleChecksPage() {
   const [params, setParams] = useSearchParams()
   const today = localDateKey()
   const yearAgo = `${Number(today.slice(0, 4)) - 1}${today.slice(4)}`
@@ -73,23 +72,8 @@ export function BaleChecksPage({ embedded = false }: { embedded?: boolean } = {}
     </div>
   )
 
-  return (
-    <div className={cn('space-y-3', !embedded && 'mx-auto max-w-4xl p-4 md:p-6')}>
-      {/* Inside the Feed view's tab the tab names the page, so only the
-          one-line description and the buttons stay. */}
-      {embedded ? (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-gray-600">Core temperature and moisture, a couple of bales of each kind, once a month.</p>
-          {actions}
-        </div>
-      ) : (
-        <PageHeader
-          title="Bale checks"
-          icon={<Thermometer className="h-5 w-5 text-brand-700" />}
-          subtitle="Core temperature and moisture, a couple of bales of each kind, once a month"
-          actions={actions}
-        />
-      )}
+  const body = (
+    <>
       {adding && <CheckForm onDone={() => setAdding(false)} />}
       {isLoading && <p className="text-sm text-gray-500">Loading…</p>}
       {checks && !checks.length && !adding && <p className="text-sm text-gray-500">No checks in the last year yet.</p>}
@@ -98,6 +82,19 @@ export function BaleChecksPage({ embedded = false }: { embedded?: boolean } = {}
           <CheckRow key={c.id} check={c} />
         ))}
       </ul>
+    </>
+  )
+
+  // Only ever the Bale checks tab of the Feed view, which draws the frame and
+  // names the page; /bale-checks redirects there. It kept a <Page> of its own
+  // for the route it lost on 24 Oct 2026, which nothing could reach.
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-gray-600">Core temperature and moisture, a couple of bales of each kind, once a month.</p>
+        {actions}
+      </div>
+      {body}
     </div>
   )
 }

@@ -42,6 +42,7 @@ import { useOpenParam } from '@/lib/useOpenParam'
 import { useHarvestEstimates } from '@/lib/harvest-estimate-data'
 import { cn } from '@/lib/utils'
 import { askConfirm } from '@/components/askConfirm'
+import { Page } from '@/components/Page'
 
 const KIND_COLORS: Record<EventKind, string> = {
   general: 'bg-gray-200 text-gray-800',
@@ -657,7 +658,7 @@ export function CalendarPage() {
   const pickedItems = picked ? (byDay.get(picked) ?? []) : []
 
   return (
-    <div className="p-4 md:p-6">
+    <Page title="Calendar">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <button
@@ -667,7 +668,8 @@ export function CalendarPage() {
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <h1 className="min-w-40 text-center text-lg font-semibold text-gray-900">{monthLabel}</h1>
+          {/* The month, not the page: the page is Calendar, which the frame says. */}
+          <h2 className="min-w-40 text-center text-lg font-semibold text-gray-900">{monthLabel}</h2>
           <button
             onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
             aria-label="Next month"
@@ -883,6 +885,6 @@ export function CalendarPage() {
           onClose={() => setDialog(null)}
         />
       )}
-    </div>
+    </Page>
   )
 }

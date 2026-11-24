@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ClipboardCheck, Gauge, RefreshCw, Search, ShieldCheck, Tractor, Wrench } from 'lucide-react'
+import { ClipboardCheck, Gauge, RefreshCw, Search, ShieldCheck, Wrench } from 'lucide-react'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { usePartnerView } from '@/lib/partner-view'
 import {
@@ -14,6 +14,7 @@ import {
 import { serviceSummary } from '@/lib/maintenance'
 import { WARRANTY_STYLE, warrantyStatus } from '@/lib/warranty'
 import { staleHoursLabel, staleHoursMachines } from '@/lib/stale-hours'
+import { fleetAlerts } from '@/lib/fleet-alerts'
 import { equipmentKind, kindOptions } from '@/lib/equipment-types'
 import { isDue } from '@/lib/truck-inspection'
 import { useTruckInspections } from '@/lib/truck-inspection-data'
@@ -21,6 +22,7 @@ import { localDateKey } from '@/lib/ranchWeather'
 import { AddButton } from '@/components/RecordEditor'
 import { ManualEquipmentModal } from '@/components/EquipmentEditor'
 import { cn } from '@/lib/utils'
+import { Page } from '@/components/Page'
 
 const CATEGORY_LABEL: Record<string, string> = {
   machine: 'Machines',
@@ -193,6 +195,7 @@ export function EquipmentPage() {
     return new Map((all ?? []).map((e) => [e.id, serviceSummary(byId.get(e.id) ?? [], e.engine_hours)]))
   }, [plans, all])
   const servicesDue = [...serviceByMachine.values()].reduce((n, s) => n + s.overdue + s.dueSoon, 0)
+  const alerts = fleetAlerts({ endingSoon, servicesDue })
   const staleHours = useMemo(() => staleHoursMachines(all ?? []), [all])
   // The semis the January reminder would name: type Truck, nothing signed this year.
   const inspectionDue = useMemo(() => {
@@ -205,31 +208,21 @@ export function EquipmentPage() {
   }, [inspections, all])
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-            <Tractor className="h-5 w-5 text-brand-700" /> Equipment service
-          </h1>
-          <p className="text-xs text-gray-500">
-            {total} machines and implements{source}
-            {withHours > 0 && ` · ${withHours} reporting engine hours`}
-            {endingSoon > 0 && (
-              <span className="font-medium text-amber-700">
-                {' · '}
-                {endingSoon} {endingSoon === 1 ? 'warranty' : 'warranties'} running out
-              </span>
-            )}
-            {servicesDue > 0 && (
-              <span className="font-medium text-amber-700">
-                {' · '}
-                {servicesDue} {servicesDue === 1 ? 'service' : 'services'} due
-              </span>
-            )}
-          </p>
-        </div>
-        {(isManager || partner) && (
-          <div className="flex flex-wrap items-center gap-2">
+    <Page
+      title="Equipment service"
+      /* The standing numbers, in view as they were before the frame — but
+         not the two amber counts that used to share this line. A warning in
+         grey six-point type is still a warning nobody reads, so those keep
+         the strip of their own below (Sam, 20 Nov 2026). */
+      info={
+        <p>
+          {total} machines and implements{source}
+          {withHours > 0 && ` · ${withHours} reporting engine hours`}
+        </p>
+      }
+      actions={
+        (isManager || partner) && (
+          <>
             {/* For what Deere does not know about: the shop tractor, an auger, a trailer. */}
             <AddButton label="Add by hand" onClick={() => setAdding(true)} />
             {isManager && (
@@ -242,9 +235,10 @@ export function EquipmentPage() {
               Sync from Deere
             </button>
             )}
-          </div>
-        )}
-      </div>
+          </>
+        )
+      }
+    >
       {adding && <ManualEquipmentModal machine={null} onClose={() => setAdding(false)} />}
 
       {sync.isError && <p className="mb-2 text-xs text-red-600">{(sync.error as Error).message}</p>}
@@ -252,6 +246,23 @@ export function EquipmentPage() {
         <p className="mb-2 text-xs text-gray-500">
           Pulling equipment and engine hours — the list fills in as it goes.
         </p>
+      )}
+
+      {/* What the fleet needs doing, on the page rather than behind the ⓘ
+          (Sam, 20 Nov 2026). The ⓘ is the right home for "59 machines and
+          implements"; it is the wrong home for a warning, which nobody opens.
+          Counted over the whole fleet, not the filtered view, so it still says
+          there is something to deal with while you are searching for something
+          else — and each machine still wears its own badge in the list. */}
+      {alerts.length > 0 && (
+        <ul className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
+          {alerts.map((a) => (
+            <li key={a.key} className="flex items-center gap-1.5">
+              {a.key === 'warranty' ? <ShieldCheck className="h-4 w-4 shrink-0" /> : <Wrench className="h-4 w-4 shrink-0" />}
+              {a.text}
+            </li>
+          ))}
+        </ul>
       )}
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -350,6 +361,6 @@ export function EquipmentPage() {
           )}
         </div>
       )}
-    </div>
+    </Page>
   )
 }

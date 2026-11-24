@@ -29,6 +29,7 @@ import type { Database } from '@/lib/database.types'
 type RunRow = Database['public']['Tables']['checklist_runs']['Row']
 import { cn } from '@/lib/utils'
 import { CARD_HEAD } from '@/lib/table-style'
+import { Page } from '@/components/Page'
 
 const CATEGORY_COLORS: Record<ChecklistCategory, string> = {
   irrigation: 'bg-sky-100 text-sky-800',
@@ -269,9 +270,9 @@ export function ChecklistsPage() {
   })
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold text-gray-900">Checklists</h1>
+    <Page
+      title="Checklists"
+      tabs={
         <PillTabs
           tabs={[
             { key: 'runs', label: `Runs (${cropYear})` },
@@ -279,10 +280,9 @@ export function ChecklistsPage() {
           ]}
           value={tab}
           onChange={setTab}
-          className="border-b-0 pb-0"
         />
-      </div>
-
+      }
+    >
       {tab === 'templates' ? (
         <>
           <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -510,6 +510,6 @@ export function ChecklistsPage() {
           onConfirm={() => deleteRun.mutate(deletingRun.id)}
         />
       )}
-    </div>
+    </Page>
   )
 }

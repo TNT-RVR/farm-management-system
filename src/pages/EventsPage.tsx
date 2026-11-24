@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils'
 import { rowClick } from '@/components/RecordEditor'
 import { askConfirm } from '@/components/askConfirm'
 import { dbErrorMessage } from '@/lib/db-error'
+import { Page } from '@/components/Page'
 
 const STATUSES: { key: EventStatus; label: string }[] = [
   { key: 'watching', label: 'Watching' },
@@ -318,19 +319,17 @@ export function EventsPage() {
     .reduce((sum, e) => sum + (priceToday(e) ?? 0), 0)
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-            <CalendarDays className="h-5 w-5 text-brand-700" /> Conferences &amp; shows
-          </h1>
-          <p className="text-xs text-gray-500">
-            Ag and pollination events worth the trip, mostly prairie, scored against what we grow.
-            {committed > 0 && ` ${fmtMoney(committed)} committed so far.`}
-          </p>
-        </div>
-        {canEdit && (
-          <div className="flex items-center gap-2">
+    <Page
+      title="Conferences & shows"
+      info={
+        <>
+          <p>Ag and pollination events worth the trip, mostly prairie, scored against what we grow.</p>
+          {committed > 0 && <p>{fmtMoney(committed)} committed so far.</p>}
+        </>
+      }
+      actions={
+        canEdit && (
+          <>
             <button
               onClick={() => pull.mutate()}
               disabled={pull.isPending}
@@ -346,10 +345,20 @@ export function EventsPage() {
             >
               <Plus className="h-4 w-4" /> Add an event
             </button>
-          </div>
-        )}
-      </div>
-
+          </>
+        )
+      }
+      tabs={
+        <PillTabs
+          tabs={[
+            { key: 'upcoming', label: 'Upcoming' },
+            { key: 'all', label: 'Everything' },
+          ]}
+          value={when}
+          onChange={setWhen}
+        />
+      }
+    >
       {pull.isError && (
         <p className="mb-2 text-xs text-red-600">{(pull.error as Error).message}</p>
       )}
@@ -364,16 +373,6 @@ export function EventsPage() {
       {!editing && (update.error || del.error) && (
         <p className="mb-2 text-xs text-red-600">{dbErrorMessage(update.error ?? del.error)}</p>
       )}
-
-      <PillTabs
-        tabs={[
-          { key: 'upcoming', label: 'Upcoming' },
-          { key: 'all', label: 'Everything' },
-        ]}
-        value={when}
-        onChange={setWhen}
-        className="mb-3"
-      />
 
       <div className="mb-3 flex flex-wrap gap-2">
         <Select
@@ -462,7 +461,7 @@ export function EventsPage() {
           onSave={(e) => save.mutate(e, { onSuccess: () => setAdding(false) })}
         />
       )}
-    </div>
+    </Page>
   )
 }
 

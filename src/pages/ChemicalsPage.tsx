@@ -5,13 +5,7 @@ import { productName, readable } from '@/lib/chemical-display'
 import { usePartnerView } from '@/lib/partner-view'
 import { isPartnerTab } from '@/lib/partner'
 import { useTab } from '@/lib/useTab'
-import {
-  AlertTriangle,
-  BookOpen,
-  FlaskConical,
-  RefreshCw,
-  Search,
-} from 'lucide-react'
+import { AlertTriangle, BookOpen, RefreshCw, Search } from 'lucide-react'
 import { ChemicalLabelDetail } from '@/components/ChemicalLabelDetail'
 import { PillTabs } from '@/components/PillTabs'
 import { SprayCheck } from '@/components/SprayCheck'
@@ -40,6 +34,7 @@ import { cn } from '@/lib/utils'
 import { localDate } from '@/lib/date-range'
 import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { useRetailerName } from '@/lib/products'
+import { Page } from '@/components/Page'
 
 const SEARCH_PLACEHOLDER: Record<SearchField, string> = {
   any: 'Product, active ingredient, pest or crop…',
@@ -221,61 +216,59 @@ function ChemicalsView() {
   )
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-            <FlaskConical className="h-5 w-5 text-brand-700" /> Chemicals
-          </h1>
-          <p className="text-xs text-gray-500">
-            {tab === 'registry'
-              ? `${count ?? '—'} agricultural products, from Health Canada's pesticide registry. Refreshed monthly.`
-              : tab === 'inventory'
-                ? `What is in the shed: bought on the ${retailerName} invoices, less what the sprayer put out, corrected by counts.`
-                : tab === 'prices'
-                  ? 'What we pay, from the invoices. Each product takes its price from its most recent one.'
-                  : tab === 'spraycheck'
-                    ? 'Pick a product and the fields: see which planned crops its label rules out.'
-                    : 'Fields sprayed lately, and when it is safe to go back in.'}
-          </p>
-        </div>
-        {tab === 'registry' && isManager && (
-          <button
-            onClick={() => queue.mutate({ scope: 'used' })}
-            disabled={queue.isPending}
-            title="Queue every product this farm has sprayed. The background reader works through them."
-            className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            <BookOpen className="h-4 w-4" /> Read our labels
-          </button>
-        )}
-        {tab === 'registry' && isManager && (
-          <button
-            onClick={() => sync.mutate()}
-            disabled={sync.isPending}
-            className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            <RefreshCw className={cn('h-4 w-4', sync.isPending && 'animate-spin')} /> Sync now
-          </button>
-        )}
-      </div>
-
-      <PillTabs
-        tabs={[
-          { key: 'registry', label: 'Registry' },
-          ...(partner
-            ? []
-            : [
-                { key: 'inventory' as const, label: 'Inventory' },
-                { key: 'prices' as const, label: 'Prices' },
-              ]),
-          { key: 'spraycheck', label: 'Before spraying' },
-          { key: 'reentry', label: 'Recently sprayed' },
-        ]}
-        value={tab}
-        onChange={setTab}
-        className="mb-3"
-      />
+    <Page
+      title="Chemicals"
+      info={
+        tab === 'registry'
+          ? `${count ?? '—'} agricultural products, from Health Canada's pesticide registry. Refreshed monthly.`
+          : tab === 'inventory'
+            ? `What is in the shed: bought on the ${retailerName} invoices, less what the sprayer put out, corrected by counts.`
+            : tab === 'prices'
+              ? 'What we pay, from the invoices. Each product takes its price from its most recent one.'
+              : tab === 'spraycheck'
+                ? 'Pick a product and the fields: see which planned crops its label rules out.'
+                : 'Fields sprayed lately, and when it is safe to go back in.'
+      }
+      actions={
+        tab === 'registry' &&
+        isManager && (
+          <>
+            <button
+              onClick={() => queue.mutate({ scope: 'used' })}
+              disabled={queue.isPending}
+              title="Queue every product this farm has sprayed. The background reader works through them."
+              className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <BookOpen className="h-4 w-4" /> Read our labels
+            </button>
+            <button
+              onClick={() => sync.mutate()}
+              disabled={sync.isPending}
+              className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <RefreshCw className={cn('h-4 w-4', sync.isPending && 'animate-spin')} /> Sync now
+            </button>
+          </>
+        )
+      }
+      tabs={
+        <PillTabs
+          tabs={[
+            { key: 'registry', label: 'Registry' },
+            ...(partner
+              ? []
+              : [
+                  { key: 'inventory' as const, label: 'Inventory' },
+                  { key: 'prices' as const, label: 'Prices' },
+                ]),
+            { key: 'spraycheck', label: 'Before spraying' },
+            { key: 'reentry', label: 'Recently sprayed' },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+      }
+    >
 
       {tab === 'inventory' ? (
         <InventoryTab />
@@ -385,6 +378,6 @@ function ChemicalsView() {
           guidance — that is a separate copyrighted publication.
         </HelpNote>
       )}
-    </div>
+    </Page>
   )
 }

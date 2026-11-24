@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { AlertTriangle, Camera as CameraIcon, Pencil, Plus, Trash2, Video } from 'lucide-react'
+import { AlertTriangle, Camera as CameraIcon, Pencil, Plus, Trash2 } from 'lucide-react'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import {
   CAMERA_KINDS,
@@ -16,6 +16,7 @@ import { InfoPopover } from '@/components/InfoPopover'
 import { cn } from '@/lib/utils'
 import { useTicker } from '@/lib/usePageVisible'
 import { askConfirm } from '@/components/askConfirm'
+import { Page } from '@/components/Page'
 
 const input = 'mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-900'
 
@@ -337,17 +338,11 @@ export function CamerasPage() {
   const editingCamera = list.find((c) => c.id === editing)
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-            <Video className="h-5 w-5 text-brand-700" /> Cameras
-          </h1>
-          <p className="text-xs text-gray-500">
-            {list.length === 0 ? 'No cameras yet' : `${list.length} on the farm`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <Page
+      title="Cameras"
+      info={list.length === 0 ? 'No cameras on the farm yet.' : `${list.length} on the farm.`}
+      actions={
+        <>
           <label className="flex items-center gap-1.5 text-xs text-gray-600">
             <input
               type="checkbox"
@@ -367,9 +362,9 @@ export function CamerasPage() {
               <Plus className="h-4 w-4" /> Add camera
             </button>
           )}
-        </div>
-      </div>
-
+        </>
+      }
+    >
       {adding && (
         <div className="mb-4">
           <CameraForm onDone={() => setAdding(false)} />
@@ -436,6 +431,6 @@ export function CamerasPage() {
           ))}
         </div>
       )}
-    </div>
+    </Page>
   )
 }

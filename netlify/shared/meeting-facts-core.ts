@@ -251,7 +251,9 @@ Return ONLY a JSON array, no prose, each item:
 
 /** The JSON array out of a reply that may have prose around it. */
 export function parseFacts(text: string): Record<string, unknown>[] {
-  const start = text.indexOf('[')
+  // The array of objects, not the first bracket: the notes a model writes
+  // between searches can hold a "[1]" or "[see below]" ahead of it.
+  const start = text.search(/\[\s*\{/)
   const end = text.lastIndexOf(']')
   if (start < 0 || end < start) return []
   try {
@@ -262,28 +264,62 @@ export function parseFacts(text: string): Record<string, unknown>[] {
   }
 }
 
+type ReplyBlock = { type: string; text?: string }
+
+/**
+ * The text of a searched reply, best guess first: the final answer (the text
+ * after the last search), then every text block.
+ *
+ * Joined with nothing, not a newline. A cited passage arrives as several text
+ * blocks, and a newline put back inside a JSON string makes the whole array
+ * unreadable.
+ */
+export function replyTexts(content: ReplyBlock[]): string[] {
+  let lastTool = -1
+  content.forEach((c, i) => {
+    if (c.type !== 'text') lastTool = i
+  })
+  const join = (blocks: ReplyBlock[]) =>
+    blocks.filter((c) => c.type === 'text').map((c) => c.text ?? '').join('')
+  return [join(content.slice(lastTool + 1)), join(content)]
+}
+
 async function askForFacts(
   apiKey: string,
   model: string,
   month: number,
   count: number,
   avoid: string[],
-): Promise<Record<string, unknown>[]> {
-  const res = await callClaude({
-    model,
-    maxTokens: 4096,
-    // Grounded, not recalled. A fact read out as farm policy has to be
-    // checkable, and the search is also what produces the source link.
-    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 8 }],
-    messages: [{ role: 'user', content: buildPrompt(month, count, avoid) }],
-  }, { apiKey })
-  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`)
-  const body = (await res.json()) as { content?: { type: string; text?: string }[] }
-  const text = (body.content ?? [])
-    .filter((c) => c.type === 'text')
-    .map((c) => c.text ?? '')
-    .join('\n')
-  return parseFacts(text)
+): Promise<{ facts: Record<string, unknown>[]; stop: string }> {
+  const messages: unknown[] = [{ role: 'user', content: buildPrompt(month, count, avoid) }]
+  const content: ReplyBlock[] = []
+  let stop = ''
+  // A searched reply can pause part-way (pause_turn); it is carried on by
+  // sending it back as it stands. Before this, a paused or cut-off reply read
+  // as "no facts, no reason" (December 2026).
+  for (let turn = 0; turn < 3; turn++) {
+    const res = await callClaude({
+      model,
+      // Eight searches and the notes between them come out of this budget
+      // before the facts do; 4,096 ran out on a three-fact month.
+      maxTokens: 12000,
+      // Grounded, not recalled. A fact read out as farm policy has to be
+      // checkable, and the search is also what produces the source link.
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 8 }],
+      messages,
+    }, { apiKey })
+    if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`)
+    const body = (await res.json()) as { content?: ReplyBlock[]; stop_reason?: string }
+    content.push(...(body.content ?? []))
+    stop = body.stop_reason ?? ''
+    if (stop !== 'pause_turn') break
+    messages.push({ role: 'assistant', content: body.content ?? [] })
+  }
+  for (const text of replyTexts(content)) {
+    const facts = parseFacts(text)
+    if (facts.length) return { facts, stop }
+  }
+  return { facts: [], stop }
 }
 
 export type TopUpResult = {
@@ -363,7 +399,11 @@ export async function runFactTopUp(
     const rejected: string[] = []
     const fresh: WrittenFact[] = []
     try {
-      for (const raw of await askForFacts(apiKey, model, month, count, avoid)) {
+      const { facts, stop } = await askForFacts(apiKey, model, month, count, avoid)
+      if (!facts.length) {
+        rejected.push(`no facts in the reply (it stopped on ${stop || 'nothing'})`)
+      }
+      for (const raw of facts) {
         // Checked against what is already there AND against the ones written a
         // moment ago in this same reply.
         const checked = validateFact(raw, month, [...avoid, ...fresh.map((f) => f.title)], taken)

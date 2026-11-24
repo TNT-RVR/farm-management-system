@@ -13,6 +13,14 @@ import { isPartnerTab } from '@/lib/partner'
 const TABS = ['map', 'topography', 'profit', 'compare'] as const
 type Tab = (typeof TABS)[number]
 
+/** On the tab, and read out as the heading: each tab is a screen of its own. */
+const LABEL: Record<Tab, string> = {
+  map: 'Map',
+  topography: 'Topography',
+  profit: 'Profit / Loss',
+  compare: 'Compare',
+}
+
 /**
  * The Map section: the farm map, and the topography built from Deere's
  * elevation, as two tabs of one view (merged 25 Sep 2026). /topography still
@@ -30,6 +38,12 @@ export function MapSection() {
   const [tab, setTab] = useTab<Tab>('map', tabs)
   return (
     <div className="flex h-full flex-col">
+      {/* The map is edge to edge, so there is no frame to hang a heading on;
+          the name is here for a screen reader, which cannot see the breadcrumb.
+          It names the tab rather than the section: each of the four is a screen
+          of its own, and Topography and Profit / Loss relied on this one when
+          they stopped naming themselves. */}
+      <h1 className="sr-only">{LABEL[tab]}</h1>
       {/* One line, scrolling sideways on a phone rather than wrapping: the
           wrap put Compare and the date on a second row and took ~35px off the
           map (design review, Nov 2026). */}
@@ -56,7 +70,7 @@ export function MapSection() {
             ) : (
               <CircleDollarSign className="h-3.5 w-3.5" />
             )}
-            {t === 'map' ? 'Map' : t === 'topography' ? 'Topography' : t === 'compare' ? 'Compare' : 'Profit / Loss'}
+            {LABEL[t]}
           </button>
         ))}
         </div>

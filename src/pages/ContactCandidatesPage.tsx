@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Check, Mail, Pencil, Phone, RotateCcw, Search, UserPlus, X } from 'lucide-react'
+import { Check, Mail, Pencil, Phone, RotateCcw, Search, X } from 'lucide-react'
 import { DataTable, type DataTableColumn } from '@/components/DataTable'
 import { InfoPopover } from '@/components/InfoPopover'
-import { PageHeader } from '@/components/PageHeader'
 import { PillTabs } from '@/components/PillTabs'
 import { Select } from '@/components/Select'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
@@ -15,6 +14,7 @@ import {
 } from '@/lib/contact-candidates'
 import { CONTACT_TYPES, type ContactType } from '@/lib/sales'
 import { cn } from '@/lib/utils'
+import { Page } from '@/components/Page'
 
 const TABS = [
   { key: 'pending' as const, label: 'To decide' },
@@ -307,33 +307,33 @@ export function ContactCandidatesPage() {
   const error = approve.error ?? setStatus.error ?? editWhy.error
 
   return (
-    <div className="p-4 md:p-6">
-      <PageHeader
-        title="Contacts to add"
-        icon={<UserPlus className="h-5 w-5 text-brand-600" />}
-        subtitle={`${counts.pending} to decide · ${counts.approved} added · ${counts.rejected} turned down`}
-        info={
-          <InfoPopover title="Where these came from">
-            {/* Said in general terms: the one sweep's dates and counts were
-                this farm's own and shipped in the public copy. */}
-            <p className="text-sm text-gray-700">
-              A sweep of the farm's email and its books' vendor and customer lists, narrowed to the
-              businesses the farm actually deals with.
-            </p>
-            <p className="mt-2 text-sm text-gray-700">
-              <b>Add</b> writes the row onto the Contacts page. <b>No</b> keeps it here so a later
-              sweep does not offer the same name again. Either can be undone.
-            </p>
-            <p className="mt-2 text-sm text-gray-700">
-              The mail supplies the names and phone numbers; the books supply the ranking. Few
-              vendors in the books carry an email or phone, so a row found only there often has a
-              reason but no number yet.
-            </p>
-          </InfoPopover>
-        }
-      />
-
-      <PillTabs tabs={TABS} value={tab} onChange={setTab} className="mb-3" />
+    <Page
+      title="Contacts to add"
+      infoTitle="Where these came from"
+      info={
+        <>
+          <p>
+            {counts.pending} to decide · {counts.approved} added · {counts.rejected} turned down.
+          </p>
+          {/* Said in general terms: the one sweep's dates and counts were
+              this farm's own and shipped in the public copy. */}
+          <p>
+            A sweep of the farm's email and its books' vendor and customer lists, narrowed to the
+            businesses the farm actually deals with.
+          </p>
+          <p>
+            <b>Add</b> writes the row onto the Contacts page. <b>No</b> keeps it here so a later
+            sweep does not offer the same name again. Either can be undone.
+          </p>
+          <p>
+            The mail supplies the names and phone numbers; the books supply the ranking. Few
+            vendors in the books carry an email or phone, so a row found only there often has a
+            reason but no number yet.
+          </p>
+        </>
+      }
+      tabs={<PillTabs tabs={TABS} value={tab} onChange={setTab} />}
+    >
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="relative min-w-0 flex-1 sm:max-w-xs">
@@ -379,6 +379,6 @@ export function ContactCandidatesPage() {
                 : 'Nothing turned down yet.'
         }
       />
-    </div>
+    </Page>
   )
 }

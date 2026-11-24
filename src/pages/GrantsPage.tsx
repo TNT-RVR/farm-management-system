@@ -48,6 +48,7 @@ import { askConfirm } from '@/components/askConfirm'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { coverLabel } from '@/lib/grant-kit'
 import { GrantActions, GrantDetailsEditor, GrantFacts } from '@/pages/grants/GrantKit'
+import { Page } from '@/components/Page'
 
 const closesLabel = (d: string | null) => {
   if (!d) return 'Ongoing'
@@ -665,15 +666,11 @@ export function GrantsPage() {
   )
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">Grants</h1>
-          <p className="text-xs text-gray-500">
-            Alberta farm &amp; cattle funding: track it, ask them about it, apply with Claude.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <Page
+      title="Grants"
+      info="Alberta farm & cattle funding: track it, ask them about it, apply with Claude."
+      actions={
+        <>
           <Select
             value={statusFilter}
             ariaLabel="Filter status"
@@ -725,8 +722,22 @@ export function GrantsPage() {
               <Plus className="h-3.5 w-3.5" /> Add grant
             </button>
           )}
-        </div>
-      </div>
+        </>
+      }
+      tabs={
+        <PillTabs
+          tabs={[
+            { key: 'active' as const, label: <Count label="Active" n={counts.active} /> },
+            { key: 'archived' as const, label: <Count label="Archived" n={counts.archived} /> },
+          ]}
+          value={tab}
+          onChange={(k) => {
+            setTab(k)
+            setStatusFilter('all')
+          }}
+        />
+      }
+    >
 
       {pull.isSuccess && (
         <p className="mb-3 rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-900">
@@ -739,20 +750,6 @@ export function GrantsPage() {
           {(pull.error as Error).message}
         </p>
       )}
-
-      {/* Active vs Archived tabs */}
-      <PillTabs
-        className="mb-4"
-        tabs={[
-          { key: 'active' as const, label: <Count label="Active" n={counts.active} /> },
-          { key: 'archived' as const, label: <Count label="Archived" n={counts.archived} /> },
-        ]}
-        value={tab}
-        onChange={(k) => {
-          setTab(k)
-          setStatusFilter('all')
-        }}
-      />
 
       <div className="rounded-lg border border-gray-200 bg-white">
         {/* A phone reads each grant down the page; from sm up it is the table. */}
@@ -843,6 +840,6 @@ export function GrantsPage() {
       {open && <GrantDetail grant={open} onClose={() => setOpenId(null)} />}
       {/* Savings tool, kept with this tab since 26 Oct 2026 (lib/fert-savings/homes.ts). */}
       <SavingsHere ids={[22]} />
-    </div>
+    </Page>
   )
 }

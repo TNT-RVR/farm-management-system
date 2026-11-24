@@ -22,6 +22,7 @@ import { useRanches } from '@/lib/ranches'
 import { farmTz } from '@/lib/farm-context'
 import { cn } from '@/lib/utils'
 import { downloadBlob, tableReportToCsv, tableReportToPdf } from '@/lib/table-report'
+import { keepMadeReport } from '@/lib/made-reports'
 import { stockReturnReport } from '@/lib/reports/stock-return'
 import { myNamedSignature } from '@/lib/signature'
 import {
@@ -282,6 +283,7 @@ function ReturnEditor({
           ? await tableReportToPdf(report)
           : new Blob([tableReportToCsv(report)], { type: 'text/csv;charset=utf-8' })
       downloadBlob(blob, `${report.filename}.${kind}`)
+      keepMadeReport({ reportId: 'stock-return', name: 'Grazing lease stock return', blob, filename: `${report.filename}.${kind}`, format: kind.toUpperCase(), family: 'grazing-report' })
     } finally {
       setBusy(null)
     }

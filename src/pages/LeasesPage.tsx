@@ -15,6 +15,7 @@ import { askConfirm } from '@/components/askConfirm'
 import { TABLE_HEAD } from '@/lib/table-style'
 import { dbErrorMessage } from '@/lib/db-error'
 import { CardList, RowCard } from '@/components/RowCards'
+import { Page } from '@/components/Page'
 
 type Lease = Database['public']['Tables']['land_leases']['Row']
 type LeaseInsert = Database['public']['Tables']['land_leases']['Insert']
@@ -134,10 +135,9 @@ export function LeasesPage() {
 
   if (!isMgr) {
     return (
-      <div className="p-4 md:p-6">
-        <h1 className="text-lg font-semibold text-gray-900">Leases</h1>
-        <p className="mt-2 text-sm text-gray-600">Leases and rent are for managers.</p>
-      </div>
+      <Page title="Leases">
+        <p className="text-sm text-gray-600">Leases and rent are for managers.</p>
+      </Page>
     )
   }
 
@@ -151,14 +151,10 @@ export function LeasesPage() {
   const totalAcres = rentedIn.reduce((s, l) => s + Number(l.acres ?? 0), 0)
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">Leases</h1>
-          <p className="text-xs text-gray-500">
-            Rented land, rent dates and renewal notice. {rentedIn.length} active · {totalAcres.toFixed(0)} ac · {money(totalRent)} a year
-          </p>
-        </div>
+    <Page
+      title="Leases"
+      info={`Rented land, rent dates and renewal notice. ${rentedIn.length} active · ${totalAcres.toFixed(0)} ac · ${money(totalRent)} a year.`}
+      actions={
         <button
           type="button"
           onClick={() => setEditing('new')}
@@ -166,7 +162,8 @@ export function LeasesPage() {
         >
           <Plus className="h-4 w-4" /> Add lease
         </button>
-      </div>
+      }
+    >
 
       {alerts.length > 0 && (
         <ul className="mb-4 space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -373,7 +370,7 @@ export function LeasesPage() {
           }
         />
       )}
-    </div>
+    </Page>
   )
 }
 

@@ -18,6 +18,7 @@ import {
 } from './handling'
 import type { CatalogRow, ItemRow, PathRow } from './handling-data'
 import { downloadBlob, tableReportToPdf, type Cell, type TableReport } from './table-report'
+import { keepMadeReport } from './made-reports'
 
 /**
  * The plan you take out to the yard: the layout drawn to scale, what it is
@@ -410,5 +411,7 @@ export function planReport(input: PlanInput, drawing?: Drawing | null): TableRep
 export async function downloadPlan(input: PlanInput): Promise<void> {
   const report = planReport(input, planDrawing(input))
   const name = `${input.yardName} ${input.layoutName}`.replace(/[\\/:*?"<>|]+/g, '-').trim()
-  downloadBlob(await tableReportToPdf(report, input.now ? { now: input.now } : {}), `Handling plan — ${name}.pdf`)
+  const blob = await tableReportToPdf(report, input.now ? { now: input.now } : {})
+  downloadBlob(blob, `Handling plan — ${name}.pdf`)
+  keepMadeReport({ reportId: 'handling-plan', name: 'Handling plan', blob, filename: `Handling plan — ${name}.pdf`, format: 'PDF', labels: { Yard: input.yardName, Layout: input.layoutName } })
 }

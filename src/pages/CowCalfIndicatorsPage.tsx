@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ClipboardCheck, Check, AlertTriangle } from 'lucide-react'
+import { Check, AlertTriangle } from 'lucide-react'
 import { HelpNote } from '@/components/HelpNote'
-import { PageHeader } from '@/components/PageHeader'
 import { Select } from '@/components/Select'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useRanches } from '@/lib/ranches'
@@ -12,6 +11,7 @@ import { TABLE_HEAD } from '@/lib/table-style'
 import { n0, n1 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { dbErrorMessage } from '@/lib/db-error'
+import { Page } from '@/components/Page'
 import {
   REGION_LABEL,
   computeIndicators,
@@ -104,8 +104,12 @@ export function CowCalfIndicatorsPage() {
   const years = Array.from({ length: 8 }, (_, i) => new Date().getFullYear() - i)
 
   return (
-    <div className="mx-auto max-w-5xl space-y-3 p-4 md:p-6">
-      <PageHeaderRow
+    <Page
+      title="Cow-calf scorecard"
+      className="space-y-3"
+      info="This calf crop against the target and the neighbours."
+    >
+      <PickerRow
         ranch={ranch}
         ranchList={ranchList}
         setRanchId={setRanchId}
@@ -123,11 +127,11 @@ export function CowCalfIndicatorsPage() {
        * do the same thing with a render in between, and a half-updated form.
        */}
       {ranch ? <Scorecard key={`${ranch}-${year}`} ranch={ranch} year={year} region={region} saved={saved ?? null} /> : null}
-    </div>
+    </Page>
   )
 }
 
-function PageHeaderRow({
+function PickerRow({
   ranch,
   ranchList,
   setRanchId,
@@ -159,13 +163,7 @@ function PageHeaderRow({
     return inputsEntered(o as IndicatorInputs)
   }, [saved])
   return (
-    <>
-      <PageHeader
-        title="Cow-calf scorecard"
-        icon={<ClipboardCheck className="h-5 w-5 text-brand-700" />}
-        subtitle="This calf crop against the target and the neighbours"
-      />
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
         <Select value={ranch} options={ranchList.map((r) => ({ value: r.id, label: r.name }))} onChange={setRanchId} className="w-40" ariaLabel="Ranch" />
         <Select
           value={String(year)}
@@ -181,11 +179,10 @@ function PageHeaderRow({
           className="w-40"
           ariaLabel="Benchmark region"
         />
-        <span className="text-xs text-gray-500">
-          {loading ? 'loading…' : saved ? `${entered.entered} of ${entered.total} figures saved` : 'No scorecard saved for this year'}
-        </span>
-      </div>
-    </>
+      <span className="text-xs text-gray-500">
+        {loading ? 'loading…' : saved ? `${entered.entered} of ${entered.total} figures saved` : 'No scorecard saved for this year'}
+      </span>
+    </div>
   )
 }
 

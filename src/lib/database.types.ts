@@ -351,6 +351,111 @@ export type Database = {
         Relationships: []
       }
       /** Heat units, frost-free days and the seasonal outlook per 0.25° weather cell (season-outlook-background). */
+      field_contacts: {
+        Row: {
+          contact_id: string
+          created_at: string
+          created_by: string | null
+          field_id: string
+          id: string
+          notes: string | null
+          role: string
+          send_harvest_report: boolean
+        }
+        Insert: {
+          contact_id: string
+          created_at?: string
+          created_by?: string | null
+          field_id: string
+          id?: string
+          notes?: string | null
+          role?: string
+          send_harvest_report?: boolean
+        }
+        Update: {
+          contact_id?: string
+          created_at?: string
+          created_by?: string | null
+          field_id?: string
+          id?: string
+          notes?: string | null
+          role?: string
+          send_harvest_report?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "field_contacts_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "field_contacts_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      harvest_report_sends: {
+        Row: {
+          contact_id: string | null
+          crop_year: number
+          email: string
+          error: string | null
+          field_id: string
+          id: string
+          kind: string
+          ok: boolean
+          resend_id: string | null
+          sent_at: string
+          sent_by: string | null
+        }
+        Insert: {
+          contact_id?: string | null
+          crop_year: number
+          email: string
+          error?: string | null
+          field_id: string
+          id?: string
+          kind: string
+          ok: boolean
+          resend_id?: string | null
+          sent_at?: string
+          sent_by?: string | null
+        }
+        Update: {
+          contact_id?: string | null
+          crop_year?: number
+          email?: string
+          error?: string | null
+          field_id?: string
+          id?: string
+          kind?: string
+          ok?: boolean
+          resend_id?: string | null
+          sent_at?: string
+          sent_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "harvest_report_sends_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "harvest_report_sends_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       field_climate: {
         Row: {
           cell_key: string
@@ -3634,6 +3739,457 @@ export type Database = {
           uploaded_by?: string | null
           uploaded_at?: string
           meta?: Json
+        }
+        Relationships: []
+      }
+      insurance_policies: {
+        Row: {
+          id: string
+          provider: string
+          crop_year: number
+          client_name: string | null
+          client_id_no: string | null
+          policy_no: string | null
+          branch: string | null
+          coverage_level: number | null
+          declared_acres: number | null
+          document_id: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          provider?: string
+          crop_year: number
+          client_name?: string | null
+          client_id_no?: string | null
+          policy_no?: string | null
+          branch?: string | null
+          coverage_level?: number | null
+          declared_acres?: number | null
+          document_id?: string | null
+          notes?: string | null
+        }
+        Update: {
+          provider?: string
+          crop_year?: number
+          client_name?: string | null
+          client_id_no?: string | null
+          policy_no?: string | null
+          branch?: string | null
+          coverage_level?: number | null
+          declared_acres?: number | null
+          document_id?: string | null
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      insurance_coverage: {
+        Row: {
+          id: string
+          policy_id: string
+          ag_input: string | null
+          end_use: string | null
+          crop_label: string
+          coverage_level: number | null
+          hail_endorsement: boolean | null
+          dollars_per_acre: number | null
+          deductible_pct: number | null
+          crop_id: string | null
+        }
+        Insert: {
+          id?: string
+          policy_id: string
+          ag_input?: string | null
+          end_use?: string | null
+          crop_label: string
+          coverage_level?: number | null
+          hail_endorsement?: boolean | null
+          dollars_per_acre?: number | null
+          deductible_pct?: number | null
+          crop_id?: string | null
+        }
+        Update: {
+          ag_input?: string | null
+          end_use?: string | null
+          crop_label?: string
+          coverage_level?: number | null
+          hail_endorsement?: boolean | null
+          dollars_per_acre?: number | null
+          deductible_pct?: number | null
+          crop_id?: string | null
+        }
+        Relationships: []
+      }
+      insurance_land: {
+        Row: {
+          id: string
+          policy_id: string
+          land_location: string
+          nickname: string | null
+          tenure: string | null
+          acres: number | null
+          insured: boolean | null
+          crop_label: string | null
+          variety: string | null
+          end_use: string | null
+          ag_input: string | null
+          seeding_date: string | null
+          practice: string | null
+          comments: string | null
+          field_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          policy_id: string
+          land_location: string
+          nickname?: string | null
+          tenure?: string | null
+          acres?: number | null
+          insured?: boolean | null
+          crop_label?: string | null
+          variety?: string | null
+          end_use?: string | null
+          ag_input?: string | null
+          seeding_date?: string | null
+          practice?: string | null
+          comments?: string | null
+          field_id?: string | null
+        }
+        Update: {
+          land_location?: string
+          nickname?: string | null
+          tenure?: string | null
+          acres?: number | null
+          insured?: boolean | null
+          crop_label?: string | null
+          variety?: string | null
+          end_use?: string | null
+          ag_input?: string | null
+          seeding_date?: string | null
+          practice?: string | null
+          comments?: string | null
+          field_id?: string | null
+        }
+        Relationships: []
+      }
+      insurance_production: {
+        Row: {
+          id: string
+          policy_id: string
+          crop_label: string
+          end_use: string | null
+          ag_input: string | null
+          land_location: string | null
+          variety: string | null
+          insured_acres: number | null
+          reported_acres: number | null
+          what_you_did: string | null
+          yield_kg_per_acre: number | null
+          production_kg: number | null
+          stored_kg: number | null
+          sold_kg: number | null
+          harvest_completed: string | null
+          comments: string | null
+          field_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          policy_id: string
+          crop_label: string
+          end_use?: string | null
+          ag_input?: string | null
+          land_location?: string | null
+          variety?: string | null
+          insured_acres?: number | null
+          reported_acres?: number | null
+          what_you_did?: string | null
+          yield_kg_per_acre?: number | null
+          production_kg?: number | null
+          stored_kg?: number | null
+          sold_kg?: number | null
+          harvest_completed?: string | null
+          comments?: string | null
+          field_id?: string | null
+        }
+        Update: {
+          crop_label?: string
+          end_use?: string | null
+          ag_input?: string | null
+          land_location?: string | null
+          variety?: string | null
+          insured_acres?: number | null
+          reported_acres?: number | null
+          what_you_did?: string | null
+          yield_kg_per_acre?: number | null
+          production_kg?: number | null
+          field_id?: string | null
+        }
+        Relationships: []
+      }
+      insurance_production_totals: {
+        Row: {
+          id: string
+          policy_id: string
+          crop_label: string
+          end_use: string | null
+          ag_input: string | null
+          production_kg: number | null
+          stored_fed_kg: number | null
+          sold_kg: number | null
+          carryover: boolean | null
+          harvest_completed: string | null
+          comments: string | null
+        }
+        Insert: {
+          id?: string
+          policy_id: string
+          crop_label: string
+          end_use?: string | null
+          ag_input?: string | null
+          production_kg?: number | null
+          stored_fed_kg?: number | null
+          sold_kg?: number | null
+          carryover?: boolean | null
+          harvest_completed?: string | null
+          comments?: string | null
+        }
+        Update: {
+          production_kg?: number | null
+          stored_fed_kg?: number | null
+          sold_kg?: number | null
+          carryover?: boolean | null
+          harvest_completed?: string | null
+          comments?: string | null
+        }
+        Relationships: []
+      }
+      insurance_claims: {
+        Row: {
+          id: string
+          policy_id: string | null
+          crop_year: number
+          kind: string
+          inspection_no: string | null
+          assessment_no: string | null
+          version_no: string | null
+          resolved_on: string | null
+          total_award: number | null
+          previous_award: number | null
+          net_award: number | null
+          document_id: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          policy_id?: string | null
+          crop_year: number
+          kind: string
+          inspection_no?: string | null
+          assessment_no?: string | null
+          version_no?: string | null
+          resolved_on?: string | null
+          total_award?: number | null
+          previous_award?: number | null
+          net_award?: number | null
+          document_id?: string | null
+          notes?: string | null
+        }
+        Update: {
+          kind?: string
+          inspection_no?: string | null
+          assessment_no?: string | null
+          version_no?: string | null
+          resolved_on?: string | null
+          total_award?: number | null
+          previous_award?: number | null
+          net_award?: number | null
+          document_id?: string | null
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      insurance_claim_lines: {
+        Row: {
+          id: string
+          claim_id: string
+          crop_label: string | null
+          land_location: string | null
+          field_id: string | null
+          acres: number | null
+          damage_pct: number | null
+          price_option: number | null
+          yield_coverage_kg: number | null
+          production_kg: number | null
+          yield_short_kg: number | null
+          total_coverage: number | null
+          previous_payments: number | null
+          award: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          claim_id: string
+          crop_label?: string | null
+          land_location?: string | null
+          field_id?: string | null
+          acres?: number | null
+          damage_pct?: number | null
+          price_option?: number | null
+          yield_coverage_kg?: number | null
+          production_kg?: number | null
+          yield_short_kg?: number | null
+          total_coverage?: number | null
+          previous_payments?: number | null
+          award?: number | null
+        }
+        Update: {
+          crop_label?: string | null
+          land_location?: string | null
+          field_id?: string | null
+          acres?: number | null
+          damage_pct?: number | null
+          award?: number | null
+        }
+        Relationships: []
+      }
+      document_areas: {
+        Row: {
+          key: string
+          label: string
+          icon: string | null
+          sort: number
+        }
+        Insert: {
+          key: string
+          label: string
+          icon?: string | null
+          sort?: number
+        }
+        Update: {
+          key?: string
+          label?: string
+          icon?: string | null
+          sort?: number
+        }
+        Relationships: []
+      }
+      documents: {
+        Row: {
+          id: string
+          area: string
+          curated: boolean
+          doc_type: string | null
+          title: string
+          party: string | null
+          doc_date: string | null
+          crop_year: number | null
+          storage_bucket: string
+          storage_path: string
+          filename: string
+          mime: string | null
+          bytes: number | null
+          text_content: string | null
+          summary: string | null
+          tags: string[]
+          source: string
+          source_table: string | null
+          source_id: string | null
+          added_by: string | null
+          access: string | null
+          report_id: string | null
+          report_options: Json | null
+          created_at: string
+          updated_at: string
+          fts: unknown | null
+        }
+        Insert: {
+          id?: string
+          area?: string
+          curated?: boolean
+          doc_type?: string | null
+          title: string
+          party?: string | null
+          doc_date?: string | null
+          crop_year?: number | null
+          storage_bucket?: string
+          storage_path: string
+          filename: string
+          mime?: string | null
+          bytes?: number | null
+          text_content?: string | null
+          summary?: string | null
+          tags?: string[]
+          source?: string
+          source_table?: string | null
+          source_id?: string | null
+          added_by?: string | null
+          access?: string | null
+          report_id?: string | null
+          report_options?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          area?: string
+          curated?: boolean
+          doc_type?: string | null
+          title?: string
+          party?: string | null
+          doc_date?: string | null
+          crop_year?: number | null
+          storage_bucket?: string
+          storage_path?: string
+          filename?: string
+          mime?: string | null
+          bytes?: number | null
+          text_content?: string | null
+          summary?: string | null
+          tags?: string[]
+          source?: string
+          source_table?: string | null
+          source_id?: string | null
+          added_by?: string | null
+          access?: string | null
+          report_id?: string | null
+          report_options?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      document_links: {
+        Row: {
+          id: string
+          document_id: string
+          entity_type: string
+          entity_id: string
+          note: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          document_id: string
+          entity_type: string
+          entity_id: string
+          note?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          document_id?: string
+          entity_type?: string
+          entity_id?: string
+          note?: string | null
+          created_at?: string
         }
         Relationships: []
       }
@@ -11278,6 +11834,22 @@ export type Database = {
       }
     }
     Functions: {
+      /**
+       * How many documents sit in each area, for the folder list.
+       * Migration 20261123180000.
+       */
+      document_area_counts: {
+        Args: Record<string, never>
+        Returns: { area: string; n: number }[]
+      }
+      /**
+       * The kinds, years and sources there are to filter documents by.
+       * Migration 20261123230000.
+       */
+      document_filter_options: {
+        Args: Record<string, never>
+        Returns: Json
+      }
       /**
        * Puts each seed's last-bought price on every seed row nobody typed a
        * price for. Migration 20261119050000.

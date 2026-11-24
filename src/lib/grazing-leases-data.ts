@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import type { Json } from '@/lib/database.types'
 import { fetchAll } from '@/lib/reports/framework'
+import { fetchPastureUse, pastureUse } from '@/lib/reports/pasture-use'
+import { localToday } from '@/lib/today'
 import { prefillReturn, toDisposition, toStockReturn, type Disposition, type EventLike, type HerdLike, type PrefillSource, type StockReturn } from '@/lib/grazing-leases'
 
 /**
@@ -39,30 +41,21 @@ export function useStockReturns(dispositionId: string | null) {
 
 /**
  * What the app knows that a blank return can start from: the ranch's Herd
- * tab, the grazing events on the lease's pastures (with the eShepherd mob
- * each came from), the ranch's calving month and brand, and the other leases.
+ * tab, the herds' stays on the lease's pastures, the ranch's calving month
+ * and brand, and the other leases.
+ *
+ * The stays are the Pasture use report's (23 Nov 2026): each herd's strips of
+ * a pasture rolled into one stay in farm days, the duplicate eShepherd rows
+ * and under-a-night passes left out. Before, part 1 read the raw grazing
+ * events, one per strip and fence toggle, dated in UTC.
  */
 export async function loadPrefillSource(d: Disposition, year: number, others: Disposition[]): Promise<PrefillSource> {
-  const from = `${year}-01-01`
-  const to = `${year}-12-31`
   const ranch = d.ranch_id
-  const [herd, events, plan, ranchRow, pastures] = await Promise.all([
+  const [herd, use, plan, ranchRow, pastures] = await Promise.all([
     ranch
       ? fetchAll<HerdLike>((a, b) => supabase.from('herd_counts').select('class_name, head_count, avg_weight_lb, feed_class, graze_start, graze_end, sort_order').eq('ranch_id', ranch).order('sort_order').order('id').range(a, b))
       : Promise.resolve([] as HerdLike[]),
-    d.pasture_ids.length
-      ? fetchAll<Omit<EventLike, 'mob'> & { id: string; notes: string | null; eshepherd_activation_id: string | null }>((a, b) =>
-          supabase
-            .from('grazing_events')
-            .select('id, pasture_id, head_count, avg_animal_weight_lb, turned_in_on, moved_out_on, notes, eshepherd_activation_id')
-            .in('pasture_id', d.pasture_ids)
-            .lte('turned_in_on', to)
-            .or(`moved_out_on.is.null,moved_out_on.gte.${from}`)
-            .order('turned_in_on')
-            .order('id')
-            .range(a, b),
-        )
-      : Promise.resolve([]),
+    d.pasture_ids.length ? fetchPastureUse() : Promise.resolve(null),
     ranch ? supabase.from('feed_plans').select('calving_month').eq('ranch_id', ranch).maybeSingle() : Promise.resolve({ data: null, error: null }),
     ranch ? supabase.from('ranches').select('brand, brand_location, owner_name').eq('id', ranch).maybeSingle() : Promise.resolve({ data: null, error: null }),
     d.pasture_ids.length ? supabase.from('pastures').select('id, name').in('id', d.pasture_ids) : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
@@ -71,26 +64,19 @@ export async function loadPrefillSource(d: Disposition, year: number, others: Di
   if (ranchRow.error) throw ranchRow.error
   if (pastures.error) throw pastures.error
 
-  // The mob each event came from: the eShepherd activation, else the note the import leaves.
-  const actIds = [...new Set(events.map((e) => e.eshepherd_activation_id).filter((x): x is string => !!x))]
-  const mobs = new Map<string, string>()
-  if (actIds.length) {
-    const { data, error } = await supabase.from('eshepherd_activations').select('id, mob').in('id', actIds)
-    if (error) throw error
-    for (const a of data ?? []) mobs.set(a.id, a.mob)
-  }
+  // Every herd's stays on the lease's pastures, as the Pasture use report counts them.
+  const ids = new Set(d.pasture_ids)
+  const stays = use ? pastureUse({ ...use, year, today: localToday(), nowIso: new Date().toISOString(), ranchId: null }).herds : []
+  const events: EventLike[] = stays.flatMap((h) =>
+    h.stays
+      .filter((st) => st.key.startsWith('p:') && ids.has(st.key.slice(2)))
+      .map((st) => ({ pasture_id: st.key.slice(2), head_count: st.head, avg_animal_weight_lb: null, turned_in_on: st.in, moved_out_on: st.out, mob: h.mob })),
+  )
   const plan0 = plan.data as { calving_month: number | null } | null
   const r = ranchRow.data as { brand: string | null; brand_location: string | null; owner_name: string | null } | null
   return {
     herd,
-    events: events.map((e) => ({
-      pasture_id: e.pasture_id,
-      head_count: e.head_count,
-      avg_animal_weight_lb: e.avg_animal_weight_lb,
-      turned_in_on: e.turned_in_on,
-      moved_out_on: e.moved_out_on,
-      mob: (e.eshepherd_activation_id && mobs.get(e.eshepherd_activation_id)) || e.notes?.replace(/^eShepherd · /, '') || null,
-    })),
+    events,
     pastureNames: new Map(((pastures.data ?? []) as { id: string; name: string }[]).map((p) => [p.id, p.name])),
     calvingMonth: plan0?.calving_month ?? null,
     ranchBrand: r ? { brand: r.brand, location: r.brand_location, owner: r.owner_name } : null,

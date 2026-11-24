@@ -41,7 +41,6 @@ import { TilesPanel } from '@/pages/settings/TilesPanel'
 import { MenuPanel } from '@/pages/settings/MenuPanel'
 import { VoiceReplyCard } from '@/pages/settings/VoiceReplyCard'
 import { useTab } from '@/lib/useTab'
-import { useMenuEnabled } from '@/lib/menu-prefs'
 import {
   ACCOUNT_TABS,
   FARM_PARTS,
@@ -725,7 +724,6 @@ function MyAccount({ head }: { head: ViewHead }) {
     <>
       {head(
         <PillTabs
-          className="mt-3 border-b-0"
           tabs={tabs.map((k) => ({ key: k, label: ACCOUNT_LABELS[k] }))}
           value={section}
           onChange={pick}
@@ -863,7 +861,6 @@ function UsersAndAccess({ head, isAdmin }: { head: ViewHead; isAdmin: boolean })
       {head(
         tabs.length > 1 && (
           <PillTabs
-            className="mt-3 border-b-0"
             tabs={tabs.map((k) => ({ key: k, label: PEOPLE_LABELS[k] }))}
             value={tab}
             onChange={setTab}
@@ -882,7 +879,7 @@ function FarmSetup({ head }: { head: ViewHead }) {
   const [part, go] = useTab('settings-farm', FARM_TABS)
   return (
     <>
-      {head(<PillTabs className="mt-3 border-b-0" tabs={FARM_PARTS} value={part} onChange={go} />)}
+      {head(<PillTabs tabs={FARM_PARTS} value={part} onChange={go} />)}
       <Suspense fallback={<p className="p-6 text-sm text-gray-400">Loading…</p>}>
         <FarmSetupPanel part={part} go={go} />
       </Suspense>
@@ -892,7 +889,6 @@ function FarmSetup({ head }: { head: ViewHead }) {
 
 export function SettingsPage({ view }: { view: SettingsView }) {
   const { profile } = useAuth()
-  const seasonMenu = useMenuEnabled()
   const isManager = hasManagerAccess(profile?.role)
   const isAdmin = hasAdminAccess(profile?.role)
   // A partner, his own account, his company's people and its setup
@@ -908,28 +904,11 @@ export function SettingsPage({ view }: { view: SettingsView }) {
   // Someone without the role lands on their own account, not a blank shell.
   if (!allowed(meta)) return <Navigate to={SETTINGS_PATHS.account} replace />
 
-  // The other Settings views, for anyone on the old sidebar: Settings is one
-  // pinned link there, so without these Users, Connections and Farm setup
-  // would have no way in. The season menu lists them itself.
-  const siblings = seasonMenu ? [] : VIEWS.filter((v) => v.key !== view && allowed(v))
-
+  // The view's name is in the breadcrumb, so the bar carries only its tabs.
   const head: ViewHead = (tabs) => (
-    <div className={cn('border-b border-gray-200 bg-white px-4 pt-4 md:px-6', !tabs && 'pb-3')}>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h1 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
-          <meta.icon className="h-5 w-5 self-center text-gray-400" /> {meta.label}
-        </h1>
-        {siblings.length > 0 && (
-          <nav aria-label="Other settings" className="flex flex-wrap gap-x-3 text-xs">
-            {siblings.map((v) => (
-              <Link key={v.key} to={SETTINGS_PATHS[v.key]} className="font-medium text-brand-700 hover:underline">
-                {v.label}
-              </Link>
-            ))}
-          </nav>
-        )}
-      </div>
-      {tabs}
+    <div className="px-4 pt-4 md:px-6 md:pt-6">
+      <h1 className="sr-only">{meta.label}</h1>
+      {tabs && <div className="mb-3">{tabs}</div>}
     </div>
   )
 

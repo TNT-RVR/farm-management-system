@@ -32,6 +32,7 @@ import { SavedViews } from '@/components/SavedViews'
 import { GoalCell, VersusCell } from '@/components/YieldScoreCells'
 import { CROP_DEFAULT } from '@/lib/forecast'
 import { TableSkeleton } from '@/components/Skeleton'
+import { Page } from '@/components/Page'
 
 function SourceBadge({ label, title: why }: { label: string; title?: string }) {
   // Harvest yields stand out from estimates; a pre-clean one is flagged,
@@ -689,19 +690,21 @@ export function PlannerPage() {
   })
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <h1 className="text-lg font-semibold text-gray-900">Crop financials · {cropYear}</h1>
-        {/* The tab bar can shrink (min-w-0), so its ▾ takes the tabs that do
-            not fit instead of the row pushing the whole page sideways; on a
-            phone it takes a line of its own (Sam, 27 Oct 2026). */}
-        <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
-          <PillTabs
-            tabs={tabs.map((t) => ({ key: t, label: t[0].toUpperCase() + t.slice(1) }))}
-            value={tab}
-            onChange={setTab}
-            className="border-b-0 pb-0"
-          />
+    <Page
+      title={`Crop financials · ${cropYear}`}
+      /* The tab bar can shrink (min-w-0), so its ▾ takes the tabs that do not
+         fit instead of the row pushing the whole page sideways; on a phone it
+         takes a line of its own (Sam, 27 Oct 2026). */
+      tabs={
+        <PillTabs
+          tabs={tabs.map((t) => ({ key: t, label: t[0].toUpperCase() + t.slice(1) }))}
+          value={tab}
+          onChange={setTab}
+          className="print:hidden"
+        />
+      }
+      actions={
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
           {tab === 'budget' && (
             <button
               onClick={() => window.print()}
@@ -711,8 +714,8 @@ export function PlannerPage() {
             </button>
           )}
         </div>
-      </div>
-
+      }
+    >
       {/* Owners and the accountant only; renders nothing for anyone else. */}
       <QbAskBar className="mb-4" />
 
@@ -849,6 +852,6 @@ export function PlannerPage() {
       ) : (
         <ActualsTab budget={budget} locked={isLocked} />
       )}
-    </div>
+    </Page>
   )
 }

@@ -1,9 +1,8 @@
 import { lazy, Suspense, useState } from 'react'
 import { SETUP_LINKS, SetupLink } from '@/components/SetupLink'
 import { useSearchParams } from 'react-router-dom'
-import { CircleDollarSign, Paperclip } from 'lucide-react'
+import { Paperclip } from 'lucide-react'
 import { DateField } from '@/components/DateField'
-import { PageHeader } from '@/components/PageHeader'
 import { QbAskBar } from '@/components/QbAskBar'
 import { PillTabs } from '@/components/PillTabs'
 import { Select } from '@/components/Select'
@@ -22,6 +21,7 @@ import {
 } from '@/lib/quickbooks'
 import { cn } from '@/lib/utils'
 import { money as fmtMoney } from '@/lib/format'
+import { Page } from '@/components/Page'
 
 const money = (v: number | null | undefined) => fmtMoney(v, 2, { neg: '-' })
 const input = 'rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900'
@@ -56,62 +56,55 @@ export function QuickBooksPage() {
   const [from, setFrom] = useState(`${thisYear}-01-01`)
   const [to, setTo] = useState('')
 
-  const header = (
-    <PageHeader
-      title="QuickBooks"
-      icon={<CircleDollarSign className="h-5 w-5 text-brand-700" />}
-      subtitle={
-        company?.realm_id
-          ? `${company.company_name ?? 'Company'} · ${company.environment === 'production' ? 'live books' : 'sandbox (test data)'} · synced ${company.last_sync_at ? new Date(company.last_sync_at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }) : 'not yet'}`
-          : undefined
-      }
-    />
-  )
+  const about = company?.realm_id
+    ? `${company.company_name ?? 'Company'} · ${company.environment === 'production' ? 'live books' : 'sandbox (test data)'} · synced ${company.last_sync_at ? new Date(company.last_sync_at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }) : 'not yet'}`
+    : undefined
 
   if (!finances) {
     return (
-      <div className="mx-auto max-w-4xl p-4 md:p-6">
-        {header}
+      <Page title="QuickBooks" info={about}>
         <p className="text-sm text-gray-600">The books are for the owners and the farm&apos;s accountant.</p>
-      </div>
+      </Page>
     )
   }
-  if (isLoading) return <div className="mx-auto max-w-4xl p-4 md:p-6">{header}<p className="text-sm text-gray-500">Loading…</p></div>
+  if (isLoading) return <Page title="QuickBooks" info={about}><p className="text-sm text-gray-500">Loading…</p></Page>
   if (!company?.realm_id) {
     return (
-      <div className="mx-auto max-w-4xl p-4 md:p-6">
-        {header}
+      <Page title="QuickBooks" info={about}>
         <p className="text-sm text-gray-600">
           QuickBooks isn&apos;t connected.{' '}
           <SetupLink managerOnly to={SETUP_LINKS.integration('quickbooks')}>
             Connect it on Connections
           </SetupLink>
         </p>
-      </div>
+      </Page>
     )
   }
 
   const realm = company.realm_id
   return (
-    <div className="mx-auto max-w-5xl space-y-3 p-4 md:p-6">
-      {header}
+    <Page
+      title="QuickBooks"
+      className="space-y-3"
+      info={about}
+      tabs={<PillTabs tabs={TABS} value={tab} onChange={(k) => setParams((p) => { p.set('tab', k); return p }, { replace: true })} />}
+      actions={
+        tab !== 'cash' &&
+        tab !== 'inputs' && (
+          <div className="flex items-center gap-1.5 text-xs text-gray-600">
+            <DateField value={from} onChange={setFrom} ariaLabel="From" />
+            <span>to</span>
+            <DateField value={to} onChange={setTo} ariaLabel="To" />
+          </div>
+        )
+      }
+    >
       {company.environment !== 'production' && (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
           Sandbox: Intuit&apos;s sample company, not the farm&apos;s books. Nothing here is real money.
         </p>
       )}
       {company.last_error && <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{company.last_error}</p>}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <PillTabs tabs={TABS} value={tab} onChange={(k) => setParams((p) => { p.set('tab', k); return p }, { replace: true })} />
-        {tab !== 'cash' && tab !== 'inputs' && (
-          <div className="ml-auto flex items-center gap-1.5 text-xs text-gray-600">
-            <DateField value={from} onChange={setFrom} ariaLabel="From" />
-            <span>to</span>
-            <DateField value={to} onChange={setTo} ariaLabel="To" />
-          </div>
-        )}
-      </div>
 
       {tab === 'transactions' && <Transactions realm={realm} from={from} to={to} />}
       {tab === 'spending' && <Spending realm={realm} from={from} to={to} />}
@@ -126,7 +119,7 @@ export function QuickBooksPage() {
         </Suspense>
       )}
       {tab === 'ask' && <QbAskBar />}
-    </div>
+    </Page>
   )
 }
 

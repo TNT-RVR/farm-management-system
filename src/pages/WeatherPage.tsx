@@ -24,6 +24,7 @@ import { useTab } from '@/lib/useTab'
 import { SprayLegend, sprayCellClass } from './weather/SprayLegend'
 import { rhClass } from './weather/rh'
 import { tempBarLayout } from './weather/tempBar'
+import { Page } from '@/components/Page'
 
 // recharts in its own chunk, only when the 24-hour tab is opened.
 const Next24 = lazyWithRetry(() => import('./weather/Next24'))
@@ -553,19 +554,10 @@ export function WeatherPage() {
     }
   }
   return (
-    <div className="mx-auto max-w-5xl p-4 md:p-6">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-2xl font-bold text-gray-900">Weather</h1>
-        <span className="text-sm font-medium text-gray-600">{describeToday()}</span>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-3">
-        {sites.map((s) => (
-          <NowCard key={s.name} site={s} active={s.name === site.name} onPick={() => pick(s.name)} />
-        ))}
-      </div>
-
-      <div className="mt-5 mb-3 flex flex-wrap items-center gap-2 border-b border-gray-200 pb-2">
+    <Page
+      title="Weather"
+      info={describeToday()}
+      tabs={
         <PillTabs
           tabs={[
             { key: 'day', label: 'Next 24 hours' },
@@ -574,14 +566,21 @@ export function WeatherPage() {
           ]}
           value={view}
           onChange={pickView}
-          className="border-0 pb-0"
         />
-        <span className="ml-auto flex gap-1.5">
+      }
+      actions={
+        <>
           <button type="button" onClick={() => setDialog('legend')} className="flex items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-sm text-gray-700 hover:bg-gray-50">
             <BookOpen className="h-4 w-4" /> Legend
           </button>
           <SettingsButton label="Weather settings" onClick={() => setDialog('settings')} />
-        </span>
+        </>
+      }
+    >
+      <div className="mb-3 grid gap-3 md:grid-cols-3">
+        {sites.map((s) => (
+          <NowCard key={s.name} site={s} active={s.name === site.name} onPick={() => pick(s.name)} />
+        ))}
       </div>
       {view === 'radar' ? (
         <Suspense fallback={<p className="py-10 text-center text-sm text-gray-400">Loading…</p>}>
@@ -595,6 +594,6 @@ export function WeatherPage() {
       {dialog === 'settings' && <SettingsDialog settings={settings} onChange={setSettings} onClose={() => setDialog(null)} />}
       {dialog === 'legend' && <LegendDialog weekLo={range?.[0] ?? null} weekHi={range?.[1] ?? null} onClose={() => setDialog(null)} />}
 
-    </div>
+    </Page>
   )
 }

@@ -75,6 +75,7 @@ import {
 } from '@/lib/combine-manual'
 import { askConfirm } from '@/components/askConfirm'
 import { CARD_HEAD, TABLE_HEAD } from '@/lib/table-style'
+import { Page } from '@/components/Page'
 
 type Tab = 'setup' | 'fix' | 'loss' | 'book' | 'monitor'
 const TAB_KEYS: Tab[] = ['setup', 'fix', 'loss', 'book', 'monitor']
@@ -135,23 +136,9 @@ function CombineView() {
   const baseline = CROP_BASELINES.find((c) => c.key === crop)!
 
   return (
-    <div className="p-4 md:p-6">
-      <h1 className="mb-1 text-lg font-semibold text-gray-900">Combine{combineModel ? ` · ${combineModel}` : ''}</h1>
-      <HelpNote
-        className="mb-3"
-        summary={
-          <>
-            Twin rotor, {ROTOR_IN} in. <BookBadge /> = the operator’s manual.
-          </>
-        }
-        title="Where the starting points come from"
-      >
-        Twin rotor, {ROTOR_IN} in. Starting points marked <BookBadge /> are the operator’s manual’s
-        for this rotor; the rest are our estimate. Either way, save what the machine actually ran
-        at.
-      </HelpNote>
-
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+    <Page
+      title={`Combine${combineModel ? ` · ${combineModel}` : ''}`}
+      tabs={
         <PillTabs
           tabs={[
             { key: 'setup', label: 'Starting settings' },
@@ -163,33 +150,52 @@ function CombineView() {
           value={tab}
           onChange={setTab}
         />
-        {tab !== 'monitor' && (
-          <Select
-            value={crop}
-            ariaLabel="Crop"
-            className="w-40"
-            onChange={(v) => setCrop(v as CombineCropKey)}
-            options={CROP_BASELINES.map((c) => ({ value: c.key, label: c.label }))}
-          />
-        )}
-        {/* The 919 is on Harvest; the reading gets taken at the combine, so
-            the way there is one tap from here. */}
-        <Link
-          to="/harvest?tab=moisture"
-          className="ml-auto inline-flex items-center gap-1 text-xs text-gray-500 hover:text-brand-700"
-        >
-          <Droplet className="h-3.5 w-3.5" /> Moisture test
-        </Link>
-        {profile?.active && (
-          <button
-            type="button"
-            onClick={() => setFinishing(true)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-brand-600 px-3 py-1.5 text-sm font-semibold text-brand-800 hover:bg-brand-50"
+      }
+      actions={
+        <>
+          {tab !== 'monitor' && (
+            <Select
+              value={crop}
+              ariaLabel="Crop"
+              className="w-40"
+              onChange={(v) => setCrop(v as CombineCropKey)}
+              options={CROP_BASELINES.map((c) => ({ value: c.key, label: c.label }))}
+            />
+          )}
+          {/* The 919 is on Harvest; the reading gets taken at the combine, so
+              the way there is one tap from here. */}
+          <Link
+            to="/harvest?tab=moisture"
+            className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-brand-700"
           >
-            <CheckCircle2 className="h-4 w-4" /> Field finished
-          </button>
-        )}
-      </div>
+            <Droplet className="h-3.5 w-3.5" /> Moisture test
+          </Link>
+          {profile?.active && (
+            <button
+              type="button"
+              onClick={() => setFinishing(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-brand-600 px-3 py-1.5 text-sm font-semibold text-brand-800 hover:bg-brand-50"
+            >
+              <CheckCircle2 className="h-4 w-4" /> Field finished
+            </button>
+          )}
+        </>
+      }
+    >
+      <HelpNote
+        className="mb-3"
+        summary={
+          <>
+            {combineModel ? `${combineModel}. ` : ''}Twin rotor, {ROTOR_IN} in. <BookBadge /> = the operator’s manual.
+          </>
+        }
+        title="Where the starting points come from"
+      >
+        Twin rotor, {ROTOR_IN} in. Starting points marked <BookBadge /> are the operator’s manual’s
+        for this rotor; the rest are our estimate. Either way, save what the machine actually ran
+        at.
+      </HelpNote>
+
       {finishing && <FieldFinishedForm onClose={() => setFinishing(false)} />}
 
       {tab === 'setup' && (
@@ -219,7 +225,7 @@ function CombineView() {
           <strong>{baseline.label}:</strong> {baseline.note}
         </p>
       )}
-    </div>
+    </Page>
   )
 }
 
@@ -555,6 +561,9 @@ function LossTab({
   const del = useDeleteLossCheck()
   const [openCheck, setOpenCheck] = useState<string | null>(null)
   const opened = checks?.find((c) => c.id === openCheck) ?? null
+  // After a loss check, walk around the combine: no grain leaking out,
+  // every door, cover and clean-out closed (Sam, 23 Nov 2026).
+  const [walkAround, setWalkAround] = useState(false)
 
   // Blank means "use what the field and crop give": yield, price, acres,
   // seed weight and lb/bu only hold what someone typed over the default.
@@ -860,13 +869,32 @@ function LossTab({
                     notes: form.notes || null,
                     ...snap.snapshot,
                   },
-                  { onSuccess: () => set('grams', '') },
+                  {
+                    onSuccess: () => {
+                      set('grams', '')
+                      setWalkAround(true)
+                    },
+                  },
                 )
               }
               className="rounded-md bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-800 disabled:opacity-50"
             >
               {saveCheck.isPending ? 'Saving…' : 'Save this check'}
             </button>
+            {walkAround ? (
+              <div role="status" className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p className="flex-1">
+                  <span className="font-semibold">Check saved. Now walk around the combine</span> — make sure no grain is leaking
+                  out and every door, cover and clean-out is closed and latched.
+                </p>
+                <button onClick={() => setWalkAround(false)} className="font-semibold text-amber-900 hover:underline">
+                  Done
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">After the check, walk around: no grain leaking, everything closed.</p>
+            )}
             {saveCheck.error && (
               <p className="text-xs text-red-700">{(saveCheck.error as Error).message}</p>
             )}

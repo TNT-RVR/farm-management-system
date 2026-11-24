@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Wheat } from 'lucide-react'
 import { HelpNote } from '@/components/HelpNote'
-import { PageHeader } from '@/components/PageHeader'
 import { Select } from '@/components/Select'
 import { supabase } from '@/lib/supabase'
 import { TABLE_HEAD } from '@/lib/table-style'
@@ -21,6 +19,7 @@ import {
 import { TONNE_PER_BU } from '@/lib/markets'
 import { HeadTip } from '@/components/HeadTip'
 import { readAmount, type AmountRule } from '@/lib/number-input'
+import { Page } from '@/components/Page'
 
 /**
  * Beef or bin: what an annual crop is worth fed to the cattle rather than
@@ -205,12 +204,7 @@ export function CropForFeedPage() {
   const forms = Object.keys(FEED_NUTRIENTS[crop] ?? {})
 
   return (
-    <div className="mx-auto max-w-5xl space-y-3 p-4 md:p-6">
-      <PageHeader
-        title="Crop for feed"
-        icon={<Wheat className="h-5 w-5 text-brand-700" />}
-        subtitle="Combine it, graze it, bale it or ensile it"
-      />
+    <Page title="Crop for feed" className="space-y-3" info="Combine it, graze it, bale it or ensile it.">
 
       <div className="grid gap-3 md:grid-cols-2">
         <Group title="The field">
@@ -374,6 +368,6 @@ export function CropForFeedPage() {
           {Math.round(DEFAULT_RECOVERY.greenfeed * 100)}%. Starting points, not measurements.
         </p>
       </HelpNote>
-    </div>
+    </Page>
   )
 }

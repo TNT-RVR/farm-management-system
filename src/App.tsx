@@ -46,6 +46,8 @@ const ContactCandidatesPage = lazy(() =>
   import('@/pages/ContactCandidatesPage').then((m) => ({ default: m.ContactCandidatesPage })),
 )
 const GrantsPage = lazy(() => import('@/pages/GrantsPage').then((m) => ({ default: m.GrantsPage })))
+const DocumentsPage = lazy(() => import('@/pages/DocumentsPage').then((m) => ({ default: m.DocumentsPage })))
+const InsurancePage = lazy(() => import('@/pages/InsurancePage').then((m) => ({ default: m.InsurancePage })))
 const ResearchPage = lazy(() =>
   import('@/pages/ResearchPage').then((m) => ({ default: m.ResearchPage })),
 )
@@ -83,6 +85,7 @@ const GrossMarginPage = lazy(() => import('@/pages/GrossMarginPage').then((m) =>
 const WaterPaybackPage = lazy(() => import('@/pages/WaterPaybackPage').then((m) => ({ default: m.WaterPaybackPage })))
 const CowCalfIndicatorsPage = lazy(() => import('@/pages/CowCalfIndicatorsPage').then((m) => ({ default: m.CowCalfIndicatorsPage })))
 const CalvingDistributionPage = lazy(() => import('@/pages/CalvingDistributionPage').then((m) => ({ default: m.CalvingDistributionPage })))
+const PastureUsePage = lazy(() => import('@/pages/PastureUsePage').then((m) => ({ default: m.PastureUsePage })))
 const FuelPage = lazy(() => import('@/pages/FuelPage').then((m) => ({ default: m.FuelPage })))
 const PrivacyPage = lazy(() => import('@/pages/LegalPage').then((m) => ({ default: m.PrivacyPage })))
 const TermsPage = lazy(() => import('@/pages/LegalPage').then((m) => ({ default: m.TermsPage })))
@@ -181,6 +184,8 @@ export default function App() {
         <Route path="/contacts/suggested" element={<ContactCandidatesPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/grants" element={<GrantsPage />} />
+        <Route path="/documents" element={<DocumentsPage />} />
+        <Route path="/insurance" element={<InsurancePage />} />
         <Route path="/canola-reports" element={<CanolaReportsPage />} />
         <Route path="/canola-bloom" element={<CanolaBloomPage />} />
         <Route path="/fusarium" element={<FusariumPage />} />
@@ -239,6 +244,7 @@ export default function App() {
         <Route path="/cattle-settings" element={<CattlePage view="settings" />} />
         <Route path="/cattle/:id" element={<CattleDetailPage />} />
         <Route path="/ranch-summary" element={<RanchSummaryPage />} />
+        <Route path="/pasture-use" element={<PastureUsePage />} />
         {/* Its own view and not a tab of Pastures: it is a full-screen drawing
             board with six panels of its own, and sharing the tab row would
             leave two rows of tabs above the map. */}

@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronRight, ListChecks } from 'lucide-react'
-import { PageHeader } from '@/components/PageHeader'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useCropYear } from '@/lib/crop-year'
 import { useMissingChecklist } from '@/lib/missing-checklist'
 import { checklistByArea, type ChecklistLine } from '@/lib/reports/missing'
+import { Page } from '@/components/Page'
 
 /**
  * What's missing (Sam, 16 Oct 2026): one checklist of the inputs nobody
@@ -18,20 +18,19 @@ export function MissingPage() {
   const groups = checklistByArea(lines)
   const items = lines.reduce((s, l) => s + l.count, 0)
   return (
-    <div className="mx-auto max-w-4xl space-y-3 p-4 md:p-6">
-      <PageHeader
-        title="What's missing"
-        icon={<ListChecks className="h-5 w-5 text-brand-700" />}
-        subtitle={isLoading ? 'Checking…' : `${lines.length} things to fill in · ${items} items · ${cropYear}${canFix ? '' : ' · a manager fills these in'}`}
-        actions={
-          // The download is the managers' report.
-          canFix && (
-            <Link to="/reports?open=missing" className="rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
-              Download
-            </Link>
-          )
-        }
-      />
+    <Page
+      title="What's missing"
+      className="space-y-3"
+      info={isLoading ? 'Checking…' : `${lines.length} things to fill in · ${items} items · ${cropYear}${canFix ? '' : ' · a manager fills these in'}`}
+      actions={
+        // The download is the managers' report.
+        canFix && (
+          <Link to="/reports?open=missing" className="rounded-md border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+            Download
+          </Link>
+        )
+      }
+    >
       {error && <p className="text-sm text-red-700">Could not check: {error.message}</p>}
       {!isLoading && !error && !lines.length && <p className="text-sm text-gray-500">Nothing missing — every check passed.</p>}
       {groups.map((g) => (
@@ -44,7 +43,7 @@ export function MissingPage() {
           </ul>
         </section>
       ))}
-    </div>
+    </Page>
   )
 }
 

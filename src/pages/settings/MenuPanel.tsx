@@ -9,7 +9,6 @@ import {
   BAR_TOOL_LABEL,
   allItems,
   isLeaf,
-  menuEnabled,
   moveSection,
   sectionOrder,
   type MenuDevice,
@@ -116,7 +115,6 @@ export function MenuPanel() {
     commit({ ...prefs, phone: { ...(prefs.phone ?? {}), buttons: next.filter(Boolean) } })
   }
 
-  const oldMenu = !menuEnabled(prefs)
   const sectionRow = (s: MenuSection, i: number, count: number) => {
     const Icon = s.icon
     const open = openSection === s.key && !isLeaf(s)
@@ -176,17 +174,6 @@ export function MenuPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-700">Use the old menu</h2>
-            <p className="text-xs text-gray-500">The menu before seasons. It is going away later.</p>
-          </div>
-          <Switch on={oldMenu} label="Use the old menu" onChange={(on) => commit({ ...prefs, enabled: !on })} />
-        </div>
-        {save.isError && <p className="mt-2 text-xs text-red-600">{(save.error as Error).message}</p>}
-      </div>
-
       <div className="rounded-lg border border-gray-200 bg-white p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-gray-700">What the menu shows</h2>

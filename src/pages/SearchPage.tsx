@@ -8,6 +8,7 @@ import { useVisibleReports } from '@/lib/reports/visible'
 import { buildAppIndex, searchApp, type AppHitKind } from '@/lib/search/app-index'
 import { TAB_ENTRIES } from '@/lib/search/tabs'
 import { cn } from '@/lib/utils'
+import { Page } from '@/components/Page'
 
 type Hit = RecordHit & { kind?: AppHitKind }
 
@@ -63,7 +64,7 @@ export function SearchPage() {
   const typed = text.trim().length >= 2
 
   return (
-    <div className="mx-auto max-w-2xl p-4 md:p-6">
+    <Page narrow title="Search">
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
         <input
@@ -127,6 +128,6 @@ export function SearchPage() {
           <p className="text-sm text-gray-400">No matches for “{text.trim()}”.</p>
         )}
       </div>
-    </div>
+    </Page>
   )
 }

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CloudHail, Check, Upload, X } from 'lucide-react'
+import { AlertTriangle, Check, Upload, X } from 'lucide-react'
 import { Select } from '@/components/Select'
 import { hasManagerAccess, useAuth } from '@/lib/auth'
 import { useAllFields } from '@/lib/queries'
@@ -12,6 +12,7 @@ import {
 } from '@/lib/hail-inspections'
 import { cn } from '@/lib/utils'
 import { HelpNote } from '@/components/HelpNote'
+import { Page } from '@/components/Page'
 
 /**
  * AFSC hail inspections, waiting to be confirmed.
@@ -51,11 +52,8 @@ export function HailReportsPage() {
   }
 
   return (
-    <div className="p-4 md:p-6">
-      <h1 className="flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-        <CloudHail className="h-5 w-5 text-brand-700" /> Hail reports
-      </h1>
-      <HelpNote className="mt-0.5 max-w-2xl" summary="Hail inspection reports to confirm against your fields." title="How hail reports work">
+    <Page title="Hail reports">
+      <HelpNote className="max-w-2xl" summary="Hail inspection reports to confirm against your fields." title="How hail reports work">
         AFSC inspection summaries, read automatically and held here for you to confirm. Confirming
         one records the hail event on the field — the day it fell, the assessed loss and the acres
         — and that is what the Hail column on the field list shows.
@@ -150,7 +148,7 @@ export function HailReportsPage() {
           </ul>
         </>
       )}
-    </div>
+    </Page>
   )
 }
 

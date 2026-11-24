@@ -15,6 +15,7 @@ export const RECORD_HOME: Record<string, string> = {
   Bins: '/harvest',
   Contracts: '/contracts',
   Grants: '/grants',
+  Documents: '/documents',
 }
 
 /**
@@ -26,7 +27,8 @@ export async function runSearch(supabase: SupabaseClient, q: string): Promise<Re
   const like = `%${q}%`
   const hits: RecordHit[] = []
 
-  const [fields, contacts, tasks, cattle, templates, crops, events, equipment, bins, contracts, grants] = await Promise.all([
+  const [fields, contacts, tasks, cattle, templates, crops, events, equipment, bins, contracts, grants, documents] =
+    await Promise.all([
     supabase
       .from('fields')
       .select('id, name, legal_land_description, notes_md')
@@ -66,6 +68,12 @@ export async function runSearch(supabase: SupabaseClient, q: string): Promise<Re
     supabase.from('bins').select('id, name, site').or(`name.ilike.${like},site.ilike.${like},notes_md.ilike.${like}`).limit(6),
     supabase.from('contracts').select('id, contract_number, crop_year, notes_md').or(`contract_number.ilike.${like},notes_md.ilike.${like}`).limit(6),
     supabase.from('grants').select('id, title, funder').or(`title.ilike.${like},funder.ilike.${like},summary.ilike.${like}`).limit(6),
+    supabase
+      .from('documents')
+      .select('id, title, doc_type, party, doc_date, area')
+      .or(`title.ilike.${like},party.ilike.${like},doc_type.ilike.${like},filename.ilike.${like}`)
+      .order('doc_date', { ascending: false, nullsFirst: false })
+      .limit(6),
   ])
 
   fields.data?.forEach((f) => hits.push({ group: 'Fields', label: f.name, sub: f.legal_land_description ?? undefined, to: `/fields/${f.id}` }))
@@ -80,9 +88,20 @@ export async function runSearch(supabase: SupabaseClient, q: string): Promise<Re
   equipment.data?.forEach((e) =>
     hits.push({ group: 'Equipment', label: e.name, sub: [e.year, e.make, e.model].filter(Boolean).join(' ') || undefined, to: `/equipment/${e.id}` }),
   )
-  bins.data?.forEach((b) => hits.push({ group: 'Bins', label: b.name, sub: b.site ?? undefined, to: '/harvest?tab=bins' }))
+  // Straight to the bin, not to the yard list with the bin still to find.
+  bins.data?.forEach((b) => hits.push({ group: 'Bins', label: b.name, sub: b.site ?? undefined, to: `/harvest?tab=bins&bin=${b.id}` }))
   contracts.data?.forEach((c) => hits.push({ group: 'Contracts', label: c.contract_number || 'Contract', sub: c.crop_year ? String(c.crop_year) : undefined, to: '/contracts' }))
   grants.data?.forEach((g) => hits.push({ group: 'Grants', label: g.title, sub: g.funder ?? undefined, to: `/grants?open=${g.id}` }))
+  // Straight to the document with its viewer open, not to the library with
+  // the search still to type.
+  documents.data?.forEach((d) =>
+    hits.push({
+      group: 'Documents',
+      label: d.title,
+      sub: [d.doc_type, d.party, d.doc_date].filter(Boolean).join(' · ') || undefined,
+      to: `/documents?open=${d.id}`,
+    }),
+  )
 
   return hits
 }

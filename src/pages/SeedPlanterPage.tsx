@@ -1,9 +1,9 @@
-import { Sprout } from 'lucide-react'
 import { PillTabs } from '@/components/PillTabs'
 import { ProductPrices } from '@/components/ProductPrices'
 import { PlanterCalculator } from '@/pages/calculator/PlanterCalculator'
 import { CropPlanterList } from '@/pages/planter/CropPlanterList'
 import { useTab } from '@/lib/useTab'
+import { Page } from '@/components/Page'
 
 /**
  * Seed & planter: the planter calculator, which was a Calculator tab, and
@@ -20,11 +20,9 @@ import { useTab } from '@/lib/useTab'
 export function SeedPlanterPage() {
   const [tab, setTab] = useTab('seed-planter', ['planter', 'crops', 'prices'] as const)
   return (
-    <div className="p-4 md:p-6">
-      <h1 className="mb-3 flex items-center gap-1.5 text-lg font-semibold text-gray-900">
-        <Sprout className="h-5 w-5 text-brand-700" /> Seed &amp; planter
-      </h1>
-
+    <Page
+      title="Seed & planter"
+      tabs={
       <PillTabs
         tabs={[
           { key: 'planter', label: 'Planter settings' },
@@ -33,9 +31,9 @@ export function SeedPlanterPage() {
         ]}
         value={tab}
         onChange={setTab}
-        className="mb-4"
       />
-
+      }
+    >
       {tab === 'planter' ? (
         // The same two-column grid the calculator page gave it.
         <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
@@ -46,6 +44,6 @@ export function SeedPlanterPage() {
       ) : (
         <ProductPrices category="seed" />
       )}
-    </div>
+    </Page>
   )
 }

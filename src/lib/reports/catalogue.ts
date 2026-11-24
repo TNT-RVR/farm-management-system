@@ -68,6 +68,7 @@ export type BuiltId =
   | 'fields'
   | 'crops'
   | 'crop-plan'
+  | 'planting-summary'
   | 'yield-history'
   | 'yield-vs-estimate'
   | 'field-season'
@@ -85,6 +86,7 @@ export type BuiltId =
   | 'bin-records'
   | 'driver-log'
   | 'bin-temperature-record'
+  | 'seed-bin-temperatures'
   | 'grain-inventory'
   | 'deliveries'
   | 'moisture-log'
@@ -112,6 +114,7 @@ export type BuiltId =
   | 'afsc-mdi-land'
   | 'afsc-mdi-identification'
   | 'grazing-record'
+  | 'pasture-use'
   | 'stock-return'
   | 'feed-budget'
   | 'pregnancy'
@@ -218,6 +221,16 @@ export const REPORTS: ReportEntry[] = [
     from: { label: 'Financials', to: '/plan' },
     formats: PDF_CSV,
     params: [year],
+  },
+  {
+    mode: 'build',
+    id: 'planting-summary',
+    section: 'crops',
+    name: 'Planting summary',
+    what: 'A row a field: the crop and variety, the acres, the day it was seeded, and the machine and operator that seeded it.',
+    from: { label: 'Fields', to: '/fields' },
+    formats: PDF_CSV,
+    params: [year, { key: 'field', kind: 'field', allLabel: 'All fields' }],
   },
   {
     mode: 'build',
@@ -459,6 +472,16 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     mode: 'build',
+    id: 'seed-bin-temperatures',
+    section: 'harvest',
+    name: 'Seed company bin temperature records',
+    what: 'A seed field’s bins and their cable readings, on the seed company’s own form where the app has it (Corteva’s).',
+    from: { label: 'Harvest reports', to: '/harvest-reports?tab=bin-temps' },
+    formats: ['PDF', 'CSV'],
+    params: [year, { key: 'field', kind: 'field', label: 'Seed field' }, { key: 'bin', kind: 'bin', allLabel: 'Every bin on its seed report' }],
+  },
+  {
+    mode: 'build',
     id: 'grain-inventory',
     section: 'harvest',
     name: 'Year-end grain inventory',
@@ -680,6 +703,20 @@ export const REPORTS: ReportEntry[] = [
     from: { label: 'Grazing', to: '/cattle?tab=grazing' },
     formats: PDF_CSV,
     params: [year, { key: 'ranch', kind: 'ranch', allLabel: 'All ranches' }],
+  },
+  {
+    mode: 'build',
+    id: 'pasture-use',
+    section: 'cattle',
+    name: 'Pasture use by herd',
+    what: 'Which herd was in which pasture over the year, sub-paddocks rolled up: in, out and days. By herd or by pasture.',
+    from: { label: 'Pasture use', to: '/pasture-use' },
+    formats: PDF_CSV,
+    params: [
+      year,
+      { key: 'ranch', kind: 'ranch', allLabel: 'All ranches' },
+      { key: 'view', kind: 'choice', label: 'Laid out', options: [{ value: 'herd', label: 'By herd' }, { value: 'pasture', label: 'By pasture' }], default: 'herd' },
+    ],
   },
   {
     mode: 'build',

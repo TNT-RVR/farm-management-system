@@ -10,6 +10,7 @@ import { asTrait, TRAITS, type HerbicideTrait } from '@/lib/canola-trait'
 import { TRAIT_SYSTEM, lastSeedCanola } from '@/lib/seed-canola-year'
 import { fieldHistoryReport, type HistoryField } from '@/lib/reports/canola-reports'
 import { downloadBlob, tableReportToCsv, tableReportToPdf } from '@/lib/table-report'
+import { keepMadeReport } from '@/lib/made-reports'
 import { cn } from '@/lib/utils'
 import { TABLE_HEAD, TABLE_TH } from '@/lib/table-style'
 import { ExportButton } from '@/components/ExportButton'
@@ -83,8 +84,10 @@ export function HistoryTab() {
     try {
       const r = fieldHistoryReport({ company: company.trim() || null, notes: notes.trim() || null, fromYear: years[years.length - 1], toYear, fields: history })
       const name = `Field crop history ${history.length === 1 ? history[0].name : `${history.length} fields`} ${years[years.length - 1]}-${toYear}`
-      if (kind === 'pdf') downloadBlob(await tableReportToPdf(r), `${fileSafe(name)}.pdf`)
-      else downloadBlob(new Blob([tableReportToCsv(r)], { type: 'text/csv' }), `${fileSafe(name)}.csv`)
+      const blob = kind === 'pdf' ? await tableReportToPdf(r) : new Blob([tableReportToCsv(r)], { type: 'text/csv' })
+      const filename = `${fileSafe(name)}.${kind}`
+      downloadBlob(blob, filename)
+      keepMadeReport({ reportId: 'canola-field-history', name: 'Field crop history for a canola company', blob, filename, format: kind.toUpperCase(), party: company.trim() || null, cropYear: toYear, labels: { Company: company.trim(), Fields: history.map((h) => h.name).join(', '), Years: `${years[years.length - 1]}–${toYear}` }, family: 'seed-canola' })
     } finally {
       setBusy(null)
     }
